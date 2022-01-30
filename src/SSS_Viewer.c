@@ -11,6 +11,7 @@
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include<arpa/inet.h>
 #include<sys/socket.h>
@@ -23,18 +24,21 @@
 
 //#define CALIBRATION
 
-#define CIS_PIXELS_PER_LINE						(1152 / 2)//200DPI
-#define CIS_LEN 								(CIS_PIXELS_PER_LINE * 3)
+#ifdef CIS_400DPI
+#define CIS_PIXELS_PER_LINE						(1152)
+#else
+#define CIS_PIXELS_PER_LINE						(576)
+#endif
 
-#define UDP_HEADER								(1397969715) 	//01010011 01010011 01010011 00110011 SSS3
-#define UDP_HEADER_SIZE							(4)//uint8
-#define UDP_NB_PACKET_PER_LINE					(7)
-#define UDP_PACKET_SIZE							((((CIS_LEN) + (UDP_HEADER_SIZE)) / UDP_NB_PACKET_PER_LINE) * 4)
+#define CIS_PIXELS_NB 							(CIS_PIXELS_PER_LINE * 3)
 
-#define BUFLEN 									((CIS_LEN + UDP_HEADER_SIZE) * 2 * 4)	//Max length of buffer
+#define UDP_HEADER_SIZE							(1)//uint32
+#define UDP_NB_PACKET_PER_LINE					(6)
+#define UDP_PACKET_SIZE							(((CIS_PIXELS_NB) / UDP_NB_PACKET_PER_LINE) + (UDP_HEADER_SIZE))
+
 #define PORT 									(55151)	//The port on which to listen for incoming data
 
-#define WINDOWS_WIDTH							(CIS_LEN)
+#define WINDOWS_WIDTH							(CIS_PIXELS_NB)
 #define WINDOWS_HEIGHT							(1160)
 
 
@@ -54,8 +58,9 @@ int main(void)
 	int y = 0;
 	int recv_len = 0;
 	unsigned int slen = sizeof(si_other);
-	uint8_t buf[BUFLEN];
-	static uint32_t curr_packet = 0;
+	uint32_t buf[UDP_PACKET_SIZE];
+	uint32_t image_buff[CIS_PIXELS_NB];
+	static uint32_t curr_packet = 0, curr_packet_header = 0;
 
 	//--------------------------------------SDL2 INIT-------------------------------------------//
 	SDL_Window *window = NULL;
@@ -127,60 +132,39 @@ int main(void)
 		//		printf("Waiting for data...");
 		fflush(stdout);
 
-		for (curr_packet = 0; curr_packet < (UDP_NB_PACKET_PER_LINE * 2); curr_packet++)
+		for (curr_packet = 0; curr_packet < (UDP_NB_PACKET_PER_LINE); curr_packet++)
 		{
 			//try to receive some data, this is a blocking call
-			if ((recv_len = recvfrom(s, &buf[curr_packet * UDP_PACKET_SIZE], UDP_PACKET_SIZE, 0, (struct sockaddr *) &si_other, &slen)) == -1)
+			if ((recv_len = recvfrom(s, (uint8_t*)buf, UDP_PACKET_SIZE * sizeof(int32_t), 0, (struct sockaddr *) &si_other, &slen)) == -1)
 			{
 				die("recvfrom()");
 			}
+			curr_packet_header = buf[0];
+			memcpy(&image_buff[curr_packet_header], &buf[1], recv_len - (UDP_HEADER_SIZE * sizeof(int32_t)));
 		}
 
 		//print details of the client/peer and the data received
 		//		printf("Received packet from %s:%d\n", inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port));
 		//		printf("Data: %s\n" ,(uint8_t *)buf);
 
-		int offset = 0;
-
-		for (int i = 0; i < (BUFLEN / 2); i+=4)
-		{
-			if (buf[i] == 0b00110011)
-			{
-				if (buf[i + 1] == 0b01010011)
-				{
-					if (buf[i + 2] == 0b01010011)
-					{
-						if (buf[i + 3] == 0b01010011)
-						{
-							offset = i + UDP_HEADER_SIZE;
-						}
-
-					}
-				}
-			}
-		}
-
-
-
-
 #ifdef CALIBRATION
 		uint32_t red = 0, green = 0, blue = 0;
 #endif
-		for (int x = 0; x < CIS_LEN; x++)
+		for (int x = 0; x < CIS_PIXELS_NB; x++)
 		{
-			SDL_SetRenderDrawColor(renderer, buf[offset + (x * 4)], buf[offset + (x * 4) + 1], buf[offset + (x * 4) + 2], 255);
+			SDL_SetRenderDrawColor(renderer, image_buff[x] & 0xFF, image_buff[x] >> 8 & 0xFF, image_buff[x] >> 16 & 0xFF, 255);
 			SDL_RenderDrawPoint(renderer, WINDOWS_WIDTH - x, y % WINDOWS_HEIGHT);
 #ifdef CALIBRATION
-			red += buf[offset + (x * 4)];
-			green += buf[offset + (x * 4) + 1];
-			blue += buf[offset + (x * 4) + 2];
+			red += image_buff[x] & 0xFF;
+			green += image_buff[x] >> 8 & 0xFF;
+			blue += image_buff[x] >> 16 & 0xFF;
 #endif
 		}
 #ifdef CALIBRATION
 		//for calibrate CIS leds luminosity
 		red /= CIS_LEN;
 		green /= CIS_LEN;
-		blue /= CIS_LEN;
+		blue /= CIS_PIXELS_NB;
 		printf("RED : %d   GREEN : %d   BLUE : %d    \n" , red, green, blue);
 		SDL_Delay(100);
 #endif
