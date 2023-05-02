@@ -9,8 +9,6 @@ RM := rm -rf
 # All of the sources participating in the build are defined here
 -include sources.mk
 -include src/subdir.mk
--include objects.mk
-
 ifneq ($(MAKECMDGOALS),clean)
 ifneq ($(strip $(C_DEPS)),)
 -include $(C_DEPS)
@@ -39,10 +37,10 @@ all: main-build
 main-build: SSS_Viewer
 
 # Tool invocations
-SSS_Viewer: $(OBJS) $(USER_OBJS) makefile objects.mk $(OPTIONAL_TOOL_DEPS)
+SSS_Viewer: $(OBJS) $(USER_OBJS) makefile $(OPTIONAL_TOOL_DEPS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
-	gcc  -o "SSS_Viewer" $(OBJS) $(USER_OBJS) $(LIBS)
+	gcc -L/opt/homebrew/lib/ -o "SSS_Viewer" $(OBJS) $(USER_OBJS) $(LIBS) -lSDL2main -lSDL2
 	@echo 'Finished building target: $@'
 	@echo ' '
 
