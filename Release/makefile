@@ -39,8 +39,8 @@ main-build: SSS_Viewer
 # Tool invocations
 SSS_Viewer: $(OBJS) $(USER_OBJS) makefile $(OPTIONAL_TOOL_DEPS)
 	@echo 'Building target: $@'
-	@echo 'Invoking: MacOS X C Linker'
-	gcc  -o "SSS_Viewer" $(OBJS) $(USER_OBJS) $(LIBS) -lSDL2
+	@echo 'Invoking: GCC C Linker'
+	gcc  -o "SSS_Viewer" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 

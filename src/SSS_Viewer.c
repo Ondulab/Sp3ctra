@@ -8,7 +8,7 @@
  ============================================================================
  */
 
-#include <SDL.h>
+#include <SDL2/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,6 +49,9 @@
 void printImage(SDL_Renderer *renderer, uint32_t *image_buff, SDL_Texture* background_texture, SDL_Texture* foreground_texture);
 void printRawData(SDL_Renderer *renderer, uint32_t *image_buff, SDL_Texture* background_texture, SDL_Texture* foreground_texture);
 
+//ip addr
+//sudo ip link set enx00e04c781b25 up
+//sudo ip addr add 192.168.0.50/24 dev enx00e04c781b25
 //memo on linux terminal : sudo nc -u -l 55151
 
 void die(char *s)
@@ -87,12 +90,16 @@ int main(void)
 	SDL_Renderer *renderer = NULL;
 	int statut = EXIT_FAILURE;
 
+	printf("START PROGRAM\n");
+
 	/* Initialisation, création de la fenêtre et du renderer. */
 	if(0 != SDL_Init(SDL_INIT_VIDEO))
 	{
 		fprintf(stderr, "Erreur SDL_Init : %s", SDL_GetError());
 		goto Quit;
 	}
+	printf("SDL INIT\n");
+
 	window = SDL_CreateWindow("SDL2", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 			WINDOWS_WIDTH, WINDOWS_HEIGHT, SDL_WINDOW_SHOWN);
 	if(NULL == window)
@@ -100,12 +107,17 @@ int main(void)
 		fprintf(stderr, "Erreur SDL_CreateWindow : %s", SDL_GetError());
 		goto Quit;
 	}
+
+	printf("SDL CREATE WINDOW"
+			"\n");
 	renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 	if(NULL == renderer)
 	{
 		fprintf(stderr, "Erreur SDL_CreateRenderer : %s", SDL_GetError());
 		goto Quit;
 	}
+
+	printf("SDL CREATE RENDER\n");
 
 	SDL_SetWindowTitle(window, "SSS_Viewer");
 
@@ -122,6 +134,8 @@ int main(void)
 
 	SDL_SetRenderTarget(renderer, background_texture);
 
+	printf("SDL FULL CONFIGURED\n");
+
 	//---------------------------------------UDP INIT--------------------------------------------//
 
 	//create a UDP socket
@@ -129,6 +143,8 @@ int main(void)
 	{
 		die("socket");
 	}
+
+	printf("CREATE UDP SOCKET\n");
 
 	// zero out the structure
 	memset((char *) &si_me, 0, sizeof(si_me));
@@ -143,10 +159,21 @@ int main(void)
 		die("bind");
 	}
 
+	printf("BIND SOCKET\n");
+
 	//---------------------------------------MAIN LOOP-------------------------------------------//
 	//keep listening for data
 	while(1)
 	{
+	    SDL_Event e;
+	    while(SDL_PollEvent(&e)) {
+	        if(e.type == SDL_QUIT) {
+	            close(s);
+	            SDL_DestroyWindow(window);
+	            SDL_Quit();
+	            return EXIT_SUCCESS;
+	        }
+	    }
 		//		printf("Waiting for data...");
 		fflush(stdout);
 
@@ -167,10 +194,8 @@ int main(void)
 			}
 #endif
 		}
-
 		printImage(renderer, image_buff, background_texture, foreground_texture);
 //		printRawData(renderer, image_buff, background_texture, foreground_texture);
-
 	}
 
 	close(s);
@@ -262,7 +287,7 @@ void printImage(SDL_Renderer *renderer, uint32_t *image_buff, SDL_Texture* backg
 
 void printRawData(SDL_Renderer *renderer, uint32_t *image_buff, SDL_Texture* background_texture, SDL_Texture* foreground_texture)
 {
-	static int y = 0;
+	//static int y = 0;
 
 	for (int x = 0; x < CIS_PIXELS_NB; x++)
 	{

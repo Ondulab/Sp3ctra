@@ -2,7 +2,16 @@
 # Automatically-generated file. Do not edit!
 ################################################################################
 
-USER_OBJS :=
+ASM_SRCS := 
+C_SRCS := 
+OBJ_SRCS := 
+O_SRCS := 
+S_UPPER_SRCS := 
+C_DEPS := 
+EXECUTABLES := 
+OBJS := 
 
-LIBS := -lSDL2 -lSDL2main
+# Every subdirectory with source files must be described here
+SUBDIRS := \
+src \
 
