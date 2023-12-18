@@ -23,27 +23,23 @@
 #include <fcntl.h>
 #include <termios.h>
 
+#include "error.h"
 #include "synth.h"
 #include "display.h"
 #include "udp.h"
+#include "audio.h"
 
 
 //#define CALIBRATION
 //#define SSS_MOD_MODE
 
-// Fonction pour quitter avec un message d'erreur
-static void die(const char *s)
-{
-    perror(s);
-    exit(1);
-}
-
 int main_loop(sfRenderWindow *window, int s, struct sockaddr_in *si_other, struct sockaddr_in *si_me) {
     ssize_t recv_len;
     uint32_t buf[UDP_PACKET_SIZE];
-    uint32_t image_buff[CIS_PIXELS_NB];
+    int32_t image_buff[CIS_PIXELS_NB];
     static uint32_t curr_packet = 0, curr_packet_header = 0;
     unsigned int slen = sizeof(*si_other);
+    static int iteration_count = 0; // Ajout d'une variable de comptage
 
     sfTexture* background_texture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
     sfTexture* foreground_texture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
@@ -52,7 +48,8 @@ int main_loop(sfRenderWindow *window, int s, struct sockaddr_in *si_other, struc
     sfSprite_setTexture(background_sprite, background_texture, sfTrue);
     sfSprite_setTexture(foreground_sprite, foreground_texture, sfTrue);
 
-    while (sfRenderWindow_isOpen(window)) {
+    while (sfRenderWindow_isOpen(window)) 
+    {
         sfEvent event;
         while (sfRenderWindow_pollEvent(window, &event)) {
             if (event.type == sfEvtClosed) {
@@ -75,32 +72,46 @@ int main_loop(sfRenderWindow *window, int s, struct sockaddr_in *si_other, struc
         }
 
         printImage(window, image_buff, background_texture, foreground_texture);
+        
+        if (iteration_count % 10 == 0) { // Exécution tous les dix itérations
+            synth_AudioProcess(image_buff, audio_samples);
+        }
+        
+        iteration_count++; // Incrémentation du compteur
     }
-
+    
     sfSprite_destroy(background_sprite);
     sfSprite_destroy(foreground_sprite);
     sfTexture_destroy(background_texture);
     sfTexture_destroy(foreground_texture);
     sfRenderWindow_destroy(window);
-
+    
     return 0;
 }
 
 
 int main(void)
 {
-    //--------------------------------------SDL2 INIT-------------------------------------------//
     // Initialisation de CSFML
     sfVideoMode mode = {WINDOWS_WIDTH, WINDOWS_HEIGHT, 32};
     sfRenderWindow* window = sfRenderWindow_create(mode, "CSFML Viewer", sfResize | sfClose, NULL);
     struct sockaddr_in si_other;
     struct sockaddr_in si_me;
     
+    AudioData audioData;
+    initAudioData(&audioData, AUDIO_CHANNEL, AUDIO_BUFFER_SIZE);
+    audio_Init(&audioData);
     synth_IfftInit();
     display_Init(window);
     int s = udp_Init(&si_other, &si_me);
 
-    main_loop(window, s, &si_other, &si_me);
+    // Démarrer l'Audio Unit
+    OSStatus status = startAudioUnit();
 
+    
+    main_loop(window, s, &si_other, &si_me);
+    
+    audio_Cleanup();
+    cleanupAudioData(&audioData);
     return 0;
 }

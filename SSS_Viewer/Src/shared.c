@@ -20,8 +20,6 @@
 
 struct shared_var shared_var;
 
-volatile struct params params;
-
 volatile int32_t cvData[NUMBER_OF_NOTES / IMAGE_WEIGHT];
 
 volatile int32_t imageData[CIS_PIXELS_NB];

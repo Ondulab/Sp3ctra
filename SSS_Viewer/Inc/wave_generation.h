@@ -1,32 +1,49 @@
 /*
- * synth.h
+ * wave_generation.h
  *
  *  Created on: 24 avr. 2019
  *      Author: zhonx
  */
 
 /* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __SYNTH_H
-#define __SYNTH_H
+#ifndef __WAVE_GENERATION_H
+#define __WAVE_GENERATION_H
 
 /* Includes ------------------------------------------------------------------*/
-#include "stdint.h"
-#include "wave_generation.h"
+#include "synth.h"
+#include "shared.h"
 
 /* Private includes ----------------------------------------------------------*/
 
 /* Exported types ------------------------------------------------------------*/
+typedef enum {
+	SAW_WAVE,
+	SIN_WAVE,
+	SQR_WAVE
+} waveformType;
+
+typedef enum {
+	MAJOR,
+	MINOR,
+} harmonizationType;
+
+struct waveParams {
+	uint32_t commaPerSemitone;
+	uint32_t startFrequency;
+	harmonizationType harmonizationType;
+	uint32_t harmonizationLevel;
+	waveformType waveformType;
+    uint32_t waveformOrder;
+};
 
 /* Exported constants --------------------------------------------------------*/
+extern volatile struct waveParams wavesGeneratorParams;
 
 /* Exported macro ------------------------------------------------------------*/
 
 /* Exported functions prototypes ---------------------------------------------*/
-int32_t synth_IfftInit(void);
-int32_t synth_GetImageData(uint32_t index);
-int32_t synth_SetImageData(uint32_t index, int32_t value);
-void synth_AudioProcess(int32_t *imageData, float *audio_samples);
+uint32_t init_waves(volatile float *unitary_waveform, volatile struct wave *waves, volatile struct waveParams *parameters);
 
 /* Private defines -----------------------------------------------------------*/
 
-#endif /* __SYNTH_H */
+#endif /* __WAVE_GENERATION_H */

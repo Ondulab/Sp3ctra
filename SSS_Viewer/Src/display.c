@@ -17,17 +17,11 @@
 #include <fcntl.h>
 #include <termios.h>
 
+#include "error.h"
 #include "display.h"
 
 //#define CALIBRATION
 //#define SSS_MOD_MODE
-
-// Fonction pour quitter avec un message d'erreur
-static void die(const char *s)
-{
-    perror(s);
-    exit(1);
-}
 
 uint32_t greyScale(uint32_t rbg888)
 {
@@ -50,7 +44,7 @@ int display_Init(sfRenderWindow *window)
     return 0;
 }
 
-void printImage(sfRenderWindow *window, uint32_t *image_buff, sfTexture* background_texture, sfTexture* foreground_texture)
+void printImage(sfRenderWindow *window, int32_t *image_buff, sfTexture* background_texture, sfTexture* foreground_texture)
 {
     // Créer une image pour la nouvelle ligne
     sfImage* image = sfImage_createFromColor(CIS_PIXELS_NB, 1, sfBlack);

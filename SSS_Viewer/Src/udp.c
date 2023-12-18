@@ -18,6 +18,7 @@
 #include <fcntl.h>
 #include <termios.h>
 
+#include "error.h"
 #include "udp.h"
 
 //#define CALIBRATION
@@ -27,13 +28,6 @@
 //sudo ip link set enx00e04c781b25 up
 //sudo ip addr add 192.168.0.50/24 dev enx00e04c781b25
 //memo on linux terminal : sudo nc -u -l 55151
-
-// Fonction pour quitter avec un message d'erreur
-static void die(const char *s)
-{
-    perror(s);
-    exit(1);
-}
 
 int udp_Init(struct sockaddr_in *si_other, struct sockaddr_in *si_me)
 {

@@ -11,7 +11,7 @@
 #include <stdio.h>
 
 int display_Init(sfRenderWindow *window);
-void printImage(sfRenderWindow *window, uint32_t *image_buff, sfTexture* background_texture, sfTexture* foreground_texture);
+void printImage(sfRenderWindow *window, int32_t *image_buff, sfTexture* background_texture, sfTexture* foreground_texture);
 void printRawData(sfRenderWindow *window, uint32_t *image_buff, sfTexture* background_texture, sfTexture* foreground_texture);
 
 #endif /* Display_h */

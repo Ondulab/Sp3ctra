@@ -13,8 +13,12 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <Accelerate/Accelerate.h>
+#include <pthread.h>
 
+#include "error.h"
+#include "wave_generation.h"
 #include "shared.h"
+#include "audio.h"
 #include "synth.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -22,9 +26,6 @@
 /* Private typedef -----------------------------------------------------------*/
 
 /* Private define ------------------------------------------------------------*/
-#ifndef HSEM_ID_0
-#define HSEM_ID_0 (0U) /* HW semaphore 0*/
-#endif
 
 /* Private macro -------------------------------------------------------------*/
 
@@ -38,7 +39,7 @@ static int32_t imageRef[NUMBER_OF_NOTES] = {0};
 
 /* Private function prototypes -----------------------------------------------*/
 static uint32_t greyScale(uint32_t rbg888);
-static void synth_IfftMode(volatile int32_t *imageData, volatile int32_t *audioData);
+static void synth_IfftMode(volatile int32_t *imageData, volatile float *audioData);
 static void synth_DirectMode(volatile int32_t *imageData, volatile int32_t *audioData, uint16_t CV_in);
 
 /* Private user code ---------------------------------------------------------*/
@@ -89,6 +90,17 @@ void fill_float(float value, float *array, size_t length)
     }
 }
 
+void fill_int32(int32_t value, int32_t *array, size_t length)
+{
+    if (array == NULL) {
+        return; // Gestion d'erreur si le tableau est NULL
+    }
+
+    for (size_t i = 0; i < length; ++i) {
+        array[i] = value;
+    }
+}
+
 /**
  * @brief  synth ifft init.
  * @param
@@ -97,9 +109,90 @@ void fill_float(float value, float *array, size_t length)
 int32_t synth_IfftInit(void)
 {
     //ToChangestatic DAC_ChannelConfTypeDef sConfig;
+
+    int32_t buffer_len = 0;
+    uint32_t aRandom32bit = 0;
+
+    printf("---------- SYNTH INIT ---------\n");
+    printf("-------------------------------\n");
+
+    // initialize default parameters
+    wavesGeneratorParams.commaPerSemitone = COMMA_PER_SEMITONE;
+    wavesGeneratorParams.startFrequency = START_FREQUENCY;
+    wavesGeneratorParams.harmonizationType = MAJOR;
+    wavesGeneratorParams.harmonizationLevel = 100;
+    wavesGeneratorParams.waveformType = SIN_WAVE;
+    wavesGeneratorParams.waveformOrder = 1;
+
+    buffer_len = init_waves(unitary_waveform, waves, &wavesGeneratorParams); //24002070 24000C30
     
-    //	printf("---------- SYNTH INIT ---------\n");
-    //	printf("-------------------------------\n");
+    int32_t value = VOLUME_INCREMENT;
+    
+    if (value == 0)
+        value = 0;
+    if (value > 100)
+        value = 100;
+    for (int32_t note = 0; note < NUMBER_OF_NOTES; note++)
+    {
+        waves[note].volume_increment = 1.00/(float)value * waves[note].max_volume_increment;
+    }
+    
+    value = VOLUME_DECREMENT;
+    
+    if (value == 0)
+        value = 0;
+    if (value > 100)
+        value = 100;
+    for (int32_t note = 0; note < NUMBER_OF_NOTES; note++)
+    {
+        waves[note].volume_decrement = 1.00/(float)value * waves[note].max_volume_decrement;
+    }
+
+    // start with random index
+    for (uint32_t i = 0; i < NUMBER_OF_NOTES; i++)
+    {
+        uint32_t aRandom32bit = arc4random();
+        waves[i].current_idx = aRandom32bit % waves[i].area_size;
+        waves[i].current_volume = 0;
+    }
+
+    if (buffer_len > (2400000-1))
+    {
+        printf("RAM overflow");
+        die("synth init failed");
+        return -1;
+    }
+
+    printf("Note number  = %d\n", (int)NUMBER_OF_NOTES);
+    printf("Buffer lengh = %d uint16\n", (int)buffer_len);
+
+
+    uint8_t FreqStr[256] = {0};
+//    UTIL_LCD_FillRect(0, DISPLAY_AERA3_Y1POS, DISPLAY_MAX_X_LENGTH, DISPLAY_AERAS3_HEIGHT, UTIL_LCD_COLOR_BLACK);
+    sprintf((char *)FreqStr, " %d -> %dHz      Octave:%d", (int)waves[0].frequency, (int)waves[NUMBER_OF_NOTES - 1].frequency, (int)sqrt(waves[NUMBER_OF_NOTES - 1].octave_coeff));
+//    UTIL_LCD_DisplayStringAt(0, DISPLAY_AERA3_Y1POS, (uint8_t*)FreqStr, LEFT_MODE);
+
+    printf("First note Freq = %dHz\nSize = %d\n", (int)waves[0].frequency, (int)waves[0].area_size);
+    printf("Last  note Freq = %dHz\nSize = %d\nOctave = %d\n", (int)waves[NUMBER_OF_NOTES - 1].frequency, (int)waves[NUMBER_OF_NOTES - 1].area_size / (int)sqrt(waves[NUMBER_OF_NOTES - 1].octave_coeff), (int)sqrt(waves[NUMBER_OF_NOTES - 1].octave_coeff));
+
+    printf("-------------------------------\n");
+
+#ifdef PRINT_IFFT_FREQUENCY
+    for (uint32_t pix = 0; pix < NUMBER_OF_NOTES; pix++)
+    {
+        printf("FREQ = %0.2f, SIZE = %d, OCTAVE = %d\n", waves[pix].frequency, (int)waves[pix].area_size, (int)waves[pix].octave_coeff);
+#ifdef PRINT_IFFT_FREQUENCY_FULL
+        uint16_t output = 0;
+        for (uint32_t idx = 0; idx < (waves[pix].area_size / waves[pix].octave_coeff); idx++)
+        {
+            output = *(waves[pix].start_ptr + (idx *  waves[pix].octave_coeff));
+            printf("%d\n", output);
+        }
+#endif
+    }
+    printf("-------------------------------\n");
+#endif
+
     
     printf("Note number  = %d\n", (int)NUMBER_OF_NOTES);
     //	printf("Buffer lengh = %d uint16\n", (int)buffer_len);
@@ -132,7 +225,7 @@ int32_t synth_IfftInit(void)
     //#ToChange	half_audio_ptr = audio_GetDataPtr(0);
     //#ToChange	full_audio_ptr = audio_GetDataPtr(AUDIO_BUFFER_SIZE * 2);
     
-    //#ToChange	arm_fill_q31(65535, (int32_t *)imageRef, NUMBER_OF_NOTES);
+    fill_int32(65535, (int32_t *)imageRef, NUMBER_OF_NOTES);
     
     return 0;
 }
@@ -303,7 +396,7 @@ void synth_DirectMode(volatile int32_t *imageData, volatile int32_t *audioData, 
         
         // Buffer copies for right channels
         //		audioData[buff_idx * 2] = signal_R;
-        audioData[buff_idx * 2 + 1] = signal_R;
+        //ToChangeaudioData[buff_idx * 2 + 1] = signal_R;
     }
     
     shared_var.synth_process_cnt += AUDIO_BUFFER_SIZE;
@@ -315,9 +408,9 @@ void synth_DirectMode(volatile int32_t *imageData, volatile int32_t *audioData, 
  * @param  htim : TIM handle
  * @retval None
  */
-#pragma GCC push_options
-#pragma GCC optimize ("unroll-loops")
-void synth_IfftMode(volatile int32_t *imageData, volatile int32_t *audioData)
+//#pragma GCC push_options
+//#pragma GCC optimize ("unroll-loops")
+void synth_IfftMode(volatile int32_t *imageData, volatile float *audioData)
 {
     static int32_t idx, acc, nbAcc;
     
@@ -354,6 +447,12 @@ void synth_IfftMode(volatile int32_t *imageData, volatile int32_t *audioData)
         imageBuffer_q31[idx] /= nbAcc;
     }
     
+    //fill_int32(0, (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES);
+    
+    //imageBuffer_q31[100] = 65000;
+    
+    //imageBuffer_q31[80] = 65000;
+    
     sub_int32(imageRef, (int32_t *)imageBuffer_q31, (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES);
     clip_int32((int32_t *)imageBuffer_q31, 0, 65535, NUMBER_OF_NOTES);
     
@@ -362,9 +461,10 @@ void synth_IfftMode(volatile int32_t *imageData, volatile int32_t *audioData)
     //relative mode
     sub_int32((int32_t *)imageBuffer_q31, (int32_t *)&imageBuffer_q31[1], (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES - 1);
     clip_int32((int32_t *)imageBuffer_q31, 0, 65535, NUMBER_OF_NOTES);
+    imageBuffer_q31[NUMBER_OF_NOTES - 1] = 0;
 #endif
     
-    for (note = 0; note < NUMBER_OF_NOTES; note++)
+    for (note = 0; note < (NUMBER_OF_NOTES); note++)
     {
         imageBuffer_f32[note] = (float)imageBuffer_q31[note];
         
@@ -455,13 +555,17 @@ void synth_IfftMode(volatile int32_t *imageData, volatile int32_t *audioData)
         else
             signal_R = 0;
         
-        //		audioData[buff_idx * 2] = signal_R;
-        audioData[buff_idx * 2 + 1] = signal_R;
+        //        audioData[buff_idx * 2] = signal_R;
+        
+        //convert to float
+        //signal_R -= 8388607.5;
+        audioData[buff_idx] = signal_R / (4294967296.00);//(float)WAVE_AMP_RESOLUTION;
+        //audioData[buff_idx] =((float)rand() / (float)RAND_MAX) * 2.0f - 1.0f;
     }
     
     shared_var.synth_process_cnt += AUDIO_BUFFER_SIZE;
 }
-#pragma GCC pop_options
+//#pragma GCC pop_options
 
 /**
  * @brief  Manages Audio process.
@@ -490,44 +594,17 @@ void synth_IfftMode(volatile int32_t *imageData, volatile int32_t *audioData)
  *                                                                                FULL
  *                                                                              COMPLETE
  */
-void synth_AudioProcess(void)
+#define TWO_PI (3.14159 * 2)
+
+void synth_AudioProcess(int32_t *imageData, float *audio_samples)
 {
-    /* 1st half buffer played; so fill it and continue playing from bottom*/
-    if(0);//ToChange*audio_GetBufferState() == AUDIO_BUFFER_OFFSET_HALF)
-    {
-        //ToChangeaudio_ResetBufferState();
-        //ToChangeudp_serverReceiveImage(imageData);
-        if (shared_var.mode == IFFT_MODE)
-            synth_IfftMode(imageData, half_audio_ptr);
-        //if (shared_var.mode == DWAVE_MODE)
-            //ToChangesynth_DirectMode(imageData, half_audio_ptr, uhADCxConvertedValue);
-        
-        //SCB_CleanDCache_by_Addr((uint32_t *)half_audio_ptr, AUDIO_BUFFER_SIZE * 8);
-        //else
-        //{
-            //SCB_InvalidateDCache_by_Addr((uint32_t *)unitary_waveform, WAVEFORM_TABLE_SIZE * 2);
-        //}
-    }
+    pthread_mutex_lock(&buffer_index_mutex);
     
-    /* 2nd half buffer played; so fill it and continue playing from top */
-    if(0);//ToChange*audio_GetBufferState() == AUDIO_BUFFER_OFFSET_FULL)
-    {
-        //ToChangeaudio_ResetBufferState();
-        //ToChangeudp_serverReceiveImage(imageData);
-        /*CM7 try to take the HW sempahore 0*/
-        if (shared_var.mode == IFFT_MODE)
-            synth_IfftMode(imageData, full_audio_ptr);
-        //if (shared_var.mode == DWAVE_MODE)
-            //ToChangesynth_DirectMode(imageData, full_audio_ptr, uhADCxConvertedValue);
-        
-        //SCB_CleanDCache_by_Addr((uint32_t *)full_audio_ptr, AUDIO_BUFFER_SIZE * 8);
-        //else
-        //{
-            //SCB_InvalidateDCache_by_Addr((uint32_t *)unitary_waveform, WAVEFORM_TABLE_SIZE * 2);
-            //SCB_InvalidateDCache_by_Addr((uint32_t *)waves, sizeof(waves));
-        //}
-    }
+    float *fill_buffer = audio_samples + current_buffer_index * AUDIO_BUFFER_SIZE;
     
+    synth_IfftMode(imageData, fill_buffer);
+    current_buffer_index = 1 - current_buffer_index;
+    return;
 #ifdef CV
     
     static uint32_t cnt = 0;
@@ -578,18 +655,5 @@ void synth_AudioProcess(void)
         Error_Handler();
     }
 #endif
-}
-
-/**
- * @brief  Conversion complete callback in non blocking mode
- * @param  AdcHandle : AdcHandle handle
- * @note   This example shows a simple way to report end of conversion, and
- *         you can add your own implementation.
- * @retval None
- */
-void HAL_ADC_ConvCpltCallback()//ToChangeADC_HandleTypeDef* AdcHandle)
-{
-    /* Get the converted value of regular channel */
-    //ToChangeuhADCxConvertedValue = HAL_ADC_GetValue(AdcHandle);
 }
 
