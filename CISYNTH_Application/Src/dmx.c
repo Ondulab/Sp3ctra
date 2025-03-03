@@ -27,6 +27,32 @@ void intHandler(int dummy)
     keepRunning = 0;
 }
 
+// Function to apply color profile correction to RGB values using multiplicative factors
+void applyColorProfile(uint8_t *red, uint8_t *green, uint8_t *blue, double redFactor, double greenFactor, double blueFactor)
+{
+    double newRed = (*red) * redFactor;
+    double newGreen = (*green) * greenFactor;
+    double newBlue = (*blue) * blueFactor;
+
+    // Clamp the values to 255
+    if (newRed > 255.0)
+    {
+        newRed = 255.0;
+    }
+    if (newGreen > 255.0)
+    {
+        newGreen = 255.0;
+    }
+    if (newBlue > 255.0)
+    {
+        newBlue = 255.0;
+    }
+
+    *red = (uint8_t)newRed;
+    *green = (uint8_t)newGreen;
+    *blue = (uint8_t)newBlue;
+}
+
 void computeAverageColor(const uint8_t *buffer_R, const uint8_t *buffer_G, const uint8_t *buffer_B, size_t numPixels, uint8_t *avgR, uint8_t *avgG, uint8_t *avgB)
 {
     unsigned long sumR = 0;

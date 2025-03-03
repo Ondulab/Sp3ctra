@@ -20,9 +20,6 @@
 #include "multithreading.h"
 #include "context.h"
 
-//#define CALIBRATION
-//#define SSS_MOD_MODE
-
 int main(void)
 {
     int dmxFd = init_Dmx();

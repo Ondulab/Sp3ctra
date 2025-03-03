@@ -271,6 +271,13 @@ void *dmxSendingThread(void *arg)
         uint8_t avgB = dmxCtx->avgB;
         dmxCtx->colorUpdated = 0;
         pthread_mutex_unlock(&dmxCtx->mutex);
+        
+        // Apply color profile correction with user-defined factors (for instance, to reduce a red dominance)
+        double redFactor = 0.9;   // Reduce red intensity
+        double greenFactor = 1.0; // Keep green unchanged
+        double blueFactor = 0.4;  // Keep blue unchanged
+
+        applyColorProfile(&avgR, &avgG, &avgB, redFactor, greenFactor, blueFactor);
 
         // Remplir la trame DMX aux indices correspondant aux canaux R, G, B
         frame[2] = avgR;
