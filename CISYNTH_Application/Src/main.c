@@ -1,5 +1,4 @@
 #include "config.h"
-
 #include <SFML/Graphics.h>
 #include <SFML/Network.h>
 #include <stdio.h>
@@ -28,6 +27,7 @@ int main(void)
         perror("Error initializing DMX");
         return EXIT_FAILURE;
     }
+    
     DMXContext *dmxCtx = malloc(sizeof(DMXContext));
     if (dmxCtx == NULL)
     {
@@ -41,7 +41,7 @@ int main(void)
     pthread_mutex_init(&dmxCtx->mutex, NULL);
     pthread_cond_init(&dmxCtx->cond, NULL);
 
-    // Initialize CSFML
+    /* Initialize CSFML */
     sfVideoMode mode = { WINDOWS_WIDTH, WINDOWS_HEIGHT, 32 };
     sfRenderWindow *window = sfRenderWindow_create(mode, "CSFML Viewer", sfResize | sfClose, NULL);
     if (!window)
@@ -52,7 +52,7 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    // Initialize UDP and Audio
+    /* Initialize UDP and Audio */
     struct sockaddr_in si_other, si_me;
     
     AudioData audioData;
@@ -73,11 +73,11 @@ int main(void)
 
     OSStatus status = startAudioUnit();  // Handle status as needed
 
-    // Create double buffer
+    /* Create double buffer */
     DoubleBuffer db;
     initDoubleBuffer(&db);
 
-    // Build global context structure
+    /* Build global context structure */
     Context context = { 0 };
     context.window = window;
     context.socket = s;
@@ -86,9 +86,18 @@ int main(void)
     context.audioData = &audioData;
     context.doubleBuffer = &db;
     context.dmxCtx = dmxCtx;
+    context.running = 1; // Flag de terminaison pour le contexte
 
-    // Create threads
-    pthread_t udpThreadId, imageThreadId, audioThreadId, dmxThreadId;
+    /* Create textures and sprites for rendering in main thread */
+    sfTexture *backgroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
+    sfTexture *foregroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
+    sfSprite *backgroundSprite = sfSprite_create();
+    sfSprite *foregroundSprite = sfSprite_create();
+    sfSprite_setTexture(backgroundSprite, backgroundTexture, sfTrue);
+    sfSprite_setTexture(foregroundSprite, foregroundTexture, sfTrue);
+
+    /* Create threads for UDP, Audio, and DMX (pas de thread d'affichage) */
+    pthread_t udpThreadId, audioThreadId, dmxThreadId;
     if (pthread_create(&dmxThreadId, NULL, dmxSendingThread, (void *)context.dmxCtx) != 0)
     {
         perror("Error creating DMX thread");
@@ -103,12 +112,6 @@ int main(void)
         sfRenderWindow_destroy(window);
         return EXIT_FAILURE;
     }
-    if (pthread_create(&imageThreadId, NULL, imageProcessingThread, (void *)&context) != 0)
-    {
-        perror("Error creating image processing thread");
-        sfRenderWindow_destroy(window);
-        return EXIT_FAILURE;
-    }
     if (pthread_create(&audioThreadId, NULL, audioProcessingThread, (void *)&context) != 0)
     {
         perror("Error creating audio processing thread");
@@ -116,27 +119,97 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    // Main CSFML loop
+    /* Main loop (gestion des événements et rendu) */
+    sfEvent event;
+    sfClock *clock = sfClock_create();
+    unsigned int frameCount = 0;
+    float elapsedTime = 0.0f;
+    
     while (sfRenderWindow_isOpen(window))
     {
-        sfEvent event;
+        /* Gestion des événements dans le thread principal */
         while (sfRenderWindow_pollEvent(window, &event))
         {
             if (event.type == sfEvtClosed)
             {
                 sfRenderWindow_close(window);
+                context.running = 0;
+                dmxCtx->running = 0;
             }
         }
-    }
 
-    // Cleanup and join threads
+        /* Vérifier si le double buffer contient de nouvelles données */
+        pthread_mutex_lock(&db.mutex);
+        int dataReady = db.dataReady;
+        if (dataReady)
+        {
+            db.dataReady = 0;
+        }
+        pthread_mutex_unlock(&db.mutex);
+
+        if (dataReady)
+        {
+            /* Rendu de la nouvelle ligne à partir du buffer */
+            printImageRGB(window,
+                          db.processingBuffer_R,
+                          db.processingBuffer_G,
+                          db.processingBuffer_B,
+                          backgroundTexture,
+                          foregroundTexture);
+
+            /* Calcul de la couleur moyenne et mise à jour du contexte DMX */
+            uint8_t avgR = 0, avgG = 0, avgB = 0;
+            computeAverageColorWeighted(db.processingBuffer_R,
+                                        db.processingBuffer_G,
+                                        db.processingBuffer_B,
+                                        CIS_MAX_PIXELS_NB,
+                                        &avgR,
+                                        &avgG,
+                                        &avgB);
+
+            pthread_mutex_lock(&dmxCtx->mutex);
+            dmxCtx->avgR = avgR;
+            dmxCtx->avgG = avgG;
+            dmxCtx->avgB = avgB;
+            dmxCtx->colorUpdated = 1;
+            pthread_cond_signal(&dmxCtx->cond);
+            pthread_mutex_unlock(&dmxCtx->mutex);
+
+            frameCount++;  // Compter chaque image affichée
+        }
+
+#ifdef PRINT_FPS
+        /* Calcul du temps écoulé et affichage du taux de rafraîchissement */
+        elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
+        if (elapsedTime >= 1.0f)
+        {
+            float fps = frameCount / elapsedTime;
+            printf("Refresh rate: %.2f FPS\n", fps);
+            sfClock_restart(clock);
+            frameCount = 0;
+        }
+#endif
+
+        /* Petite pause pour limiter la charge CPU */
+        usleep(100);
+    }
+    
+    sfClock_destroy(clock);
+
+    /* Terminaison et synchronisation */
+    context.running = 0;
+    dmxCtx->running = 0;
+
     pthread_join(udpThreadId, NULL);
-    pthread_join(imageThreadId, NULL);
     pthread_join(audioThreadId, NULL);
-    // (Optionally join DMX thread if required)
+    pthread_join(dmxThreadId, NULL);
 
     audio_Cleanup();
     cleanupAudioData(&audioData);
+    sfTexture_destroy(backgroundTexture);
+    sfTexture_destroy(foregroundTexture);
+    sfSprite_destroy(backgroundSprite);
+    sfSprite_destroy(foregroundSprite);
     sfRenderWindow_destroy(window);
 
     return 0;

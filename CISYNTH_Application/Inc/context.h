@@ -3,7 +3,6 @@
 
 #include <SFML/Graphics.h>
 #include <SFML/Network.h>
-
 #include "audio.h"
 
 typedef struct
@@ -18,7 +17,8 @@ typedef struct
     volatile int colorUpdated;
 } DMXContext;
 
-typedef struct {
+typedef struct
+{
     sfRenderWindow *window;
     int socket;
     struct sockaddr_in *si_other;
@@ -26,6 +26,7 @@ typedef struct {
     AudioData *audioData;
     DoubleBuffer *doubleBuffer;
     DMXContext *dmxCtx;
+    volatile int running;   // Ajout du flag de terminaison pour Context
     // Ajouter d'autres champs selon les besoins
 } Context;
 

@@ -2,6 +2,7 @@
 #define MULTITHREADING_H
 
 #include <pthread.h>
+#include "config.h"
 
 #ifdef _WIN32
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
@@ -38,36 +39,6 @@ typedef struct DoubleBuffer
     pthread_mutex_t mutex;
     pthread_cond_t cond;
 } DoubleBuffer;
-
-//---------------------------------------------------------------------------------------------------------------------------------------------------------
-// DEFINES
-//---------------------------------------------------------------------------------------------------------------------------------------------------------
-
-#define CIS_400DPI_PIXELS_NB                    (3456)
-#define CIS_200DPI_PIXELS_NB                    (1728)
-
-#define CIS_MAX_PIXELS_PER_LANE                 (CIS_400DPI_PIXELS_PER_LANE)
-
-// Number of UDP packets per line
-#define UDP_MAX_NB_PACKET_PER_LINE              (12)
-
-#define CIS_400DPI_PIXELS_NB                    (3456)
-#define CIS_200DPI_PIXELS_NB                    (1728)
-
-#define CIS_MAX_PIXELS_NB                       (CIS_400DPI_PIXELS_NB)
-
-// Ensure UDP_LINE_FRAGMENT_SIZE is an integer
-#if (CIS_MAX_PIXELS_NB % UDP_MAX_NB_PACKET_PER_LINE) != 0
-  #error "CIS_MAX_PIXELS_NB must be divisible by UDP_NB_PACKET_PER_LINE."
-#endif
-
-// Size of each UDP line fragment (number of pixels per packet)
-#define UDP_LINE_FRAGMENT_SIZE                  (CIS_MAX_PIXELS_NB / UDP_MAX_NB_PACKET_PER_LINE)
-
-#define PORT                                    (55151)    //The port on which to listen for incoming data
-
-#define DEFAULT_MULTI                           "192.168.0.1"
-#define DEFAULT_PORT                            PORT
 
 //---------------------------------------------------------------------------------------------------------------------------------------------------------
 //  COMMON STRUCTURE CIS / MAX
