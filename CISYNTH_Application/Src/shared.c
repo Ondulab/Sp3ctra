@@ -7,6 +7,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "shared.h"
+#include "config.h"
 
 /* Private includes ----------------------------------------------------------*/
 
@@ -22,7 +23,7 @@ struct shared_var shared_var;
 
 volatile int32_t cvData[NUMBER_OF_NOTES / IMAGE_WEIGHT];
 
-volatile int32_t imageData[CIS_PIXELS_NB];
+volatile int32_t imageData[CIS_MAX_PIXELS_NB];
 
 volatile int32_t audioBuff[AUDIO_BUFFER_SIZE * 4];
 

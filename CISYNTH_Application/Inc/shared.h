@@ -9,10 +9,6 @@
 #ifndef __SHARED_H__
 #define __SHARED_H__
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* Includes ------------------------------------------------------------------*/
 
 /* Private includes ----------------------------------------------------------*/
@@ -69,7 +65,7 @@ struct shared_var {
 };
 
 /* Exported constants --------------------------------------------------------*/
-#define WAVEFORM_TABLE_SIZE        10000000
+#define WAVEFORM_TABLE_SIZE        (10000000)
 
 extern struct shared_var shared_var;
 extern volatile struct params params;
@@ -86,9 +82,5 @@ extern int params_size;
 /* Exported functions prototypes ---------------------------------------------*/
 
 /* Private defines -----------------------------------------------------------*/
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /*__SHARED_H__*/

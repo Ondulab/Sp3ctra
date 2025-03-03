@@ -101,17 +101,11 @@ void fill_int32(int32_t value, int32_t *array, size_t length)
     }
 }
 
-/**
- * @brief  synth ifft init.
- * @param
- * @retval Error
- */
 int32_t synth_IfftInit(void)
 {
     //ToChangestatic DAC_ChannelConfTypeDef sConfig;
 
     int32_t buffer_len = 0;
-    uint32_t aRandom32bit = 0;
 
     printf("---------- SYNTH INIT ---------\n");
     printf("-------------------------------\n");
@@ -230,11 +224,6 @@ int32_t synth_IfftInit(void)
     return 0;
 }
 
-/**
- * @brief  Get Image buffer data
- * @param  Index
- * @retval Value
- */
 int32_t synth_GetImageData(uint32_t index)
 {
     //	if (index >= RFFT_BUFFER_SIZE)
@@ -242,11 +231,6 @@ int32_t synth_GetImageData(uint32_t index)
     return imageData[index];
 }
 
-/**
- * @brief  Set Image buffer data
- * @param  Index
- * @retval Value
- */
 int32_t synth_SetImageData(uint32_t index, int32_t value)
 {
     //	if (index >= RFFT_BUFFER_SIZE)
@@ -280,9 +264,9 @@ void synth_DirectMode(volatile int32_t *imageData, volatile int32_t *audioData, 
     static int32_t image_idx_DW = 0;
     static int32_t buff_idx = 0;
     static int32_t idx = 0;
-    static int32_t imageBuffer_q31[CIS_PIXELS_NB+1];
-    static int32_t imageData_ref_q31[CIS_PIXELS_NB+1];
-    static const float noScaled_freq = (SAMPLING_FREQUENCY) / CIS_PIXELS_NB; // 27,7 Hz;
+    static int32_t imageBuffer_q31[CIS_MAX_PIXELS_NB+1];
+    static int32_t imageData_ref_q31[CIS_MAX_PIXELS_NB+1];
+    static const float noScaled_freq = (SAMPLING_FREQUENCY) / CIS_MAX_PIXELS_NB; // 27,7 Hz;
     static float note_freq = 0.0;
     static float scale_factor = 0.0;
     static uint32_t scaledPixel_nb = 0;
@@ -328,17 +312,17 @@ void synth_DirectMode(volatile int32_t *imageData, volatile int32_t *audioData, 
     
     scale_factor = note_freq / noScaled_freq;
     
-    scaledPixel_nb = (uint32_t)((float)CIS_PIXELS_NB / scale_factor);
+    scaledPixel_nb = (uint32_t)((float)CIS_MAX_PIXELS_NB / scale_factor);
     
     // Sanity check
     if (scaledPixel_nb < 1)
         scale_factor = 1;
-    if (scaledPixel_nb > CIS_PIXELS_NB)
-        scaledPixel_nb = CIS_PIXELS_NB;
+    if (scaledPixel_nb > CIS_MAX_PIXELS_NB)
+        scaledPixel_nb = CIS_MAX_PIXELS_NB;
     
     if (shared_var.directRead_Mode == DUAL_READ)
     {
-        for (idx = CIS_PIXELS_NB; --idx >= 0;)
+        for (idx = CIS_MAX_PIXELS_NB; --idx >= 0;)
         {
             imageData_ref_q31[idx] = imageData[idx];
         }
@@ -447,20 +431,20 @@ void synth_IfftMode(volatile int32_t *imageData, volatile float *audioData)
         imageBuffer_q31[idx] /= nbAcc;
     }
     
-    //fill_int32(0, (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES);
+    fill_int32(0, (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES);
     
     //imageBuffer_q31[100] = 65000;
     
     //imageBuffer_q31[80] = 65000;
     
     sub_int32(imageRef, (int32_t *)imageBuffer_q31, (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES);
-    clip_int32((int32_t *)imageBuffer_q31, 0, 65535, NUMBER_OF_NOTES);
+    clip_int32((int32_t *)imageBuffer_q31, 0, VOLUME_AMP_RESOLUTION, NUMBER_OF_NOTES);
     
     //handle image / apply different algorithms
 #ifdef RELATIVE_MODE
     //relative mode
     sub_int32((int32_t *)imageBuffer_q31, (int32_t *)&imageBuffer_q31[1], (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES - 1);
-    clip_int32((int32_t *)imageBuffer_q31, 0, 65535, NUMBER_OF_NOTES);
+    clip_int32((int32_t *)imageBuffer_q31, 0, VOLUME_AMP_RESOLUTION, NUMBER_OF_NOTES);
     imageBuffer_q31[NUMBER_OF_NOTES - 1] = 0;
 #endif
     
@@ -555,7 +539,7 @@ void synth_IfftMode(volatile int32_t *imageData, volatile float *audioData)
         else
             signal_R = 0;
         
-        //        audioData[buff_idx * 2] = signal_R;
+        audioData[buff_idx * 2] = signal_R;
         
         //convert to float
         //signal_R -= 8388607.5;

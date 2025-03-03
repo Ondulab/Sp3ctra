@@ -11,11 +11,11 @@
             shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
-            filePath = "SSS_Viewer/Src/synth.c"
+            filePath = "CISYNTH_Application/Src/synth.c"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "562"
-            endingLineNumber = "562"
+            startingLineNumber = "546"
+            endingLineNumber = "546"
             landmarkName = "synth_IfftMode(imageData, audioData)"
             landmarkType = "9">
          </BreakpointContent>
@@ -27,45 +27,13 @@
             shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
-            filePath = "SSS_Viewer/Src/audio.c"
+            filePath = "CISYNTH_Application/Src/audio.c"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "96"
             endingLineNumber = "96"
             landmarkName = "audioCallback(inRefCon, ioActionFlags, inTimeStamp, inBusNumber, inNumberFrames, ioData)"
             landmarkType = "9">
-            <Locations>
-               <Location
-                  uuid = "91D3676B-8F9B-48F6-A334-237A40E98BB0 - 3f166644a5196ad2"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "audioCallback"
-                  moduleName = "SSS_Viewer"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/zhonx/Documents/Workspaces/Workspace_Xcode/SSS_Viewer/SSS_Viewer/Src/audio.c"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "116"
-                  endingLineNumber = "116"
-                  offsetFromSymbolStart = "76">
-               </Location>
-               <Location
-                  uuid = "91D3676B-8F9B-48F6-A334-237A40E98BB0 - 3f166644a5196ad2"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "audioCallback"
-                  moduleName = "SSS_Viewer"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/zhonx/Documents/Workspaces/Workspace_Xcode/SSS_Viewer/SSS_Viewer/Src/audio.c"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "116"
-                  endingLineNumber = "116"
-                  offsetFromSymbolStart = "52">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -75,11 +43,11 @@
             shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
-            filePath = "SSS_Viewer/Src/synth.c"
+            filePath = "CISYNTH_Application/Src/synth.c"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "603"
-            endingLineNumber = "603"
+            startingLineNumber = "587"
+            endingLineNumber = "587"
             landmarkName = "synth_AudioProcess(imageData, audio_samples)"
             landmarkType = "9">
          </BreakpointContent>
@@ -91,12 +59,28 @@
             shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
-            filePath = "SSS_Viewer/Src/synth.c"
+            filePath = "CISYNTH_Application/Src/synth.c"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "148"
-            endingLineNumber = "148"
+            startingLineNumber = "142"
+            endingLineNumber = "142"
             landmarkName = "synth_IfftInit()"
+            landmarkType = "9">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "1CD4CDA7-99BB-4174-BD83-9BC999AE3373"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "CISYNTH_Application/Src/multithreading.c"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "348"
+            endingLineNumber = "348"
+            landmarkName = "audioProcessingThread(arg)"
             landmarkType = "9">
          </BreakpointContent>
       </BreakpointProxy>

@@ -47,10 +47,10 @@ int display_Init(sfRenderWindow *window)
 void printImage(sfRenderWindow *window, int32_t *image_buff, sfTexture* background_texture, sfTexture* foreground_texture)
 {
     // Créer une image pour la nouvelle ligne
-    sfImage* image = sfImage_createFromColor(CIS_PIXELS_NB, 1, sfBlack);
+    sfImage* image = sfImage_createFromColor(CIS_MAX_PIXELS_NB, 1, sfBlack);
 
     // Définir la couleur de chaque pixel de la nouvelle ligne
-    for (int x = 0; x < CIS_PIXELS_NB; x++) {
+    for (int x = 0; x < CIS_MAX_PIXELS_NB; x++) {
         sfColor color = sfColor_fromRGB(
             image_buff[x] & 0xFF,
             (image_buff[x] >> 8) & 0xFF,
@@ -90,7 +90,7 @@ void printRawData(sfRenderWindow *window, uint32_t *image_buff, sfTexture* backg
     sfRenderWindow_clear(window, sfBlack);
 
     // Création d'une ligne verticale pour chaque x
-    for (int x = 0; x < CIS_PIXELS_NB; x++) {
+    for (int x = 0; x < CIS_MAX_PIXELS_NB; x++) {
         // Dessiner une ligne verticale noire
         sfVertexArray *line = sfVertexArray_create();
         sfVertexArray_setPrimitiveType(line, sfLinesStrip);

@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "367A52C42AF123C500FE94D7"
-               BuildableName = "SSS_Viewer"
-               BlueprintName = "SSS_Viewer"
-               ReferencedContainer = "container:SSS_Viewer.xcodeproj">
+               BuildableName = "CISYNTH_Application"
+               BlueprintName = "CISYNTH_Application"
+               ReferencedContainer = "container:CISYNTH_Application.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -45,9 +45,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "367A52C42AF123C500FE94D7"
-            BuildableName = "SSS_Viewer"
-            BlueprintName = "SSS_Viewer"
-            ReferencedContainer = "container:SSS_Viewer.xcodeproj">
+            BuildableName = "CISYNTH_Application"
+            BlueprintName = "CISYNTH_Application"
+            ReferencedContainer = "container:CISYNTH_Application.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -62,9 +62,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "367A52C42AF123C500FE94D7"
-            BuildableName = "SSS_Viewer"
-            BlueprintName = "SSS_Viewer"
-            ReferencedContainer = "container:SSS_Viewer.xcodeproj">
+            BuildableName = "CISYNTH_Application"
+            BlueprintName = "CISYNTH_Application"
+            ReferencedContainer = "container:CISYNTH_Application.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
