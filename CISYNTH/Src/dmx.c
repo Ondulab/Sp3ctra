@@ -228,10 +228,30 @@ int init_Dmx(void)
     tty.c_cc[VMIN] = 0;
     tty.c_cc[VTIME] = 10;
 
+    printf("Baud rate: %d\n", cfgetispeed(&tty));
+    printf("c_cflag: 0x%lx\n", tty.c_cflag);
+    printf("c_iflag: 0x%lx\n", tty.c_iflag);
+    printf("c_oflag: 0x%lx\n", tty.c_oflag);
+    printf("c_lflag: 0x%lx\n", tty.c_lflag);
+    
+    speed_t speed = 9600;  // Remplacez par B115200 si erreur
+    if (ioctl(fd, IOSSIOSPEED, &speed) < 0)
+    {
+        perror("Error setting custom baud rate");
+    }
+    else
+    {
+        printf("Custom baud rate set successfully!\n");
+    }
+
+    // Vérifiez la vitesse après configuration
+    printf("Baud rate after setting: %d\n", cfgetispeed(&tty));
+    
     // Apply settings immediately
     if (tcsetattr(fd, TCSANOW, &tty) != 0)
     {
         perror("Error from tcsetattr");
+        printf("Errno: %d, %s\n", errno, strerror(errno));
         close(fd);
         return -1;
     }
@@ -253,7 +273,7 @@ int init_Dmx(void)
     }
     
     // Set custom baud rate
-    speed_t speed = DMX_BAUD;
+    speed = DMX_BAUD;
     if (ioctl(fd, IOSSIOSPEED, &speed) < 0)
     {
         perror("Error setting custom baud rate");
