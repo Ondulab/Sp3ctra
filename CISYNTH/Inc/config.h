@@ -62,6 +62,15 @@
 #define AUDIO_BUFFER_SIZE                       (256)
 
 /**************************************************************************************
+ * Image Definitions
+ **************************************************************************************/
+// Compilation-time switch for enabling image transformation
+#define ENABLE_IMAGE_TRANSFORM 1
+
+// Renamed constant for gamma correction
+#define IMAGE_GAMMA 2.2
+
+/**************************************************************************************
  * Synth Definitions
  **************************************************************************************/
 // Define waveform type (options: SIN, SAW, SQR)
@@ -70,6 +79,8 @@
 #define GAP_LIMITER
 
 #define COLOR_INVERTED
+
+#define ENABLE_NON_LINEAR_MAPPING 1  // Set to 1 to enable non-linear mapping, or 0 to disable
 
 // Optional definitions (uncomment if needed)
 //#define STEREO_1

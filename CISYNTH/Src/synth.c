@@ -373,17 +373,13 @@ void synth_DirectMode(volatile int32_t *imageData, volatile int32_t *audioData, 
 void synth_IfftMode(int32_t *imageData, float *audioData)
 {
     static int32_t idx, acc, nbAcc;
-    
     static int32_t signal_R;
     static int32_t signal_L;
-    
     static int32_t new_idx;
     static int32_t buff_idx;
     static int32_t note;
-    
     static int32_t imageBuffer_q31[NUMBER_OF_NOTES];
     static float imageBuffer_f32[NUMBER_OF_NOTES];
-    
     static float waveBuffer[AUDIO_BUFFER_SIZE];
     static float ifftBuffer[AUDIO_BUFFER_SIZE];
     static float sumVolumeBuffer[AUDIO_BUFFER_SIZE];
@@ -396,7 +392,7 @@ void synth_IfftMode(int32_t *imageData, float *audioData)
     fill_float(0, maxVolumeBuffer, AUDIO_BUFFER_SIZE);
     
     float tmp_audioData[AUDIO_BUFFER_SIZE];
-
+    
     for (idx = 0; idx < NUMBER_OF_NOTES; idx++)
     {
         imageBuffer_q31[idx] = 0;
@@ -419,46 +415,42 @@ void synth_IfftMode(int32_t *imageData, float *audioData)
         }
 #endif
     }
-    //correction bug
+    // Correction bug
     imageBuffer_q31[0] = 0;
     
-    //fill_int32(0, (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES);
-    //imageBuffer_q31[200] = 65535;
-    //imageBuffer_q31[40] = 65000;
-    //imageBuffer_q31[800] = 65000;
-    //imageBuffer_q31[3300] = 65000;
-    
-    //sub_int32(imageRef, (int32_t *)imageBuffer_q31, (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES);
-    //clip_int32((int32_t *)imageBuffer_q31, 0, VOLUME_AMP_RESOLUTION, NUMBER_OF_NOTES);
-    
-    //handle image / apply different algorithms
 #ifdef RELATIVE_MODE
-    //relative mode
     sub_int32((int32_t *)imageBuffer_q31, (int32_t *)&imageBuffer_q31[1], (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES - 1);
     clip_int32((int32_t *)imageBuffer_q31, 0, VOLUME_AMP_RESOLUTION, NUMBER_OF_NOTES);
     imageBuffer_q31[NUMBER_OF_NOTES - 1] = 0;
 #endif
     
-    for (note = 0; note < (NUMBER_OF_NOTES); note++)
+    for (note = 0; note < NUMBER_OF_NOTES; note++)
     {
         imageBuffer_f32[note] = (float)imageBuffer_q31[note];
         
+#if ENABLE_NON_LINEAR_MAPPING
+        {
+            float normalizedIntensity = imageBuffer_f32[note] / (float)VOLUME_AMP_RESOLUTION;
+            float gamma = 2.2f;  // Gamma value, adjustable as needed
+            normalizedIntensity = powf(normalizedIntensity, gamma);
+            imageBuffer_f32[note] = normalizedIntensity * VOLUME_AMP_RESOLUTION;
+        }
+#endif
+        
         for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++)
         {
-            //octave_coeff jump current pointer into the fundamental waveform, for example : the 3th octave increment the current pointer 8 per 8 (2^3)
             new_idx = (waves[note].current_idx + waves[note].octave_coeff);
             if (new_idx >= waves[note].area_size)
             {
                 new_idx -= waves[note].area_size;
             }
-            //fill buffer with current note waveform
+            // Fill buffer with current note waveform
             waveBuffer[buff_idx] = (*(waves[note].start_ptr + new_idx));
-
             waves[note].current_idx = new_idx;
         }
         
 #ifdef GAP_LIMITER
-        //gap limiter to minimize glitchs
+        // Gap limiter to minimize glitches
         for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE - 1; buff_idx++)
         {
             if (waves[note].current_volume < imageBuffer_f32[note])
@@ -467,7 +459,6 @@ void synth_IfftMode(int32_t *imageData, float *audioData)
                 if (waves[note].current_volume > imageBuffer_f32[note])
                 {
                     waves[note].current_volume = imageBuffer_f32[note];
-                    //fill buffer with current volume evolution
                     break;
                 }
             }
@@ -477,40 +468,34 @@ void synth_IfftMode(int32_t *imageData, float *audioData)
                 if (waves[note].current_volume < imageBuffer_f32[note])
                 {
                     waves[note].current_volume = imageBuffer_f32[note];
-                    //fill buffer with current volume evolution
                     break;
                 }
             }
-            
-            //fill buffer with current volume evolution
             volumeBuffer[buff_idx] = waves[note].current_volume;
         }
-        
-        //fill constant volume buffer
+        // Fill constant volume buffer
         if (buff_idx < AUDIO_BUFFER_SIZE)
         {
             fill_float(waves[note].current_volume, &volumeBuffer[buff_idx], AUDIO_BUFFER_SIZE - buff_idx);
         }
-        
 #else
-        //		waves[note].current_volume = imageBuffer[note];
         fill_float(imageBuffer_f32[note], volumeBuffer, AUDIO_BUFFER_SIZE);
 #endif
         
-        //apply volume scaling at current note waveform
+        // Apply volume scaling to the current note waveform
         mult_float(waveBuffer, volumeBuffer, waveBuffer, AUDIO_BUFFER_SIZE);
         
-        for (buff_idx = AUDIO_BUFFER_SIZE; --buff_idx >= 0;)
+        for (buff_idx = AUDIO_BUFFER_SIZE; --buff_idx >= 0; )
         {
-            //store max volume
             if (volumeBuffer[buff_idx] > maxVolumeBuffer[buff_idx])
+            {
                 maxVolumeBuffer[buff_idx] = volumeBuffer[buff_idx];
+            }
         }
         
-        //ifft summation
+        // IFFT summation
         add_float(waveBuffer, ifftBuffer, ifftBuffer, AUDIO_BUFFER_SIZE);
-        
-        //volume summation
+        // Volume summation
         add_float(volumeBuffer, sumVolumeBuffer, sumVolumeBuffer, AUDIO_BUFFER_SIZE);
     }
     
@@ -520,10 +505,13 @@ void synth_IfftMode(int32_t *imageData, float *audioData)
     for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++)
     {
         if (sumVolumeBuffer[buff_idx] != 0)
+        {
             signal_R = (int32_t)(ifftBuffer[buff_idx] / (sumVolumeBuffer[buff_idx]));
+        }
         else
+        {
             signal_R = 0;
-        
+        }
         audioData[buff_idx] = signal_R / (float)WAVE_AMP_RESOLUTION;
         tmp_audioData[buff_idx] = signal_R / (float)WAVE_AMP_RESOLUTION;
     }

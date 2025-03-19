@@ -96,6 +96,10 @@ void swapBuffers(DoubleBuffer *db)
 /*------------------------------------------------------------------------------
     Thread Implementations
 ------------------------------------------------------------------------------*/
+// Assume that Context, DoubleBuffer, packet_Image, UDP_MAX_NB_PACKET_PER_LINE,
+// IMAGE_DATA_HEADER and swapBuffers() are defined elsewhere.
+// It is also assumed that the Context structure now contains a boolean field
+// 'enableImageTransform' to toggle image transformation at runtime.
 
 void *udpThread(void *arg)
 {
@@ -107,7 +111,7 @@ void *udpThread(void *arg)
     ssize_t recv_len;
     struct packet_Image packet;
 
-    /* Variables locales pour reconstitution de ligne */
+    // Local variables for reassembling line fragments
     uint32_t currentLineId = 0;
     bool *receivedFragments = (bool *) calloc(UDP_MAX_NB_PACKET_PER_LINE, sizeof(bool));
     if (receivedFragments == NULL)
@@ -149,6 +153,35 @@ void *udpThread(void *arg)
 
         if (fragmentCount == packet.total_fragments)
         {
+    #if ENABLE_IMAGE_TRANSFORM
+            if (ctx->enableImageTransform)
+            {
+                int lineSize = packet.total_fragments * packet.fragment_size;
+                for (int i = 0; i < lineSize; i++)
+                {
+                    // Retrieve original RGB values
+                    unsigned char r = db->activeBuffer_R[i];
+                    unsigned char g = db->activeBuffer_G[i];
+                    unsigned char b = db->activeBuffer_B[i];
+
+                    // Step 2: Calculate perceived luminance: Y = 0.299 * r + 0.587 * g + 0.114 * b
+                    double luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                    // Step 3: Inversion and normalization:
+                    // Y_inv = 255 - Y, then I = Y_inv / 255.
+                    double invertedLuminance = 255.0 - luminance;
+                    double intensity = invertedLuminance / 255.0;
+
+                    // Step 4: Gamma correction: I_corr = intensity^(IMAGE_GAMMA)
+                    double correctedIntensity = pow(intensity, IMAGE_GAMMA);
+
+                    // Step 5: Modulate original RGB channels by the corrected intensity.
+                    db->activeBuffer_R[i] = (uint8_t) round(r * correctedIntensity);
+                    db->activeBuffer_G[i] = (uint8_t) round(g * correctedIntensity);
+                    db->activeBuffer_B[i] = (uint8_t) round(b * correctedIntensity);
+                }
+            }
+    #endif
             pthread_mutex_lock(&db->mutex);
             swapBuffers(db);
             db->dataReady = true;
@@ -175,20 +208,6 @@ void *dmxSendingThread(void *arg)
         memcpy(currentSpots, dmxCtx->spots, sizeof(currentSpots));
         dmxCtx->colorUpdated = 0;
         pthread_mutex_unlock(&dmxCtx->mutex);
-
-        // Appliquer le profil couleur pour chaque zone
-        for (int i = 0; i < DMX_NUM_SPOTS; i++)
-        {
-            double redFactor = 1.0;
-            double greenFactor = 1.0;
-            double blueFactor = 1.0;
-            applyColorProfile(&currentSpots[i].red,
-                              &currentSpots[i].green,
-                              &currentSpots[i].blue,
-                              redFactor,
-                              greenFactor,
-                              blueFactor);
-        }
 
         // Réinitialiser la trame DMX et définir le start code
         memset(frame, 0, DMX_FRAME_SIZE);
