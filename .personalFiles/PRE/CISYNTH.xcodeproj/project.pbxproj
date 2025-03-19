@@ -7,15 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		36215C972D8AF04B00F5390F /* libsndfile.1.0.37.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 36215C962D8AF04B00F5390F /* libsndfile.1.0.37.dylib */; };
 		36C0D3622D89956B0049526A /* libcairo.2.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 36C0D3612D89956B0049526A /* libcairo.2.dylib */; };
 		36C0D3642D8995840049526A /* libfftw3.3.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 36C0D3632D8995840049526A /* libfftw3.3.dylib */; };
 		36C0D3682D8995B10049526A /* libcsfml-system.2.6.1.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 36C0D3652D8995B10049526A /* libcsfml-system.2.6.1.dylib */; };
 		36C0D3692D8995B10049526A /* libcsfml-window.2.6.1.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 36C0D3662D8995B10049526A /* libcsfml-window.2.6.1.dylib */; };
 		36C0D36A2D8995B10049526A /* libcsfml-graphics.2.6.1.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 36C0D3672D8995B10049526A /* libcsfml-graphics.2.6.1.dylib */; };
-		AC8C1F7D2D8ACC0F0026570E /* libsndfile.1.0.37.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AC8C1F7C2D8ACC0F0026570E /* libsndfile.1.0.37.dylib */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		36215C962D8AF04B00F5390F /* libsndfile.1.0.37.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libsndfile.1.0.37.dylib; path = ../../../../../../opt/homebrew/Cellar/libsndfile/1.2.2_1/lib/libsndfile.1.0.37.dylib; sourceTree = "<group>"; };
 		36C0D3262D8995160049526A /* CISYNTH.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CISYNTH.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		36C0D3612D89956B0049526A /* libcairo.2.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libcairo.2.dylib; path = ../../../../../../opt/homebrew/Cellar/cairo/1.18.4/lib/libcairo.2.dylib; sourceTree = "<group>"; };
 		36C0D3632D8995840049526A /* libfftw3.3.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libfftw3.3.dylib; path = ../../../../../../opt/homebrew/Cellar/fftw/3.3.10_2/lib/libfftw3.3.dylib; sourceTree = "<group>"; };
@@ -69,7 +70,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AC8C1F7D2D8ACC0F0026570E /* libsndfile.1.0.37.dylib in Frameworks */,
+				36215C972D8AF04B00F5390F /* libsndfile.1.0.37.dylib in Frameworks */,
 				36C0D3682D8995B10049526A /* libcsfml-system.2.6.1.dylib in Frameworks */,
 				36C0D3692D8995B10049526A /* libcsfml-window.2.6.1.dylib in Frameworks */,
 				36C0D36A2D8995B10049526A /* libcsfml-graphics.2.6.1.dylib in Frameworks */,
@@ -104,6 +105,7 @@
 			children = (
 				36C0D36B2D8996040049526A /* libsndfile.1.0.37.dylib */,
 				AC8C1F7C2D8ACC0F0026570E /* libsndfile.1.0.37.dylib */,
+				36215C962D8AF04B00F5390F /* libsndfile.1.0.37.dylib */,
 				36C0D3672D8995B10049526A /* libcsfml-graphics.2.6.1.dylib */,
 				36C0D3652D8995B10049526A /* libcsfml-system.2.6.1.dylib */,
 				36C0D3662D8995B10049526A /* libcsfml-window.2.6.1.dylib */,
