@@ -40,7 +40,7 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
     double alpha = 0.95; // Facteur de lissage
 
     // Facteurs de correction du profil couleur pour RGB (à ajuster si besoin)
-    double redFactor   = 1.0;
+    double redFactor   = RED_FACTOR;
     double greenFactor = 0.3;
     double blueFactor  = 0.1;
 

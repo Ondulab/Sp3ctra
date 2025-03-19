@@ -44,6 +44,8 @@
 #define DMX_CHANNELS                            (512)
 #define FRAME_SIZE                              (DMX_CHANNELS + 1)
 
+#define RED_FACTOR                              (0.5)
+
 #define NUM_SPOTS 7       // Nombre de spots DMX à gérer
 
 /**************************************************************************************
@@ -75,7 +77,7 @@
 #define WAVE_AMP_RESOLUTION                     (16777215)        // Decimal value
 #define VOLUME_AMP_RESOLUTION                   (65535)           // Decimal value
 #define START_FREQUENCY                         (40)
-#define MAX_OCTAVE_NUMBER                       (20)
+#define MAX_OCTAVE_NUMBER                       (10)
 #define SEMITONE_PER_OCTAVE                     (12)
 #define COMMA_PER_SEMITONE                      (38)
 
