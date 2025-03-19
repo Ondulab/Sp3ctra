@@ -44,9 +44,9 @@
 #define DMX_CHANNELS                            (512)
 #define DMX_FRAME_SIZE                          (DMX_CHANNELS + 1)
 
-#define DMX_RED_FACTOR                          (0.5)
-#define DMX_GREEN_FACTOR                        (0.5)
-#define DMX_BLUE_FACTOR                         (0.5)
+#define DMX_RED_FACTOR                          (1)
+#define DMX_GREEN_FACTOR                        (1)
+#define DMX_BLUE_FACTOR                         (1)
 
 #define DMX_SMOOTHING_FACTOR                    (0.95)
 
