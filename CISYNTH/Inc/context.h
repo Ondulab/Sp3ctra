@@ -12,7 +12,7 @@ typedef struct
     int fd;
     int running;
     int colorUpdated;
-    DMXSpot spots[NUM_SPOTS];
+    DMXSpot spots[DMX_NUM_SPOTS];
     pthread_mutex_t mutex;
     pthread_cond_t cond;
 } DMXContext;

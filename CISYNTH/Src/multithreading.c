@@ -164,20 +164,20 @@ void *udpThread(void *arg)
 void *dmxSendingThread(void *arg)
 {
     DMXContext *dmxCtx = (DMXContext *) arg;
-    unsigned char frame[FRAME_SIZE];
+    unsigned char frame[DMX_FRAME_SIZE];
 
     while (dmxCtx->running)
     {
         WaitForDMXColorUpdate(dmxCtx);
 
-        DMXSpot currentSpots[NUM_SPOTS];
+        DMXSpot currentSpots[DMX_NUM_SPOTS];
         pthread_mutex_lock(&dmxCtx->mutex);
         memcpy(currentSpots, dmxCtx->spots, sizeof(currentSpots));
         dmxCtx->colorUpdated = 0;
         pthread_mutex_unlock(&dmxCtx->mutex);
 
         // Appliquer le profil couleur pour chaque zone
-        for (int i = 0; i < NUM_SPOTS; i++)
+        for (int i = 0; i < DMX_NUM_SPOTS; i++)
         {
             double redFactor = 1.0;
             double greenFactor = 1.0;
@@ -191,11 +191,11 @@ void *dmxSendingThread(void *arg)
         }
 
         // Réinitialiser la trame DMX et définir le start code
-        memset(frame, 0, FRAME_SIZE);
+        memset(frame, 0, DMX_FRAME_SIZE);
         frame[0] = 0;
 
         // Pour chaque spot, insérer les 7 canaux dans la trame à partir de l'adresse indiquée
-        for (int i = 0; i < NUM_SPOTS; i++)
+        for (int i = 0; i < DMX_NUM_SPOTS; i++)
         {
             int base = currentSpots[i].channel;
             // On suppose ici que la valeur 'channel' correspond à l'adresse DMX de départ (1-indexée)
@@ -208,7 +208,7 @@ void *dmxSendingThread(void *arg)
             frame[base + 6] = currentSpots[i].strobo;
         }
 
-        if (send_dmx_frame(dmxCtx->fd, frame, FRAME_SIZE) < 0)
+        if (send_dmx_frame(dmxCtx->fd, frame, DMX_FRAME_SIZE) < 0)
         {
             perror("Error sending DMX frame");
         }

@@ -6,7 +6,7 @@
 /**************************************************************************************
  * Debug Definitions
  **************************************************************************************/
-#define PRINT_IFFT_FREQUENCY
+//#define PRINT_IFFT_FREQUENCY
 //#define PRINT_IFFT_FREQUENCY_FULL
 
 /**************************************************************************************
@@ -37,16 +37,22 @@
 /**************************************************************************************
  * DMX Definitions
  **************************************************************************************/
-#define DMX
+#define USE_DMX
 
 #define DMX_PORT                                "/dev/tty.usbserial-AD0JUL0N"
 #define DMX_BAUD                                (250000)
 #define DMX_CHANNELS                            (512)
-#define FRAME_SIZE                              (DMX_CHANNELS + 1)
+#define DMX_FRAME_SIZE                          (DMX_CHANNELS + 1)
 
-#define RED_FACTOR                              (0.5)
+#define DMX_RED_FACTOR                          (0.5)
+#define DMX_GREEN_FACTOR                        (0.5)
+#define DMX_BLUE_FACTOR                         (0.5)
 
-#define NUM_SPOTS 7       // Nombre de spots DMX à gérer
+#define DMX_SMOOTHING_FACTOR                    (0.95)
+
+#define DMX_GAMMA                               (2.0)
+
+#define DMX_NUM_SPOTS                           (7)       // Nombre de spots DMX à gérer
 
 /**************************************************************************************
  * DAC Definitions

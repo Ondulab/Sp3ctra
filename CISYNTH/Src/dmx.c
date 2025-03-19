@@ -14,7 +14,7 @@
 #include "config.h"
 #include "dmx.h"
 
-const uint8_t spotChannels[NUM_SPOTS] = {10, 20, 30, 40, 50, 60, 70};
+const uint8_t spotChannels[DMX_NUM_SPOTS] = {10, 20, 30, 40, 50, 60, 70};
 
 volatile sig_atomic_t keepRunning = 1;
 int fd;
@@ -29,25 +29,25 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
                                 const uint8_t *buffer_G,
                                 const uint8_t *buffer_B,
                                 size_t numPixels,
-                                DMXSpot spots[NUM_SPOTS])
+                                DMXSpot spots[DMX_NUM_SPOTS])
 {
-    size_t zoneSize = numPixels / NUM_SPOTS;
-    static int initialized[NUM_SPOTS] = {0};
-    static double smoothR[NUM_SPOTS] = {0.0};
-    static double smoothG[NUM_SPOTS] = {0.0};
-    static double smoothB[NUM_SPOTS] = {0.0};
-    static double smoothW[NUM_SPOTS] = {0.0};  // Pour le canal blanc
-    double alpha = 0.95; // Facteur de lissage
+    size_t zoneSize = numPixels / DMX_NUM_SPOTS;
+    static int initialized[DMX_NUM_SPOTS] = {0};
+    static double smoothR[DMX_NUM_SPOTS] = {0.0};
+    static double smoothG[DMX_NUM_SPOTS] = {0.0};
+    static double smoothB[DMX_NUM_SPOTS] = {0.0};
+    static double smoothW[DMX_NUM_SPOTS] = {0.0};  // Pour le canal blanc
+    double alpha = DMX_SMOOTHING_FACTOR; // Facteur de lissage
 
     // Facteurs de correction du profil couleur pour RGB (à ajuster si besoin)
-    double redFactor   = RED_FACTOR;
-    double greenFactor = 0.3;
-    double blueFactor  = 0.1;
+    double redFactor   = DMX_RED_FACTOR;
+    double greenFactor = DMX_GREEN_FACTOR;
+    double blueFactor  = DMX_BLUE_FACTOR;
 
-    for (size_t i = 0; i < NUM_SPOTS; i++)
+    for (size_t i = 0; i < DMX_NUM_SPOTS; i++)
     {
         size_t start = i * zoneSize;
-        size_t end = (i == NUM_SPOTS - 1) ? numPixels : start + zoneSize;
+        size_t end = (i == DMX_NUM_SPOTS - 1) ? numPixels : start + zoneSize;
         unsigned long sumR = 0, sumG = 0, sumB = 0;
         size_t count = end - start;
 
@@ -72,7 +72,7 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
         double I_spots = Y_son / 255.0;
 
         // 4 & 5. Application de l'intensité aux couleurs d'origine avec correction gamma (gamma = 4.0)
-        double gamma = 2.0;
+        double gamma = DMX_GAMMA;
         double I_spots_corr = pow(I_spots, gamma);
         double finalR = avgR * I_spots_corr;
         double finalG = avgG * I_spots_corr;

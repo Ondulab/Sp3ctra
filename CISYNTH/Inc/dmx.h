@@ -16,7 +16,7 @@ typedef struct
 } DMXSpot;
 
 // Function prototype for sending a DMX frame-
-void computeAverageColorPerZone(const uint8_t *buffer_R, const uint8_t *buffer_G, const uint8_t *buffer_B, size_t numPixels, DMXSpot spots[NUM_SPOTS]);
+void computeAverageColorPerZone(const uint8_t *buffer_R, const uint8_t *buffer_G, const uint8_t *buffer_B, size_t numPixels, DMXSpot spots[DMX_NUM_SPOTS]);
 void applyColorProfile(uint8_t *red, uint8_t *green, uint8_t *blue, double redFactor, double greenFactor, double blueFactor);
 int send_dmx_frame(int fd, unsigned char *frame, size_t len);
 int init_Dmx(void);

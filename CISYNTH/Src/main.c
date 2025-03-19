@@ -26,7 +26,7 @@ int main(void)
     //return EXIT_FAILURE;
     
     int dmxFd = init_Dmx();
-#ifdef DMX
+#ifdef USE_DMX
     if (dmxFd < 0)
     {
         perror("Error initializing DMX");
@@ -104,7 +104,7 @@ int main(void)
 
     /* Create threads for UDP, Audio, and DMX (pas de thread d'affichage) */
     pthread_t udpThreadId, audioThreadId, dmxThreadId;
-#ifdef DMX
+#ifdef USE_DMX
     if (pthread_create(&dmxThreadId, NULL, dmxSendingThread, (void *)context.dmxCtx) != 0)
     {
         perror("Error creating DMX thread");
@@ -169,7 +169,7 @@ int main(void)
                           foregroundTexture);
 
             /* Calcul de la couleur moyenne et mise à jour du contexte DMX */
-            DMXSpot zoneSpots[NUM_SPOTS];
+            DMXSpot zoneSpots[DMX_NUM_SPOTS];
             computeAverageColorPerZone(db.processingBuffer_R,
                                        db.processingBuffer_G,
                                        db.processingBuffer_B,
