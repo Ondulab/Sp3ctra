@@ -27,7 +27,9 @@ typedef struct
     DoubleBuffer *doubleBuffer;
     DMXContext *dmxCtx;
     volatile int running;   // Ajout du flag de terminaison pour Context
-    // Ajouter d'autres champs selon les besoins
+#if ENABLE_IMAGE_TRANSFORM
+    bool enableImageTransform;
+#endif
 } Context;
 
 #endif /* CONTEXT_H */
