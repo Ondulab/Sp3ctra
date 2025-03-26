@@ -196,35 +196,29 @@ void *udpThread(void *arg)
 
 void *dmxSendingThread(void *arg)
 {
-    DMXContext *dmxCtx = (DMXContext *) arg;
+    DMXContext *dmxCtx = (DMXContext *)arg;
     unsigned char frame[DMX_FRAME_SIZE];
 
-    while (dmxCtx->running)
+    while (dmxCtx->running && keepRunning)
     {
-        WaitForDMXColorUpdate(dmxCtx);
-
-        DMXSpot currentSpots[DMX_NUM_SPOTS];
-        pthread_mutex_lock(&dmxCtx->mutex);
-        memcpy(currentSpots, dmxCtx->spots, sizeof(currentSpots));
-        dmxCtx->colorUpdated = 0;
-        pthread_mutex_unlock(&dmxCtx->mutex);
-
         // Réinitialiser la trame DMX et définir le start code
         memset(frame, 0, DMX_FRAME_SIZE);
         frame[0] = 0;
 
-        // Pour chaque spot, insérer les 7 canaux dans la trame à partir de l'adresse indiquée
+        // Pour chaque spot, insérer les 3 canaux (R, G, B) à partir de l'adresse définie
         for (int i = 0; i < DMX_NUM_SPOTS; i++)
         {
-            int base = currentSpots[i].channel;
-            // On suppose ici que la valeur 'channel' correspond à l'adresse DMX de départ (1-indexée)
-            //frame[base]     = currentSpots[i].dimmer;
-            frame[base + 0] = currentSpots[i].red;
-            frame[base + 1] = currentSpots[i].green;
-            frame[base + 2] = currentSpots[i].blue;
-            frame[base + 3] = 0 ; //currentSpots[i].white;
-            //frame[base + 5] = currentSpots[i].mode;
-            //frame[base + 6] = currentSpots[i].strobo;
+            int base = spotChannels[i];
+            if ((base + 2) < DMX_FRAME_SIZE)
+            {
+                frame[base + 0] = dmxCtx->spots[i].red;
+                frame[base + 1] = dmxCtx->spots[i].green;
+                frame[base + 2] = dmxCtx->spots[i].blue;
+            }
+            else
+            {
+                fprintf(stderr, "DMX address out of bounds for spot %d\n", i);
+            }
         }
 
         if (send_dmx_frame(dmxCtx->fd, frame, DMX_FRAME_SIZE) < 0)
