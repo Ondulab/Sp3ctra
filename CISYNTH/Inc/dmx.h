@@ -6,13 +6,13 @@
 typedef struct
 {
     uint8_t channel;  // Start
-    uint8_t dimmer;
     uint8_t red;
     uint8_t green;
     uint8_t blue;
+    uint8_t dimmer;
     uint8_t white;
-    uint8_t mode;
-    uint8_t strobo;
+    //uint8_t mode;
+    //uint8_t strobo;
 } DMXSpot;
 
 // Function prototype for sending a DMX frame-

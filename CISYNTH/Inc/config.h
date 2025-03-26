@@ -50,9 +50,9 @@
 
 #define DMX_SMOOTHING_FACTOR                    (0.95)
 
-#define DMX_GAMMA                               (2.0)
+#define DMX_GAMMA                               (1.7)
 
-#define DMX_NUM_SPOTS                           (7)       // Nombre de spots DMX à gérer
+#define DMX_NUM_SPOTS                           (5)       // Nombre de spots DMX à gérer
 
 /**************************************************************************************
  * DAC Definitions
@@ -65,10 +65,10 @@
  * Image Definitions
  **************************************************************************************/
 // Compilation-time switch for enabling image transformation
-#define ENABLE_IMAGE_TRANSFORM 1
+#define ENABLE_IMAGE_TRANSFORM 0
 
 // Renamed constant for gamma correction
-#define IMAGE_GAMMA 2.2
+//#define IMAGE_GAMMA 2.2
 
 /**************************************************************************************
  * Synth Definitions
@@ -93,13 +93,13 @@
  **************************************************************************************/
 #define WAVE_AMP_RESOLUTION                     (16777215)        // Decimal value
 #define VOLUME_AMP_RESOLUTION                   (65535)           // Decimal value
-#define START_FREQUENCY                         (40)
-#define MAX_OCTAVE_NUMBER                       (10)
+#define START_FREQUENCY                         (65.41)
+#define MAX_OCTAVE_NUMBER                       (8)               // >> le nb d'octaves n'a pas d'incidence ?
 #define SEMITONE_PER_OCTAVE                     (12)
-#define COMMA_PER_SEMITONE                      (38)
+#define COMMA_PER_SEMITONE                      (36)
 
-#define VOLUME_INCREMENT                        (1)
-#define VOLUME_DECREMENT                        (20)
+#define VOLUME_INCREMENT                        (60)
+#define VOLUME_DECREMENT                        (100)
 
 #define PIXELS_PER_NOTE                         (1)
 #define NUMBER_OF_NOTES                         (CIS_MAX_PIXELS_NB / PIXELS_PER_NOTE)

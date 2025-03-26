@@ -14,7 +14,7 @@
 #include "config.h"
 #include "dmx.h"
 
-const uint8_t spotChannels[DMX_NUM_SPOTS] = {10, 20, 30, 40, 50, 60, 70};
+const uint8_t spotChannels[DMX_NUM_SPOTS] = {10};
 
 volatile sig_atomic_t keepRunning = 1;
 int fd;
@@ -103,9 +103,9 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
         spots[i].green   = (uint8_t)smoothG[i];
         spots[i].blue    = (uint8_t)smoothB[i];
         spots[i].white   = (uint8_t)smoothW[i];  // Affectation de la valeur du canal blanc
-        spots[i].mode    = 0;
-        spots[i].strobo  = 0;
-        spots[i].channel = spotChannels[i];
+        //spots[i].mode    = 4;
+        //spots[i].strobo  = 0;
+        //spots[i].channel = spotChannels[i];
 
         // Application de la correction du profil couleur aux canaux RGB
         applyColorProfile(&spots[i].red, &spots[i].green, &spots[i].blue,
@@ -198,9 +198,9 @@ int init_Dmx(void)
     }
     if (fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) == -1)
     {
-        perror("Error setting flags");
+      perror("Error setting flags");
         close(fd);
-        return -1;
+      return -1;
     }
 
     // Get current serial port settings

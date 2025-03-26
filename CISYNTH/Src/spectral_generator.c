@@ -60,8 +60,8 @@
 
 /* --- FFT parameters --- */
 #define DEFAULT_FFT_SIZE        8192      /* Base FFT window size */
-#define DEFAULT_OVERLAP         0.85      /* Overlap fraction (95%) */
-#define DEFAULT_MIN_FREQ        65        /* Minimum frequency for display */
+#define DEFAULT_OVERLAP         0.95      /* Overlap fraction (95%) */
+#define DEFAULT_MIN_FREQ        20        /* Minimum frequency for display */
 #define DEFAULT_MAX_FREQ        16640.0   /* Maximum frequency for display (8 octaves) */
 
 /* Image dimensions (based on A4 at 600 DPI) */
@@ -133,7 +133,7 @@ int spectral_generator(void)
     /* Load audio signal from WAV file */
     double *signal = NULL;
     //const char *wav_filename = "sample.wav";   /* Specify your WAV file path */
-    const char *wav_filename = "/Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH/sample.wav";
+    const char *wav_filename = "/Users/redodd/Documents/Workspace_Xcode/CISYNTH_Application/waves/VoluminaLigeti-p1.wav";
     if (load_wav_file(wav_filename, &signal, &total_samples, &sample_rate, duration) != 0)
     {
         fprintf(stderr, "Error: Unable to load WAV file.\n");
@@ -160,6 +160,7 @@ int spectral_generator(void)
 
     int step = (int)(fft_size * (1.0 - DEFAULT_OVERLAP));
     int num_windows = (total_samples - fft_size) / step + 1;
+    printf("total_samples = %d, step = %d, num_windows = %d\n", total_samples, step, num_windows);
 
     /* Allocate memory for the spectrogram (2D: num_windows x num_bins) */
     double *spectrogram = (double *)malloc(num_windows * num_bins * sizeof(double));
@@ -331,10 +332,10 @@ int spectral_generator(void)
     /* ------------------------------ */
     /* 5. Generate the PNG Spectrogram*/
     /* ------------------------------ */
-    int base_width = (int)BASE_WIDTH;
     int base_height = (int)BASE_HEIGHT;
-    int image_width = (int)(base_width * SCALE_FACTOR);
+    int image_width = num_windows;                      /* dynamic width = number of time windows */
     int image_height = (int)(base_height * SCALE_FACTOR);
+    int base_width = image_width;                       /* for drawing consistency */
 
     /* Create an image surface for PNG output */
     cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, image_width, image_height);
@@ -497,7 +498,7 @@ int spectral_generator(void)
 #endif
 
     cairo_destroy(cr);
-    cairo_surface_write_to_png(surface, "/Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH/spectrogram.png");
+    cairo_surface_write_to_png(surface, "/Users/redodd/Documents/Workspace_Xcode/CISYNTH_Application/spectrogrammes/VoluminaLigeti-p1-20Hz.png");
     cairo_surface_destroy(surface);
 
     /* Cleanup FFTW resources */
@@ -545,11 +546,8 @@ int load_wav_file(const char *filename, double **signal, int *num_samples, int *
     }
 
     *sample_rate = sfinfo.samplerate;
-    int total_frames = (int)(duration * (*sample_rate));
-    if (total_frames > sfinfo.frames)
-    {
-        total_frames = sfinfo.frames;
-    }
+    int total_frames = sfinfo.frames;    /* Read entire file, ignore duration */
+    duration = (double)total_frames / (*sample_rate);
 
     int channels = sfinfo.channels;
     float *temp_buffer = (float *)malloc(total_frames * channels * sizeof(float));

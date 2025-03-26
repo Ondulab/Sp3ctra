@@ -23,7 +23,8 @@
 int main(void)
 {
     //spectral_generator();
-    //return EXIT_FAILURE;
+    //printf("end of program");
+    //return EXIT_FAILURE;            // pour print only
     
     int dmxFd = init_Dmx();
 #ifdef USE_DMX

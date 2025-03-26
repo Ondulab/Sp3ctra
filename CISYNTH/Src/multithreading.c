@@ -218,13 +218,13 @@ void *dmxSendingThread(void *arg)
         {
             int base = currentSpots[i].channel;
             // On suppose ici que la valeur 'channel' correspond à l'adresse DMX de départ (1-indexée)
-            frame[base]     = currentSpots[i].dimmer;
-            frame[base + 1] = currentSpots[i].red;
-            frame[base + 2] = currentSpots[i].green;
-            frame[base + 3] = currentSpots[i].blue;
-            frame[base + 4] = currentSpots[i].white;
-            frame[base + 5] = currentSpots[i].mode;
-            frame[base + 6] = currentSpots[i].strobo;
+            //frame[base]     = currentSpots[i].dimmer;
+            frame[base + 0] = currentSpots[i].red;
+            frame[base + 1] = currentSpots[i].green;
+            frame[base + 2] = currentSpots[i].blue;
+            frame[base + 3] = 0 ; //currentSpots[i].white;
+            //frame[base + 5] = currentSpots[i].mode;
+            //frame[base + 6] = currentSpots[i].strobo;
         }
 
         if (send_dmx_frame(dmxCtx->fd, frame, DMX_FRAME_SIZE) < 0)
