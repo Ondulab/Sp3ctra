@@ -1,0 +1,45 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "cmake.configureOnOpen": true,
+        "cmake.buildDirectory": "${workspaceFolder}/build",
+        "editor.formatOnSave": true,
+        "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+        "C_Cpp.clang_format_fallbackStyle": "LLVM",
+        "C_Cpp.default.cStandard": "c11",
+        "C_Cpp.default.cppStandard": "c++17",
+        "files.associations": {
+            "*.h": "c"
+        }
+    },
+    "extensions": {
+        "recommendations": [
+            "ms-vscode.cpptools",
+            "ms-vscode.cmake-tools",
+            "twxs.cmake",
+            "ms-vscode.cpptools-extension-pack"
+        ]
+    },
+    "launch": {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "name": "Debug CISYNTH",
+                "type": "cppdbg",
+                "request": "launch",
+                "program": "${workspaceFolder}/build/CISYNTH",
+                "args": [],
+                "stopAtEntry": false,
+                "cwd": "${workspaceFolder}",
+                "environment": [],
+                "externalConsole": false,
+                "MIMode": "lldb",
+                "preLaunchTask": "Build CMake Debug"
+            }
+        ]
+    }
+}
