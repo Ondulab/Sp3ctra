@@ -90,8 +90,12 @@ int main(int argc, char **argv) {
   if (use_dmx) {
 #ifdef USE_DMX
     dmxFd = init_Dmx(dmx_port, silent_dmx);
-    if (dmxFd < 0 && !silent_dmx) {
-      printf("Failed to initialize DMX. Continuing without DMX support.\n");
+    if (dmxFd < 0) {
+      if (!silent_dmx) {
+        printf("Failed to initialize DMX. Continuing without DMX support.\n");
+      }
+      // Si l'initialisation DMX a échoué, on désactive le DMX complètement
+      use_dmx = 0;
     }
 #endif
   }
