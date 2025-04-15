@@ -156,7 +156,7 @@ int send_dmx_frame(int fd, unsigned char *frame, size_t len) {
   return 0;
 }
 
-int init_Dmx(void) {
+int init_Dmx(const char *port, int silent) {
   int fd;
   struct termios tty;
 
@@ -164,26 +164,30 @@ int init_Dmx(void) {
   signal(SIGINT, intHandler);
 
   // Open serial port
-  fd = open(DMX_PORT, O_RDWR | O_NOCTTY | O_NONBLOCK);
+  fd = open(port, O_RDWR | O_NOCTTY | O_NONBLOCK);
   if (fd < 0) {
-    perror("Error opening serial port");
+    if (!silent)
+      perror("Error opening serial port");
     return -1;
   }
 
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags == -1) {
-    perror("Error getting flags");
+    if (!silent)
+      perror("Error getting flags");
     close(fd);
     return -1;
   }
   if (fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) == -1) {
-    perror("Error setting flags");
+    if (!silent)
+      perror("Error setting flags");
     close(fd);
     return -1;
   }
 
   if (tcgetattr(fd, &tty) != 0) {
-    perror("Error from tcgetattr");
+    if (!silent)
+      perror("Error from tcgetattr");
     close(fd);
     return -1;
   }
@@ -202,48 +206,59 @@ int init_Dmx(void) {
   tty.c_cc[VMIN] = 0;
   tty.c_cc[VTIME] = 10; // Timeout 1 sec
 
-  printf("Baud rate: %lu\n", cfgetispeed(&tty));
-  printf("c_cflag: 0x%lx\n", tty.c_cflag);
-  printf("c_iflag: 0x%lx\n", tty.c_iflag);
-  printf("c_oflag: 0x%lx\n", tty.c_oflag);
-  printf("c_lflag: 0x%lx\n", tty.c_lflag);
+  if (!silent) {
+    printf("Baud rate: %lu\n", cfgetispeed(&tty));
+    printf("c_cflag: 0x%lx\n", tty.c_cflag);
+    printf("c_iflag: 0x%lx\n", tty.c_iflag);
+    printf("c_oflag: 0x%lx\n", tty.c_oflag);
+    printf("c_lflag: 0x%lx\n", tty.c_lflag);
+  }
 
   speed_t speed = 9600; // Remplacez par B115200 si nécessaire
   if (ioctl(fd, IOSSIOSPEED, &speed) < 0) {
-    perror("Error setting custom baud rate");
+    if (!silent)
+      perror("Error setting custom baud rate");
   } else {
-    printf("Custom baud rate set successfully!\n");
+    if (!silent)
+      printf("Custom baud rate set successfully!\n");
   }
 
-  printf("Baud rate after setting: %lu\n", cfgetispeed(&tty));
+  if (!silent)
+    printf("Baud rate after setting: %lu\n", cfgetispeed(&tty));
 
   if (tcsetattr(fd, TCSANOW, &tty) != 0) {
-    perror("Error from tcsetattr");
-    printf("Errno: %d, %s\n", errno, strerror(errno));
+    if (!silent) {
+      perror("Error from tcsetattr");
+      printf("Errno: %d, %s\n", errno, strerror(errno));
+    }
     close(fd);
     return -1;
   }
 
   int status;
   if (ioctl(fd, TIOCMGET, &status) < 0) {
-    perror("Error getting modem status");
+    if (!silent)
+      perror("Error getting modem status");
     close(fd);
     return -1;
   }
   status &= ~(TIOCM_DTR | TIOCM_RTS);
   if (ioctl(fd, TIOCMSET, &status) < 0) {
-    perror("Error setting modem status");
+    if (!silent)
+      perror("Error setting modem status");
     close(fd);
     return -1;
   }
 
   speed = DMX_BAUD;
   if (ioctl(fd, IOSSIOSPEED, &speed) < 0) {
-    perror("Error setting custom baud rate");
+    if (!silent)
+      perror("Error setting custom baud rate");
     close(fd);
     return -1;
   }
 
-  printf("Serial port opened and configured successfully.\n");
+  if (!silent)
+    printf("Serial port opened and configured successfully.\n");
   return fd;
 }

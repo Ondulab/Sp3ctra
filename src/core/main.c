@@ -1,221 +1,336 @@
+#include "audio.h"
 #include "config.h"
+#include "context.h"
+#include "display.h"
+#include "dmx.h"
+#include "error.h"
+#include "multithreading.h"
+#include "synth.h"
+#include "udp.h"
 #include <SFML/Graphics.h>
 #include <SFML/Network.h>
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <arpa/inet.h>
 #include <sys/socket.h>
-#include <errno.h>
-#include <fcntl.h>
 #include <termios.h>
-#include "dmx.h"
-#include "error.h"
-#include "synth.h"
-#include "display.h"
-#include "udp.h"
-#include "audio.h"
-#include "multithreading.h"
-#include "context.h"
+#include <unistd.h>
 
-int main(void)
-{
-    
-    int dmxFd = init_Dmx();
+// Gestionnaire de signal global pour l'application
+volatile sig_atomic_t app_running = 1;
+Context *global_context =
+    NULL; // Contexte global pour le gestionnaire de signaux
+
+void signalHandler(int signal) {
+  (void)signal;
+  app_running = 0;
+  printf("\nSignal d'arrêt reçu. Arrêt en cours...\n");
+  fflush(stdout);
+
+  // Forcer la terminaison des threads si l'utilisateur appuie à nouveau sur
+  // Ctrl+C
+  if (global_context) {
+    global_context->running = 0;
+    if (global_context->dmxCtx) {
+      global_context->dmxCtx->running = 0;
+    }
+    keepRunning = 0; // Variable globale du module DMX
+  }
+
+  // Terminer immédiatement l'application
+  printf("\nForced exit!\n");
+  _exit(0); // Sortie brutale mais garantie
+}
+
+int main(int argc, char **argv) {
+  // Configurez le gestionnaire de signaux SIGINT (Ctrl+C)
+  signal(SIGINT, signalHandler);
+  /* Parse command-line arguments */
+  int use_dmx = 1;                 // Par défaut, on active le DMX
+  int silent_dmx = 0;              // Par défaut, on affiche les messages DMX
+  const char *dmx_port = DMX_PORT; // Port DMX par défaut
+
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--cli") == 0) {
+      printf("Running in CLI mode (no GUI window)\n");
+#ifndef CLI_MODE
+#define CLI_MODE
+#endif
+    } else if (strcmp(argv[i], "--no-dmx") == 0) {
+      use_dmx = 0;
+      printf("DMX disabled\n");
+    } else if (strncmp(argv[i], "--dmx-port=", 11) == 0) {
+      dmx_port = argv[i] + 11;
+      printf("Using DMX port: %s\n", dmx_port);
+    } else if (strcmp(argv[i], "--silent-dmx") == 0) {
+      silent_dmx = 1;
+      printf("DMX messages silenced\n");
+    }
+  }
+
+  int dmxFd = -1;
+  if (use_dmx) {
 #ifdef USE_DMX
-    if (dmxFd < 0)
-    {
-        perror("Error initializing DMX");
-        //return EXIT_FAILURE;
+    dmxFd = init_Dmx(dmx_port, silent_dmx);
+    if (dmxFd < 0 && !silent_dmx) {
+      printf("Failed to initialize DMX. Continuing without DMX support.\n");
     }
 #endif
-    
-    DMXContext *dmxCtx = malloc(sizeof(DMXContext));
-    if (dmxCtx == NULL)
-    {
-        perror("Error allocating DMXContext");
-        close(dmxFd);
-        //return EXIT_FAILURE;
-    }
-    dmxCtx->fd = dmxFd;
-    dmxCtx->running = 1;
-    dmxCtx->colorUpdated = 0;
-    pthread_mutex_init(&dmxCtx->mutex, NULL);
-    pthread_cond_init(&dmxCtx->cond, NULL);
+  }
 
-    /* Initialize CSFML */
-    sfVideoMode mode = { WINDOWS_WIDTH, WINDOWS_HEIGHT, 32 };
-    sfRenderWindow *window = sfRenderWindow_create(mode, "CSFML Viewer", sfResize | sfClose, NULL);
-    if (!window)
-    {
-        perror("Error creating CSFML window");
-        close(dmxCtx->fd);
-        free(dmxCtx);
-        return EXIT_FAILURE;
-    }
+  DMXContext *dmxCtx = malloc(sizeof(DMXContext));
+  if (dmxCtx == NULL) {
+    perror("Error allocating DMXContext");
+    close(dmxFd);
+    // return EXIT_FAILURE;
+  }
+  dmxCtx->fd = dmxFd;
+  dmxCtx->running = 1;
+  dmxCtx->colorUpdated = 0;
+  pthread_mutex_init(&dmxCtx->mutex, NULL);
+  pthread_cond_init(&dmxCtx->cond, NULL);
 
-    /* Initialize UDP and Audio */
-    struct sockaddr_in si_other, si_me;
-    
-    AudioData audioData;
-    initAudioData(&audioData, AUDIO_CHANNEL, AUDIO_BUFFER_SIZE);
-    audio_Init(&audioData);
-    synth_IfftInit();
-    display_Init(window);
+  /* Initialize CSFML */
+  sfVideoMode mode = {WINDOWS_WIDTH, WINDOWS_HEIGHT, 32};
+  sfRenderWindow *window = NULL;
 
-    int s = udp_Init(&si_other, &si_me);
-    if (s < 0)
-    {
-        perror("Error initializing UDP");
-        sfRenderWindow_destroy(window);
-        close(dmxCtx->fd);
-        free(dmxCtx);
-        return EXIT_FAILURE;
-    }
-
-    OSStatus status = startAudioUnit();  // Handle status as needed
-
-    /* Create double buffer */
-    DoubleBuffer db;
-    initDoubleBuffer(&db);
-
-    /* Build global context structure */
-    Context context = { 0 };
-    context.window = window;
-    context.socket = s;
-    context.si_other = &si_other;
-    context.si_me = &si_me;
-    context.audioData = &audioData;
-    context.doubleBuffer = &db;
-    context.dmxCtx = dmxCtx;
-    context.running = 1; // Flag de terminaison pour le contexte
-
-    /* Create textures and sprites for rendering in main thread */
-    sfTexture *backgroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
-    sfTexture *foregroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
-    sfSprite *backgroundSprite = sfSprite_create();
-    sfSprite *foregroundSprite = sfSprite_create();
-    sfSprite_setTexture(backgroundSprite, backgroundTexture, sfTrue);
-    sfSprite_setTexture(foregroundSprite, foregroundTexture, sfTrue);
-
-    /* Create threads for UDP, Audio, and DMX (pas de thread d'affichage) */
-    pthread_t udpThreadId, audioThreadId, dmxThreadId;
-#ifdef USE_DMX
-    if (pthread_create(&dmxThreadId, NULL, dmxSendingThread, (void *)context.dmxCtx) != 0)
-    {
-        perror("Error creating DMX thread");
-        close(dmxCtx->fd);
-        free(dmxCtx);
-        sfRenderWindow_destroy(window);
-        return EXIT_FAILURE;
-    }
+#ifndef CLI_MODE
+  window =
+      sfRenderWindow_create(mode, "CSFML Viewer", sfResize | sfClose, NULL);
+  if (!window) {
+    perror("Error creating CSFML window");
+    close(dmxCtx->fd);
+    free(dmxCtx);
+    return EXIT_FAILURE;
+  }
 #endif
-    if (pthread_create(&udpThreadId, NULL, udpThread, (void *)&context) != 0)
-    {
-        perror("Error creating UDP thread");
-        sfRenderWindow_destroy(window);
-        return EXIT_FAILURE;
+
+  /* Initialize UDP and Audio */
+  struct sockaddr_in si_other, si_me;
+
+  AudioData audioData;
+  initAudioData(&audioData, AUDIO_CHANNEL, AUDIO_BUFFER_SIZE);
+  audio_Init(&audioData);
+  synth_IfftInit();
+  display_Init(window);
+
+  int s = udp_Init(&si_other, &si_me);
+  if (s < 0) {
+    perror("Error initializing UDP");
+    sfRenderWindow_destroy(window);
+    close(dmxCtx->fd);
+    free(dmxCtx);
+    return EXIT_FAILURE;
+  }
+
+  OSStatus status = startAudioUnit(); // Handle status as needed
+
+  /* Create double buffer */
+  DoubleBuffer db;
+  initDoubleBuffer(&db);
+
+  /* Build global context structure */
+  Context context = {0};
+  context.window = window;
+  context.socket = s;
+  context.si_other = &si_other;
+  context.si_me = &si_me;
+  context.audioData = &audioData;
+  context.doubleBuffer = &db;
+  context.dmxCtx = dmxCtx;
+  context.running = 1; // Flag de terminaison pour le contexte
+
+  // Sauvegarde du contexte pour le gestionnaire de signaux
+  global_context = &context;
+
+  /* Create textures and sprites for rendering in main thread */
+  sfTexture *backgroundTexture = NULL;
+  sfTexture *foregroundTexture = NULL;
+  sfSprite *backgroundSprite = NULL;
+  sfSprite *foregroundSprite = NULL;
+
+#ifndef CLI_MODE
+  backgroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
+  foregroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
+  backgroundSprite = sfSprite_create();
+  foregroundSprite = sfSprite_create();
+  sfSprite_setTexture(backgroundSprite, backgroundTexture, sfTrue);
+  sfSprite_setTexture(foregroundSprite, foregroundTexture, sfTrue);
+#endif
+
+  /* Create threads for UDP, Audio, and DMX (pas de thread d'affichage) */
+  pthread_t udpThreadId, audioThreadId, dmxThreadId;
+
+#ifdef USE_DMX
+  if (use_dmx && dmxFd >= 0) {
+    if (pthread_create(&dmxThreadId, NULL, dmxSendingThread,
+                       (void *)context.dmxCtx) != 0) {
+      perror("Error creating DMX thread");
+      close(dmxCtx->fd);
+      free(dmxCtx);
+      sfRenderWindow_destroy(window);
+      return EXIT_FAILURE;
     }
-    if (pthread_create(&audioThreadId, NULL, audioProcessingThread, (void *)&context) != 0)
-    {
-        perror("Error creating audio processing thread");
-        sfRenderWindow_destroy(window);
-        return EXIT_FAILURE;
+  }
+#endif
+  if (pthread_create(&udpThreadId, NULL, udpThread, (void *)&context) != 0) {
+    perror("Error creating UDP thread");
+    sfRenderWindow_destroy(window);
+    return EXIT_FAILURE;
+  }
+  if (pthread_create(&audioThreadId, NULL, audioProcessingThread,
+                     (void *)&context) != 0) {
+    perror("Error creating audio processing thread");
+    sfRenderWindow_destroy(window);
+    return EXIT_FAILURE;
+  }
+
+  struct sched_param param;
+  param.sched_priority = 80; // Choisir une priorité adaptée
+  pthread_setschedparam(audioThreadId, SCHED_RR, &param);
+
+  /* Main loop (gestion des événements et rendu) */
+  sfEvent event;
+  sfClock *clock = sfClock_create();
+  unsigned int frameCount = 0;
+  int running = 1;
+
+#ifdef CLI_MODE
+  /* En mode CLI, gérer les signaux pour l'arrêt propre (CTRL+C) */
+  printf("========================================================\n");
+  printf("Application running in CLI mode.\n");
+  printf("Press Ctrl+C to stop the application.\n");
+  printf("========================================================\n");
+
+  /* Boucle principale pour le mode CLI */
+  while (running && context.running && app_running) {
+    /* Vérifier si le double buffer contient de nouvelles données */
+    pthread_mutex_lock(&db.mutex);
+    int dataReady = db.dataReady;
+    if (dataReady) {
+      db.dataReady = 0;
     }
-    
-    struct sched_param param;
-    param.sched_priority = 80; // Choisir une priorité adaptée
-    pthread_setschedparam(audioThreadId, SCHED_RR, &param);
+    pthread_mutex_unlock(&db.mutex);
 
-    /* Main loop (gestion des événements et rendu) */
-    sfEvent event;
-    sfClock *clock = sfClock_create();
-    unsigned int frameCount = 0;
-    
-    while (sfRenderWindow_isOpen(window))
-    {
-        /* Gestion des événements dans le thread principal */
-        while (sfRenderWindow_pollEvent(window, &event))
-        {
-            if (event.type == sfEvtClosed)
-            {
-                sfRenderWindow_close(window);
-                context.running = 0;
-                dmxCtx->running = 0;
-            }
-        }
+    if (dataReady) {
+      /* Calcul de la couleur moyenne et mise à jour du contexte DMX */
+      DMXSpot zoneSpots[DMX_NUM_SPOTS];
+      computeAverageColorPerZone(db.processingBuffer_R, db.processingBuffer_G,
+                                 db.processingBuffer_B, CIS_MAX_PIXELS_NB,
+                                 zoneSpots);
 
-        /* Vérifier si le double buffer contient de nouvelles données */
-        pthread_mutex_lock(&db.mutex);
-        int dataReady = db.dataReady;
-        if (dataReady)
-        {
-            db.dataReady = 0;
-        }
-        pthread_mutex_unlock(&db.mutex);
+      pthread_mutex_lock(&dmxCtx->mutex);
+      memcpy(dmxCtx->spots, zoneSpots, sizeof(zoneSpots));
+      dmxCtx->colorUpdated = 1;
+      pthread_cond_signal(&dmxCtx->cond);
+      pthread_mutex_unlock(&dmxCtx->mutex);
 
-        if (dataReady)
-        {
-            /* Rendu de la nouvelle ligne à partir du buffer */
-            printImageRGB(window,
-                          db.processingBuffer_R,
-                          db.processingBuffer_G,
-                          db.processingBuffer_B,
-                          backgroundTexture,
-                          foregroundTexture);
-
-            /* Calcul de la couleur moyenne et mise à jour du contexte DMX */
-            DMXSpot zoneSpots[DMX_NUM_SPOTS];
-            computeAverageColorPerZone(db.processingBuffer_R,
-                                       db.processingBuffer_G,
-                                       db.processingBuffer_B,
-                                       CIS_MAX_PIXELS_NB,
-                                       zoneSpots);
-
-            pthread_mutex_lock(&dmxCtx->mutex);
-            memcpy(dmxCtx->spots, zoneSpots, sizeof(zoneSpots));
-            dmxCtx->colorUpdated = 1;
-            pthread_cond_signal(&dmxCtx->cond);
-            pthread_mutex_unlock(&dmxCtx->mutex);
-
-            frameCount++;  // Compter chaque image affichée
-        }
+      frameCount++; // Compter chaque trame traitée
+    }
 
 #ifdef PRINT_FPS
-        float elapsedTime = 0.0f;
-        /* Calcul du temps écoulé et affichage du taux de rafraîchissement */
-        elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
-        if (elapsedTime >= 1.0f)
-        {
-            float fps = frameCount / elapsedTime;
-            printf("Refresh rate: %.2f FPS\n", fps);
-            sfClock_restart(clock);
-            frameCount = 0;
-        }
+    float elapsedTime = 0.0f;
+    /* Calcul du temps écoulé et affichage du taux de rafraîchissement */
+    elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
+    if (elapsedTime >= 1.0f) {
+      float fps = frameCount / elapsedTime;
+      printf("Processing rate: %.2f FPS\n", fps);
+      sfClock_restart(clock);
+      frameCount = 0;
+    }
 #endif
 
-        /* Petite pause pour limiter la charge CPU */
-        usleep(100);
+    /* Petite pause pour limiter la charge CPU */
+    usleep(100);
+  }
+#else
+  /* Boucle principale avec affichage graphique */
+  while (sfRenderWindow_isOpen(window)) {
+    /* Gestion des événements dans le thread principal */
+    while (sfRenderWindow_pollEvent(window, &event)) {
+      if (event.type == sfEvtClosed) {
+        sfRenderWindow_close(window);
+        context.running = 0;
+        dmxCtx->running = 0;
+      }
     }
-    
-    sfClock_destroy(clock);
 
-    /* Terminaison et synchronisation */
-    context.running = 0;
-    dmxCtx->running = 0;
+    /* Vérifier si le double buffer contient de nouvelles données */
+    pthread_mutex_lock(&db.mutex);
+    int dataReady = db.dataReady;
+    if (dataReady) {
+      db.dataReady = 0;
+    }
+    pthread_mutex_unlock(&db.mutex);
 
-    pthread_join(udpThreadId, NULL);
-    pthread_join(audioThreadId, NULL);
+    if (dataReady) {
+      /* Rendu de la nouvelle ligne à partir du buffer */
+      printImageRGB(window, db.processingBuffer_R, db.processingBuffer_G,
+                    db.processingBuffer_B, backgroundTexture,
+                    foregroundTexture);
+
+      /* Calcul de la couleur moyenne et mise à jour du contexte DMX */
+      DMXSpot zoneSpots[DMX_NUM_SPOTS];
+      computeAverageColorPerZone(db.processingBuffer_R, db.processingBuffer_G,
+                                 db.processingBuffer_B, CIS_MAX_PIXELS_NB,
+                                 zoneSpots);
+
+      pthread_mutex_lock(&dmxCtx->mutex);
+      memcpy(dmxCtx->spots, zoneSpots, sizeof(zoneSpots));
+      dmxCtx->colorUpdated = 1;
+      pthread_cond_signal(&dmxCtx->cond);
+      pthread_mutex_unlock(&dmxCtx->mutex);
+
+      frameCount++; // Compter chaque image affichée
+    }
+
+#ifdef PRINT_FPS
+    float elapsedTime = 0.0f;
+    /* Calcul du temps écoulé et affichage du taux de rafraîchissement */
+    elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
+    if (elapsedTime >= 1.0f) {
+      float fps = frameCount / elapsedTime;
+      printf("Refresh rate: %.2f FPS\n", fps);
+      sfClock_restart(clock);
+      frameCount = 0;
+    }
+#endif
+
+    /* Petite pause pour limiter la charge CPU */
+    usleep(100);
+  }
+#endif
+
+  sfClock_destroy(clock);
+
+  printf("\nTerminaison des threads et nettoyage...\n");
+  /* Terminaison et synchronisation */
+  context.running = 0;
+  dmxCtx->running = 0;
+  keepRunning = 0; // Variable globale du module DMX
+
+  pthread_join(udpThreadId, NULL);
+  pthread_join(audioThreadId, NULL);
+#ifdef USE_DMX
+  if (use_dmx && dmxFd >= 0) {
     pthread_join(dmxThreadId, NULL);
+  }
+#endif
 
-    audio_Cleanup();
-    cleanupAudioData(&audioData);
-    sfTexture_destroy(backgroundTexture);
-    sfTexture_destroy(foregroundTexture);
-    sfSprite_destroy(backgroundSprite);
-    sfSprite_destroy(foregroundSprite);
-    sfRenderWindow_destroy(window);
+  audio_Cleanup();
+  cleanupAudioData(&audioData);
 
-    return 0;
+#ifndef CLI_MODE
+  sfTexture_destroy(backgroundTexture);
+  sfTexture_destroy(foregroundTexture);
+  sfSprite_destroy(backgroundSprite);
+  sfSprite_destroy(foregroundSprite);
+  sfRenderWindow_destroy(window);
+#endif
+
+  return 0;
 }
