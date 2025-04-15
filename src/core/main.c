@@ -26,24 +26,38 @@ Context *global_context =
     NULL; // Contexte global pour le gestionnaire de signaux
 
 void signalHandler(int signal) {
+  static volatile sig_atomic_t already_called = 0;
+
+  // Éviter les appels récursifs au gestionnaire
+  if (already_called) {
+    // Si le gestionnaire est rappelé, c'est que l'utilisateur
+    // insiste avec les Ctrl+C, donc on force vraiment la sortie
+    kill(getpid(), SIGKILL);
+    return;
+  }
+
+  already_called = 1;
+
   (void)signal;
-  app_running = 0;
   printf("\nSignal d'arrêt reçu. Arrêt en cours...\n");
   fflush(stdout);
 
-  // Forcer la terminaison des threads si l'utilisateur appuie à nouveau sur
-  // Ctrl+C
+  // Mettre à jour les flags d'arrêt
+  app_running = 0;
   if (global_context) {
     global_context->running = 0;
     if (global_context->dmxCtx) {
       global_context->dmxCtx->running = 0;
     }
-    keepRunning = 0; // Variable globale du module DMX
   }
+  keepRunning = 0; // Variable globale du module DMX
 
-  // Terminer immédiatement l'application
+  // Forcer la terminaison immédiate sans attendre les threads
   printf("\nForced exit!\n");
-  _exit(0); // Sortie brutale mais garantie
+  fflush(stdout);
+
+  // Tuer le processus avec SIGKILL (ne peut pas être ignoré ou bloqué)
+  kill(getpid(), SIGKILL);
 }
 
 int main(int argc, char **argv) {
@@ -205,6 +219,7 @@ int main(int argc, char **argv) {
   printf("Application running in CLI mode.\n");
   printf("Press Ctrl+C to stop the application.\n");
   printf("========================================================\n");
+  fflush(stdout); // S'assurer que tout est affiché immédiatement
 
   /* Boucle principale pour le mode CLI */
   while (running && context.running && app_running) {
