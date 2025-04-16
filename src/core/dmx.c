@@ -1,4 +1,6 @@
+#ifdef __APPLE__
 #include <IOKit/serial/ioss.h>
+#endif
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
@@ -215,6 +217,9 @@ int init_Dmx(const char *port, int silent) {
   }
 
   speed_t speed = 9600; // Remplacez par B115200 si nécessaire
+
+#ifdef __APPLE__
+  // MacOS utilise IOSSIOSPEED pour définir des baudrates personnalisés
   if (ioctl(fd, IOSSIOSPEED, &speed) < 0) {
     if (!silent)
       perror("Error setting custom baud rate");
@@ -222,6 +227,13 @@ int init_Dmx(const char *port, int silent) {
     if (!silent)
       printf("Custom baud rate set successfully!\n");
   }
+#else
+  // Sur Linux, on utilise les constantes B* standard
+  cfsetispeed(&tty, B9600);
+  cfsetospeed(&tty, B9600);
+  if (!silent)
+    printf("Standard baud rate set\n");
+#endif
 
   if (!silent)
     printf("Baud rate after setting: %lu\n", cfgetispeed(&tty));
@@ -251,12 +263,24 @@ int init_Dmx(const char *port, int silent) {
   }
 
   speed = DMX_BAUD;
+#ifdef __APPLE__
   if (ioctl(fd, IOSSIOSPEED, &speed) < 0) {
     if (!silent)
       perror("Error setting custom baud rate");
     close(fd);
     return -1;
   }
+#else
+  // Sur Linux, on utilise les constantes B* standard
+  cfsetispeed(&tty, B250000); // DMX_BAUD: 250000
+  cfsetospeed(&tty, B250000);
+  if (tcsetattr(fd, TCSANOW, &tty) != 0) {
+    if (!silent)
+      perror("Error setting DMX baud rate");
+    close(fd);
+    return -1;
+  }
+#endif
 
   if (!silent)
     printf("Serial port opened and configured successfully.\n");

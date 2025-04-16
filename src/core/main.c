@@ -7,8 +7,34 @@
 #include "multithreading.h"
 #include "synth.h"
 #include "udp.h"
+
+#ifdef __LINUX__
+// Vérifier si SFML est désactivé
+#ifdef NO_SFML
+// Structures de base pour les horloges
+typedef struct {
+  unsigned long long microseconds;
+} sfTime;
+
+typedef struct sfClock sfClock;
+sfClock *sfClock_create(void) { return NULL; }
+void sfClock_destroy(sfClock *clock) { (void)clock; }
+sfTime sfClock_getElapsedTime(const sfClock *clock) {
+  (void)clock;
+  sfTime time = {0};
+  return time;
+}
+void sfClock_restart(sfClock *clock) { (void)clock; }
+#else
+// SFML disponible sur Linux
 #include <SFML/Graphics.h>
 #include <SFML/Network.h>
+#endif
+#else
+// macOS a toujours SFML
+#include <SFML/Graphics.h>
+#include <SFML/Network.h>
+#endif
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>

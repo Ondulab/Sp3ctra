@@ -93,8 +93,20 @@ macx {
 
 # Configuration pour Jetson Nano (Linux ARM)
 linux-g++ {
+    # Définir que nous sommes sur Linux
+    DEFINES += __LINUX__
+    
     # Dépendances pour Linux
-    LIBS += -lfftw3 -lsndfile -lsfml-graphics -lsfml-window -lsfml-system -lcsfml-graphics -lcsfml-window -lcsfml-system
+    LIBS += -lfftw3 -lsndfile
+    
+    # Vérifier si SFML est disponible
+    system("pkg-config --exists sfml-graphics") {
+        message("SFML trouvé, inclusion des bibliothèques SFML")
+        LIBS += -lsfml-graphics -lsfml-window -lsfml-system -lcsfml-graphics -lcsfml-window -lcsfml-system
+    } else {
+        message("SFML non trouvé, désactivation des fonctionnalités graphiques")
+        DEFINES += NO_SFML
+    }
     
     # Threads POSIX
     LIBS += -lpthread

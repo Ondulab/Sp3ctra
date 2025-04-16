@@ -12,8 +12,10 @@
 /**************************************************************************************
  * Mode Definitions
  **************************************************************************************/
-/* Uncomment to enable CLI mode (no GUI window) */
+/* CLI_MODE est défini soit ici, soit par le compilateur via -DCLI_MODE */
+#ifndef CLI_MODE
 #define CLI_MODE
+#endif
 
 /**************************************************************************************
  * CIS Definitions

@@ -5,8 +5,23 @@
 #include "config.h"
 #include "dmx.h"
 #include "doublebuffer.h"
+
+#ifdef __LINUX__
+// Vérifier si SFML est désactivé
+#ifdef NO_SFML
+// Déclarations simplifiées pour compilation sans SFML
+typedef void sfRenderWindow;
+typedef void sfEvent;
+#else
+// SFML disponible sur Linux
 #include <SFML/Graphics.h>
 #include <SFML/Network.h>
+#endif
+#else
+// macOS a toujours SFML
+#include <SFML/Graphics.h>
+#include <SFML/Network.h>
+#endif
 
 typedef struct {
   int fd;
