@@ -1,7 +1,7 @@
 /* multithreading.c */
 
 #include "multithreading.h"
-#include "audio.h"
+#include "audio_c_api.h"
 #include "config.h"
 #include "context.h"
 #include "display.h"
@@ -107,8 +107,8 @@ void *udpThread(void *arg) {
 
   // Local variables for reassembling line fragments
   uint32_t currentLineId = 0;
-  bool *receivedFragments =
-      (bool *)calloc(UDP_MAX_NB_PACKET_PER_LINE, sizeof(bool));
+  int *receivedFragments =
+      (int *)calloc(UDP_MAX_NB_PACKET_PER_LINE, sizeof(int));
   if (receivedFragments == NULL) {
     perror("Error allocating receivedFragments");
     exit(EXIT_FAILURE);
@@ -128,13 +128,13 @@ void *udpThread(void *arg) {
 
     if (currentLineId != packet.line_id) {
       currentLineId = packet.line_id;
-      memset(receivedFragments, 0, packet.total_fragments * sizeof(bool));
+      memset(receivedFragments, 0, packet.total_fragments * sizeof(int));
       fragmentCount = 0;
     }
 
     uint32_t offset = packet.fragment_id * packet.fragment_size;
     if (!receivedFragments[packet.fragment_id]) {
-      receivedFragments[packet.fragment_id] = true;
+      receivedFragments[packet.fragment_id] = 1;
       fragmentCount++;
       memcpy(&db->activeBuffer_R[offset], packet.imageData_R,
              packet.fragment_size);
@@ -175,7 +175,7 @@ void *udpThread(void *arg) {
 #endif
       pthread_mutex_lock(&db->mutex);
       swapBuffers(db);
-      db->dataReady = true;
+      db->dataReady = 1;
       pthread_cond_signal(&db->cond);
       pthread_mutex_unlock(&db->mutex);
     }
@@ -253,7 +253,7 @@ void *audioProcessingThread(void *arg) {
 
     // Mark double buffer as free, swap it
     pthread_mutex_lock(&db->mutex);
-    db->dataReady = false;
+    db->dataReady = 0;
     swapBuffers(db);
     pthread_mutex_unlock(&db->mutex);
 

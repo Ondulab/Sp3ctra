@@ -1,4 +1,4 @@
-#include "audio.h"
+#include "audio_c_api.h"
 #include "config.h"
 #include "context.h"
 #include "display.h"
@@ -130,9 +130,7 @@ int main(int argc, char **argv) {
   /* Initialize UDP and Audio */
   struct sockaddr_in si_other, si_me;
 
-  AudioData audioData;
-  initAudioData(&audioData, AUDIO_CHANNEL, AUDIO_BUFFER_SIZE);
-  audio_Init(&audioData);
+  audio_Init(); // Utilise RtAudio maintenant
   synth_IfftInit();
   display_Init(window);
 
@@ -145,7 +143,10 @@ int main(int argc, char **argv) {
     return EXIT_FAILURE;
   }
 
-  OSStatus status = startAudioUnit(); // Handle status as needed
+  int status = startAudioUnit(); // RtAudio renvoie un int maintenant
+  if (status != 0) {
+    printf("Erreur lors du démarrage audio: %d\n", status);
+  }
 
   /* Create double buffer */
   DoubleBuffer db;
@@ -157,7 +158,7 @@ int main(int argc, char **argv) {
   context.socket = s;
   context.si_other = &si_other;
   context.si_me = &si_me;
-  context.audioData = &audioData;
+  context.audioData = NULL; // RtAudio gère maintenant le buffer audio
   context.doubleBuffer = &db;
   context.dmxCtx = dmxCtx;
   context.running = 1; // Flag de terminaison pour le contexte
@@ -340,8 +341,7 @@ int main(int argc, char **argv) {
   }
 #endif
 
-  audio_Cleanup();
-  cleanupAudioData(&audioData);
+  audio_Cleanup(); // Nettoyage de RtAudio
 
 #ifndef CLI_MODE
   sfTexture_destroy(backgroundTexture);

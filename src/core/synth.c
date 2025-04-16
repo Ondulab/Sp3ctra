@@ -17,7 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "audio.h"
+#include "audio_c_api.h"
 #include "error.h"
 #include "shared.h"
 #include "synth.h"
@@ -534,25 +534,24 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     pthread_cond_wait(&buffers_R[index].cond, &buffers_R[index].mutex);
   }
   pthread_mutex_unlock(&buffers_R[index].mutex);
+
 #if 1
   greyScale(buffer_R, buffer_G, buffer_B, g_grayScale, CIS_MAX_PIXELS_NB);
-
   synth_IfftMode(g_grayScale, buffers_R[index].data); // Process synthesis
 #endif
 
 #if 0
-    // Remplissage du buffer
-    for (int i = 0; i < AUDIO_BUFFER_SIZE; i++)
-    {
-        buffers_R[index].data[i] = sinf(phase);
-        phase += (TWO_PI * 440) / SAMPLING_FREQUENCY;
+  // Génération d'une onde sinusoïdale simple pour test audio
+  for (int i = 0; i < AUDIO_BUFFER_SIZE; i++) {
+    buffers_R[index].data[i] = sinf(phase);
+    phase += (TWO_PI * 440) / SAMPLING_FREQUENCY;
 
-        // si on veut empêcher phase de devenir trop grand
-        if (phase >= TWO_PI)
-        {
-            phase -= TWO_PI;
-        }
+    // Éviter que phase devienne trop grand
+    if (phase >= TWO_PI) {
+      phase -= TWO_PI;
     }
+  }
+  printf("Test audio: génération sinusoïdale dans buffer[%d]\n", index);
 #endif
 
   // Marquer le buffer comme prêt

@@ -1,7 +1,10 @@
 #ifndef DMX_H
 #define DMX_H
 
+#include "config.h"
+#include <signal.h> // for sig_atomic_t
 #include <stddef.h> // for size_t
+#include <stdint.h> // for uint8_t
 
 typedef struct {
   // uint8_t channel;  // Start
