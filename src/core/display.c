@@ -6,6 +6,7 @@
 //
 
 #include "config.h"
+#include <stdint.h> // Pour uint8_t, uint32_t et autres types entiers de taille fixe
 
 #ifdef __LINUX__
 // Vérifier si SFML est désactivé

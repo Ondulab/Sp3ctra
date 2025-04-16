@@ -6,6 +6,7 @@
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdint.h> // Pour uint8_t, uint32_t et autres types entiers de taille fixe
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -209,11 +210,19 @@ int init_Dmx(const char *port, int silent) {
   tty.c_cc[VTIME] = 10; // Timeout 1 sec
 
   if (!silent) {
+#ifdef __APPLE__
     printf("Baud rate: %lu\n", cfgetispeed(&tty));
     printf("c_cflag: 0x%lx\n", tty.c_cflag);
     printf("c_iflag: 0x%lx\n", tty.c_iflag);
     printf("c_oflag: 0x%lx\n", tty.c_oflag);
     printf("c_lflag: 0x%lx\n", tty.c_lflag);
+#else
+    printf("Baud rate: %u\n", cfgetispeed(&tty));
+    printf("c_cflag: 0x%x\n", tty.c_cflag);
+    printf("c_iflag: 0x%x\n", tty.c_iflag);
+    printf("c_oflag: 0x%x\n", tty.c_oflag);
+    printf("c_lflag: 0x%x\n", tty.c_lflag);
+#endif
   }
 
   speed_t speed = 9600; // Remplacez par B115200 si nécessaire
@@ -235,8 +244,13 @@ int init_Dmx(const char *port, int silent) {
     printf("Standard baud rate set\n");
 #endif
 
-  if (!silent)
+  if (!silent) {
+#ifdef __APPLE__
     printf("Baud rate after setting: %lu\n", cfgetispeed(&tty));
+#else
+    printf("Baud rate after setting: %u\n", cfgetispeed(&tty));
+#endif
+  }
 
   if (tcsetattr(fd, TCSANOW, &tty) != 0) {
     if (!silent) {
@@ -272,8 +286,25 @@ int init_Dmx(const char *port, int silent) {
   }
 #else
   // Sur Linux, on utilise les constantes B* standard
+  // Vérifier quel baudrate est disponible, car B250000 n'est pas standard
+  // partout
+#ifdef B250000
   cfsetispeed(&tty, B250000); // DMX_BAUD: 250000
   cfsetospeed(&tty, B250000);
+#elif defined B230400
+  // Utiliser le baudrate le plus proche
+  cfsetispeed(&tty, B230400);
+  cfsetospeed(&tty, B230400);
+  if (!silent)
+    printf("B250000 non disponible, utilisation de B230400\n");
+#else
+  // Fallback à 38400 qui est toujours disponible
+  cfsetispeed(&tty, B38400);
+  cfsetospeed(&tty, B38400);
+  if (!silent)
+    printf("Baudrates élevés non disponibles, utilisation de B38400\n");
+#endif
+
   if (tcsetattr(fd, TCSANOW, &tty) != 0) {
     if (!silent)
       perror("Error setting DMX baud rate");
