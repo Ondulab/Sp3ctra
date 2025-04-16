@@ -60,3 +60,49 @@ fastlane/.env
 *.swp
 *.swo
 *.swn
+
+# === C/C++ specific ===
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Build directories
+build_nogui/build_nogui/obj/
+build_nogui/build_nogui/moc/
+.qmake.stash
+
+# Generated binaries
+build_nogui/CISYNTH_noGUI
+CISYNTH_noGUI.app/

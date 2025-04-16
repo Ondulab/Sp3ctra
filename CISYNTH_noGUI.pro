@@ -117,3 +117,11 @@ win32 {
 
 # Définir PRINT_FPS pour afficher les informations de FPS
 DEFINES += PRINT_FPS
+
+# Supprimer -O2 du mode release
+# QMAKE_CFLAGS_RELEASE -= -O2
+# QMAKE_CXXFLAGS_RELEASE -= -O2
+
+# Ajouter Ofast
+# QMAKE_CFLAGS_RELEASE += -Ofast
+# QMAKE_CXXFLAGS_RELEASE += -Ofast
