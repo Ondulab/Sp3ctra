@@ -143,7 +143,12 @@ int32_t synth_IfftInit(void) {
 
   // start with random index
   for (uint32_t i = 0; i < NUMBER_OF_NOTES; i++) {
+#ifdef __APPLE__
     uint32_t aRandom32bit = arc4random();
+#else
+    // Use standard random function on Linux
+    uint32_t aRandom32bit = rand();
+#endif
     waves[i].current_idx = aRandom32bit % waves[i].area_size;
     waves[i].current_volume = 0;
   }
