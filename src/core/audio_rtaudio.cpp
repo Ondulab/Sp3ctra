@@ -125,12 +125,11 @@ bool AudioSystem::initialize() {
   options.numberOfBuffers = 2; // Valeur minimale pour la latence
 
   // Ouvrir le flux audio avec les options de faible latence
-  RtAudioErrorType error =
-      audio->openStream(&params, nullptr, RTAUDIO_FLOAT32, sampleRate,
-                        &bufferSize, &AudioSystem::rtCallback, this, &options);
-
-  if (error != RtAudioErrorType::RTAUDIO_NO_ERROR) {
-    std::cerr << "Erreur RtAudio: " << audio->getErrorText() << std::endl;
+  try {
+    audio->openStream(&params, nullptr, RTAUDIO_FLOAT32, sampleRate,
+                      &bufferSize, &AudioSystem::rtCallback, this, &options);
+  } catch (std::exception &e) {
+    std::cerr << "Erreur RtAudio: " << e.what() << std::endl;
     return false;
   }
 
@@ -148,10 +147,10 @@ bool AudioSystem::start() {
   if (!audio || !audio->isStreamOpen())
     return false;
 
-  RtAudioErrorType error = audio->startStream();
-  if (error != RtAudioErrorType::RTAUDIO_NO_ERROR) {
-    std::cerr << "Erreur démarrage RtAudio: " << audio->getErrorText()
-              << std::endl;
+  try {
+    audio->startStream();
+  } catch (std::exception &e) {
+    std::cerr << "Erreur démarrage RtAudio: " << e.what() << std::endl;
     return false;
   }
 
@@ -162,10 +161,10 @@ bool AudioSystem::start() {
 // Arrêt du flux audio
 void AudioSystem::stop() {
   if (audio && audio->isStreamRunning()) {
-    RtAudioErrorType error = audio->stopStream();
-    if (error != RtAudioErrorType::RTAUDIO_NO_ERROR) {
-      std::cerr << "Erreur arrêt RtAudio: " << audio->getErrorText()
-                << std::endl;
+    try {
+      audio->stopStream();
+    } catch (std::exception &e) {
+      std::cerr << "Erreur arrêt RtAudio: " << e.what() << std::endl;
     }
     isRunning = false;
   }
@@ -234,23 +233,16 @@ bool AudioSystem::setDevice(unsigned int deviceId) {
   options.numberOfBuffers = 2;
 
   // Ouvrir le flux audio avec les options de faible latence
-  RtAudioErrorType error =
-      audio->openStream(&params, nullptr, RTAUDIO_FLOAT32, sampleRate,
-                        &bufferSize, &AudioSystem::rtCallback, this, &options);
+  try {
+    audio->openStream(&params, nullptr, RTAUDIO_FLOAT32, sampleRate,
+                      &bufferSize, &AudioSystem::rtCallback, this, &options);
 
-  if (error != RtAudioErrorType::RTAUDIO_NO_ERROR) {
-    std::cerr << "Erreur changement périphérique: " << audio->getErrorText()
-              << std::endl;
-    return false;
-  }
-
-  if (wasRunning) {
-    error = audio->startStream();
-    if (error != RtAudioErrorType::RTAUDIO_NO_ERROR) {
-      std::cerr << "Erreur redémarrage après changement: "
-                << audio->getErrorText() << std::endl;
-      return false;
+    if (wasRunning) {
+      audio->startStream();
     }
+  } catch (std::exception &e) {
+    std::cerr << "Erreur changement périphérique: " << e.what() << std::endl;
+    return false;
   }
 
   return true;
