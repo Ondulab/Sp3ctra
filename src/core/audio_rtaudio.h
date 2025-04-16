@@ -49,6 +49,9 @@ public:
   bool setDevice(unsigned int deviceId);
   unsigned int getCurrentDevice() const;
 
+  // Accesseur pour l'objet RtAudio (à utiliser avec précaution)
+  RtAudio *getAudioDevice() const { return audio; }
+
   // Paramètres de latence
   bool setBufferSize(unsigned int size);
   unsigned int getBufferSize() const;

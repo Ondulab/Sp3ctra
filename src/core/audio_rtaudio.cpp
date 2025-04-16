@@ -381,4 +381,30 @@ void stopAudioUnit() {
   }
 }
 
+// Lister les périphériques audio disponibles
+void printAudioDevices() {
+  if (!gAudioSystem || !gAudioSystem->getAudioDevice()) {
+    printf("Système audio non initialisé\n");
+    return;
+  }
+
+  std::vector<std::string> devices = gAudioSystem->getAvailableDevices();
+  unsigned int defaultDevice =
+      gAudioSystem->getAudioDevice()->getDefaultOutputDevice();
+
+  printf("Périphériques audio disponibles:\n");
+  for (unsigned int i = 0; i < devices.size(); i++) {
+    printf("  [%d] %s %s\n", i, devices[i].c_str(),
+           (i == defaultDevice) ? "(défaut)" : "");
+  }
+}
+
+// Définir le périphérique audio actif
+int setAudioDevice(unsigned int deviceId) {
+  if (gAudioSystem) {
+    return gAudioSystem->setDevice(deviceId) ? 1 : 0;
+  }
+  return 0;
+}
+
 } // extern "C"

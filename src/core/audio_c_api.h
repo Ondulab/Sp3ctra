@@ -52,6 +52,8 @@ void cleanupAudioData(AudioData *audioData);
 void audio_Cleanup(void);
 int startAudioUnit(void);
 void stopAudioUnit(void);
+void printAudioDevices(void);
+int setAudioDevice(unsigned int deviceId);
 
 #ifdef __cplusplus
 }

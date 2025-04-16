@@ -93,6 +93,8 @@ int main(int argc, char **argv) {
   int use_dmx = 1;                 // Par défaut, on active le DMX
   int silent_dmx = 0;              // Par défaut, on affiche les messages DMX
   const char *dmx_port = DMX_PORT; // Port DMX par défaut
+  int list_audio_devices = 0;      // Afficher les périphériques audio
+  int audio_device_id = -1;        // -1 = utiliser le périphérique par défaut
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--cli") == 0) {
@@ -109,6 +111,12 @@ int main(int argc, char **argv) {
     } else if (strcmp(argv[i], "--silent-dmx") == 0) {
       silent_dmx = 1;
       printf("DMX messages silenced\n");
+    } else if (strcmp(argv[i], "--list-audio-devices") == 0) {
+      list_audio_devices = 1;
+      printf("Will list audio devices\n");
+    } else if (strncmp(argv[i], "--audio-device=", 15) == 0) {
+      audio_device_id = atoi(argv[i] + 15);
+      printf("Using audio device: %d\n", audio_device_id);
     }
   }
 
@@ -157,6 +165,31 @@ int main(int argc, char **argv) {
   struct sockaddr_in si_other, si_me;
 
   audio_Init(); // Utilise RtAudio maintenant
+
+  // Traiter les options audio
+  if (list_audio_devices) {
+    printAudioDevices();
+    // Si on a demandé uniquement la liste des périphériques, on quitte
+    if (argc == 2) {
+      audio_Cleanup();
+      close(dmxCtx->fd);
+      free(dmxCtx);
+      return EXIT_SUCCESS;
+    }
+  }
+
+  // Sélectionner le périphérique audio si spécifié
+  if (audio_device_id >= 0) {
+    if (!setAudioDevice(audio_device_id)) {
+      printf("Erreur: Impossible d'utiliser le périphérique audio %d. "
+             "Utilisation du périphérique par défaut.\n",
+             audio_device_id);
+    } else {
+      printf("Périphérique audio %d sélectionné avec succès.\n",
+             audio_device_id);
+    }
+  }
+
   synth_IfftInit();
   display_Init(window);
 
