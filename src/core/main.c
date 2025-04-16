@@ -268,7 +268,7 @@ int main(int argc, char **argv) {
   }
 
   struct sched_param param;
-  param.sched_priority = 80; // Choisir une priorité adaptée
+  param.sched_priority = 50; // Priorité plus modérée pour le Jetson Nano
   pthread_setschedparam(audioThreadId, SCHED_RR, &param);
 
   /* Main loop (gestion des événements et rendu) */

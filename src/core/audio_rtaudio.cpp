@@ -119,10 +119,12 @@ bool AudioSystem::initialize() {
   params.nChannels = channels;
   params.firstChannel = 0;
 
-  // Options pour optimiser la latence
+  // Options pour optimiser la stabilité sur Jetson Nano
   RtAudio::StreamOptions options;
-  options.flags = RTAUDIO_NONINTERLEAVED | RTAUDIO_MINIMIZE_LATENCY;
-  options.numberOfBuffers = 2; // Valeur minimale pour la latence
+  options.flags =
+      RTAUDIO_NONINTERLEAVED; // Suppression de RTAUDIO_MINIMIZE_LATENCY
+  options.numberOfBuffers =
+      4; // Augmentation du nombre de buffers pour plus de stabilité
 
   // Ouvrir le flux audio avec les options de faible latence
   try {
@@ -227,10 +229,12 @@ bool AudioSystem::setDevice(unsigned int deviceId) {
   params.nChannels = channels;
   params.firstChannel = 0;
 
-  // Options pour optimiser la latence
+  // Options pour optimiser la stabilité sur Jetson Nano
   RtAudio::StreamOptions options;
-  options.flags = RTAUDIO_NONINTERLEAVED | RTAUDIO_MINIMIZE_LATENCY;
-  options.numberOfBuffers = 2;
+  options.flags =
+      RTAUDIO_NONINTERLEAVED; // Suppression de RTAUDIO_MINIMIZE_LATENCY
+  options.numberOfBuffers =
+      4; // Augmentation du nombre de buffers pour plus de stabilité
 
   // Ouvrir le flux audio avec les options de faible latence
   try {
