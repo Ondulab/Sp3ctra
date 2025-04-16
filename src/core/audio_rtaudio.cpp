@@ -27,45 +27,58 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   float *outLeft = outputBuffer;
   float *outRight = outputBuffer + nFrames;
 
-  // Récupérer l'index du buffer actuel
-  int index = __atomic_load_n(&current_buffer_index, __ATOMIC_RELAXED);
-  int otherIndex = 1 - index; // L'autre buffer
+  // Variables statiques pour maintenir l'état entre les appels
+  static unsigned int readOffset =
+      0; // Combien de frames ont été consommées dans le buffer actuel
+  static int localReadIndex = 0; // Quel buffer on lit actuellement (indépendant
+                                 // de current_buffer_index)
 
-  bool bufferReady = false;
+  unsigned int framesToRender = nFrames;
 
-  // Vérifier si un buffer est prêt
-  pthread_mutex_lock(&buffers_R[otherIndex].mutex);
-  if (buffers_R[otherIndex].ready) {
-    bufferReady = true;
-  }
-  pthread_mutex_unlock(&buffers_R[otherIndex].mutex);
-
-  // Si un buffer est prêt, l'utiliser
-  if (bufferReady) {
-    // Copier les données du buffer vers la sortie audio
-    unsigned int copySize = std::min((unsigned int)AUDIO_BUFFER_SIZE, nFrames);
-
-    for (unsigned int i = 0; i < copySize; i++) {
-      outLeft[i] = buffers_R[otherIndex].data[i];
-      outRight[i] =
-          buffers_R[otherIndex].data[i]; // Même signal pour les deux canaux
+  // Traitement des frames demandées, potentiellement en utilisant plusieurs
+  // buffers
+  while (framesToRender > 0) {
+    // Si le buffer actuel n'est pas prêt = underrun
+    if (buffers_R[localReadIndex].ready != 1) {
+      // On génère du silence uniquement pour le reste manquant, pas le buffer
+      // entier
+      memset(outLeft, 0, framesToRender * sizeof(float));
+      memset(outRight, 0, framesToRender * sizeof(float));
+      break; // On sort, mais sans erreur - juste du silence pour cette partie
     }
 
-    // Remplir le reste avec du silence si nécessaire
-    if (copySize < nFrames) {
-      memset(outLeft + copySize, 0, (nFrames - copySize) * sizeof(float));
-      memset(outRight + copySize, 0, (nFrames - copySize) * sizeof(float));
-    }
+    // Combien de frames reste-t-il dans le buffer actuel?
+    unsigned int framesAvailable = AUDIO_BUFFER_SIZE - readOffset;
 
-    // Marquer le buffer comme libre
-    pthread_mutex_lock(&buffers_R[otherIndex].mutex);
-    buffers_R[otherIndex].ready = 0;
-    pthread_cond_signal(&buffers_R[otherIndex].cond);
-    pthread_mutex_unlock(&buffers_R[otherIndex].mutex);
-  } else {
-    // Si aucun buffer n'est prêt, générer du silence
-    memset(outLeft, 0, nFrames * sizeof(float));
-    memset(outRight, 0, nFrames * sizeof(float));
+    // On consomme soit tout ce qui reste, soit ce dont on a besoin
+    unsigned int chunk =
+        (framesToRender < framesAvailable) ? framesToRender : framesAvailable;
+
+    // Copie du morceau de buffer vers la sortie audio
+    memcpy(outLeft, &buffers_R[localReadIndex].data[readOffset],
+           chunk * sizeof(float));
+    memcpy(outRight, &buffers_R[localReadIndex].data[readOffset],
+           chunk * sizeof(float));
+
+    // Avancer les pointeurs
+    outLeft += chunk;
+    outRight += chunk;
+    readOffset += chunk;
+    framesToRender -= chunk;
+
+    // Si on a consommé tout le buffer, on le marque comme libre et on passe au
+    // suivant
+    if (readOffset >= AUDIO_BUFFER_SIZE) {
+      // Terminé avec ce buffer
+      pthread_mutex_lock(&buffers_R[localReadIndex].mutex);
+      buffers_R[localReadIndex].ready = 0;
+      pthread_cond_signal(&buffers_R[localReadIndex].cond);
+      pthread_mutex_unlock(&buffers_R[localReadIndex].mutex);
+
+      // Passage au buffer suivant
+      localReadIndex = (localReadIndex == 0) ? 1 : 0;
+      readOffset = 0;
+    }
   }
 
   return 0;
