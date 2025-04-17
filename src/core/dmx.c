@@ -19,14 +19,24 @@
 #include "dmx.h"
 
 // DMX addresses for each spot (3 channels per spot)
-const uint8_t spotChannels[DMX_NUM_SPOTS] = {10, 20, 30, 40, 50};
+// Configuration pour Stairville Show Bar Tri LED 18x3W RGB
+// Adresse de départ: 1, mode 54 canaux pour contrôle individuel des 18 LEDs
+// Canaux 1-3 : RGB pour LED 1, canaux 4-6 : RGB pour LED 2, etc.
+const uint8_t spotChannels[DMX_NUM_SPOTS] = {
+    1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 37, 40, 43, 46, 49, 52};
 
 volatile sig_atomic_t keepRunning = 1;
 int fd;
 
+// Cette fonction est maintenant déclarée externe pour éviter la duplication
+// avec le gestionnaire principal dans main.c
+extern void signalHandler(int signal);
+
 void intHandler(int dummy) {
   (void)dummy;
   keepRunning = 0;
+  // Appel au gestionnaire principal pour assurer une terminaison complète
+  signalHandler(dummy);
 }
 
 void computeAverageColorPerZone(const uint8_t *buffer_R,
@@ -163,8 +173,8 @@ int init_Dmx(const char *port, int silent) {
   int fd;
   struct termios tty;
 
-  // Handle Ctrl+C
-  signal(SIGINT, intHandler);
+  // Ne pas installer de gestionnaire de signal ici
+  // Le gestionnaire principal dans main.c s'en occupe déjà
 
   // Open serial port
   fd = open(port, O_RDWR | O_NOCTTY | O_NONBLOCK);

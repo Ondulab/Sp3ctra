@@ -204,6 +204,11 @@ void *dmxSendingThread(void *arg) {
       break;
     }
 
+    // Vérifier immédiatement si un signal d'arrêt a été reçu
+    if (!dmxCtx->running || !keepRunning) {
+      break;
+    }
+
     // Réinitialiser la trame DMX et définir le start code
     memset(frame, 0, DMX_FRAME_SIZE);
     frame[0] = 0;
@@ -221,8 +226,9 @@ void *dmxSendingThread(void *arg) {
       }
     }
 
-    // Envoyer la trame DMX seulement si le fd est valide
-    if (dmxCtx->fd >= 0 &&
+    // Envoyer la trame DMX seulement si le fd est valide et que l'application
+    // est toujours en cours d'exécution
+    if (dmxCtx->running && keepRunning && dmxCtx->fd >= 0 &&
         send_dmx_frame(dmxCtx->fd, frame, DMX_FRAME_SIZE) < 0) {
       perror("Error sending DMX frame");
       // En cas d'erreur répétée, on peut quitter le thread
@@ -232,8 +238,17 @@ void *dmxSendingThread(void *arg) {
       }
     }
 
-    usleep(25000);
+    // Utiliser un sleep interruptible qui vérifie périodiquement si un signal
+    // d'arrêt a été reçu
+    for (int i = 0; i < 5; i++) { // 5 * 5ms = 25ms total
+      if (!dmxCtx->running || !keepRunning) {
+        break;
+      }
+      usleep(5000); // 5ms
+    }
   }
+
+  printf("DMX thread terminating...\n");
 
   // Fermer le descripteur de fichier seulement s'il est valide
   if (dmxCtx->fd >= 0) {

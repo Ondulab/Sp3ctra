@@ -51,6 +51,8 @@ volatile sig_atomic_t app_running = 1;
 Context *global_context =
     NULL; // Contexte global pour le gestionnaire de signaux
 
+// Rendre le gestionnaire de signal visible pour les autres modules (comme
+// dmx.c)
 void signalHandler(int signal) {
   static volatile sig_atomic_t already_called = 0;
 
@@ -95,13 +97,18 @@ int main(int argc, char **argv) {
   const char *dmx_port = DMX_PORT; // Port DMX par défaut
   int list_audio_devices = 0;      // Afficher les périphériques audio
   int audio_device_id = -1;        // -1 = utiliser le périphérique par défaut
+  int use_sfml_window = 0; // Par défaut, pas de fenêtre SFML en mode CLI
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--cli") == 0) {
-      printf("Running in CLI mode (no GUI window)\n");
+      printf(
+          "Running in CLI mode (no GUI window unless --sfml-window is used)\n");
 #ifndef CLI_MODE
 #define CLI_MODE
 #endif
+    } else if (strcmp(argv[i], "--sfml-window") == 0) {
+      use_sfml_window = 1;
+      printf("SFML window enabled (visual display will be shown)\n");
     } else if (strcmp(argv[i], "--no-dmx") == 0) {
       use_dmx = 0;
       printf("DMX disabled\n");
@@ -151,6 +158,7 @@ int main(int argc, char **argv) {
   sfRenderWindow *window = NULL;
 
 #ifndef CLI_MODE
+  // Mode GUI normal, toujours créer la fenêtre
   window =
       sfRenderWindow_create(mode, "CSFML Viewer", sfResize | sfClose, NULL);
   if (!window) {
@@ -158,6 +166,18 @@ int main(int argc, char **argv) {
     close(dmxCtx->fd);
     free(dmxCtx);
     return EXIT_FAILURE;
+  }
+#else
+  // Mode CLI, mais avec option de fenêtre SFML si demandée
+  if (use_sfml_window) {
+    window = sfRenderWindow_create(mode, "CISYNTH SFML Viewer",
+                                   sfResize | sfClose, NULL);
+    if (!window) {
+      perror("Error creating CSFML window");
+      close(dmxCtx->fd);
+      free(dmxCtx);
+      return EXIT_FAILURE;
+    }
   }
 #endif
 
@@ -232,12 +252,23 @@ int main(int argc, char **argv) {
   sfSprite *foregroundSprite = NULL;
 
 #ifndef CLI_MODE
+  // Mode GUI normal, toujours créer les textures
   backgroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
   foregroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
   backgroundSprite = sfSprite_create();
   foregroundSprite = sfSprite_create();
   sfSprite_setTexture(backgroundSprite, backgroundTexture, sfTrue);
   sfSprite_setTexture(foregroundSprite, foregroundTexture, sfTrue);
+#else
+  // Mode CLI, mais avec option de fenêtre SFML si demandée
+  if (use_sfml_window) {
+    backgroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
+    foregroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
+    backgroundSprite = sfSprite_create();
+    foregroundSprite = sfSprite_create();
+    sfSprite_setTexture(backgroundSprite, backgroundTexture, sfTrue);
+    sfSprite_setTexture(foregroundSprite, foregroundTexture, sfTrue);
+  }
 #endif
 
   /* Create threads for UDP, Audio, and DMX (pas de thread d'affichage) */
@@ -281,12 +312,29 @@ int main(int argc, char **argv) {
   /* En mode CLI, gérer les signaux pour l'arrêt propre (CTRL+C) */
   printf("========================================================\n");
   printf("Application running in CLI mode.\n");
+  if (use_sfml_window) {
+    printf("SFML window enabled for visual display.\n");
+  } else {
+    printf("No visual display (use --sfml-window to enable).\n");
+  }
   printf("Press Ctrl+C to stop the application.\n");
   printf("========================================================\n");
   fflush(stdout); // S'assurer que tout est affiché immédiatement
 
   /* Boucle principale pour le mode CLI */
   while (running && context.running && app_running) {
+    /* Gérer les événements SFML si la fenêtre est active */
+    if (use_sfml_window && window) {
+      sfEvent event;
+      while (sfRenderWindow_pollEvent(window, &event)) {
+        if (event.type == sfEvtClosed) {
+          sfRenderWindow_close(window);
+          context.running = 0;
+          dmxCtx->running = 0;
+        }
+      }
+    }
+
     /* Vérifier si le double buffer contient de nouvelles données */
     pthread_mutex_lock(&db.mutex);
     int dataReady = db.dataReady;
@@ -296,6 +344,13 @@ int main(int argc, char **argv) {
     pthread_mutex_unlock(&db.mutex);
 
     if (dataReady) {
+      /* Rendu de la nouvelle ligne si SFML est activé */
+      if (use_sfml_window && window) {
+        printImageRGB(window, db.processingBuffer_R, db.processingBuffer_G,
+                      db.processingBuffer_B, backgroundTexture,
+                      foregroundTexture);
+      }
+
       /* Calcul de la couleur moyenne et mise à jour du contexte DMX */
       DMXSpot zoneSpots[DMX_NUM_SPOTS];
       computeAverageColorPerZone(db.processingBuffer_R, db.processingBuffer_G,
@@ -402,12 +457,23 @@ int main(int argc, char **argv) {
 
   audio_Cleanup(); // Nettoyage de RtAudio
 
+  /* Nettoyage des ressources graphiques */
 #ifndef CLI_MODE
+  // Mode GUI normal, toujours nettoyer
   sfTexture_destroy(backgroundTexture);
   sfTexture_destroy(foregroundTexture);
   sfSprite_destroy(backgroundSprite);
   sfSprite_destroy(foregroundSprite);
   sfRenderWindow_destroy(window);
+#else
+  // Mode CLI, nettoyer seulement si la fenêtre SFML était utilisée
+  if (use_sfml_window) {
+    sfTexture_destroy(backgroundTexture);
+    sfTexture_destroy(foregroundTexture);
+    sfSprite_destroy(backgroundSprite);
+    sfSprite_destroy(foregroundSprite);
+    sfRenderWindow_destroy(window);
+  }
 #endif
 
   return 0;
