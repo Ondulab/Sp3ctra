@@ -23,10 +23,6 @@
 #define CIS_400DPI_PIXELS_NB (3456)
 #define CIS_200DPI_PIXELS_NB (1728)
 
-// NOTE: The macro CIS_400DPI_PIXELS_PER_LANE is undefined.
-// Uncomment and define it if needed:
-// #define CIS_MAX_PIXELS_PER_LANE                (CIS_400DPI_PIXELS_PER_LANE)
-
 #define UDP_MAX_NB_PACKET_PER_LINE (12)
 #define CIS_MAX_PIXELS_NB (CIS_400DPI_PIXELS_NB)
 
@@ -56,18 +52,52 @@
 #define DMX_GREEN_FACTOR (1)
 #define DMX_BLUE_FACTOR (1)
 
+#define DMX_SATURATION_FACTOR (2.2) // 1.8 Color saturation factor
+
 #define DMX_SMOOTHING_FACTOR (0.95)
 
-#define DMX_GAMMA (1.7)
+#define DMX_GAMMA (1.2)
 
-#define DMX_NUM_SPOTS (5) // Nombre de spots DMX à gérer
+// Paramètres pour la courbe de réponse progressive
+#define DMX_BLACK_THRESHOLD                                                    \
+  (0.1) // Seuil en dessous duquel les LEDs restent éteintes (0-1)
+#define DMX_RESPONSE_CURVE (2.0) // Contrôle l'inflexion de la courbe log/exp
+
+// Paramètres pour la détection des éléments significatifs et le chevauchement
+// des zones
+#define DMX_ZONE_OVERLAP (0.3) // Facteur de chevauchement entre zones (0-1)
+#define DMX_WHITE_THRESHOLD                                                    \
+  (220) // Valeur en dessous de laquelle un pixel n'est pas considéré comme
+        // blanc
+#define DMX_SIGNIFICANT_WEIGHT                                                 \
+  (5.0) // Poids des pixels non-blancs par rapport aux pixels blancs
+
+// Paramètres pour la détection des blobs
+#define DMX_MIN_BLOB_SIZE                                                      \
+  (5) // Taille minimale d'un blob pour être considéré (en pixels)
+#define DMX_COLOR_SIMILARITY_THRESHOLD                                         \
+  (1500) // Seuil de similarité de couleur (distance euclidienne au carré)
+#define DMX_MAX_BLOBS_PER_ZONE (10) // Nombre maximum de blobs par zone
+#define DMX_MAX_ZONE_SIZE (500) // Taille maximum d'une zone avec chevauchement
+
+// Paramètres pour la stabilisation des zones sombres/noires
+#define DMX_LOW_INTENSITY_THRESHOLD                                            \
+  (0.15) // Seuil d'intensité considéré comme "faible"
+#define DMX_DARK_SMOOTHING_FACTOR                                              \
+  (0.98) // Lissage plus fort pour les zones sombres (0-1)
+#define DMX_UNIFORM_THRESHOLD                                                  \
+  (10.0) // Seuil pour considérer une zone comme uniforme
+#define DMX_MIN_STD_DEV                                                        \
+  (0.05) // Écart-type minimal pour considérer des variations significatives
+
+#define DMX_NUM_SPOTS (18) // Nombre de spots DMX à gérer
 
 /**************************************************************************************
  * DAC Definitions
  **************************************************************************************/
 #define SAMPLING_FREQUENCY (48000)
 #define AUDIO_CHANNEL (2)
-#define AUDIO_BUFFER_SIZE (1024)
+#define AUDIO_BUFFER_SIZE (256)
 
 /**************************************************************************************
  * Image Definitions
