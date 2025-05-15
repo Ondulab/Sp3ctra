@@ -3,6 +3,7 @@
 #ifndef AUDIO_RTAUDIO_H
 #define AUDIO_RTAUDIO_H
 
+#include "audio_c_api.h"
 #include "config.h"
 #include <atomic>
 #include <mutex>
@@ -29,6 +30,9 @@ private:
   // Callback de l'instance
   int handleCallback(float *outputBuffer, unsigned int nFrames);
 
+  // Volume control
+  float masterVolume;
+
 public:
   AudioSystem(unsigned int sampleRate = SAMPLING_FREQUENCY,
               unsigned int bufferSize = AUDIO_BUFFER_SIZE,
@@ -52,6 +56,10 @@ public:
   // Accesseur pour l'objet RtAudio (à utiliser avec précaution)
   RtAudio *getAudioDevice() const { return audio; }
 
+  // Volume control
+  void setMasterVolume(float volume);
+  float getMasterVolume() const;
+
   // Paramètres de latence
   bool setBufferSize(unsigned int size);
   unsigned int getBufferSize() const;
@@ -62,7 +70,7 @@ extern AudioSystem *gAudioSystem;
 
 // Ces fonctions peuvent être conservées pour la compatibilité
 extern "C" {
-void audio_Init();
+void audio_Init(void);
 void audio_Cleanup();
 int startAudioUnit();
 void stopAudioUnit();

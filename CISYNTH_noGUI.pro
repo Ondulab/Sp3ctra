@@ -41,11 +41,13 @@ SOURCES += \
     src/core/synth.c \
     src/core/udp.c \
     src/core/wave_generation.c \
-    src/core/audio_rtaudio.cpp
+    src/core/audio_rtaudio.cpp \
+    src/core/midi_controller.cpp
 
 # Fichiers d'en-tête
 HEADERS += \
     src/core/audio_rtaudio.h \
+    src/core/audio_c_api.h \
     src/core/config.h \
     src/core/context.h \
     src/core/display.h \
@@ -53,6 +55,7 @@ HEADERS += \
     src/core/doublebuffer.h \
     src/core/error.h \
     src/core/multithreading.h \
+    src/core/midi_controller.h \
     src/core/shared.h \
     src/core/synth.h \
     src/core/udp.h \
@@ -70,7 +73,8 @@ macx {
         -L/opt/homebrew/Cellar/sfml@2/2.6.2_1/lib \
         -lsfml-graphics -lsfml-window -lsfml-system \
         -lcsfml-graphics -lcsfml-window -lcsfml-system \
-        -lrtaudio
+        -lrtaudio \
+        -lrtmidi
     
     # Chemins d'inclusion pour Homebrew
     INCLUDEPATH += /opt/homebrew/include
@@ -111,8 +115,8 @@ linux-g++ {
     # Threads POSIX
     LIBS += -lpthread
     
-    # Support audio
-    LIBS += -lasound -lrtaudio
+    # Support audio et MIDI
+    LIBS += -lasound -lrtaudio -lrtmidi
     
     # C++11 pour support RtAudio
     CONFIG += c++11
@@ -120,8 +124,8 @@ linux-g++ {
 
 # Configuration pour Windows (si besoin dans le futur)
 win32 {
-    # Support RtAudio Windows
-    LIBS += -lrtaudio -lole32 -lwinmm -ldsound
+    # Support RtAudio et RtMidi pour Windows
+    LIBS += -lrtaudio -lrtmidi -lole32 -lwinmm -ldsound
 }
 
 # Définir USE_DMX si nécessaire

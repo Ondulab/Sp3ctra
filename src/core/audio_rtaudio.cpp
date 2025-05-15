@@ -33,6 +33,9 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   static int localReadIndex = 0; // Quel buffer on lit actuellement (indépendant
                                  // de current_buffer_index)
 
+  // Buffer temporaire pour appliquer le volume
+  static float tempBuffer[AUDIO_BUFFER_SIZE];
+
   unsigned int framesToRender = nFrames;
 
   // Traitement des frames demandées, potentiellement en utilisant plusieurs
@@ -54,11 +57,28 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     unsigned int chunk =
         (framesToRender < framesAvailable) ? framesToRender : framesAvailable;
 
-    // Copie du morceau de buffer vers la sortie audio
-    memcpy(outLeft, &buffers_R[localReadIndex].data[readOffset],
+    // Copier les données dans un buffer temporaire et appliquer le volume
+    memcpy(tempBuffer, &buffers_R[localReadIndex].data[readOffset],
            chunk * sizeof(float));
-    memcpy(outRight, &buffers_R[localReadIndex].data[readOffset],
-           chunk * sizeof(float));
+
+    // Appliquer le volume master (avec log pour le débogage)
+    static float lastLoggedVolume = -1.0f;
+    float currentVolume = this->masterVolume;
+
+    // Log le volume seulement s'il a changé significativement
+    if (fabs(currentVolume - lastLoggedVolume) > 0.01f) {
+      std::cout << "AUDIO: Applying volume: " << currentVolume << std::endl;
+      lastLoggedVolume = currentVolume;
+    }
+
+    // Amplification avec le volume courant
+    for (unsigned int i = 0; i < chunk; i++) {
+      tempBuffer[i] *= currentVolume;
+    }
+
+    // Copie du buffer avec volume appliqué vers la sortie audio
+    memcpy(outLeft, tempBuffer, chunk * sizeof(float));
+    memcpy(outRight, tempBuffer, chunk * sizeof(float));
 
     // Avancer les pointeurs
     outLeft += chunk;
@@ -88,7 +108,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
                          unsigned int channels)
     : audio(nullptr), sampleRate(sampleRate), bufferSize(bufferSize),
-      channels(channels), isRunning(false) {
+      channels(channels), isRunning(false), masterVolume(1.0f) {
   processBuffer.resize(bufferSize * channels);
 }
 
@@ -286,6 +306,15 @@ bool AudioSystem::setBufferSize(unsigned int size) {
 
 // Récupérer la taille du buffer
 unsigned int AudioSystem::getBufferSize() const { return bufferSize; }
+
+// Set master volume (0.0 - 1.0)
+void AudioSystem::setMasterVolume(float volume) {
+  // Clamp volume entre 0.0 et 1.0
+  masterVolume = (volume < 0.0f) ? 0.0f : (volume > 1.0f) ? 1.0f : volume;
+}
+
+// Get master volume
+float AudioSystem::getMasterVolume() const { return masterVolume; }
 
 // Fonctions C pour la compatibilité avec le code existant
 extern "C" {

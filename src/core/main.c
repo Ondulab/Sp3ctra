@@ -8,6 +8,12 @@
 #include "synth.h"
 #include "udp.h"
 
+// Declaration des fonctions MIDI externes (C-compatible)
+extern void midi_Init(void);
+extern void midi_Cleanup(void);
+extern int midi_Connect(void);
+extern void midi_SetupVolumeControl(void);
+
 #ifdef __LINUX__
 // Vérifier si SFML est désactivé
 #ifdef NO_SFML
@@ -184,7 +190,23 @@ int main(int argc, char **argv) {
   /* Initialize UDP and Audio */
   struct sockaddr_in si_other, si_me;
 
-  audio_Init(); // Utilise RtAudio maintenant
+  // Initialiser l'audio (RtAudio)
+  audio_Init();
+
+  // Initialiser le contrôleur MIDI
+  midi_Init();
+
+  // Configurer le callback de volume MIDI
+  midi_SetupVolumeControl();
+
+  // Essayer de connecter au Launchkey Mini
+  if (midi_Connect()) {
+    printf("MIDI: Launchkey Mini connected\n");
+  } else {
+    printf("MIDI: No Launchkey Mini device found\n");
+    // Note: nous ne pouvons pas afficher la liste des périphériques ici car
+    // nous n'avons pas accès direct à l'objet C++ depuis C
+  }
 
   // Traiter les options audio
   if (list_audio_devices) {
@@ -455,6 +477,8 @@ int main(int argc, char **argv) {
   }
 #endif
 
+  // Nettoyage MIDI et audio
+  midi_Cleanup();
   audio_Cleanup(); // Nettoyage de RtAudio
 
   /* Nettoyage des ressources graphiques */
