@@ -236,8 +236,32 @@ typedef struct {
   double intensity;
 } SpotColor;
 
+// Calcule l'écart-type d'un ensemble de valeurs
+double calculateStandardDeviation(const uint8_t *values, size_t start,
+                                  size_t end) {
+  if (end <= start)
+    return 0.0;
+
+  // Calculer la moyenne
+  double sum = 0.0;
+  for (size_t i = start; i < end; i++) {
+    sum += values[i];
+  }
+  double mean = sum / (end - start);
+
+  // Calculer la somme des carrés des écarts
+  double sumSquaredDiff = 0.0;
+  for (size_t i = start; i < end; i++) {
+    double diff = values[i] - mean;
+    sumSquaredDiff += diff * diff;
+  }
+
+  // Calculer l'écart-type
+  return sqrt(sumSquaredDiff / (end - start));
+}
+
 // Approche hybride : détection des blobs pour filtrer les poussières +
-// transition douce
+// transition douce + stabilisation des zones sombres
 void computeAverageColorPerZone(const uint8_t *buffer_R,
                                 const uint8_t *buffer_G,
                                 const uint8_t *buffer_B, size_t numPixels,
@@ -353,12 +377,31 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
       // avgB = 255.0;
     }
 
+    // Calculer l'écart-type pour déterminer si la zone est uniforme
+    double stdDevR = calculateStandardDeviation(buffer_R, start, end);
+    double stdDevG = calculateStandardDeviation(buffer_G, start, end);
+    double stdDevB = calculateStandardDeviation(buffer_B, start, end);
+
+    // Écart-type global RGB
+    double avgStdDev = (stdDevR + stdDevG + stdDevB) / 3.0;
+
     // Calcul intensité (noir=1, blanc=0)
     double intensity = 1.0 - (luminance / 255.0);
     double response_factor = 0.0;
 
-    // Seuil et courbe d'intensité
-    if (intensity > DMX_BLACK_THRESHOLD) {
+    // La zone est-elle sombre ET uniforme? (surface noire sans variations
+    // significatives)
+    bool isDarkUniform = (intensity > DMX_LOW_INTENSITY_THRESHOLD &&
+                          avgStdDev < DMX_UNIFORM_THRESHOLD);
+
+    // Si c'est une zone noire uniforme, réduire très fortement l'intensité
+    if (isDarkUniform) {
+      // Surface noire uniforme - atténuer fortement l'intensité pour éviter les
+      // clignotements
+      response_factor = 0.0; // Éteindre complètement
+    }
+    // Sinon, traitement normal
+    else if (intensity > DMX_BLACK_THRESHOLD) {
       double normalized =
           (intensity - DMX_BLACK_THRESHOLD) / (1.0 - DMX_BLACK_THRESHOLD);
       response_factor = pow(normalized, DMX_RESPONSE_CURVE);

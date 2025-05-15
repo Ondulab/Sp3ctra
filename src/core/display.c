@@ -43,7 +43,12 @@ typedef struct {
 
 int display_Init(sfRenderWindow *window) {
 #ifdef CLI_MODE
-  printf("Running in CLI mode, no SFML window required\n");
+  if (window) {
+    printf("SFML window detected in CLI mode, using it for display\n");
+    printf("SFML CONFIGURED IN CLI+WINDOW MODE\n");
+  } else {
+    printf("Running in CLI mode, no SFML window required\n");
+  }
   return 0;
 #else
   if (!window) {
@@ -61,10 +66,20 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
                    uint8_t *buffer_B, sfTexture *background_texture,
                    sfTexture *foreground_texture) {
 #ifdef CLI_MODE
-  // En mode CLI, nous n'affichons pas l'image graphique
-  // Mais on pourrait afficher des informations de débogage ici si nécessaire
-  return;
+  // En mode CLI, vérifier si une fenêtre SFML est disponible
+  if (!window || !background_texture || !foreground_texture) {
+    // Si aucune fenêtre ou texture n'est disponible, on ne fait rien
+    return;
+  }
+  // Sinon, on procède à l'affichage même en mode CLI
 #else
+  // Vérification de sécurité en mode normal
+  if (!window || !background_texture || !foreground_texture) {
+    fprintf(stderr, "Error: Missing window or textures for display\n");
+    return;
+  }
+#endif
+
   // Create an image of one line (width = CIS_MAX_PIXELS_NB, height = 1)
   sfImage *image = sfImage_create(CIS_MAX_PIXELS_NB, 1);
   if (image == NULL) {
@@ -109,16 +124,25 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
   sfImage_destroy(image);
   sfTexture_destroy(line_texture);
   sfSprite_destroy(foreground_sprite);
-#endif
 }
 
 // Ancienne fonction utilisant un buffer 32-bit combiné
 void printImage(sfRenderWindow *window, int32_t *image_buff,
                 sfTexture *background_texture, sfTexture *foreground_texture) {
 #ifdef CLI_MODE
-  // En mode CLI, nous n'affichons pas l'image graphique
-  return;
+  // En mode CLI, vérifier si une fenêtre SFML est disponible
+  if (!window || !background_texture || !foreground_texture) {
+    return;
+  }
+  // Sinon, on procède à l'affichage même en mode CLI
 #else
+  // Vérification de sécurité en mode normal
+  if (!window || !background_texture || !foreground_texture) {
+    fprintf(stderr, "Error: Missing window or textures for display\n");
+    return;
+  }
+#endif
+
   // Create an image for the new line
   sfImage *image = sfImage_createFromColor(CIS_MAX_PIXELS_NB, 1, sfBlack);
 
@@ -155,16 +179,25 @@ void printImage(sfRenderWindow *window, int32_t *image_buff,
   sfImage_destroy(image);
   sfTexture_destroy(line_texture);
   sfSprite_destroy(foreground_sprite);
-#endif
 }
 
 void printRawData(sfRenderWindow *window, uint32_t *image_buff,
                   sfTexture *background_texture,
                   sfTexture *foreground_texture) {
 #ifdef CLI_MODE
-  // En mode CLI, nous n'utilisons pas l'affichage graphique
-  return;
+  // En mode CLI, vérifier si une fenêtre SFML est disponible
+  if (!window || !background_texture || !foreground_texture) {
+    return;
+  }
+  // Sinon, on procède à l'affichage même en mode CLI
 #else
+  // Vérification de sécurité en mode normal
+  if (!window || !background_texture || !foreground_texture) {
+    fprintf(stderr, "Error: Missing window or textures for display\n");
+    return;
+  }
+#endif
+
   sfRenderWindow_clear(window, sfBlack);
 
   // Create a vertical line for each x coordinate
@@ -208,5 +241,4 @@ void printRawData(sfRenderWindow *window, uint32_t *image_buff,
   // Clean up
   sfSprite_destroy(background_sprite);
   sfSprite_destroy(foreground_sprite);
-#endif
 }

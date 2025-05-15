@@ -226,8 +226,8 @@ void *dmxSendingThread(void *arg) {
       }
     }
 
-    // Envoyer la trame DMX seulement si le fd est valide et que l'application
-    // est toujours en cours d'exécution
+    // Envoyer la trame DMX seulement si le fd est valide et que
+    // l'application est toujours en cours d'exécution
     if (dmxCtx->running && keepRunning && dmxCtx->fd >= 0 &&
         send_dmx_frame(dmxCtx->fd, frame, DMX_FRAME_SIZE) < 0) {
       perror("Error sending DMX frame");
