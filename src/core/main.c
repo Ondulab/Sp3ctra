@@ -325,9 +325,11 @@ int main(int argc, char **argv) {
   pthread_setschedparam(audioThreadId, SCHED_RR, &param);
 
   /* Main loop (gestion des événements et rendu) */
-  sfEvent event;
+  // sfEvent event; // Unused variable
   sfClock *clock = sfClock_create();
+#ifdef PRINT_FPS
   unsigned int frameCount = 0;
+#endif
   int running = 1;
 
 #ifdef CLI_MODE
@@ -385,7 +387,9 @@ int main(int argc, char **argv) {
       pthread_cond_signal(&dmxCtx->cond);
       pthread_mutex_unlock(&dmxCtx->mutex);
 
+#ifdef PRINT_FPS
       frameCount++; // Compter chaque trame traitée
+#endif
     }
 
 #ifdef PRINT_FPS
@@ -394,9 +398,10 @@ int main(int argc, char **argv) {
     elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
     if (elapsedTime >= 1.0f) {
       float fps = frameCount / elapsedTime;
-      printf("Processing rate: %.2f FPS\n", fps);
+      (void)fps; // Mark fps as used to silence warning if printf is commented
+      // printf("Processing rate: %.2f FPS\n", fps); // Supprimé ou commenté
       sfClock_restart(clock);
-      frameCount = 0;
+      frameCount = 0; // Réinitialiser frameCount ici
     }
 #endif
 
@@ -441,7 +446,9 @@ int main(int argc, char **argv) {
       pthread_cond_signal(&dmxCtx->cond);
       pthread_mutex_unlock(&dmxCtx->mutex);
 
+#ifdef PRINT_FPS
       frameCount++; // Compter chaque image affichée
+#endif
     }
 
 #ifdef PRINT_FPS
@@ -450,9 +457,10 @@ int main(int argc, char **argv) {
     elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
     if (elapsedTime >= 1.0f) {
       float fps = frameCount / elapsedTime;
-      printf("Refresh rate: %.2f FPS\n", fps);
+      (void)fps; // Mark fps as used to silence warning if printf is commented
+      // printf("Refresh rate: %.2f FPS\n", fps); // Supprimé ou commenté
       sfClock_restart(clock);
-      frameCount = 0;
+      frameCount = 0; // Réinitialiser frameCount ici
     }
 #endif
 

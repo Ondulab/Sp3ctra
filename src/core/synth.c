@@ -38,8 +38,8 @@ static uint32_t log_counter = 0;
 #define LOG_FREQUENCY                                                          \
   (SAMPLING_FREQUENCY / AUDIO_BUFFER_SIZE) // Environ 1 seconde
 
-static volatile int32_t *half_audio_ptr;
-static volatile int32_t *full_audio_ptr;
+// static volatile int32_t *half_audio_ptr; // Unused variable
+// static volatile int32_t *full_audio_ptr; // Unused variable
 static int32_t imageRef[NUMBER_OF_NOTES] = {0};
 
 /* Variable used to get converted value */
@@ -49,8 +49,9 @@ static int32_t imageRef[NUMBER_OF_NOTES] = {0};
 static uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G,
                           uint8_t *buffer_B, int32_t *gray, uint32_t size);
 void synth_IfftMode(int32_t *imageData, float *audioData);
-static void synth_DirectMode(volatile int32_t *imageData,
-                             volatile int32_t *audioData, uint16_t CV_in);
+// static void synth_DirectMode(volatile int32_t *imageData,
+//                              volatile int32_t *audioData, uint16_t CV_in); //
+//                              Unused function
 static float calculate_contrast(int32_t *imageData, size_t size);
 
 /* Private user code ---------------------------------------------------------*/
@@ -116,7 +117,8 @@ int32_t synth_IfftInit(void) {
 
   // initialize default parameters
   wavesGeneratorParams.commaPerSemitone = COMMA_PER_SEMITONE;
-  wavesGeneratorParams.startFrequency = START_FREQUENCY;
+  wavesGeneratorParams.startFrequency =
+      (uint32_t)START_FREQUENCY; // Cast to uint32_t
   wavesGeneratorParams.harmonizationType = MAJOR;
   wavesGeneratorParams.harmonizationLevel = 100;
   wavesGeneratorParams.waveformType = SIN_WAVE;
@@ -239,11 +241,12 @@ uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
  * @param  htim : TIM handle
  * @retval None
  */
-#pragma GCC push_options
-#pragma GCC optimize("unroll-loops")
+/*
+// #pragma GCC push_options // Removed pragma
+// #pragma GCC optimize("unroll-loops") // Removed pragma
 void synth_DirectMode(volatile int32_t *imageData, volatile int32_t *audioData,
-                      uint16_t CV_in) {
-  static int32_t signal_R;
+// audioData is unused uint16_t CV_in) {
+  // static int32_t signal_R; // Unused variable
   static int32_t image_idx_UP = 0;
   static int32_t image_idx_DW = 0;
   static int32_t buff_idx = 0;
@@ -336,8 +339,8 @@ void synth_DirectMode(volatile int32_t *imageData, volatile int32_t *audioData,
   // Fill audio buffer
   for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
     // Check if current idx is below than a complete CIS line
-    if (image_idx_UP < scaledPixel_nb) {
-      signal_R = imageBuffer_q31[image_idx_UP];
+    if ((uint32_t)image_idx_UP < scaledPixel_nb) { // Cast image_idx_UP to
+uint32_t for comparison signal_R = imageBuffer_q31[image_idx_UP];
       image_idx_UP++;
     }
     // Else fill the audio buffer with mirror CIS image
@@ -365,7 +368,8 @@ void synth_DirectMode(volatile int32_t *imageData, volatile int32_t *audioData,
 
   shared_var.synth_process_cnt += AUDIO_BUFFER_SIZE;
 }
-#pragma GCC pop_options
+// #pragma GCC pop_options // Removed pragma
+*/
 
 /**
  * Calcule le contraste d'une image en mesurant la variance des valeurs de
@@ -450,8 +454,9 @@ static float calculate_contrast(int32_t *imageData, size_t size) {
 
   // Logs limités pour améliorer les performances
   if (log_counter % LOG_FREQUENCY == 0) {
-    printf("Contraste calculé: mean=%.2f, variance=%.2f, result=%.2f\n", mean,
-           variance, result);
+    // printf("Contraste calculé: mean=%.2f, variance=%.2f, result=%.2f\n",
+    // mean,
+    //        variance, result); // Supprimé ou commenté
   }
 
   // Afficher les valeurs min et max de imageData pour le diagnostic
@@ -465,7 +470,8 @@ static float calculate_contrast(int32_t *imageData, size_t size) {
       max_image_value = imageData[i];
     }
   }
-  printf("Image data: min=%d, max=%d\n", min_image_value, max_image_value);
+  // printf("Image data: min=%d, max=%d\n", min_image_value, max_image_value);
+  // // Supprimé ou commenté
 
   return result;
 }
@@ -480,11 +486,11 @@ static float calculate_contrast(int32_t *imageData, size_t size) {
 void synth_IfftMode(int32_t *imageData, float *audioData) {
   // Mode IFFT (logs limités)
   if (log_counter % LOG_FREQUENCY == 0) {
-    printf("===== IFFT Mode appelé =====\n");
+    // printf("===== IFFT Mode appelé =====\n"); // Supprimé ou commenté
   }
-  static int32_t idx, acc, nbAcc;
-  static int32_t signal_R;
-  static int32_t signal_L;
+  static int32_t idx, acc; // nbAcc is unused
+  static int32_t signal_R; // Restored as it's used locally
+  // static int32_t signal_L; // Unused variable
   static int32_t new_idx;
   static int32_t buff_idx;
   static int32_t note;
@@ -495,7 +501,7 @@ void synth_IfftMode(int32_t *imageData, float *audioData) {
   static float sumVolumeBuffer[AUDIO_BUFFER_SIZE];
   static float volumeBuffer[AUDIO_BUFFER_SIZE];
   static float maxVolumeBuffer[AUDIO_BUFFER_SIZE];
-  static float tmpMaxVolumeBuffer[AUDIO_BUFFER_SIZE];
+  // static float tmpMaxVolumeBuffer[AUDIO_BUFFER_SIZE]; // Unused variable
 
   fill_float(0, ifftBuffer, AUDIO_BUFFER_SIZE);
   fill_float(0, sumVolumeBuffer, AUDIO_BUFFER_SIZE);
@@ -547,7 +553,8 @@ void synth_IfftMode(int32_t *imageData, float *audioData) {
 
     for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
       new_idx = (waves[note].current_idx + waves[note].octave_coeff);
-      if (new_idx >= waves[note].area_size) {
+      if ((uint32_t)new_idx >=
+          waves[note].area_size) { // Cast new_idx to uint32_t for comparison
         new_idx -= waves[note].area_size;
       }
       // Fill buffer with current note waveform
@@ -633,8 +640,8 @@ void synth_IfftMode(int32_t *imageData, float *audioData) {
 
   // Audio output prêt
   if (log_counter % LOG_FREQUENCY == 0) {
-    printf("Audio output: min=%.6f, max=%.6f, contrast=%.2f\n", min_level,
-           max_level, contrast_factor);
+    // printf("Audio output: min=%.6f, max=%.6f, contrast=%.2f\n", min_level,
+    //        max_level, contrast_factor); // Supprimé ou commenté
   }
 
   // Incrémenter le compteur global pour la limitation des logs
@@ -666,7 +673,7 @@ void synth_IfftMode(int32_t *imageData, float *audioData) {
  *                                                                              COMPLETE
  */
 
-static float phase = 0.0f;
+// static float phase = 0.0f; // Unused variable
 
 // Fonction de traitement audio
 // Synth process function
@@ -674,7 +681,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
                         uint8_t *buffer_B) {
   // Traitement audio (logs limités)
   if (log_counter % LOG_FREQUENCY == 0) {
-    printf("===== Audio Process appelé =====\n");
+    // printf("===== Audio Process appelé =====\n"); // Supprimé ou commenté
   }
 
   // Vérifier que les buffers d'entrée ne sont pas NULL

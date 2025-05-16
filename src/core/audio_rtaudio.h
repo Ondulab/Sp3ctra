@@ -38,8 +38,9 @@ private:
   // Paramètres de réverbération
   static const int REVERB_BUFFER_SIZE = 32768; // Pour compatibilité arrière
   float *reverbBuffer;                         // Pour compatibilité arrière
-  int reverbWriteIndex;                        // Pour compatibilité arrière
-  int reverbDelays[8];                         // Pour compatibilité arrière
+  // int reverbWriteIndex;                        // Pour compatibilité arrière
+  // - Unused
+  int reverbDelays[8]; // Pour compatibilité arrière
 
   // Nouvelle implémentation basée sur ZitaRev1
   ZitaRev1

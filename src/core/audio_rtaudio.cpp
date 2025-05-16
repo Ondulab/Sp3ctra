@@ -17,6 +17,9 @@ AudioSystem *gAudioSystem = nullptr;
 int AudioSystem::rtCallback(void *outputBuffer, void *inputBuffer,
                             unsigned int nFrames, double streamTime,
                             RtAudioStreamStatus status, void *userData) {
+  (void)inputBuffer; // Mark inputBuffer as unused
+  (void)streamTime;  // Mark streamTime as unused
+  (void)status;      // Mark status as unused
   auto *audioSystem = static_cast<AudioSystem *>(userData);
   return audioSystem->handleCallback(static_cast<float *>(outputBuffer),
                                      nFrames);
@@ -126,9 +129,10 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 // Constructeur
 AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
                          unsigned int channels)
-    : audio(nullptr), sampleRate(sampleRate), bufferSize(bufferSize),
-      channels(channels), isRunning(false), masterVolume(1.0f),
-      reverbBuffer(nullptr), reverbWriteIndex(0), reverbMix(0.33f),
+    : audio(nullptr), isRunning(false), // Moved isRunning before members that
+                                        // might use it implicitly or explicitly
+      sampleRate(sampleRate), bufferSize(bufferSize), channels(channels),
+      masterVolume(1.0f), reverbBuffer(nullptr), reverbMix(0.33f),
       reverbRoomSize(0.5f), reverbDamping(0.5f), reverbWidth(1.0f),
       reverbEnabled(true) {
 

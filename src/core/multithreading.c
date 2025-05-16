@@ -32,6 +32,7 @@ static void WaitForDoubleBuffer(DoubleBuffer *db) {
   pthread_mutex_unlock(&db->mutex);
 }
 
+/*
 // Wait for DMX color update using condition variable
 static void WaitForDMXColorUpdate(DMXContext *ctx) {
   pthread_mutex_lock(&ctx->mutex);
@@ -40,6 +41,7 @@ static void WaitForDMXColorUpdate(DMXContext *ctx) {
   }
   pthread_mutex_unlock(&ctx->mutex);
 }
+*/
 
 void initDoubleBuffer(DoubleBuffer *db) {
   if (pthread_mutex_init(&db->mutex, NULL) != 0) {

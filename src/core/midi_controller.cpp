@@ -37,7 +37,7 @@ MidiController::MidiController()
     : midiIn(nullptr), isConnected(false), currentController(MIDI_NONE) {
 
   // Initialize with empty callback
-  volumeChangeCallback = [](float volume) {};
+  volumeChangeCallback = [](float /*volume*/) {};
 }
 
 MidiController::~MidiController() { cleanup(); }
@@ -229,6 +229,7 @@ void MidiController::midiCallback(double timeStamp,
 
 void MidiController::processMidiMessage(double timeStamp,
                                         std::vector<unsigned char> *message) {
+  (void)timeStamp; // Mark timeStamp as unused
   // Check if this is a valid message
   if (message->size() < 3) {
     return; // Not enough data for a CC message - silently ignore
