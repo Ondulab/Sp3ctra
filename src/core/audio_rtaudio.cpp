@@ -76,9 +76,28 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       tempBuffer[i] *= currentVolume;
     }
 
-    // Copie du buffer avec volume appliqué vers la sortie audio
-    memcpy(outLeft, tempBuffer, chunk * sizeof(float));
-    memcpy(outRight, tempBuffer, chunk * sizeof(float));
+    // Préparer un tableau de pointeurs pour l'égaliseur
+    float *tempBufferPtr[1] = {tempBuffer};
+
+    // Appliquer l'égaliseur à trois bandes si activé
+    if (gEqualizer && gEqualizer->isEnabled()) {
+      gEqualizer->process(chunk, 1, tempBufferPtr);
+    }
+
+    // Appliquer la réverbération si elle est activée
+    for (unsigned int i = 0; i < chunk; i++) {
+      float inputL = tempBuffer[i];
+      float inputR =
+          tempBuffer[i]; // Même signal pour gauche et droite en entrée
+      float outputL, outputR;
+
+      // Traiter la réverbération
+      processReverb(inputL, inputR, outputL, outputR);
+
+      // Écrire le résultat dans les buffers de sortie
+      outLeft[i] = outputL;
+      outRight[i] = outputR;
+    }
 
     // Avancer les pointeurs
     outLeft += chunk;
@@ -108,19 +127,99 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
                          unsigned int channels)
     : audio(nullptr), sampleRate(sampleRate), bufferSize(bufferSize),
-      channels(channels), isRunning(false), masterVolume(1.0f) {
+      channels(channels), isRunning(false), masterVolume(1.0f),
+      reverbBuffer(nullptr), reverbWriteIndex(0), reverbMix(0.33f),
+      reverbRoomSize(0.5f), reverbDamping(0.5f), reverbWidth(1.0f),
+      reverbEnabled(true) {
+
+  std::cout << "\033[1;32m[ZitaRev1] Réverbération activée par défaut avec "
+               "l'algorithme Zita-Rev1\033[0m"
+            << std::endl;
+
   processBuffer.resize(bufferSize * channels);
+
+  // Initialisation du buffer de réverbération (pour compatibilité)
+  reverbBuffer = new float[REVERB_BUFFER_SIZE];
+  for (int i = 0; i < REVERB_BUFFER_SIZE; i++) {
+    reverbBuffer[i] = 0.0f;
+  }
+
+  // Configuration des délais pour la réverbération (pour compatibilité)
+  reverbDelays[0] = 1116;
+  reverbDelays[1] = 1356;
+  reverbDelays[2] = 1422;
+  reverbDelays[3] = 1617;
+  reverbDelays[4] = 1188;
+  reverbDelays[5] = 1277;
+  reverbDelays[6] = 1491;
+  reverbDelays[7] = 1557;
+
+  // Configuration de ZitaRev1 avec des valeurs optimales
+  zitaRev.init(sampleRate);
+  zitaRev.set_roomsize(0.75f); // Grande taille de pièce (équivalent à SIZE)
+  zitaRev.set_damping(0.7f);   // Amortissement des hautes fréquences modéré
+  zitaRev.set_width(1.0f);     // Largeur stéréo maximale
+  zitaRev.set_delay(
+      0.05f);            // Léger pre-delay pour clarté (équivalent à PREDELAY)
+  zitaRev.set_mix(0.8f); // 80% wet (ajustable via reverbMix)
 }
 
 // Destructeur
 AudioSystem::~AudioSystem() {
   stop();
+
+  // Libération du buffer de réverbération
+  if (reverbBuffer) {
+    delete[] reverbBuffer;
+    reverbBuffer = nullptr;
+  }
+
   if (audio) {
     if (audio->isStreamOpen()) {
       audio->closeStream();
     }
     delete audio;
   }
+}
+
+// Fonction de traitement de la réverbération
+void AudioSystem::processReverb(float inputL, float inputR, float &outputL,
+                                float &outputR) {
+  // Si réverbération désactivée, sortie = entrée
+  if (!reverbEnabled) {
+    outputL = inputL;
+    outputR = inputR;
+    return;
+  }
+
+  // Mise à jour des paramètres ZitaRev1 en fonction des contrôles MIDI
+  zitaRev.set_roomsize(reverbRoomSize);
+  zitaRev.set_damping(reverbDamping);
+  zitaRev.set_width(reverbWidth);
+  // Le mix est géré séparément dans notre code
+
+  // Buffers temporaires pour traitement ZitaRev1
+  float inBufferL[1] = {inputL};
+  float inBufferR[1] = {inputR};
+  float outBufferL[1] = {0.0f};
+  float outBufferR[1] = {0.0f};
+
+  // Traiter via ZitaRev1 (algorithme de réverbération de haute qualité)
+  zitaRev.process(inBufferL, inBufferR, outBufferL, outBufferR, 1);
+
+  // Mélanger le signal sec et le signal traité (wet)
+  // Utiliser une courbe exponentielle pour le mixage pour un meilleur contrôle
+  float wetGain =
+      reverbMix * reverbMix *
+      3.0f; // Amplification exponentielle pour rendre l'effet très audible
+
+  // Conserver une partie du signal sec même quand le mix est au maximum (plus
+  // musical)
+  float dryGain = 1.0f - reverbMix * 0.7f;
+
+  // Mélanger les signaux
+  outputL = inputL * dryGain + outBufferL[0] * wetGain;
+  outputR = inputR * dryGain + outBufferR[0] * wetGain;
 }
 
 // Initialisation
@@ -316,6 +415,82 @@ void AudioSystem::setMasterVolume(float volume) {
 // Get master volume
 float AudioSystem::getMasterVolume() const { return masterVolume; }
 
+// === Contrôles de réverbération ===
+
+// Activer/désactiver la réverbération
+void AudioSystem::enableReverb(bool enable) {
+  reverbEnabled = enable;
+  std::cout << "\033[1;36mREVERB: " << (enable ? "ON" : "OFF") << "\033[0m"
+            << std::endl;
+}
+
+// Vérifier si la réverbération est activée
+bool AudioSystem::isReverbEnabled() const { return reverbEnabled; }
+
+// Régler le mix dry/wet (0.0 - 1.0)
+void AudioSystem::setReverbMix(float mix) {
+  if (mix < 0.0f)
+    reverbMix = 0.0f;
+  else if (mix > 1.0f)
+    reverbMix = 1.0f;
+  else
+    reverbMix = mix;
+
+  // Plus de log ici pour éviter les doublons avec les logs colorés de
+  // midi_controller.cpp
+}
+
+// Obtenir le mix dry/wet actuel
+float AudioSystem::getReverbMix() const { return reverbMix; }
+
+// Régler la taille de la pièce (0.0 - 1.0)
+void AudioSystem::setReverbRoomSize(float size) {
+  if (size < 0.0f)
+    reverbRoomSize = 0.0f;
+  else if (size > 1.0f)
+    reverbRoomSize = 1.0f;
+  else
+    reverbRoomSize = size;
+
+  // Plus de log ici pour éviter les doublons avec les logs colorés de
+  // midi_controller.cpp
+}
+
+// Obtenir la taille de la pièce actuelle
+float AudioSystem::getReverbRoomSize() const { return reverbRoomSize; }
+
+// Régler l'amortissement (0.0 - 1.0)
+void AudioSystem::setReverbDamping(float damping) {
+  if (damping < 0.0f)
+    reverbDamping = 0.0f;
+  else if (damping > 1.0f)
+    reverbDamping = 1.0f;
+  else
+    reverbDamping = damping;
+
+  // Plus de log ici pour éviter les doublons avec les logs colorés de
+  // midi_controller.cpp
+}
+
+// Obtenir l'amortissement actuel
+float AudioSystem::getReverbDamping() const { return reverbDamping; }
+
+// Régler la largeur stéréo (0.0 - 1.0)
+void AudioSystem::setReverbWidth(float width) {
+  if (width < 0.0f)
+    reverbWidth = 0.0f;
+  else if (width > 1.0f)
+    reverbWidth = 1.0f;
+  else
+    reverbWidth = width;
+
+  // Plus de log ici pour éviter les doublons avec les logs colorés de
+  // midi_controller.cpp
+}
+
+// Obtenir la largeur stéréo actuelle
+float AudioSystem::getReverbWidth() const { return reverbWidth; }
+
 // Fonctions C pour la compatibilité avec le code existant
 extern "C" {
 
@@ -370,6 +545,15 @@ void audio_Init(void) {
       gAudioSystem->initialize();
     }
   }
+
+  // Initialiser l'égaliseur à 3 bandes
+  if (!gEqualizer) {
+    float sampleRate = (gAudioSystem) ? SAMPLING_FREQUENCY : 44100.0f;
+    eq_Init(sampleRate);
+    std::cout
+        << "\033[1;32m[ThreeBandEQ] Égaliseur à 3 bandes initialisé\033[0m"
+        << std::endl;
+  }
 }
 
 void cleanupAudioData(AudioData *audioData) {
@@ -397,6 +581,11 @@ void audio_Cleanup() {
   if (gAudioSystem) {
     delete gAudioSystem;
     gAudioSystem = nullptr;
+  }
+
+  // Nettoyage de l'égaliseur
+  if (gEqualizer) {
+    eq_Cleanup();
   }
 }
 

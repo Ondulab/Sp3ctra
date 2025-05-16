@@ -8,6 +8,7 @@
 #include "midi_controller.h"
 #include "audio_rtaudio.h"
 #include "config.h"
+#include "three_band_eq.h"
 #include <algorithm>
 #include <iostream>
 
@@ -24,6 +25,12 @@ MidiController *gMidiController = nullptr;
 #define LAUNCHKEY_MINI_CC_REVERB_SIZE 21  // Room size
 #define LAUNCHKEY_MINI_CC_REVERB_DAMP 22  // Damping
 #define LAUNCHKEY_MINI_CC_REVERB_WIDTH 23 // Largeur stéréo
+
+// Numéros CC pour l'égaliseur (nanoKONTROL2)
+#define NANOKONTROL2_CC_EQ_LOW 16      // LF gain (General Purpose 1)
+#define NANOKONTROL2_CC_EQ_MID 17      // Mid gain (General Purpose 2)
+#define NANOKONTROL2_CC_EQ_HIGH 18     // HF gain (General Purpose 3)
+#define NANOKONTROL2_CC_EQ_MID_FREQ 19 // Mid frequency (General Purpose 4)
 
 MidiController::MidiController()
     : midiIn(nullptr), isConnected(false), currentController(MIDI_NONE) {
@@ -313,6 +320,79 @@ void MidiController::processMidiMessage(double timeStamp,
         // Log pour le débogage avec couleur jaune
         std::cout << "\033[1;33mREVERB WIDTH: " << (int)(normalizedValue * 100)
                   << "%\033[0m" << std::endl;
+      }
+      break;
+
+    // Égaliseur: Gain des basses (LF)
+    case NANOKONTROL2_CC_EQ_LOW:
+      if (gEqualizer) {
+        // Activer l'égaliseur si ce n'est pas déjà fait
+        if (!gEqualizer->isEnabled()) {
+          gEqualizer->setEnabled(true);
+        }
+
+        // Convertir la valeur MIDI en gain en dB (-24dB à +24dB)
+        float lowGain = ((normalizedValue * 2.0f) - 1.0f) * 24.0f;
+        gEqualizer->setLowGain(lowGain);
+
+        // Log pour le débogage avec couleur verte
+        std::cout << "\033[1;32mEQ LOW GAIN: " << lowGain << " dB\033[0m"
+                  << std::endl;
+      }
+      break;
+
+    // Égaliseur: Gain des médiums (Mid)
+    case NANOKONTROL2_CC_EQ_MID:
+      if (gEqualizer) {
+        // Activer l'égaliseur si ce n'est pas déjà fait
+        if (!gEqualizer->isEnabled()) {
+          gEqualizer->setEnabled(true);
+        }
+
+        // Convertir la valeur MIDI en gain en dB (-24dB à +24dB)
+        float midGain = ((normalizedValue * 2.0f) - 1.0f) * 24.0f;
+        gEqualizer->setMidGain(midGain);
+
+        // Log pour le débogage avec couleur bleu clair
+        std::cout << "\033[1;36mEQ MID GAIN: " << midGain << " dB\033[0m"
+                  << std::endl;
+      }
+      break;
+
+    // Égaliseur: Gain des aigus (HF)
+    case NANOKONTROL2_CC_EQ_HIGH:
+      if (gEqualizer) {
+        // Activer l'égaliseur si ce n'est pas déjà fait
+        if (!gEqualizer->isEnabled()) {
+          gEqualizer->setEnabled(true);
+        }
+
+        // Convertir la valeur MIDI en gain en dB (-24dB à +24dB)
+        float highGain = ((normalizedValue * 2.0f) - 1.0f) * 24.0f;
+        gEqualizer->setHighGain(highGain);
+
+        // Log pour le débogage avec couleur violet
+        std::cout << "\033[1;35mEQ HIGH GAIN: " << highGain << " dB\033[0m"
+                  << std::endl;
+      }
+      break;
+
+    // Égaliseur: Fréquence des médiums
+    case NANOKONTROL2_CC_EQ_MID_FREQ:
+      if (gEqualizer) {
+        // Activer l'égaliseur si ce n'est pas déjà fait
+        if (!gEqualizer->isEnabled()) {
+          gEqualizer->setEnabled(true);
+        }
+
+        // Convertir la valeur MIDI en fréquence (250Hz à 5000Hz, échelle
+        // logarithmique)
+        float midFreq = 250.0f * powf(20.0f, normalizedValue);
+        gEqualizer->setMidFrequency(midFreq);
+
+        // Log pour le débogage avec couleur jaune
+        std::cout << "\033[1;33mEQ MID FREQ: " << midFreq << " Hz\033[0m"
+                  << std::endl;
       }
       break;
 

@@ -45,7 +45,8 @@ SOURCES += \
     src/core/midi_controller.cpp \
     src/core/ZitaRev1.cpp \
     src/core/reverb.cpp \
-    src/core/pareq.cpp
+    src/core/pareq.cpp \
+    src/core/three_band_eq.cpp
 
 # Fichiers d'en-tête
 HEADERS += \
@@ -66,7 +67,8 @@ HEADERS += \
     src/core/ZitaRev1.h \
     src/core/reverb.h \
     src/core/pareq.h \
-    src/core/global.h
+    src/core/global.h \
+    src/core/three_band_eq.h
 
 # Chemins d'inclusion
 INCLUDEPATH += src/core
