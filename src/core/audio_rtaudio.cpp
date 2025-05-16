@@ -2,6 +2,8 @@
 
 #include "audio_rtaudio.h"
 #include "audio_c_api.h"
+#include "midi_controller.h" // For gMidiController
+#include "synth_fft.h"       // For fft_audio_buffers and related variables
 #include <cstring>
 #include <iostream>
 
@@ -31,12 +33,19 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   float *outRight = outputBuffer + nFrames;
 
   // Variables statiques pour maintenir l'état entre les appels
-  static unsigned int readOffset =
-      0; // Combien de frames ont été consommées dans le buffer actuel
-  static int localReadIndex = 0; // Quel buffer on lit actuellement (indépendant
-                                 // de current_buffer_index)
+  static unsigned int readOffset = 0; // Combien de frames ont été consommées
+                                      // dans le buffer actuel (synth_IfftMode)
+  static int localReadIndex =
+      0; // Quel buffer on lit actuellement (synth_IfftMode)
 
-  // Buffer temporaire pour appliquer le volume
+  // Variables pour synth_fftMode
+  static unsigned int fft_readOffset = 0;
+  static int fft_localReadIndex = 0;
+  static float tempFftBuffer[AUDIO_BUFFER_SIZE]; // Buffer temporaire pour
+                                                 // synth_fftMode data
+
+  // Buffer temporaire pour appliquer le volume (sera utilisé pour le signal de
+  // synth_IfftMode initialement)
   static float tempBuffer[AUDIO_BUFFER_SIZE];
 
   unsigned int framesToRender = nFrames;
@@ -60,9 +69,53 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     unsigned int chunk =
         (framesToRender < framesAvailable) ? framesToRender : framesAvailable;
 
-    // Copier les données dans un buffer temporaire et appliquer le volume
+    // Copier les données de synth_IfftMode dans tempBuffer
     memcpy(tempBuffer, &buffers_R[localReadIndex].data[readOffset],
            chunk * sizeof(float));
+
+    // Récupérer les niveaux de mixage
+    float level_ifft = 0.5f; // Default if no controller
+    float level_fft = 0.5f;  // Default if no controller
+    if (gMidiController && gMidiController->isAnyControllerConnected()) {
+      level_ifft = gMidiController->getMixLevelSynthIfft();
+      level_fft = gMidiController->getMixLevelSynthFft();
+    }
+
+    // Lire les données de synth_fftMode
+    if (fft_audio_buffers[fft_localReadIndex].ready != 1) {
+      // Underrun pour synth_fftMode, remplir tempFftBuffer de silence
+      memset(tempFftBuffer, 0, chunk * sizeof(float));
+    } else {
+      // Copier les données de synth_fftMode dans tempFftBuffer
+      unsigned int fft_framesAvailable = AUDIO_BUFFER_SIZE - fft_readOffset;
+      unsigned int fft_chunk =
+          (chunk < fft_framesAvailable)
+              ? chunk
+              : fft_framesAvailable; // Should be same as 'chunk' if buffers are
+                                     // aligned
+
+      if (fft_chunk <
+          chunk) { // Not enough data in current fft buffer, fill rest with 0
+        memcpy(tempFftBuffer,
+               &fft_audio_buffers[fft_localReadIndex].data[fft_readOffset],
+               fft_chunk * sizeof(float));
+        memset(tempFftBuffer + fft_chunk, 0,
+               (chunk - fft_chunk) * sizeof(float));
+      } else {
+        memcpy(tempFftBuffer,
+               &fft_audio_buffers[fft_localReadIndex].data[fft_readOffset],
+               chunk * sizeof(float));
+      }
+    }
+
+    // Mixer les signaux dans tempBuffer
+    for (unsigned int i = 0; i < chunk; i++) {
+      float sample_ifft = tempBuffer[i]; // Already contains synth_IfftMode data
+      float sample_fft = tempFftBuffer[i];
+      tempBuffer[i] = (sample_ifft * level_ifft) + (sample_fft * level_fft);
+      // Normalization could be added here if (level_ifft + level_fft > 1.0f)
+      // e.g., tempBuffer[i] /= (level_ifft + level_fft); if sum > 1
+    }
 
     // Appliquer le volume master (avec log pour le débogage)
     static float lastLoggedVolume = -1.0f;
@@ -108,18 +161,26 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     readOffset += chunk;
     framesToRender -= chunk;
 
-    // Si on a consommé tout le buffer, on le marque comme libre et on passe au
-    // suivant
+    // Si on a consommé tout le buffer de synth_IfftMode, on le marque comme
+    // libre et on passe au suivant
     if (readOffset >= AUDIO_BUFFER_SIZE) {
-      // Terminé avec ce buffer
       pthread_mutex_lock(&buffers_R[localReadIndex].mutex);
       buffers_R[localReadIndex].ready = 0;
       pthread_cond_signal(&buffers_R[localReadIndex].cond);
       pthread_mutex_unlock(&buffers_R[localReadIndex].mutex);
-
-      // Passage au buffer suivant
       localReadIndex = (localReadIndex == 0) ? 1 : 0;
       readOffset = 0;
+    }
+
+    // Gérer le buffer de synth_fftMode
+    fft_readOffset += chunk; // Consommé 'chunk' frames de fft_buffer aussi
+    if (fft_readOffset >= AUDIO_BUFFER_SIZE) {
+      pthread_mutex_lock(&fft_audio_buffers[fft_localReadIndex].mutex);
+      fft_audio_buffers[fft_localReadIndex].ready = 0;
+      pthread_cond_signal(&fft_audio_buffers[fft_localReadIndex].cond);
+      pthread_mutex_unlock(&fft_audio_buffers[fft_localReadIndex].mutex);
+      fft_localReadIndex = (fft_localReadIndex == 0) ? 1 : 0;
+      fft_readOffset = 0;
     }
   }
 

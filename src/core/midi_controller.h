@@ -48,6 +48,10 @@ private:
   float convertCCToVolume(unsigned char value);
 
 public:
+  // Variables to store mix levels for the two synths
+  float mix_level_synth_ifft;
+  float mix_level_synth_fft;
+
   MidiController();
   ~MidiController();
 
@@ -74,6 +78,10 @@ public:
   // Get current controller information
   MidiControllerType getCurrentControllerType();
   std::string getCurrentControllerName();
+
+  // Accessors for mix levels
+  float getMixLevelSynthIfft() const;
+  float getMixLevelSynthFft() const;
 };
 
 // Global instance for C API compatibility

@@ -34,7 +34,9 @@ MidiController *gMidiController = nullptr;
 #define NANOKONTROL2_CC_EQ_MID_FREQ 19 // Mid frequency (General Purpose 4)
 
 MidiController::MidiController()
-    : midiIn(nullptr), isConnected(false), currentController(MIDI_NONE) {
+    : midiIn(nullptr), isConnected(false), currentController(MIDI_NONE),
+      mix_level_synth_ifft(0.5f),
+      mix_level_synth_fft(0.5f) { // Initialize mix levels
 
   // Initialize with empty callback
   volumeChangeCallback = [](float /*volume*/) {};
@@ -400,6 +402,20 @@ void MidiController::processMidiMessage(double timeStamp,
       }
       break;
 
+    // nanoKONTROL2 SLIDER/KNOB Control 1 Breath Control (coarse) -> CC 2
+    case 2:
+      mix_level_synth_ifft = normalizedValue;
+      std::cout << "\033[1;37mMIX IFFT: " << (int)(normalizedValue * 100)
+                << "%\033[0m" << std::endl;
+      break;
+
+    // nanoKONTROL2 SLIDER/KNOB Control 1 Controller 3 -> CC 3
+    case 3:
+      mix_level_synth_fft = normalizedValue;
+      std::cout << "\033[1;37mMIX FFT: " << (int)(normalizedValue * 100)
+                << "%\033[0m" << std::endl;
+      break;
+
     // Autres contrôleurs non gérés
     default:
 #ifdef DEBUG_MIDI
@@ -415,6 +431,15 @@ void MidiController::processMidiMessage(double timeStamp,
 float MidiController::convertCCToVolume(unsigned char value) {
   // Convert from MIDI value (0-127) to normalized volume (0.0-1.0)
   return static_cast<float>(value) / 127.0f;
+}
+
+// Accessors for mix levels
+float MidiController::getMixLevelSynthIfft() const {
+  return mix_level_synth_ifft;
+}
+
+float MidiController::getMixLevelSynthFft() const {
+  return mix_level_synth_fft;
 }
 
 // C API functions for compatibility with existing code

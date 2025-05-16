@@ -66,7 +66,8 @@ SOURCES       = ../src/core/display.c \
 		../src/core/ZitaRev1.cpp \
 		../src/core/reverb.cpp \
 		../src/core/pareq.cpp \
-		../src/core/three_band_eq.cpp 
+		../src/core/three_band_eq.cpp \
+		../src/core/synth_fft.c
 OBJECTS       = build_nogui/obj/display.o \
 		build_nogui/obj/dmx.o \
 		build_nogui/obj/error.o \
@@ -81,7 +82,8 @@ OBJECTS       = build_nogui/obj/display.o \
 		build_nogui/obj/ZitaRev1.o \
 		build_nogui/obj/reverb.o \
 		build_nogui/obj/pareq.o \
-		build_nogui/obj/three_band_eq.o
+		build_nogui/obj/three_band_eq.o \
+		build_nogui/obj/synth_fft.o
 DIST          = /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_pre.prf \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/qdevice.pri \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/device_config.prf \
@@ -1014,6 +1016,7 @@ build_nogui/obj/main.o: ../src/core/main.c ../src/core/audio_c_api.h \
 		../src/core/synth.h \
 		../src/core/wave_generation.h \
 		../src/core/shared.h \
+		../src/core/synth_fft.h \
 		../src/core/udp.h
 	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/main.o ../src/core/main.c
 
@@ -1135,7 +1138,10 @@ build_nogui/obj/audio_rtaudio.o: ../src/core/audio_rtaudio.cpp ../src/core/audio
 		../src/core/audio_c_api.h \
 		../src/core/config.h \
 		../src/core/three_band_eq.h \
-		/opt/homebrew/include/rtaudio/RtAudio.h
+		/opt/homebrew/include/rtaudio/RtAudio.h \
+		../src/core/midi_controller.h \
+		/opt/homebrew/include/rtmidi/RtMidi.h \
+		../src/core/synth_fft.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o build_nogui/obj/audio_rtaudio.o ../src/core/audio_rtaudio.cpp
 
 build_nogui/obj/midi_controller.o: ../src/core/midi_controller.cpp ../src/core/midi_controller.h \
@@ -1169,8 +1175,13 @@ build_nogui/obj/pareq.o: ../src/core/pareq.cpp ../src/core/pareq.h \
 build_nogui/obj/three_band_eq.o: ../src/core/three_band_eq.cpp ../src/core/three_band_eq.h \
 		../src/core/pareq.h \
 		../src/core/global.h \
-		../src/core/config.h
+		../src/core/three_band_eq.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o build_nogui/obj/three_band_eq.o ../src/core/three_band_eq.cpp
+
+build_nogui/obj/synth_fft.o: ../src/core/synth_fft.c ../src/core/synth_fft.h \
+		../src/core/config.h \
+		../src/core/error.h
+	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/synth_fft.o ../src/core/synth_fft.c
 
 ####### Install
 
@@ -1179,4 +1190,3 @@ install:  FORCE
 uninstall:  FORCE
 
 FORCE:
-

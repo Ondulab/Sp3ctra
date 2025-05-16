@@ -6,6 +6,7 @@
 #include "error.h"
 #include "multithreading.h"
 #include "synth.h"
+#include "synth_fft.h" // Added for the new FFT synth mode
 #include "udp.h"
 
 // Declaration des fonctions MIDI externes (C-compatible)
@@ -233,6 +234,7 @@ int main(int argc, char **argv) {
   }
 
   synth_IfftInit();
+  synth_fftMode_init(); // Initialize the new FFT synth mode
   display_Init(window);
 
   int s = udp_Init(&si_other, &si_me);
@@ -294,7 +296,8 @@ int main(int argc, char **argv) {
 #endif
 
   /* Create threads for UDP, Audio, and DMX (pas de thread d'affichage) */
-  pthread_t udpThreadId, audioThreadId, dmxThreadId;
+  pthread_t udpThreadId, audioThreadId, dmxThreadId,
+      fftSynthThreadId; // Added fftSynthThreadId
 
 #ifdef USE_DMX
   if (use_dmx && dmxFd >= 0) {
@@ -323,6 +326,16 @@ int main(int argc, char **argv) {
   struct sched_param param;
   param.sched_priority = 50; // Priorité plus modérée pour le Jetson Nano
   pthread_setschedparam(audioThreadId, SCHED_RR, &param);
+
+  // Create and start the FFT synth thread
+  if (pthread_create(&fftSynthThreadId, NULL, synth_fftMode_thread_func,
+                     NULL) != 0) {
+    perror("Error creating FFT synth thread");
+    // Consider cleanup for other threads if this fails mid-startup
+    sfRenderWindow_destroy(window);
+    return EXIT_FAILURE;
+  }
+  // Optionally set scheduling parameters for fftSynthThreadId as well if needed
 
   /* Main loop (gestion des événements et rendu) */
   // sfEvent event; // Unused variable
@@ -479,6 +492,7 @@ int main(int argc, char **argv) {
 
   pthread_join(udpThreadId, NULL);
   pthread_join(audioThreadId, NULL);
+  pthread_join(fftSynthThreadId, NULL); // Join the FFT synth thread
 #ifdef USE_DMX
   if (use_dmx && dmxFd >= 0) {
     pthread_join(dmxThreadId, NULL);

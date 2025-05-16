@@ -49,9 +49,7 @@ static int32_t imageRef[NUMBER_OF_NOTES] = {0};
 static uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G,
                           uint8_t *buffer_B, int32_t *gray, uint32_t size);
 void synth_IfftMode(int32_t *imageData, float *audioData);
-// static void synth_DirectMode(volatile int32_t *imageData,
-//                              volatile int32_t *audioData, uint16_t CV_in); //
-//                              Unused function
+
 static float calculate_contrast(int32_t *imageData, size_t size);
 
 /* Private user code ---------------------------------------------------------*/
@@ -235,141 +233,6 @@ uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
 
   return 0;
 }
-
-/**
- * @brief  Period elapsed callback in non blocking mode
- * @param  htim : TIM handle
- * @retval None
- */
-/*
-// #pragma GCC push_options // Removed pragma
-// #pragma GCC optimize("unroll-loops") // Removed pragma
-void synth_DirectMode(volatile int32_t *imageData, volatile int32_t *audioData,
-// audioData is unused uint16_t CV_in) {
-  // static int32_t signal_R; // Unused variable
-  static int32_t image_idx_UP = 0;
-  static int32_t image_idx_DW = 0;
-  static int32_t buff_idx = 0;
-  static int32_t idx = 0;
-  static int32_t imageBuffer_q31[CIS_MAX_PIXELS_NB + 1];
-  static int32_t imageData_ref_q31[CIS_MAX_PIXELS_NB + 1];
-  static const float noScaled_freq =
-      (SAMPLING_FREQUENCY) / CIS_MAX_PIXELS_NB; // 27,7 Hz;
-  static float note_freq = 0.0;
-  static float scale_factor = 0.0;
-  static uint32_t scaledPixel_nb = 0;
-
-  static const float LAMIN = 440;
-  static const float LAMAX = 880;
-  static const float adc_LAMIN = 14290;
-  static const float adc_LAMAX = 30630;
-  static float gain;
-  static float offset;
-
-  // Initialiser les valeurs calculées au moment de l'exécution
-  gain = (LAMAX - LAMIN) / (adc_LAMAX - adc_LAMIN);
-  offset = -300; // LAMIN - (adc_LAMIN / gain);
-
-  static int32_t adc_history[100];
-  static int32_t idx_adc = 0;
-  static int32_t avrg_adc = 0;
-
-  static int32_t glide = 5;
-
-  adc_history[idx_adc] = CV_in;
-  idx_adc++;
-  if (idx_adc > glide - 1)
-    idx_adc = 0;
-
-  avrg_adc = 0;
-
-  for (int i = 0; i < glide; i++) {
-    avrg_adc += adc_history[i];
-  }
-
-  CV_in = avrg_adc / glide;
-
-  //	printf("ADC_val = %d\n", CV_in);
-
-  note_freq = CV_in * gain + offset;
-  //	note_freq = 55;
-
-  //	printf("Freq = %d\n", (int)note_freq);
-
-  if (note_freq < 30)
-    note_freq = 30;
-  if (note_freq > 20000)
-    note_freq = 20000;
-
-  scale_factor = note_freq / noScaled_freq;
-
-  scaledPixel_nb = (uint32_t)((float)CIS_MAX_PIXELS_NB / scale_factor);
-
-  // Sanity check
-  if (scaledPixel_nb < 1)
-    scale_factor = 1;
-  if (scaledPixel_nb > CIS_MAX_PIXELS_NB)
-    scaledPixel_nb = CIS_MAX_PIXELS_NB;
-
-  if (shared_var.directRead_Mode == DUAL_READ) {
-    for (idx = CIS_MAX_PIXELS_NB; --idx >= 0;) {
-      imageData_ref_q31[idx] = imageData[idx];
-    }
-  }
-
-  // imageData_ref_q31[CIS_PIXELS_NB];
-
-  for (idx = scaledPixel_nb; --idx >= 0;) {
-    imageBuffer_q31[idx] =
-        0; //(greyScale(imageData_ref_q31[(int32_t)(idx * scale_factor)]) -
-           // greyScale(imageData[(int32_t)(idx * scale_factor)])) * (16843 /
-           // 2);
-           ////16843 is factor to translate in a 32bit number
-  }
-
-  //	for (idx = scaledPixel_nb; --idx >= scaledPixel_nb / 2;)
-  //	{
-  //		imageBuffer_q31[idx] = 0x7FFFFFFF;
-  //	}
-  //	for (idx = scaledPixel_nb / 2; --idx >= 0;)
-  //	{
-  //		imageBuffer_q31[idx] = -0x7FFFFFFF;
-  //	}
-
-  // Fill audio buffer
-  for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-    // Check if current idx is below than a complete CIS line
-    if ((uint32_t)image_idx_UP < scaledPixel_nb) { // Cast image_idx_UP to
-uint32_t for comparison signal_R = imageBuffer_q31[image_idx_UP];
-      image_idx_UP++;
-    }
-    // Else fill the audio buffer with mirror CIS image
-    else {
-      if (shared_var.directRead_Mode == NORMAL_REVERSE_READ) {
-        if (image_idx_DW > 1) {
-          image_idx_DW--;
-          signal_R = imageBuffer_q31[image_idx_DW];
-        }
-        // Restart counters
-        else {
-          image_idx_UP = 0;
-          image_idx_DW = scaledPixel_nb - 1;
-        }
-      } else {
-        image_idx_UP = 0;
-        image_idx_DW = scaledPixel_nb - 1;
-      }
-    }
-
-    // Buffer copies for right channels
-    //		audioData[buff_idx * 2] = signal_R;
-    // ToChangeaudioData[buff_idx * 2 + 1] = signal_R;
-  }
-
-  shared_var.synth_process_cnt += AUDIO_BUFFER_SIZE;
-}
-// #pragma GCC pop_options // Removed pragma
-*/
 
 /**
  * Calcule le contraste d'une image en mesurant la variance des valeurs de
@@ -650,30 +513,6 @@ void synth_IfftMode(int32_t *imageData, float *audioData) {
   shared_var.synth_process_cnt += AUDIO_BUFFER_SIZE;
 }
 // #pragma GCC pop_options
-
-/**
- *
- *                   |------------------------------|------------------------------|
- *                   |half rfft buffer to audio buff| | audio buffer
- * |------------FILL--------------|-------------PLAY-------------| | | | | |
- * fill half rfft buffer    | |                              | |
- *                   |------------------------------|------------------------------|
- *                                                  ^
- *                                                HALF
- *                                              COMPLETE
- *
- *                   |------------------------------|------------------------------|
- *                   |                              |full rfft buffer to audio
- * buff| audio buffer
- * |-------------PLAY-------------|-------------FILL-------------| | | | | fill
- * full rfft buffer    |                              | | | |
- *                   |------------------------------|------------------------------|
- *                                                                                 ^
- *                                                                                FULL
- *                                                                              COMPLETE
- */
-
-// static float phase = 0.0f; // Unused variable
 
 // Fonction de traitement audio
 // Synth process function
