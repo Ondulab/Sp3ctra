@@ -1,17 +1,20 @@
-//
-//  audio.h
-//  SSS_Viewer
-//
-//  Created by Zhonx on 16/12/2023.
-//
+/* audio_c_api.h - Interface C pour RtAudio */
 
 #ifndef audio_h
 #define audio_h
 
-#include <AudioUnit/AudioUnit.h>
+#include "config.h"
+#include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 
-#include "config.h"
+// Types compatibles avec CoreAudio
+typedef float Float32;
+typedef uint32_t UInt32;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef enum {
   AUDIO_BUFFER_OFFSET_NONE = 0,
@@ -38,15 +41,22 @@ extern AudioDataBuffers buffers_R[2];
 extern volatile int current_buffer_index;
 extern pthread_mutex_t buffer_index_mutex;
 
+// Fonctions C pour la compatibilité
 void resetAudioDataBufferOffset(void);
 int getAudioDataBufferOffset(void);
 void setAudioDataBufferOffsetHALF(void);
 void setAudioDataBufferOffsetFULL(void);
 void initAudioData(AudioData *audioData, UInt32 numChannels, UInt32 bufferSize);
-void audio_Init(AudioData *audioData);
+void audio_Init(void);
 void cleanupAudioData(AudioData *audioData);
 void audio_Cleanup(void);
-OSStatus startAudioUnit(void);
+int startAudioUnit(void);
 void stopAudioUnit(void);
+void printAudioDevices(void);
+int setAudioDevice(unsigned int deviceId);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* audio_h */

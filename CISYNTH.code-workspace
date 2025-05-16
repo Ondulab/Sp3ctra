@@ -14,7 +14,10 @@
         "C_Cpp.default.cppStandard": "c++17",
         "files.associations": {
             "*.h": "c"
-        }
+        },
+        "cline.modelSettings.o3Mini.reasoningEffort": "high",
+        "cline.preferredLanguage": "French - Français",
+        "cline.vsCodeLmModelSelector": {}
     },
     "extensions": {
         "recommendations": [
