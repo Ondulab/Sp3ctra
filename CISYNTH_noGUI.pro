@@ -42,7 +42,10 @@ SOURCES += \
     src/core/udp.c \
     src/core/wave_generation.c \
     src/core/audio_rtaudio.cpp \
-    src/core/midi_controller.cpp
+    src/core/midi_controller.cpp \
+    src/core/ZitaRev1.cpp \
+    src/core/reverb.cpp \
+    src/core/pareq.cpp
 
 # Fichiers d'en-tête
 HEADERS += \
@@ -60,7 +63,10 @@ HEADERS += \
     src/core/synth.h \
     src/core/udp.h \
     src/core/wave_generation.h \
-    src/core/ZitaRev1.h
+    src/core/ZitaRev1.h \
+    src/core/reverb.h \
+    src/core/pareq.h \
+    src/core/global.h
 
 # Chemins d'inclusion
 INCLUDEPATH += src/core
