@@ -1168,7 +1168,8 @@ build_nogui/obj/pareq.o: src/core/pareq.cpp src/core/pareq.h \
 
 build_nogui/obj/three_band_eq.o: src/core/three_band_eq.cpp src/core/three_band_eq.h \
 		src/core/pareq.h \
-		src/core/global.h
+		src/core/global.h \
+		src/core/config.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o build_nogui/obj/three_band_eq.o src/core/three_band_eq.cpp
 
 ####### Install
