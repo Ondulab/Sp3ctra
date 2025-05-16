@@ -19,6 +19,7 @@ MidiController *gMidiController = nullptr;
 #define LAUNCHKEY_MINI_CC_VOLUME 7 // Volume standard (0-127)
 #define LAUNCHKEY_MINI_MK3_CC_MOD                                              \
   1 // Le vrai numéro de contrôleur de la molette de modulation sur MK3
+#define NANOKONTROL2_CC_VOLUME 0 // Bank Select (pour nanoKONTROL2)
 
 // Numéros CC pour la réverbération (nanoKONTROL2)
 #define LAUNCHKEY_MINI_CC_REVERB_MIX 20   // Dry/Wet mix
@@ -252,15 +253,17 @@ void MidiController::processMidiMessage(double timeStamp,
     switch (number) {
     // Volume principal
     case LAUNCHKEY_MINI_CC_VOLUME:
-    case LAUNCHKEY_MINI_MK3_CC_MOD: {
+    case LAUNCHKEY_MINI_MK3_CC_MOD:
+    case NANOKONTROL2_CC_VOLUME: {
       // Convertir avec la fonction originale pour préserver le comportement
       // exact
       float volume = convertCCToVolume(value);
       // Call the volume change callback
       volumeChangeCallback(volume);
 
-      // Log pour le débogage supprimé (utilise uniquement le log dans
-      // AudioSystem)
+      // Log pour le débogage avec couleur blanche
+      std::cout << "\033[1;37mVOLUME: " << (int)(volume * 100) << "%\033[0m"
+                << std::endl;
     } break;
 
     // Réverbération: Mix Dry/Wet
