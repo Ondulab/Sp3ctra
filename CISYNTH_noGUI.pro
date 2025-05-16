@@ -39,6 +39,7 @@ SOURCES += \
     src/core/multithreading.c \
     src/core/shared.c \
     src/core/synth.c \
+    src/core/synth_fft.c \
     src/core/udp.c \
     src/core/wave_generation.c \
     src/core/audio_rtaudio.cpp \
@@ -62,6 +63,7 @@ HEADERS += \
     src/core/midi_controller.h \
     src/core/shared.h \
     src/core/synth.h \
+    src/core/synth_fft.h \
     src/core/udp.h \
     src/core/wave_generation.h \
     src/core/ZitaRev1.h \

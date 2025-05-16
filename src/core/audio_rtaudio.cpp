@@ -108,13 +108,13 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       }
     }
 
-    // Mixer les signaux dans tempBuffer
-    for (unsigned int i = 0; i < chunk; i++) {
-      float sample_ifft = tempBuffer[i]; // Already contains synth_IfftMode data
-      float sample_fft = tempFftBuffer[i];
-      tempBuffer[i] = (sample_ifft * level_ifft) + (sample_fft * level_fft);
-      // Normalization could be added here if (level_ifft + level_fft > 1.0f)
-      // e.g., tempBuffer[i] /= (level_ifft + level_fft); if sum > 1
+    // Récupérer les niveaux d'envoi vers la réverbération
+    float reverb_send_ifft =
+        0.7f; // Valeur par défaut identique au constructeur MidiController
+    float reverb_send_fft = 0.0f; // Valeur par défaut (initialement à 0)
+    if (gMidiController && gMidiController->isAnyControllerConnected()) {
+      reverb_send_ifft = gMidiController->getReverbSendSynthIfft();
+      reverb_send_fft = gMidiController->getReverbSendSynthFft();
     }
 
     // Appliquer le volume master (avec log pour le débogage)
@@ -127,32 +127,118 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       lastLoggedVolume = currentVolume;
     }
 
-    // Amplification avec le volume courant
+    // Buffers temporaires pour stocker les sorties de réverbération
+    float reverbOutputL_ifft[AUDIO_BUFFER_SIZE];
+    float reverbOutputR_ifft[AUDIO_BUFFER_SIZE];
+    float reverbOutputL_fft[AUDIO_BUFFER_SIZE];
+    float reverbOutputR_fft[AUDIO_BUFFER_SIZE];
+
+    // Traiter la réverbération pour le signal synth_IFFT
     for (unsigned int i = 0; i < chunk; i++) {
-      tempBuffer[i] *= currentVolume;
+      float sample_ifft = tempBuffer[i] * currentVolume; // Apply volume
+      float inputL_ifft = sample_ifft;
+      float inputR_ifft = sample_ifft; // Même signal pour les deux canaux
+
+      // Appliquer la réverbération au signal synth_IFFT
+      if (reverb_send_ifft > 0.0f && reverbEnabled) {
+        // Processus de réverbération ajusté par le niveau d'envoi
+        float tempL, tempR;
+        processReverb(inputL_ifft * reverb_send_ifft,
+                      inputR_ifft * reverb_send_ifft, tempL, tempR);
+        // Stocker le signal réverbéré
+        reverbOutputL_ifft[i] = tempL;
+        reverbOutputR_ifft[i] = tempR;
+      } else {
+        // Pas d'envoi à la réverbération - affecter des zéros pour éviter le
+        // bruit
+        reverbOutputL_ifft[i] = 0.0f;
+        reverbOutputR_ifft[i] = 0.0f;
+      }
     }
 
-    // Préparer un tableau de pointeurs pour l'égaliseur
-    float *tempBufferPtr[1] = {tempBuffer};
+    // Pour le signal synth_FFT, simplifions considérablement le traitement pour
+    // éviter les problèmes
+    // Ne traiter la réverbération que si BOTH le volume FFT ET le niveau
+    // d'envoi reverb sont > 0
+    bool fft_has_reverb =
+        (reverb_send_fft > 0.01f) && reverbEnabled && (level_fft > 0.01f);
 
-    // Appliquer l'égaliseur à trois bandes si activé
+    if (fft_has_reverb) {
+      // Préparer un buffer temporaire pour le traitement de réverbération du
+      // synth_FFT
+      float temp_fft_buffer[AUDIO_BUFFER_SIZE];
+
+      // Copier les données avec volume ET niveau de mixage appliqués
+      for (unsigned int i = 0; i < chunk; i++) {
+        temp_fft_buffer[i] =
+            tempFftBuffer[i] * currentVolume * reverb_send_fft * level_fft;
+      }
+
+      // Appliquer la réverbération au buffer entier plutôt qu'échantillon par
+      // échantillon
+      float tempOutL[AUDIO_BUFFER_SIZE] = {0};
+      float tempOutR[AUDIO_BUFFER_SIZE] = {0};
+
+      // Traiter la réverbération en une seule fois
+      for (unsigned int i = 0; i < chunk; i++) {
+        float tmp_l = 0, tmp_r = 0;
+        processReverb(temp_fft_buffer[i], temp_fft_buffer[i], tmp_l, tmp_r);
+        tempOutL[i] = tmp_l;
+        tempOutR[i] = tmp_r;
+      }
+
+      // Stocker les résultats
+      for (unsigned int i = 0; i < chunk; i++) {
+        reverbOutputL_fft[i] = tempOutL[i];
+        reverbOutputR_fft[i] = tempOutR[i];
+      }
+    } else {
+      // Aucune réverbération pour synth_FFT - mettre des zéros
+      for (unsigned int i = 0; i < chunk; i++) {
+        reverbOutputL_fft[i] = 0.0f;
+        reverbOutputR_fft[i] = 0.0f;
+      }
+    }
+
+    // Mixer tous les signaux ensemble (dry + wet) avec une approche simplifiée
+    for (unsigned int i = 0; i < chunk; i++) {
+      // Signal sec du synth IFFT avec volume et mixage appliqués
+      float dry_ifft = tempBuffer[i] * currentVolume * level_ifft;
+
+      // Signal sec du synth FFT avec volume et mixage appliqués
+      float dry_fft = tempFftBuffer[i] * currentVolume * level_fft;
+
+      // Signal humide du synth IFFT
+      float wet_ifft_L = reverbOutputL_ifft[i];
+      float wet_ifft_R = reverbOutputR_ifft[i];
+
+      // Signal humide du synth FFT
+      float wet_fft_L = reverbOutputL_fft[i];
+      float wet_fft_R = reverbOutputR_fft[i];
+
+      // Mixage final
+      outLeft[i] = dry_ifft + dry_fft + (wet_ifft_L * level_ifft) +
+                   (wet_fft_L * level_fft);
+      outRight[i] = dry_ifft + dry_fft + (wet_ifft_R * level_ifft) +
+                    (wet_fft_R * level_fft);
+
+      // Limiter pour éviter les crêtes excessives
+      if (outLeft[i] > 1.0f)
+        outLeft[i] = 1.0f;
+      if (outLeft[i] < -1.0f)
+        outLeft[i] = -1.0f;
+      if (outRight[i] > 1.0f)
+        outRight[i] = 1.0f;
+      if (outRight[i] < -1.0f)
+        outRight[i] = -1.0f;
+    }
+
+    // Appliquer l'égaliseur à trois bandes si activé au signal final
     if (gEqualizer && gEqualizer->isEnabled()) {
-      gEqualizer->process(chunk, 1, tempBufferPtr);
-    }
-
-    // Appliquer la réverbération si elle est activée
-    for (unsigned int i = 0; i < chunk; i++) {
-      float inputL = tempBuffer[i];
-      float inputR =
-          tempBuffer[i]; // Même signal pour gauche et droite en entrée
-      float outputL, outputR;
-
-      // Traiter la réverbération
-      processReverb(inputL, inputR, outputL, outputR);
-
-      // Écrire le résultat dans les buffers de sortie
-      outLeft[i] = outputL;
-      outRight[i] = outputR;
+      float *outLeftPtr[1] = {outLeft};
+      float *outRightPtr[1] = {outRight};
+      gEqualizer->process(chunk, 1, outLeftPtr);
+      gEqualizer->process(chunk, 1, outRightPtr);
     }
 
     // Avancer les pointeurs
@@ -193,8 +279,8 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
     : audio(nullptr), isRunning(false), // Moved isRunning before members that
                                         // might use it implicitly or explicitly
       sampleRate(sampleRate), bufferSize(bufferSize), channels(channels),
-      masterVolume(1.0f), reverbBuffer(nullptr), reverbMix(0.33f),
-      reverbRoomSize(0.5f), reverbDamping(0.5f), reverbWidth(1.0f),
+      masterVolume(1.0f), reverbBuffer(nullptr), reverbMix(0.5f),
+      reverbRoomSize(0.95f), reverbDamping(0.4f), reverbWidth(1.0f),
       reverbEnabled(true) {
 
   std::cout << "\033[1;32m[ZitaRev1] Réverbération activée par défaut avec "
@@ -219,14 +305,17 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
   reverbDelays[6] = 1491;
   reverbDelays[7] = 1557;
 
-  // Configuration de ZitaRev1 avec des valeurs optimales
+  // Configuration de ZitaRev1 avec des valeurs pour une réverbération longue et
+  // douce
   zitaRev.init(sampleRate);
-  zitaRev.set_roomsize(0.75f); // Grande taille de pièce (équivalent à SIZE)
-  zitaRev.set_damping(0.7f);   // Amortissement des hautes fréquences modéré
-  zitaRev.set_width(1.0f);     // Largeur stéréo maximale
+  zitaRev.set_roomsize(
+      0.95f); // Très grande taille de pièce pour une réverb longue
+  zitaRev.set_damping(0.4f); // Amortissement des hautes fréquences réduit pour
+                             // plus de brillance
+  zitaRev.set_width(1.0f);   // Largeur stéréo maximale
   zitaRev.set_delay(
-      0.05f);            // Léger pre-delay pour clarté (équivalent à PREDELAY)
-  zitaRev.set_mix(0.8f); // 80% wet (ajustable via reverbMix)
+      0.08f);            // Pre-delay plus important pour clarté et séparation
+  zitaRev.set_mix(0.7f); // 70% wet pour équilibre entre clarté et présence
 }
 
 // Destructeur
@@ -273,14 +362,12 @@ void AudioSystem::processReverb(float inputL, float inputR, float &outputL,
   zitaRev.process(inBufferL, inBufferR, outBufferL, outBufferR, 1);
 
   // Mélanger le signal sec et le signal traité (wet)
-  // Utiliser une courbe exponentielle pour le mixage pour un meilleur contrôle
+  // Utiliser une courbe linéaire pour une réverbération plus douce
   float wetGain =
-      reverbMix * reverbMix *
-      3.0f; // Amplification exponentielle pour rendre l'effet très audible
+      reverbMix; // Relation directe entre le paramètre et le gain wet
 
-  // Conserver une partie du signal sec même quand le mix est au maximum (plus
-  // musical)
-  float dryGain = 1.0f - reverbMix * 0.7f;
+  // Balance simple entre signal sec et humide
+  float dryGain = 1.0f - reverbMix; // Relation inverse pour un total de 100%
 
   // Mélanger les signaux
   outputL = inputL * dryGain + outBufferL[0] * wetGain;

@@ -27,6 +27,11 @@ MidiController *gMidiController = nullptr;
 #define LAUNCHKEY_MINI_CC_REVERB_DAMP 22  // Damping
 #define LAUNCHKEY_MINI_CC_REVERB_WIDTH 23 // Largeur stéréo
 
+// Numéros CC pour les niveaux d'envoi vers la réverbération par synthétiseur
+#define CC_REVERB_SEND_SYNTH_FFT                                               \
+  4 // Niveau d'envoi de réverb pour synth_fft (selon demande)
+#define CC_REVERB_SEND_SYNTH_IFFT 5 // Niveau d'envoi de réverb pour synth
+
 // Numéros CC pour l'égaliseur (nanoKONTROL2)
 #define NANOKONTROL2_CC_EQ_LOW 16      // LF gain (General Purpose 1)
 #define NANOKONTROL2_CC_EQ_MID 17      // Mid gain (General Purpose 2)
@@ -36,7 +41,9 @@ MidiController *gMidiController = nullptr;
 MidiController::MidiController()
     : midiIn(nullptr), isConnected(false), currentController(MIDI_NONE),
       mix_level_synth_ifft(0.5f),
-      mix_level_synth_fft(0.5f) { // Initialize mix levels
+      mix_level_synth_fft(0.0f), // FFT à 0 par défaut
+      reverb_send_synth_ifft(0.7f),
+      reverb_send_synth_fft(0.0f) { // Initialize all levels
 
   // Initialize with empty callback
   volumeChangeCallback = [](float /*volume*/) {};
@@ -416,6 +423,30 @@ void MidiController::processMidiMessage(double timeStamp,
                 << "%\033[0m" << std::endl;
       break;
 
+    // Contrôleur pour le niveau d'envoi de réverb pour synth FFT
+    case CC_REVERB_SEND_SYNTH_FFT:
+      reverb_send_synth_fft = normalizedValue;
+      std::cout << "\033[1;36mREVERB SEND FFT: " << (int)(normalizedValue * 100)
+                << "%\033[0m" << std::endl;
+      if (gAudioSystem && normalizedValue > 0.0f) {
+        if (!gAudioSystem->isReverbEnabled()) {
+          gAudioSystem->enableReverb(true);
+        }
+      }
+      break;
+
+    // Contrôleur pour le niveau d'envoi de réverb pour synth IFFT
+    case CC_REVERB_SEND_SYNTH_IFFT:
+      reverb_send_synth_ifft = normalizedValue;
+      std::cout << "\033[1;36mREVERB SEND IFFT: "
+                << (int)(normalizedValue * 100) << "%\033[0m" << std::endl;
+      if (gAudioSystem && normalizedValue > 0.0f) {
+        if (!gAudioSystem->isReverbEnabled()) {
+          gAudioSystem->enableReverb(true);
+        }
+      }
+      break;
+
     // Autres contrôleurs non gérés
     default:
 #ifdef DEBUG_MIDI
@@ -440,6 +471,15 @@ float MidiController::getMixLevelSynthIfft() const {
 
 float MidiController::getMixLevelSynthFft() const {
   return mix_level_synth_fft;
+}
+
+// Accessors for reverb send levels
+float MidiController::getReverbSendSynthIfft() const {
+  return reverb_send_synth_ifft;
+}
+
+float MidiController::getReverbSendSynthFft() const {
+  return reverb_send_synth_fft;
 }
 
 // C API functions for compatibility with existing code

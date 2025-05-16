@@ -59,6 +59,7 @@ SOURCES       = ../src/core/display.c \
 		../src/core/multithreading.c \
 		../src/core/shared.c \
 		../src/core/synth.c \
+		../src/core/synth_fft.c \
 		../src/core/udp.c \
 		../src/core/wave_generation.c \
 		../src/core/audio_rtaudio.cpp \
@@ -66,8 +67,7 @@ SOURCES       = ../src/core/display.c \
 		../src/core/ZitaRev1.cpp \
 		../src/core/reverb.cpp \
 		../src/core/pareq.cpp \
-		../src/core/three_band_eq.cpp \
-		../src/core/synth_fft.c
+		../src/core/three_band_eq.cpp 
 OBJECTS       = build_nogui/obj/display.o \
 		build_nogui/obj/dmx.o \
 		build_nogui/obj/error.o \
@@ -75,6 +75,7 @@ OBJECTS       = build_nogui/obj/display.o \
 		build_nogui/obj/multithreading.o \
 		build_nogui/obj/shared.o \
 		build_nogui/obj/synth.o \
+		build_nogui/obj/synth_fft.o \
 		build_nogui/obj/udp.o \
 		build_nogui/obj/wave_generation.o \
 		build_nogui/obj/audio_rtaudio.o \
@@ -82,8 +83,7 @@ OBJECTS       = build_nogui/obj/display.o \
 		build_nogui/obj/ZitaRev1.o \
 		build_nogui/obj/reverb.o \
 		build_nogui/obj/pareq.o \
-		build_nogui/obj/three_band_eq.o \
-		build_nogui/obj/synth_fft.o
+		build_nogui/obj/three_band_eq.o
 DIST          = /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_pre.prf \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/qdevice.pri \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/device_config.prf \
@@ -307,6 +307,7 @@ DIST          = /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_pre.pr
 		../src/core/midi_controller.h \
 		../src/core/shared.h \
 		../src/core/synth.h \
+		../src/core/synth_fft.h \
 		../src/core/udp.h \
 		../src/core/wave_generation.h \
 		../src/core/ZitaRev1.h \
@@ -320,6 +321,7 @@ DIST          = /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_pre.pr
 		../src/core/multithreading.c \
 		../src/core/shared.c \
 		../src/core/synth.c \
+		../src/core/synth_fft.c \
 		../src/core/udp.c \
 		../src/core/wave_generation.c \
 		../src/core/audio_rtaudio.cpp \
@@ -796,8 +798,8 @@ distdir: FORCE
 	@test -d $(DISTDIR) || mkdir -p $(DISTDIR)
 	$(COPY_FILE) --parents $(DIST) $(DISTDIR)/
 	$(COPY_FILE) --parents /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp $(DISTDIR)/
-	$(COPY_FILE) --parents ../src/core/audio_rtaudio.h ../src/core/audio_c_api.h ../src/core/config.h ../src/core/context.h ../src/core/display.h ../src/core/dmx.h ../src/core/doublebuffer.h ../src/core/error.h ../src/core/multithreading.h ../src/core/midi_controller.h ../src/core/shared.h ../src/core/synth.h ../src/core/udp.h ../src/core/wave_generation.h ../src/core/ZitaRev1.h ../src/core/reverb.h ../src/core/pareq.h ../src/core/global.h ../src/core/three_band_eq.h $(DISTDIR)/
-	$(COPY_FILE) --parents ../src/core/display.c ../src/core/dmx.c ../src/core/error.c ../src/core/main.c ../src/core/multithreading.c ../src/core/shared.c ../src/core/synth.c ../src/core/udp.c ../src/core/wave_generation.c ../src/core/audio_rtaudio.cpp ../src/core/midi_controller.cpp ../src/core/ZitaRev1.cpp ../src/core/reverb.cpp ../src/core/pareq.cpp ../src/core/three_band_eq.cpp $(DISTDIR)/
+	$(COPY_FILE) --parents ../src/core/audio_rtaudio.h ../src/core/audio_c_api.h ../src/core/config.h ../src/core/context.h ../src/core/display.h ../src/core/dmx.h ../src/core/doublebuffer.h ../src/core/error.h ../src/core/multithreading.h ../src/core/midi_controller.h ../src/core/shared.h ../src/core/synth.h ../src/core/synth_fft.h ../src/core/udp.h ../src/core/wave_generation.h ../src/core/ZitaRev1.h ../src/core/reverb.h ../src/core/pareq.h ../src/core/global.h ../src/core/three_band_eq.h $(DISTDIR)/
+	$(COPY_FILE) --parents ../src/core/display.c ../src/core/dmx.c ../src/core/error.c ../src/core/main.c ../src/core/multithreading.c ../src/core/shared.c ../src/core/synth.c ../src/core/synth_fft.c ../src/core/udp.c ../src/core/wave_generation.c ../src/core/audio_rtaudio.cpp ../src/core/midi_controller.cpp ../src/core/ZitaRev1.cpp ../src/core/reverb.cpp ../src/core/pareq.cpp ../src/core/three_band_eq.cpp $(DISTDIR)/
 
 
 clean: compiler_clean 
@@ -1118,6 +1120,11 @@ build_nogui/obj/synth.o: ../src/core/synth.c ../src/core/config.h \
 		../src/core/wave_generation.h
 	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/synth.o ../src/core/synth.c
 
+build_nogui/obj/synth_fft.o: ../src/core/synth_fft.c ../src/core/synth_fft.h \
+		../src/core/config.h \
+		../src/core/error.h
+	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/synth_fft.o ../src/core/synth_fft.c
+
 build_nogui/obj/udp.o: ../src/core/udp.c ../src/core/config.h \
 		../src/core/error.h \
 		../src/core/udp.h
@@ -1175,13 +1182,8 @@ build_nogui/obj/pareq.o: ../src/core/pareq.cpp ../src/core/pareq.h \
 build_nogui/obj/three_band_eq.o: ../src/core/three_band_eq.cpp ../src/core/three_band_eq.h \
 		../src/core/pareq.h \
 		../src/core/global.h \
-		../src/core/three_band_eq.h
+		../src/core/config.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o build_nogui/obj/three_band_eq.o ../src/core/three_band_eq.cpp
-
-build_nogui/obj/synth_fft.o: ../src/core/synth_fft.c ../src/core/synth_fft.h \
-		../src/core/config.h \
-		../src/core/error.h
-	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/synth_fft.o ../src/core/synth_fft.c
 
 ####### Install
 
@@ -1190,3 +1192,4 @@ install:  FORCE
 uninstall:  FORCE
 
 FORCE:
+

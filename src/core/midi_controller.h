@@ -52,6 +52,10 @@ public:
   float mix_level_synth_ifft;
   float mix_level_synth_fft;
 
+  // Variables to store reverb send levels for each synth
+  float reverb_send_synth_ifft;
+  float reverb_send_synth_fft;
+
   MidiController();
   ~MidiController();
 
@@ -82,6 +86,10 @@ public:
   // Accessors for mix levels
   float getMixLevelSynthIfft() const;
   float getMixLevelSynthFft() const;
+
+  // Accessors for reverb send levels
+  float getReverbSendSynthIfft() const;
+  float getReverbSendSynthFft() const;
 };
 
 // Global instance for C API compatibility
