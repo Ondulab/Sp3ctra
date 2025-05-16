@@ -96,9 +96,9 @@
 /**************************************************************************************
  * DAC Definitions
  **************************************************************************************/
-#define SAMPLING_FREQUENCY (48000)
+#define SAMPLING_FREQUENCY (96000)
 #define AUDIO_CHANNEL (2)
-#define AUDIO_BUFFER_SIZE (256)
+#define AUDIO_BUFFER_SIZE (512)
 
 /**************************************************************************************
  * Image Definitions
@@ -122,12 +122,24 @@
 #define ENABLE_NON_LINEAR_MAPPING                                              \
   1 // Set to 1 to enable non-linear mapping, or 0 to disable
 
-// Optional definitions (uncomment if needed)
-// #define STEREO_1
-// #define RELATIVE_MODE
+/**************************************************************************************
+ * Synth and Image Processing Configuration
+ **************************************************************************************/
 
-#define PI (3.14159265358979323846)
-#define TWO_PI (PI * 2)
+// Image Processing and Contrast Modulation
+#define CONTRAST_MIN 0.00f   // Minimum volume for blurred images (0.0 to 1.0)
+#define CONTRAST_STRIDE 4.0f // Pixel sampling stride for optimization
+#define CONTRAST_ADJUSTMENT_POWER                                              \
+  1.5f // Exponent for adjusting the contrast curve
+
+// Non-Linear Intensity Mapping
+#define GAMMA_VALUE 1.8f // Gamma value for non-linear intensity correction
+
+// Logging Parameters
+#define LOG_FREQUENCY                                                          \
+  (SAMPLING_FREQUENCY /                                                        \
+   AUDIO_BUFFER_SIZE) // Approximate logging frequency in Hz
+
 /**************************************************************************************
  * Wave Generation Definitions
  **************************************************************************************/
@@ -138,8 +150,8 @@
 #define SEMITONE_PER_OCTAVE (12)
 #define COMMA_PER_SEMITONE (36)
 
-#define VOLUME_INCREMENT (1)
-#define VOLUME_DECREMENT (1)
+#define VOLUME_INCREMENT (10)
+#define VOLUME_DECREMENT (10)
 
 #define PIXELS_PER_NOTE (1)
 #define NUMBER_OF_NOTES (CIS_MAX_PIXELS_NB / PIXELS_PER_NOTE)
