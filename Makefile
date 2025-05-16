@@ -37,7 +37,7 @@ MOVE          = mv -f
 TAR           = tar -cf
 COMPRESS      = gzip -9f
 DISTNAME      = CISYNTH_noGUI1.0.0
-DISTDIR = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI/build_nogui/obj/CISYNTH_noGUI1.0.0
+DISTDIR = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI_contrasteLigne/build_nogui/obj/CISYNTH_noGUI1.0.0
 LINK          = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
 LFLAGS        = -stdlib=libc++ -Wl,-no_warn_duplicate_libraries -Wl,-headerpad_max_install_names -headerpad_max_install_names $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wl,-rpath,@executable_path/../Frameworks
 LIBS          = $(SUBLIBS) -F/opt/homebrew/Cellar/qt@5/5.15.16_1/lib -L/opt/homebrew/lib -lfftw3 -lsndfile -L/opt/homebrew/Cellar/sfml@2/2.6.2_1/lib -lsfml-graphics -lsfml-window -lsfml-system -lcsfml-graphics -lcsfml-window -lcsfml-system -lrtaudio -lrtmidi -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa -framework QtGui -framework AppKit -framework Metal -framework QtCore -framework DiskArbitration -framework IOKit -framework OpenGL -framework AGL   
@@ -334,12 +334,12 @@ TARGET        = CISYNTH_noGUI
 EXPORT_QMAKE_MAC_SDK = macosx
 EXPORT_QMAKE_MAC_SDK_VERSION = 15.4
 EXPORT_QMAKE_XCODE_DEVELOPER_PATH = /Applications/Xcode.app/Contents/Developer
-EXPORT__QMAKE_STASH_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI/.qmake.stash
+EXPORT__QMAKE_STASH_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI_contrasteLigne/.qmake.stash
 EXPORT_VALID_ARCHS = arm64
 EXPORT_DEFAULT_ARCHS = arm64
 EXPORT_ARCHS = $(filter $(EXPORT_VALID_ARCHS), $(if $(ARCHS), $(ARCHS), $(if $(EXPORT_DEFAULT_ARCHS), $(EXPORT_DEFAULT_ARCHS), $(EXPORT_VALID_ARCHS))))
 EXPORT_ARCH_ARGS = $(foreach arch, $(if $(EXPORT_ARCHS), $(EXPORT_ARCHS), $(EXPORT_VALID_ARCHS)), -arch $(arch))
-EXPORT__PRO_FILE_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI/CISYNTH_noGUI.pro
+EXPORT__PRO_FILE_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI_contrasteLigne/CISYNTH_noGUI.pro
 
 
 include /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/mac/sdk.mk
