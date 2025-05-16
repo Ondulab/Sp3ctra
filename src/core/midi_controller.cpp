@@ -70,10 +70,12 @@ bool MidiController::connect() {
             << " devices" << std::endl;
 #endif
 
-  // Check for various possible names of the Launchkey Mini
-  std::vector<std::string> launchkeyNames = {
-      "Launchkey Mini", "MIDIIN2 (Launchkey Mini)", "Launchkey Mini MK3",
-      "Launchkey Mini MIDI Port"};
+  // Check for various possible names of the Launchkey Mini and nanoKONTROL2
+  std::vector<std::string> controllerNames = {
+      "Launchkey Mini",      "MIDIIN2 (Launchkey Mini)",
+      "Launchkey Mini MK3",  "Launchkey Mini MIDI Port",
+      "nanoKONTROL2",        "KORG nanoKONTROL2",
+      "nanoKONTROL2 MIDI 1", "nanoKONTROL2 CTRL"};
 
   for (unsigned int i = 0; i < nPorts; i++) {
     std::string portName = midiIn->getPortName(i);
@@ -82,11 +84,11 @@ bool MidiController::connect() {
     std::cout << "MIDI device " << i << ": " << portName << std::endl;
 #endif
 
-    // Check if port name contains any of the Launchkey Mini variations
-    for (const auto &name : launchkeyNames) {
+    // Check if port name contains any of the supported controller variations
+    for (const auto &name : controllerNames) {
       if (portName.find(name) != std::string::npos) {
 #ifdef DEBUG_MIDI
-        std::cout << "Found Launchkey Mini: " << portName << std::endl;
+        std::cout << "Found MIDI controller: " << portName << std::endl;
 #endif
         return connectToDevice(i);
       }
@@ -94,7 +96,7 @@ bool MidiController::connect() {
   }
 
 #ifdef DEBUG_MIDI
-  std::cout << "No Launchkey Mini device found" << std::endl;
+  std::cout << "No supported MIDI controller found" << std::endl;
 #endif
   return false;
 }
@@ -123,6 +125,8 @@ bool MidiController::connectToDevice(unsigned int portNumber) {
     std::string portName = midiIn->getPortName(portNumber);
     if (portName.find("Launchkey Mini") != std::string::npos) {
       currentController = MIDI_LAUNCHKEY_MINI;
+    } else if (portName.find("nanoKONTROL2") != std::string::npos) {
+      currentController = MIDI_LAUNCHKEY_MINI; // Use same mapping for now
     } else {
       currentController = MIDI_NONE;
     }
