@@ -17,7 +17,7 @@ CXX           = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefau
 DEFINES       = -DUSE_RTAUDIO -DPRINT_FPS -DQT_NO_DEBUG -DQT_GUI_LIB -DQT_CORE_LIB
 CFLAGS        = -pipe -O2 $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
 CXXFLAGS      = -pipe -stdlib=libc++ -O2 -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
-INCPATH       = -I../../CISYNTH_MIDI -I. -I../src/core -I/opt/homebrew/include -I/opt/homebrew/Cellar/sfml@2/2.6.2_1/include -I/opt/homebrew/Cellar/qt@5/5.15.16_1/lib/QtGui.framework/Headers -I/opt/homebrew/Cellar/qt@5/5.15.16_1/lib/QtCore.framework/Headers -Ibuild_nogui/moc -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk/System/Library/Frameworks/OpenGL.framework/Headers -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk/System/Library/Frameworks/AGL.framework/Headers -I/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/macx-clang -F/opt/homebrew/Cellar/qt@5/5.15.16_1/lib
+INCPATH       = -I../../CISYNTH_MIDI_contrasteLigne -I. -I../src/core -I/opt/homebrew/include -I/opt/homebrew/Cellar/sfml@2/2.6.2_1/include -I/opt/homebrew/Cellar/qt@5/5.15.16_1/lib/QtGui.framework/Headers -I/opt/homebrew/Cellar/qt@5/5.15.16_1/lib/QtCore.framework/Headers -Ibuild_nogui/moc -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk/System/Library/Frameworks/OpenGL.framework/Headers -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk/System/Library/Frameworks/AGL.framework/Headers -I/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/macx-clang -F/opt/homebrew/Cellar/qt@5/5.15.16_1/lib
 QMAKE         = /opt/homebrew/opt/qt@5/bin/qmake
 DEL_FILE      = rm -f
 CHK_DIR_EXISTS= test -d
@@ -37,10 +37,10 @@ MOVE          = mv -f
 TAR           = tar -cf
 COMPRESS      = gzip -9f
 DISTNAME      = CISYNTH_noGUI1.0.0
-DISTDIR = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI/build_nogui/build_nogui/obj/CISYNTH_noGUI1.0.0
+DISTDIR = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI_contrasteLigne/build_nogui/build_nogui/obj/CISYNTH_noGUI1.0.0
 LINK          = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
 LFLAGS        = -stdlib=libc++ -Wl,-no_warn_duplicate_libraries -Wl,-headerpad_max_install_names -headerpad_max_install_names $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wl,-rpath,@executable_path/../Frameworks
-LIBS          = $(SUBLIBS) -F/opt/homebrew/Cellar/qt@5/5.15.16_1/lib -L/opt/homebrew/lib -lfftw3 -lsndfile -L/opt/homebrew/Cellar/sfml@2/2.6.2_1/lib -lsfml-graphics -lsfml-window -lsfml-system -lcsfml-graphics -lcsfml-window -lcsfml-system -lrtaudio -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa -framework QtGui -framework AppKit -framework Metal -framework QtCore -framework DiskArbitration -framework IOKit -framework OpenGL -framework AGL   
+LIBS          = $(SUBLIBS) -F/opt/homebrew/Cellar/qt@5/5.15.16_1/lib -L/opt/homebrew/lib -lfftw3 -lsndfile -L/opt/homebrew/Cellar/sfml@2/2.6.2_1/lib -lsfml-graphics -lsfml-window -lsfml-system -lcsfml-graphics -lcsfml-window -lcsfml-system -lrtaudio -lrtmidi -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa -framework QtGui -framework AppKit -framework Metal -framework QtCore -framework DiskArbitration -framework IOKit -framework OpenGL -framework AGL   
 AR            = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar cq
 RANLIB        = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ranlib -s
 SED           = sed
@@ -61,7 +61,8 @@ SOURCES       = ../src/core/display.c \
 		../src/core/synth.c \
 		../src/core/udp.c \
 		../src/core/wave_generation.c \
-		../src/core/audio_rtaudio.cpp 
+		../src/core/audio_rtaudio.cpp \
+		../src/core/midi_controller.cpp 
 OBJECTS       = build_nogui/obj/display.o \
 		build_nogui/obj/dmx.o \
 		build_nogui/obj/error.o \
@@ -71,7 +72,8 @@ OBJECTS       = build_nogui/obj/display.o \
 		build_nogui/obj/synth.o \
 		build_nogui/obj/udp.o \
 		build_nogui/obj/wave_generation.o \
-		build_nogui/obj/audio_rtaudio.o
+		build_nogui/obj/audio_rtaudio.o \
+		build_nogui/obj/midi_controller.o
 DIST          = /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_pre.prf \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/qdevice.pri \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/device_config.prf \
@@ -284,6 +286,7 @@ DIST          = /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_pre.pr
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/yacc.prf \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/lex.prf \
 		../../CISYNTH_noGUI.pro ../src/core/audio_rtaudio.h \
+		../src/core/audio_c_api.h \
 		../src/core/config.h \
 		../src/core/context.h \
 		../src/core/display.h \
@@ -291,10 +294,12 @@ DIST          = /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_pre.pr
 		../src/core/doublebuffer.h \
 		../src/core/error.h \
 		../src/core/multithreading.h \
+		../src/core/midi_controller.h \
 		../src/core/shared.h \
 		../src/core/synth.h \
 		../src/core/udp.h \
-		../src/core/wave_generation.h ../src/core/display.c \
+		../src/core/wave_generation.h \
+		../src/core/ZitaRev1.h ../src/core/display.c \
 		../src/core/dmx.c \
 		../src/core/error.c \
 		../src/core/main.c \
@@ -303,7 +308,8 @@ DIST          = /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_pre.pr
 		../src/core/synth.c \
 		../src/core/udp.c \
 		../src/core/wave_generation.c \
-		../src/core/audio_rtaudio.cpp
+		../src/core/audio_rtaudio.cpp \
+		../src/core/midi_controller.cpp
 QMAKE_TARGET  = CISYNTH_noGUI
 DESTDIR       = ./
 TARGET        = ./CISYNTH_noGUI.app/Contents/MacOS/CISYNTH_noGUI
@@ -312,12 +318,12 @@ TARGET        = ./CISYNTH_noGUI.app/Contents/MacOS/CISYNTH_noGUI
 EXPORT_QMAKE_MAC_SDK = macosx
 EXPORT_QMAKE_MAC_SDK_VERSION = 15.4
 EXPORT_QMAKE_XCODE_DEVELOPER_PATH = /Applications/Xcode.app/Contents/Developer
-EXPORT__QMAKE_STASH_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI/.qmake.stash
+EXPORT__QMAKE_STASH_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI_contrasteLigne/.qmake.stash
 EXPORT_VALID_ARCHS = arm64
 EXPORT_DEFAULT_ARCHS = arm64
 EXPORT_ARCHS = $(filter $(EXPORT_VALID_ARCHS), $(if $(ARCHS), $(ARCHS), $(if $(EXPORT_DEFAULT_ARCHS), $(EXPORT_DEFAULT_ARCHS), $(EXPORT_VALID_ARCHS))))
 EXPORT_ARCH_ARGS = $(foreach arch, $(if $(EXPORT_ARCHS), $(EXPORT_ARCHS), $(EXPORT_VALID_ARCHS)), -arch $(arch))
-EXPORT__PRO_FILE_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI/CISYNTH_noGUI.pro
+EXPORT__PRO_FILE_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI_contrasteLigne/CISYNTH_noGUI.pro
 
 
 include /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/mac/sdk.mk
@@ -787,8 +793,8 @@ distdir: FORCE
 	@test -d $(DISTDIR) || mkdir -p $(DISTDIR)
 	$(COPY_FILE) --parents $(DIST) $(DISTDIR)/
 	$(COPY_FILE) --parents /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp $(DISTDIR)/
-	$(COPY_FILE) --parents ../src/core/audio_rtaudio.h ../src/core/config.h ../src/core/context.h ../src/core/display.h ../src/core/dmx.h ../src/core/doublebuffer.h ../src/core/error.h ../src/core/multithreading.h ../src/core/shared.h ../src/core/synth.h ../src/core/udp.h ../src/core/wave_generation.h $(DISTDIR)/
-	$(COPY_FILE) --parents ../src/core/display.c ../src/core/dmx.c ../src/core/error.c ../src/core/main.c ../src/core/multithreading.c ../src/core/shared.c ../src/core/synth.c ../src/core/udp.c ../src/core/wave_generation.c ../src/core/audio_rtaudio.cpp $(DISTDIR)/
+	$(COPY_FILE) --parents ../src/core/audio_rtaudio.h ../src/core/audio_c_api.h ../src/core/config.h ../src/core/context.h ../src/core/display.h ../src/core/dmx.h ../src/core/doublebuffer.h ../src/core/error.h ../src/core/multithreading.h ../src/core/midi_controller.h ../src/core/shared.h ../src/core/synth.h ../src/core/udp.h ../src/core/wave_generation.h ../src/core/ZitaRev1.h $(DISTDIR)/
+	$(COPY_FILE) --parents ../src/core/display.c ../src/core/dmx.c ../src/core/error.c ../src/core/main.c ../src/core/multithreading.c ../src/core/shared.c ../src/core/synth.c ../src/core/udp.c ../src/core/wave_generation.c ../src/core/audio_rtaudio.cpp ../src/core/midi_controller.cpp $(DISTDIR)/
 
 
 clean: compiler_clean 
@@ -1121,10 +1127,20 @@ build_nogui/obj/wave_generation.o: ../src/core/wave_generation.c ../src/core/con
 	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/wave_generation.o ../src/core/wave_generation.c
 
 build_nogui/obj/audio_rtaudio.o: ../src/core/audio_rtaudio.cpp ../src/core/audio_rtaudio.h \
+		../src/core/ZitaRev1.h \
 		../src/core/audio_c_api.h \
 		../src/core/config.h \
 		/opt/homebrew/include/rtaudio/RtAudio.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o build_nogui/obj/audio_rtaudio.o ../src/core/audio_rtaudio.cpp
+
+build_nogui/obj/midi_controller.o: ../src/core/midi_controller.cpp ../src/core/midi_controller.h \
+		/opt/homebrew/include/rtmidi/RtMidi.h \
+		../src/core/audio_rtaudio.h \
+		../src/core/ZitaRev1.h \
+		../src/core/audio_c_api.h \
+		../src/core/config.h \
+		/opt/homebrew/include/rtaudio/RtAudio.h
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o build_nogui/obj/midi_controller.o ../src/core/midi_controller.cpp
 
 ####### Install
 

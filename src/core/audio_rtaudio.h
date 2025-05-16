@@ -3,6 +3,7 @@
 #ifndef AUDIO_RTAUDIO_H
 #define AUDIO_RTAUDIO_H
 
+#include "ZitaRev1.h"
 #include "audio_c_api.h"
 #include "config.h"
 #include <atomic>
@@ -32,6 +33,26 @@ private:
 
   // Volume control
   float masterVolume;
+
+  // Paramètres de réverbération
+  static const int REVERB_BUFFER_SIZE = 32768; // Pour compatibilité arrière
+  float *reverbBuffer;                         // Pour compatibilité arrière
+  int reverbWriteIndex;                        // Pour compatibilité arrière
+  int reverbDelays[8];                         // Pour compatibilité arrière
+
+  // Nouvelle implémentation basée sur ZitaRev1
+  ZitaRev1
+      zitaRev; // Instance de ZitaRev1 pour une réverbération de haute qualité
+
+  float reverbMix;      // Dry/Wet mix (0.0 - 1.0)
+  float reverbRoomSize; // Taille de la pièce (0.0 - 1.0)
+  float reverbDamping;  // Amortissement (0.0 - 1.0)
+  float reverbWidth;    // Largeur stéréo (0.0 - 1.0)
+  bool reverbEnabled;   // Activation/désactivation de la réverbération
+
+  // Fonction de traitement de la réverbération
+  void processReverb(float inputL, float inputR, float &outputL,
+                     float &outputR);
 
 public:
   AudioSystem(unsigned int sampleRate = SAMPLING_FREQUENCY,
@@ -63,6 +84,18 @@ public:
   // Paramètres de latence
   bool setBufferSize(unsigned int size);
   unsigned int getBufferSize() const;
+
+  // Contrôle de réverbération
+  void enableReverb(bool enable);
+  bool isReverbEnabled() const;
+  void setReverbMix(float mix);
+  float getReverbMix() const;
+  void setReverbRoomSize(float size);
+  float getReverbRoomSize() const;
+  void setReverbDamping(float damping);
+  float getReverbDamping() const;
+  void setReverbWidth(float width);
+  float getReverbWidth() const;
 };
 
 // Fonction globale pour la rétrocompatibilité minimale

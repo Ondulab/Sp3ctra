@@ -59,7 +59,8 @@ HEADERS += \
     src/core/shared.h \
     src/core/synth.h \
     src/core/udp.h \
-    src/core/wave_generation.h
+    src/core/wave_generation.h \
+    src/core/ZitaRev1.h
 
 # Chemins d'inclusion
 INCLUDEPATH += src/core
