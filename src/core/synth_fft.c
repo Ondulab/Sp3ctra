@@ -39,11 +39,13 @@ static void generate_test_data_for_fft(void);
 // --- Synth Parameters & Globals ---
 #define NORM_FACTOR_BIN0 881280.0f
 #define NORM_FACTOR_HARMONICS 220320.0f
-#define MASTER_VOLUME 0.125f
+#define MASTER_VOLUME 0.5f
 #define AMPLITUDE_SMOOTHING_ALPHA 0.005f
 #define AMPLITUDE_GAMMA 2.5f
 
 // Polyphony related globals
+unsigned long long g_current_trigger_order =
+    0; // Global trigger order counter, starts at 0
 SynthVoice poly_voices[NUM_POLY_VOICES];
 float global_smoothed_magnitudes[NUM_OSCILLATORS];
 SpectralFilterParams global_spectral_filter_params;
@@ -126,6 +128,7 @@ void synth_fftMode_init(void) {
     poly_voices[i].voice_state = ADSR_STATE_IDLE;
     poly_voices[i].midi_note_number = -1;
     poly_voices[i].last_velocity = 1.0f;
+    poly_voices[i].last_triggered_order = 0; // Initialize trigger order
     for (int j = 0; j < NUM_OSCILLATORS; ++j) {
       poly_voices[i].oscillators[j].phase = 0.0f;
     }
@@ -439,16 +442,15 @@ static void adsr_init_envelope(AdsrEnvelope *env, float attack_s, float decay_s,
 static void adsr_trigger_attack(AdsrEnvelope *env) {
   env->state = ADSR_STATE_ATTACK;
   env->current_samples = 0;
-  if (env->current_output > 0.0f && env->current_output < 1.0f &&
-      env->attack_time_samples > 0.0f) {
-    env->attack_increment =
-        (1.0f - env->current_output) / env->attack_time_samples;
-  } else if (env->attack_time_samples > 0.0f) {
-    env->current_output = 0.0f;
+  // Always reset current_output to 0 for a new attack phase, ensuring full
+  // attack from zero.
+  env->current_output = 0.0f;
+
+  if (env->attack_time_samples > 0.0f) {
     env->attack_increment = 1.0f / env->attack_time_samples;
-  } else {
-    env->current_output = 1.0f;
-    env->attack_increment = 0.0f;
+  } else {                        // Attack time is zero or negative
+    env->current_output = 1.0f;   // Instantly go to peak
+    env->attack_increment = 0.0f; // No increment needed
     if (env->sustain_level < 1.0f && env->decay_time_samples > 0.0f) {
       env->state = ADSR_STATE_DECAY;
       if (env->decay_time_samples > 0.0f) {
@@ -539,60 +541,103 @@ static float midi_note_to_frequency(int noteNumber) {
 }
 
 void synth_fft_note_on(int noteNumber, int velocity) {
-  if (velocity > 0) {
-    int voice_idx = -1;
-    for (int i = 0; i < NUM_POLY_VOICES; ++i) {
-      if (poly_voices[i].voice_state == ADSR_STATE_IDLE) {
-        voice_idx = i;
-        break;
-      }
-    }
-    if (voice_idx == -1) {
-      int oldest_voice_idx = 0;
-      long long oldest_age = -1; // Use a large number or track actual age
-      // Simple: find any voice in release, or just steal oldest
-      // non-newly-triggered one This is a very basic stealing logic, can be
-      // improved
-      for (int i = 0; i < NUM_POLY_VOICES; ++i) {
-        if (poly_voices[i].voice_state ==
-            ADSR_STATE_RELEASE) { // Prefer releasing voice
-          oldest_voice_idx = i;
-          break;
-        }
-        // A more complex age tracking would be needed for true "oldest note"
-        // For now, just cycle through if all are in Attack/Decay/Sustain
-        if (i > oldest_voice_idx &&
-            poly_voices[i].voice_state !=
-                ADSR_STATE_ATTACK) { // Avoid stealing a freshly attacked note
-          // This is still not great, a proper age or note-on timestamp is
-          // better
-          oldest_voice_idx = i;
-        }
-      }
-      voice_idx =
-          oldest_voice_idx; // Fallback to stealing voice 0 or oldest found
-      printf("SYNTH_FFT: No idle voice, stealing voice %d for note %d\n",
-             voice_idx, noteNumber);
-    }
-
-    SynthVoice *voice = &poly_voices[voice_idx];
-    voice->fundamental_frequency = midi_note_to_frequency(noteNumber);
-    voice->midi_note_number = noteNumber;
-    voice->voice_state = ADSR_STATE_ATTACK;
-
-    for (int i = 0; i < NUM_OSCILLATORS; ++i) {
-      voice->oscillators[i].phase = 0.0f;
-    }
-    voice->last_velocity = (float)velocity / 127.0f;
-    adsr_trigger_attack(&voice->volume_adsr);
-    adsr_trigger_attack(&voice->filter_adsr);
-    printf("SYNTH_FFT: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %f Hz "
-           "-> ADSR Attack\n",
-           voice_idx, noteNumber, voice->last_velocity,
-           voice->fundamental_frequency);
-  } else {
+  if (velocity <= 0) {
     synth_fft_note_off(noteNumber);
+    return;
   }
+
+  g_current_trigger_order++; // Increment global trigger order
+
+  int voice_idx = -1;
+
+  // Priority 1: Find an IDLE voice
+  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+    if (poly_voices[i].voice_state == ADSR_STATE_IDLE) {
+      voice_idx = i;
+      break;
+    }
+  }
+
+  // Priority 2: Find the oldest voice not in RELEASE or RECENT ATTACK
+  // "Recent attack" could be defined by comparing its trigger order to
+  // g_current_trigger_order For simplicity here, we'll consider any ATTACK,
+  // DECAY, SUSTAIN voice. We'll pick the one with the smallest
+  // last_triggered_order.
+  if (voice_idx == -1) {
+    unsigned long long oldest_order =
+        g_current_trigger_order +
+        1; // Initialize with a value guaranteed to be newer
+    int candidate_idx = -1;
+    for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+      if (poly_voices[i].voice_state != ADSR_STATE_RELEASE &&
+          poly_voices[i].voice_state !=
+              ADSR_STATE_IDLE) { // i.e., ATTACK, DECAY, SUSTAIN
+        if (poly_voices[i].last_triggered_order < oldest_order) {
+          oldest_order = poly_voices[i].last_triggered_order;
+          candidate_idx = i;
+        }
+      }
+    }
+    if (candidate_idx != -1) {
+      voice_idx = candidate_idx;
+      printf("SYNTH_FFT: No idle voice. Stealing oldest active (non-release) "
+             "voice %d for note %d (Order: %llu)\n",
+             voice_idx, noteNumber, oldest_order);
+    }
+  }
+
+  // Priority 3: If still no voice, steal the voice in RELEASE with the lowest
+  // envelope output
+  if (voice_idx == -1) {
+    float lowest_env_output = 2.0f; // Greater than max envelope output (1.0)
+    int candidate_idx = -1;
+    for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+      if (poly_voices[i].voice_state == ADSR_STATE_RELEASE) {
+        if (poly_voices[i].volume_adsr.current_output < lowest_env_output) {
+          lowest_env_output = poly_voices[i].volume_adsr.current_output;
+          candidate_idx = i;
+        }
+      }
+    }
+    if (candidate_idx != -1) {
+      voice_idx = candidate_idx;
+      printf("SYNTH_FFT: No idle or active non-release voice. Stealing "
+             "quietest release voice %d for note %d (Env: %.2f)\n",
+             voice_idx, noteNumber, lowest_env_output);
+    }
+  }
+
+  // Fallback: If absolutely no voice found (e.g., all voices are in very recent
+  // ATTACK and NUM_POLY_VOICES is small) or if all voices are in RELEASE but
+  // none were selected by prio 3 (should not happen if there's at least one
+  // release voice) For now, we'll just steal voice 0 as a last resort if
+  // voice_idx is still -1. A more robust system might refuse the note or have a
+  // more complex fallback.
+  if (voice_idx == -1) {
+    voice_idx = 0; // Default to stealing voice 0 if no other candidate found
+    printf("SYNTH_FFT: Critical fallback. Stealing voice 0 for note %d\n",
+           noteNumber);
+  }
+
+  SynthVoice *voice = &poly_voices[voice_idx];
+  voice->fundamental_frequency = midi_note_to_frequency(noteNumber);
+  voice->midi_note_number = noteNumber;
+  voice->voice_state =
+      ADSR_STATE_ATTACK; // Set to ATTACK before adsr_trigger_attack
+  voice->last_velocity = (float)velocity / 127.0f;
+  voice->last_triggered_order = g_current_trigger_order;
+
+  for (int i = 0; i < NUM_OSCILLATORS; ++i) {
+    voice->oscillators[i].phase = 0.0f;
+  }
+
+  adsr_trigger_attack(&voice->volume_adsr);
+  adsr_trigger_attack(&voice->filter_adsr);
+
+  printf("SYNTH_FFT: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f "
+         "Hz, Order: %llu -> ADSR Attack\n",
+         voice_idx, noteNumber, velocity, voice->last_velocity,
+         voice->fundamental_frequency, voice->last_triggered_order);
 }
 
 void synth_fft_note_off(int noteNumber) {

@@ -15,7 +15,7 @@
 
 /* Synth Definitions */
 #define NUM_OSCILLATORS 30
-#define NUM_POLY_VOICES 8                    // Increased to 8 polyphonic voices
+#define NUM_POLY_VOICES 32 // Increased to 32 polyphonic voices
 #define DEFAULT_FUNDAMENTAL_FREQUENCY 440.0f // A4 for testing
 
 /* ADSR Envelope Definitions */
@@ -82,6 +82,8 @@ typedef struct {
 
   float last_velocity; // Normalized velocity (0.0 to 1.0) of the last Note On
                        // for this voice
+  unsigned long long
+      last_triggered_order; // Order in which this voice was triggered
 } SynthVoice;
 
 /* Définitions pour la moyenne glissante */
@@ -109,6 +111,8 @@ typedef struct {
 } FftAudioDataBuffer;
 
 /* Exported variables --------------------------------------------------------*/
+extern unsigned long long
+    g_current_trigger_order;                    // Global trigger order counter
 extern FftAudioDataBuffer fft_audio_buffers[2]; // Double buffer for FFT synth
 extern volatile int
     fft_current_buffer_index; // Index of the buffer to be filled by producer
