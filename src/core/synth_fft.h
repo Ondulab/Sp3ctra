@@ -17,6 +17,43 @@
 #define NUM_OSCILLATORS 30
 #define DEFAULT_FUNDAMENTAL_FREQUENCY 440.0f // A4 for testing
 
+/* ADSR Envelope Definitions */
+typedef enum {
+  ADSR_STATE_IDLE,
+  ADSR_STATE_ATTACK,
+  ADSR_STATE_DECAY,
+  ADSR_STATE_SUSTAIN,
+  ADSR_STATE_RELEASE
+} AdsrState;
+
+typedef struct {
+  AdsrState state;
+  float attack_time_samples;  // Attack time in samples
+  float decay_time_samples;   // Decay time in samples
+  float sustain_level;        // Sustain level (0.0 to 1.0)
+  float release_time_samples; // Release time in samples
+
+  float current_output;      // Current envelope output value (0.0 to 1.0)
+  long long current_samples; // Counter for samples in current state
+  float attack_increment;    // Value to add per sample in attack phase
+  float decay_decrement;     // Value to subtract per sample in decay phase
+  float release_decrement;   // Value to subtract per sample in release phase
+  // Default ADSR values (can be made configurable later)
+  // Times in seconds, will be converted to samples in init
+  float attack_s;
+  float decay_s;
+  float release_s;
+} AdsrEnvelope;
+
+/* Filter Definitions */
+typedef struct S_SpectralFilterParams { // Renamed struct tag
+  // Parameters for filter modulation by ADSR
+  float base_cutoff_hz;   // Base cutoff frequency when ADSR is at 0
+  float filter_env_depth; // How much ADSR modulates cutoff (can be positive or
+                          // negative)
+  // prev_output and alpha are removed as they are not needed for this approach
+} SpectralFilterParams; // Renamed typedef alias
+
 // Structure for a single oscillator
 typedef struct {
   float phase;
@@ -31,6 +68,15 @@ typedef struct {
                                                          // smoothing
   volatile float fundamental_frequency; // Volatile due to inter-thread access
   volatile int active;                  // Volatile due to inter-thread access
+
+  // ADSR Envelope for Volume
+  AdsrEnvelope volume_adsr;
+  float last_velocity; // Normalized velocity (0.0 to 1.0) of the last Note On
+
+  // Filter ADSR Envelope and Filter State
+  AdsrEnvelope filter_adsr;
+  SpectralFilterParams
+      spectral_filter_params; // Use new type name and member name
 } MonophonicVoice;
 
 /* Définitions pour la moyenne glissante */
@@ -85,5 +131,11 @@ synth_fftMode_thread_func(void *arg); // Renamed to avoid conflict if
 // MIDI Note handling functions for synth_fft
 void synth_fft_note_on(int noteNumber, int velocity);
 void synth_fft_note_off(int noteNumber);
+
+// Functions to set ADSR parameters for synth_fft volume envelope
+void synth_fft_set_volume_adsr_attack(float attack_s);
+void synth_fft_set_volume_adsr_decay(float decay_s);
+void synth_fft_set_volume_adsr_sustain(float sustain_level); // 0.0 to 1.0
+void synth_fft_set_volume_adsr_release(float release_s);
 
 #endif /* SYNTH_FFT_H */
