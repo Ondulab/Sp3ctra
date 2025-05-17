@@ -24,6 +24,10 @@
 static void adsr_init_envelope(AdsrEnvelope *env, float attack_s, float decay_s,
                                float sustain_level, float release_s,
                                float sample_rate);
+static void adsr_update_settings_and_recalculate_rates(
+    AdsrEnvelope *env, float attack_s, float decay_s, float sustain_level,
+    float release_s,
+    float sample_rate); // New forward declaration
 static void adsr_trigger_attack(AdsrEnvelope *env);
 static void adsr_trigger_release(AdsrEnvelope *env);
 static float adsr_get_output(AdsrEnvelope *env);
@@ -439,6 +443,89 @@ static void adsr_init_envelope(AdsrEnvelope *env, float attack_s, float decay_s,
   env->current_samples = 0;
 }
 
+// New function to update ADSR settings for an already active envelope without
+// resetting its state
+static void
+adsr_update_settings_and_recalculate_rates(AdsrEnvelope *env, float attack_s,
+                                           float decay_s, float sustain_level,
+                                           float release_s, float sample_rate) {
+  env->attack_s = attack_s;
+  env->decay_s = decay_s;
+  env->sustain_level = sustain_level;
+  env->release_s = release_s;
+
+  env->attack_time_samples =
+      (attack_s > 0.0f) ? fmaxf(1.0f, attack_s * sample_rate) : 0.0f;
+  env->decay_time_samples =
+      (decay_s > 0.0f) ? fmaxf(1.0f, decay_s * sample_rate) : 0.0f;
+  env->release_time_samples =
+      (release_s > 0.0f) ? fmaxf(1.0f, release_s * sample_rate) : 0.0f;
+
+  // Recalculate increments/decrements
+  // For attack_increment, it's generally set when attack is triggered or
+  // re-triggered. If an attack is in progress and its time changes,
+  // adsr_get_output would need more complex logic to adjust smoothly. For now,
+  // we primarily focus on decay and release adjustments.
+  env->attack_increment =
+      (env->attack_time_samples > 0.0f)
+          ? (1.0f / env->attack_time_samples)
+          : 1.0f; // Default for re-calc, trigger_attack refines
+
+  // Decay decrement:
+  // If currently in DECAY state and current_output is above the new
+  // sustain_level
+  if (env->state == ADSR_STATE_DECAY &&
+      env->current_output > env->sustain_level) {
+    float time_remaining_decay = env->decay_time_samples - env->current_samples;
+    if (time_remaining_decay > 0.0f) {
+      env->decay_decrement =
+          (env->current_output - env->sustain_level) / time_remaining_decay;
+    } else { // Time is up or negative, should go to sustain level instantly or
+             // use a minimal decrement
+      env->decay_decrement =
+          (env->current_output -
+           env->sustain_level); // Effectively instant if current_samples >=
+                                // decay_time_samples
+    }
+  } else { // Standard calculation (e.g. for init or if not in decay, or if
+           // current_output <= sustain_level)
+    env->decay_decrement =
+        (env->decay_time_samples > 0.0f &&
+         (1.0f - env->sustain_level) > 0.00001f)
+            ? ((1.0f - env->sustain_level) / env->decay_time_samples)
+            : (1.0f - env->sustain_level); // Default or if sustain is 1.0 or
+                                           // decay time is 0
+    if (env->decay_decrement < 0.0f)
+      env->decay_decrement = 0.0f; // Ensure non-negative
+  }
+
+  // Release decrement:
+  // If currently in RELEASE state and current_output is above 0
+  if (env->state == ADSR_STATE_RELEASE && env->current_output > 0.0f) {
+    float time_remaining_release =
+        env->release_time_samples - env->current_samples;
+    if (time_remaining_release > 0.0f) {
+      env->release_decrement = env->current_output / time_remaining_release;
+    } else { // Time is up or negative, should go to 0 instantly
+      env->release_decrement = env->current_output; // Effectively instant
+    }
+  } else { // Standard calculation (e.g. for init or if not in release)
+    env->release_decrement =
+        (env->release_time_samples > 0.0f &&
+         env->current_output > 0.00001f) // Check current_output for release
+            ? (env->current_output /
+               env->release_time_samples) // This assumes release starts from
+                                          // current_output
+            : env->current_output;        // If release time is 0, instant drop
+    if (env->release_decrement < 0.0f)
+      env->release_decrement = 0.0f; // Ensure non-negative
+  }
+  // Note: The original adsr_init_envelope's release_decrement was calculated
+  // based on sustain_level if current_output was 0. Here, for an active
+  // envelope, it should always be based on current_output. If
+  // adsr_trigger_release is called, it will set its own release_decrement.
+}
+
 static void adsr_trigger_attack(AdsrEnvelope *env) {
   env->state = ADSR_STATE_ATTACK;
   env->current_samples = 0;
@@ -580,9 +667,10 @@ void synth_fft_note_on(int noteNumber, int velocity) {
     }
     if (candidate_idx != -1) {
       voice_idx = candidate_idx;
-      printf("SYNTH_FFT: No idle voice. Stealing oldest active (non-release) "
-             "voice %d for note %d (Order: %llu)\n",
-             voice_idx, noteNumber, oldest_order);
+      // printf("SYNTH_FFT: No idle voice. Stealing oldest active (non-release)
+      // "
+      //        "voice %d for note %d (Order: %llu)\n",
+      //        voice_idx, noteNumber, oldest_order);
     }
   }
 
@@ -601,9 +689,9 @@ void synth_fft_note_on(int noteNumber, int velocity) {
     }
     if (candidate_idx != -1) {
       voice_idx = candidate_idx;
-      printf("SYNTH_FFT: No idle or active non-release voice. Stealing "
-             "quietest release voice %d for note %d (Env: %.2f)\n",
-             voice_idx, noteNumber, lowest_env_output);
+      // printf("SYNTH_FFT: No idle or active non-release voice. Stealing "
+      //        "quietest release voice %d for note %d (Env: %.2f)\n",
+      //        voice_idx, noteNumber, lowest_env_output);
     }
   }
 
@@ -615,15 +703,25 @@ void synth_fft_note_on(int noteNumber, int velocity) {
   // more complex fallback.
   if (voice_idx == -1) {
     voice_idx = 0; // Default to stealing voice 0 if no other candidate found
-    printf("SYNTH_FFT: Critical fallback. Stealing voice 0 for note %d\n",
-           noteNumber);
+    // printf("SYNTH_FFT: Critical fallback. Stealing voice 0 for note %d\n",
+    //        noteNumber);
   }
 
   SynthVoice *voice = &poly_voices[voice_idx];
+
+  // Initialize the chosen voice's envelopes with current global ADSR settings
+  // This ensures it starts fresh, respecting the latest global parameters.
+  adsr_init_envelope(&voice->volume_adsr, G_VOLUME_ADSR_ATTACK_S,
+                     G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
+                     G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+  adsr_init_envelope(&voice->filter_adsr, G_FILTER_ADSR_ATTACK_S,
+                     G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
+                     G_FILTER_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+
   voice->fundamental_frequency = midi_note_to_frequency(noteNumber);
   voice->midi_note_number = noteNumber;
-  voice->voice_state =
-      ADSR_STATE_ATTACK; // Set to ATTACK before adsr_trigger_attack
+  voice->voice_state = ADSR_STATE_ATTACK; // Will be set by adsr_trigger_attack,
+                                          // but good to be explicit
   voice->last_velocity = (float)velocity / 127.0f;
   voice->last_triggered_order = g_current_trigger_order;
 
@@ -631,13 +729,15 @@ void synth_fft_note_on(int noteNumber, int velocity) {
     voice->oscillators[i].phase = 0.0f;
   }
 
-  adsr_trigger_attack(&voice->volume_adsr);
-  adsr_trigger_attack(&voice->filter_adsr);
+  adsr_trigger_attack(
+      &voice->volume_adsr); // This will now use the freshly initialized params
+  adsr_trigger_attack(
+      &voice->filter_adsr); // and set state to ATTACK, current_output to 0
 
-  printf("SYNTH_FFT: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f "
-         "Hz, Order: %llu -> ADSR Attack\n",
-         voice_idx, noteNumber, velocity, voice->last_velocity,
-         voice->fundamental_frequency, voice->last_triggered_order);
+  // printf("SYNTH_FFT: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f "
+  //        "Hz, Order: %llu -> ADSR Attack\n",
+  //        voice_idx, noteNumber, velocity, voice->last_velocity,
+  //        voice->fundamental_frequency, voice->last_triggered_order);
 }
 
 void synth_fft_note_off(int noteNumber) {
@@ -650,8 +750,8 @@ void synth_fft_note_off(int noteNumber) {
       // voice_state will be set to IDLE by adsr_get_output when release
       // finishes midi_note_number will be set to -1 when voice_state becomes
       // IDLE in synth_fftMode_process
-      printf("SYNTH_FFT: Voice %d Note Off: %d -> ADSR Release\n", i,
-             noteNumber);
+      // printf("SYNTH_FFT: Voice %d Note Off: %d -> ADSR Release\n", i,
+      //        noteNumber);
     }
   }
 }
@@ -688,14 +788,15 @@ void synth_fft_set_volume_adsr_attack(float attack_s) {
   if (attack_s < 0.0f)
     attack_s = 0.0f;
   G_VOLUME_ADSR_ATTACK_S = attack_s;
-  printf("SYNTH_FFT: Global Volume ADSR Attack set to: %.3f s\n", attack_s);
-  // Re-initialize ADSR for all voices with the new attack time
+  // printf("SYNTH_FFT: Global Volume ADSR Attack set to: %.3f s\n", attack_s);
   for (int i = 0; i < NUM_POLY_VOICES; ++i) {
-    adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
-                       G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-                       G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
-    // Note: This might also re-initialize filter ADSR if desired, or keep them
-    // separate
+    adsr_update_settings_and_recalculate_rates(
+        &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
+        G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
+        G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+    // Update filter ADSR similarly if desired
+    // adsr_update_settings_and_recalculate_rates(&poly_voices[i].filter_adsr,
+    // G_FILTER_ADSR_ATTACK_S, ...);
   }
 }
 
@@ -703,12 +804,12 @@ void synth_fft_set_volume_adsr_decay(float decay_s) {
   if (decay_s < 0.0f)
     decay_s = 0.0f;
   G_VOLUME_ADSR_DECAY_S = decay_s;
-  printf("SYNTH_FFT: Global Volume ADSR Decay set to: %.3f s\n", decay_s);
-  // Re-initialize ADSR for all voices with the new decay time
+  // printf("SYNTH_FFT: Global Volume ADSR Decay set to: %.3f s\n", decay_s);
   for (int i = 0; i < NUM_POLY_VOICES; ++i) {
-    adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
-                       G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-                       G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+    adsr_update_settings_and_recalculate_rates(
+        &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
+        G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
+        G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
   }
 }
 
@@ -718,12 +819,13 @@ void synth_fft_set_volume_adsr_sustain(float sustain_level) {
   if (sustain_level > 1.0f)
     sustain_level = 1.0f;
   G_VOLUME_ADSR_SUSTAIN_LEVEL = sustain_level;
-  printf("SYNTH_FFT: Global Volume ADSR Sustain set to: %.2f\n", sustain_level);
-  // Re-initialize ADSR for all voices with the new sustain level
+  // printf("SYNTH_FFT: Global Volume ADSR Sustain set to: %.2f\n",
+  // sustain_level);
   for (int i = 0; i < NUM_POLY_VOICES; ++i) {
-    adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
-                       G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-                       G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+    adsr_update_settings_and_recalculate_rates(
+        &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
+        G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
+        G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
   }
 }
 
@@ -731,12 +833,13 @@ void synth_fft_set_volume_adsr_release(float release_s) {
   if (release_s < 0.0f)
     release_s = 0.0f;
   G_VOLUME_ADSR_RELEASE_S = release_s;
-  printf("SYNTH_FFT: Global Volume ADSR Release set to: %.3f s\n", release_s);
-  // Re-initialize ADSR for all voices with the new release time
+  // printf("SYNTH_FFT: Global Volume ADSR Release set to: %.3f s\n",
+  // release_s);
   for (int i = 0; i < NUM_POLY_VOICES; ++i) {
-    adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
-                       G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-                       G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+    adsr_update_settings_and_recalculate_rates(
+        &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
+        G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
+        G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
   }
 }
 
@@ -748,13 +851,13 @@ void synth_fft_set_vibrato_rate(float rate_hz) {
   global_vibrato_lfo.rate_hz = rate_hz;
   global_vibrato_lfo.phase_increment =
       TWO_PI * rate_hz / (float)SAMPLING_FREQUENCY;
-  printf("SYNTH_FFT: Global Vibrato LFO Rate set to: %.2f Hz\n", rate_hz);
+  // printf("SYNTH_FFT: Global Vibrato LFO Rate set to: %.2f Hz\n", rate_hz);
 }
 
 void synth_fft_set_vibrato_depth(float depth_semitones) {
   // Depth can be positive or negative, typically small values like -2 to 2
   // semitones
   global_vibrato_lfo.depth_semitones = depth_semitones;
-  printf("SYNTH_FFT: Global Vibrato LFO Depth set to: %.2f semitones\n",
-         depth_semitones);
+  // printf("SYNTH_FFT: Global Vibrato LFO Depth set to: %.2f semitones\n",
+  //        depth_semitones);
 }

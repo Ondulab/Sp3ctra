@@ -528,11 +528,11 @@ void MidiController::processMidiMessage(double timeStamp,
   } else if (messageType == 0x90) { // Note On message
     int noteNumber = number;        // message->at(1) is 'number'
     int velocity = value;           // message->at(2) is 'value'
-#ifdef DEBUG_MIDI
-    std::cout << "MIDI Note On: Channel=" << (int)midiChannel
-              << ", Note=" << noteNumber << ", Velocity=" << velocity
-              << std::endl;
-#endif
+    // #ifdef DEBUG_MIDI // Commenting out these general Note On/Off logs
+    //     std::cout << "MIDI Note On: Channel=" << (int)midiChannel
+    //               << ", Note=" << noteNumber << ", Velocity=" << velocity
+    //               << std::endl;
+    // #endif
     if (velocity > 0) {
       if (noteOnCallback) {
         noteOnCallback(noteNumber, velocity);
@@ -545,11 +545,11 @@ void MidiController::processMidiMessage(double timeStamp,
   } else if (messageType == 0x80) { // Note Off message
     int noteNumber = number;        // message->at(1) is 'number'
     // int velocity = value; // Velocity for note off
-#ifdef DEBUG_MIDI
-    std::cout << "MIDI Note Off: Channel=" << (int)midiChannel
-              << ", Note=" << noteNumber << ", Velocity=" << (int)value
-              << std::endl;
-#endif
+    // #ifdef DEBUG_MIDI // Commenting out these general Note On/Off logs
+    //     std::cout << "MIDI Note Off: Channel=" << (int)midiChannel
+    //               << ", Note=" << noteNumber << ", Velocity=" << (int)value
+    //               << std::endl;
+    // #endif
     if (noteOffCallback) {
       noteOffCallback(noteNumber);
     }

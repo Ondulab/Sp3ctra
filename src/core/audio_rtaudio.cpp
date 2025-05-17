@@ -134,7 +134,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 
     // Log le volume seulement s'il a changé significativement
     if (fabs(currentVolume - lastLoggedVolume) > 0.01f) {
-      std::cout << "AUDIO: Applying volume: " << currentVolume << std::endl;
+      // std::cout << "AUDIO: Applying volume: " << currentVolume << std::endl;
       lastLoggedVolume = currentVolume;
     }
 
