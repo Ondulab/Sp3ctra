@@ -15,6 +15,7 @@
 
 /* Synth Definitions */
 #define NUM_OSCILLATORS 30
+#define NUM_POLY_VOICES 8                    // Increased to 8 polyphonic voices
 #define DEFAULT_FUNDAMENTAL_FREQUENCY 440.0f // A4 for testing
 
 /* ADSR Envelope Definitions */
@@ -61,23 +62,27 @@ typedef struct {
   // Amplitude will be derived from FFT magnitudes
 } OscillatorState;
 
-// Structure for a monophonic synth voice
+// Structure for a single polyphonic synth voice (renamed from MonophonicVoice)
 typedef struct {
-  OscillatorState oscillators[NUM_OSCILLATORS];
-  float smoothed_normalized_magnitudes[NUM_OSCILLATORS]; // For amplitude
-                                                         // smoothing
-  volatile float fundamental_frequency; // Volatile due to inter-thread access
-  volatile int active;                  // Volatile due to inter-thread access
+  OscillatorState oscillators[NUM_OSCILLATORS]; // Per-voice phase
+  // smoothed_normalized_magnitudes will be global, shared by all voices for
+  // timbre
 
-  // ADSR Envelope for Volume
-  AdsrEnvelope volume_adsr;
+  volatile float fundamental_frequency;
+  AdsrState
+      voice_state; // Tracks overall state of the voice (idle, attack, decay,
+                   // sustain, release) This replaces the simple 'active' flag.
+  int midi_note_number; // MIDI note number this voice is playing, for Note Off
+                        // matching
+
+  AdsrEnvelope volume_adsr; // Each voice has its own volume ADSR state
+  AdsrEnvelope filter_adsr; // Each voice has its own filter ADSR state
+  // SpectralFilterParams will be global, shared by all voices for filter
+  // character
+
   float last_velocity; // Normalized velocity (0.0 to 1.0) of the last Note On
-
-  // Filter ADSR Envelope and Filter State
-  AdsrEnvelope filter_adsr;
-  SpectralFilterParams
-      spectral_filter_params; // Use new type name and member name
-} MonophonicVoice;
+                       // for this voice
+} SynthVoice;
 
 /* Définitions pour la moyenne glissante */
 #define MOVING_AVERAGE_WINDOW_SIZE 8 // Reduced from 32 for faster response
@@ -111,17 +116,34 @@ extern pthread_mutex_t
     fft_buffer_index_mutex; // Mutex for fft_current_buffer_index
 
 /* Variables pour la moyenne glissante et la FFT */
-extern GrayscaleLine
-    image_line_history[MOVING_AVERAGE_WINDOW_SIZE]; // Historique des lignes
-extern int
-    history_write_index; // Index pour l'écriture circulaire dans l'historique
-extern int history_fill_count; // Nombre d'éléments valides dans l'historique
-extern pthread_mutex_t
-    image_history_mutex;             // Pour protéger l'accès à l'historique
-extern FftContext fft_context;       // Contexte pour la FFT
-extern MonophonicVoice g_mono_voice; // Global monophonic voice instance
+extern GrayscaleLine image_line_history[MOVING_AVERAGE_WINDOW_SIZE];
+extern int history_write_index;
+extern int history_fill_count;
+extern pthread_mutex_t image_history_mutex;
+extern FftContext fft_context;
+
+// Polyphony related globals
+extern SynthVoice poly_voices[NUM_POLY_VOICES];
+extern float global_smoothed_magnitudes[NUM_OSCILLATORS];
+extern SpectralFilterParams global_spectral_filter_params;
+
+/* LFO State Definition */
+typedef struct {
+  float phase;
+  float phase_increment;
+  float current_output; // Output of LFO, typically -1.0 to 1.0
+  // Parameters
+  float rate_hz;
+  float depth_semitones; // Modulation depth in semitones
+} LfoState;
+
+extern LfoState global_vibrato_lfo; // Global LFO for vibrato
 
 /* Exported functions prototypes ---------------------------------------------*/
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void synth_fftMode_init(void);
 void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size);
 void *
@@ -137,5 +159,13 @@ void synth_fft_set_volume_adsr_attack(float attack_s);
 void synth_fft_set_volume_adsr_decay(float decay_s);
 void synth_fft_set_volume_adsr_sustain(float sustain_level); // 0.0 to 1.0
 void synth_fft_set_volume_adsr_release(float release_s);
+
+// Functions to set LFO parameters
+void synth_fft_set_vibrato_rate(float rate_hz);
+void synth_fft_set_vibrato_depth(float depth_semitones);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* SYNTH_FFT_H */

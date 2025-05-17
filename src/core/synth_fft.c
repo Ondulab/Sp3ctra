@@ -1,50 +1,70 @@
 /*
  * synth_fft.c
- *
- *  Created on: 16 May 2025
- *      Author: Cline
  */
 
 #include "synth_fft.h"
-#include "config.h"       // For SAMPLING_FREQUENCY, AUDIO_BUFFER_SIZE
-#include "context.h"      // Pour accéder à la structure Context
-#include "doublebuffer.h" // Pour accéder au DoubleBuffer des images
-#include "error.h"        // For die() or other error handling
-#include <errno.h>        // For ETIMEDOUT
-#include <math.h> // For sinf, M_PI, powf, sqrtf, fmaxf, fminf, floorf, expf
+#include "config.h"
+#include "context.h"
+#include "doublebuffer.h"
+#include "error.h"
+#include <errno.h>
+#include <math.h>
 #include <pthread.h>
-#include <stdio.h>  // For printf (debugging)
-#include <string.h> // For memset
-#include <time.h>   // Pour time() (random seed)
-#include <unistd.h> // Pour usleep
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #ifndef M_PI
 #define M_PI (3.14159265358979323846)
 #endif
 #define TWO_PI (2.0 * M_PI)
 
-// Forward declarations for static ADSR functions
+// --- Static Forward Declarations ---
 static void adsr_init_envelope(AdsrEnvelope *env, float attack_s, float decay_s,
                                float sustain_level, float release_s,
                                float sample_rate);
 static void adsr_trigger_attack(AdsrEnvelope *env);
 static void adsr_trigger_release(AdsrEnvelope *env);
 static float adsr_get_output(AdsrEnvelope *env);
-
-// Forward declarations for static Filter functions (now only init for spectral
-// params)
 static void filter_init_spectral_params(SpectralFilterParams *fp,
                                         float base_cutoff_hz,
                                         float filter_env_depth);
+static void lfo_init(LfoState *lfo, float rate_hz, float depth_semitones,
+                     float sample_rate);
+static float lfo_process(LfoState *lfo);
+static void process_image_data_for_fft(DoubleBuffer *image_db);
+static void generate_test_data_for_fft(void);
 
-// Normalization factors for FFT magnitudes
+// --- Synth Parameters & Globals ---
 #define NORM_FACTOR_BIN0 881280.0f
 #define NORM_FACTOR_HARMONICS 220320.0f
 #define MASTER_VOLUME 0.125f
 #define AMPLITUDE_SMOOTHING_ALPHA 0.005f
 #define AMPLITUDE_GAMMA 2.5f
 
-// Global variables defined in synth_fft.h
+// Polyphony related globals
+SynthVoice poly_voices[NUM_POLY_VOICES];
+float global_smoothed_magnitudes[NUM_OSCILLATORS];
+SpectralFilterParams global_spectral_filter_params;
+LfoState global_vibrato_lfo; // Definition for the global LFO
+
+// Global default ADSR parameters
+static float G_VOLUME_ADSR_ATTACK_S = 0.01f;
+static float G_VOLUME_ADSR_DECAY_S = 0.1f;
+static float G_VOLUME_ADSR_SUSTAIN_LEVEL = 0.8f;
+static float G_VOLUME_ADSR_RELEASE_S = 0.2f;
+
+static float G_FILTER_ADSR_ATTACK_S = 0.02f;
+static float G_FILTER_ADSR_DECAY_S = 0.2f;
+static float G_FILTER_ADSR_SUSTAIN_LEVEL = 0.1f;
+static float G_FILTER_ADSR_RELEASE_S = 0.3f;
+
+// Default LFO parameters
+static float G_LFO_RATE_HZ = 5.0f;
+static float G_LFO_DEPTH_SEMITONES = 0.25f;
+
+// FFT related globals
 FftAudioDataBuffer fft_audio_buffers[2];
 volatile int fft_current_buffer_index = 0;
 pthread_mutex_t fft_buffer_index_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -54,18 +74,12 @@ int history_write_index = 0;
 int history_fill_count = 0;
 pthread_mutex_t image_history_mutex = PTHREAD_MUTEX_INITIALIZER;
 FftContext fft_context;
-MonophonicVoice g_mono_voice;
-
-static float sine_phase = 0.0f;           // Legacy, unused by current synth
-static float sine_phase_increment = 0.0f; // Legacy
 
 extern volatile int keepRunning;
 
+// --- Initialization ---
 void synth_fftMode_init(void) {
-  printf("Initializing synth_fftMode...\n");
-
-  sine_phase_increment = TWO_PI * 440.0f / (float)SAMPLING_FREQUENCY; // Legacy
-  sine_phase = 0.0f;                                                  // Legacy
+  printf("Initializing synth_fftMode (Polyphonic with LFO)...\n");
 
   for (int i = 0; i < 2; ++i) {
     if (pthread_mutex_init(&fft_audio_buffers[i].mutex, NULL) != 0) {
@@ -95,141 +109,152 @@ void synth_fftMode_init(void) {
   memset(fft_context.fft_input, 0, sizeof(fft_context.fft_input));
   memset(fft_context.fft_output, 0, sizeof(fft_context.fft_output));
 
-  g_mono_voice.fundamental_frequency = DEFAULT_FUNDAMENTAL_FREQUENCY;
-  g_mono_voice.active = 0;
-  g_mono_voice.last_velocity = 1.0f;
-  for (int i = 0; i < NUM_OSCILLATORS; ++i) {
-    g_mono_voice.oscillators[i].phase = 0.0f;
-    g_mono_voice.smoothed_normalized_magnitudes[i] = 0.0f;
-  }
-  adsr_init_envelope(&g_mono_voice.volume_adsr, 0.01f, 0.1f, 0.8f, 0.2f,
-                     (float)SAMPLING_FREQUENCY);
-  printf("Monophonic voice initialized. Volume ADSR: A=%.2fs, D=%.2fs, S=%.1f, "
-         "R=%.2fs\n",
-         g_mono_voice.volume_adsr.attack_s, g_mono_voice.volume_adsr.decay_s,
-         g_mono_voice.volume_adsr.sustain_level,
-         g_mono_voice.volume_adsr.release_s);
-
-  adsr_init_envelope(&g_mono_voice.filter_adsr, 0.02f, 0.2f, 0.1f, 0.3f,
-                     (float)SAMPLING_FREQUENCY);
-  printf("Monophonic voice initialized. Filter ADSR: A=%.2fs, D=%.2fs, S=%.1f, "
-         "R=%.2fs\n",
-         g_mono_voice.filter_adsr.attack_s, g_mono_voice.filter_adsr.decay_s,
-         g_mono_voice.filter_adsr.sustain_level,
-         g_mono_voice.filter_adsr.release_s);
-
-  filter_init_spectral_params(&g_mono_voice.spectral_filter_params, 8000.0f,
+  memset(global_smoothed_magnitudes, 0, sizeof(global_smoothed_magnitudes));
+  filter_init_spectral_params(&global_spectral_filter_params, 8000.0f,
                               -7800.0f);
-  printf("Monophonic voice initialized. Spectral Filter Params: "
-         "BaseCutoff=%.0fHz, EnvDepth=%.0fHz\n",
-         g_mono_voice.spectral_filter_params.base_cutoff_hz,
-         g_mono_voice.spectral_filter_params.filter_env_depth);
+  printf("Global Spectral Filter Params: BaseCutoff=%.0fHz, EnvDepth=%.0fHz\n",
+         global_spectral_filter_params.base_cutoff_hz,
+         global_spectral_filter_params.filter_env_depth);
 
+  lfo_init(&global_vibrato_lfo, G_LFO_RATE_HZ, G_LFO_DEPTH_SEMITONES,
+           (float)SAMPLING_FREQUENCY);
+  printf("Global Vibrato LFO initialized: Rate=%.2f Hz, Depth=%.2f semitones\n",
+         global_vibrato_lfo.rate_hz, global_vibrato_lfo.depth_semitones);
+
+  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+    poly_voices[i].fundamental_frequency = 0.0f;
+    poly_voices[i].voice_state = ADSR_STATE_IDLE;
+    poly_voices[i].midi_note_number = -1;
+    poly_voices[i].last_velocity = 1.0f;
+    for (int j = 0; j < NUM_OSCILLATORS; ++j) {
+      poly_voices[i].oscillators[j].phase = 0.0f;
+    }
+    adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
+                       G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
+                       G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+    adsr_init_envelope(&poly_voices[i].filter_adsr, G_FILTER_ADSR_ATTACK_S,
+                       G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
+                       G_FILTER_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+  }
+  printf("%d polyphonic voices initialized.\n", NUM_POLY_VOICES);
   printf("synth_fftMode initialized with moving average window of %d frames.\n",
          MOVING_AVERAGE_WINDOW_SIZE);
 }
 
+// --- Audio Processing ---
 void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
   if (audio_buffer == NULL) {
     fprintf(stderr, "synth_fftMode_process: audio_buffer is NULL\n");
     return;
   }
+  memset(audio_buffer, 0, buffer_size * sizeof(float));
 
-  float target_normalized_magnitudes[NUM_OSCILLATORS];
-
-  target_normalized_magnitudes[0] =
+  global_smoothed_magnitudes[0] =
       fft_context.fft_output[0].r / NORM_FACTOR_BIN0;
-  if (target_normalized_magnitudes[0] < 0.0f) {
-    target_normalized_magnitudes[0] = 0.0f;
+  if (global_smoothed_magnitudes[0] < 0.0f) {
+    global_smoothed_magnitudes[0] = 0.0f;
   }
 
   for (int i = 1; i < NUM_OSCILLATORS; ++i) {
     float real = fft_context.fft_output[i].r;
     float imag = fft_context.fft_output[i].i;
     float magnitude = sqrtf(real * real + imag * imag);
-    target_normalized_magnitudes[i] =
-        fminf(1.0f, magnitude / NORM_FACTOR_HARMONICS);
-    if (target_normalized_magnitudes[i] < 0.0f) {
-      target_normalized_magnitudes[i] = 0.0f;
+    float target_mag = fminf(1.0f, magnitude / NORM_FACTOR_HARMONICS);
+    if (target_mag < 0.0f) {
+      target_mag = 0.0f;
     }
-  }
-
-  for (int i = 0; i < NUM_OSCILLATORS; ++i) {
-    g_mono_voice.smoothed_normalized_magnitudes[i] =
-        AMPLITUDE_SMOOTHING_ALPHA * target_normalized_magnitudes[i] +
-        (1.0f - AMPLITUDE_SMOOTHING_ALPHA) *
-            g_mono_voice.smoothed_normalized_magnitudes[i];
+    global_smoothed_magnitudes[i] =
+        AMPLITUDE_SMOOTHING_ALPHA * target_mag +
+        (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * global_smoothed_magnitudes[i];
   }
 
   for (unsigned int sample_idx = 0; sample_idx < buffer_size; ++sample_idx) {
-    float volume_adsr_val = adsr_get_output(&g_mono_voice.volume_adsr);
-    float filter_adsr_val = adsr_get_output(&g_mono_voice.filter_adsr);
+    float master_sample_sum = 0.0f;
+    float lfo_modulation_value =
+        lfo_process(&global_vibrato_lfo); // Process LFO per sample
 
-    if (volume_adsr_val < 0.00001f &&
-        g_mono_voice.volume_adsr.state == ADSR_STATE_IDLE) {
-      for (unsigned int j = sample_idx; j < buffer_size; ++j) {
-        audio_buffer[j] = 0.0f;
-      }
-      break;
-    }
+    for (int v_idx = 0; v_idx < NUM_POLY_VOICES; ++v_idx) {
+      SynthVoice *current_voice = &poly_voices[v_idx];
+      float volume_adsr_val = adsr_get_output(&current_voice->volume_adsr);
+      float filter_adsr_val = adsr_get_output(&current_voice->filter_adsr);
 
-    float modulated_cutoff_hz =
-        g_mono_voice.spectral_filter_params.base_cutoff_hz +
-        filter_adsr_val * g_mono_voice.spectral_filter_params.filter_env_depth;
-    modulated_cutoff_hz =
-        fmaxf(20.0f, fminf(modulated_cutoff_hz,
-                           (float)SAMPLING_FREQUENCY / 2.0f - 1.0f));
-
-    float current_sample_sum = 0.0f;
-    for (int osc_idx = 0; osc_idx < NUM_OSCILLATORS; ++osc_idx) {
-      float harmonic_multiple = (float)(osc_idx + 1);
-      float osc_freq = g_mono_voice.fundamental_frequency * harmonic_multiple;
-      float phase_increment = TWO_PI * osc_freq / (float)SAMPLING_FREQUENCY;
-
-      float smoothed_amplitude =
-          g_mono_voice.smoothed_normalized_magnitudes[osc_idx];
-      float amplitude_after_gamma = powf(smoothed_amplitude, AMPLITUDE_GAMMA);
-      if (smoothed_amplitude < 0.0f &&
-          (AMPLITUDE_GAMMA != floorf(AMPLITUDE_GAMMA))) {
-        amplitude_after_gamma = 0.0f;
+      if (current_voice->volume_adsr.state == ADSR_STATE_IDLE &&
+          current_voice->voice_state != ADSR_STATE_IDLE) {
+        current_voice->voice_state = ADSR_STATE_IDLE;
+        current_voice->midi_note_number = -1;
       }
 
-      float attenuation = 1.0f;
-      if (modulated_cutoff_hz > 1.0f) {
-        if (osc_freq > 0.001f) {
-          float ratio = osc_freq / modulated_cutoff_hz;
-          attenuation = 1.0f / sqrtf(1.0f + ratio * ratio);
+      if (volume_adsr_val < 0.00001f &&
+          current_voice->voice_state == ADSR_STATE_IDLE) {
+        continue;
+      }
+
+      float modulated_cutoff_hz =
+          global_spectral_filter_params.base_cutoff_hz +
+          filter_adsr_val * global_spectral_filter_params.filter_env_depth;
+      modulated_cutoff_hz =
+          fmaxf(20.0f, fminf(modulated_cutoff_hz,
+                             (float)SAMPLING_FREQUENCY / 2.0f - 1.0f));
+
+      // Apply LFO to fundamental frequency
+      float base_freq = current_voice->fundamental_frequency;
+      float freq_mod_factor = powf(
+          2.0f,
+          (lfo_modulation_value * global_vibrato_lfo.depth_semitones) / 12.0f);
+      float actual_fundamental_freq = base_freq * freq_mod_factor;
+
+      float voice_sample_sum = 0.0f;
+      for (int osc_idx = 0; osc_idx < NUM_OSCILLATORS; ++osc_idx) {
+        float harmonic_multiple = (float)(osc_idx + 1);
+        float osc_freq = actual_fundamental_freq *
+                         harmonic_multiple; // Use LFO modulated fundamental
+        float phase_increment = TWO_PI * osc_freq / (float)SAMPLING_FREQUENCY;
+
+        float smoothed_amplitude = global_smoothed_magnitudes[osc_idx];
+        float amplitude_after_gamma = powf(smoothed_amplitude, AMPLITUDE_GAMMA);
+        if (smoothed_amplitude < 0.0f &&
+            (AMPLITUDE_GAMMA != floorf(AMPLITUDE_GAMMA))) {
+          amplitude_after_gamma = 0.0f;
         }
-      } else {
-        attenuation = (osc_freq < 1.0f) ? 1.0f : 0.00001f;
+
+        float attenuation = 1.0f;
+        if (modulated_cutoff_hz > 1.0f) {
+          if (osc_freq > 0.001f) {
+            float ratio = osc_freq / modulated_cutoff_hz;
+            attenuation = 1.0f / sqrtf(1.0f + ratio * ratio);
+          }
+        } else {
+          attenuation = (osc_freq < 1.0f) ? 1.0f : 0.00001f;
+        }
+
+        float final_amplitude = amplitude_after_gamma * attenuation;
+        float osc_sample =
+            final_amplitude * sinf(current_voice->oscillators[osc_idx].phase);
+        voice_sample_sum += osc_sample;
+
+        current_voice->oscillators[osc_idx].phase += phase_increment;
+        if (current_voice->oscillators[osc_idx].phase >= TWO_PI) {
+          current_voice->oscillators[osc_idx].phase -= TWO_PI;
+        }
       }
 
-      float final_amplitude = amplitude_after_gamma * attenuation;
-      float osc_sample =
-          final_amplitude * sinf(g_mono_voice.oscillators[osc_idx].phase);
-      current_sample_sum += osc_sample;
-
-      g_mono_voice.oscillators[osc_idx].phase += phase_increment;
-      if (g_mono_voice.oscillators[osc_idx].phase >= TWO_PI) {
-        g_mono_voice.oscillators[osc_idx].phase -= TWO_PI;
-      }
+      voice_sample_sum *= volume_adsr_val;
+      voice_sample_sum *= current_voice->last_velocity;
+      master_sample_sum += voice_sample_sum;
     }
 
-    current_sample_sum *= volume_adsr_val;
-    current_sample_sum *= g_mono_voice.last_velocity;
-    // Time-domain filter processing is removed. Spectral filtering is
-    // per-oscillator.
-    current_sample_sum *= MASTER_VOLUME;
+    master_sample_sum *= MASTER_VOLUME;
 
-    if (current_sample_sum > 1.0f)
-      current_sample_sum = 1.0f;
-    else if (current_sample_sum < -1.0f)
-      current_sample_sum = -1.0f;
+    if (master_sample_sum > 1.0f)
+      master_sample_sum = 1.0f;
+    else if (master_sample_sum < -1.0f)
+      master_sample_sum = -1.0f;
 
-    audio_buffer[sample_idx] = current_sample_sum;
+    audio_buffer[sample_idx] = master_sample_sum;
   }
 }
 
+// --- Image & FFT Processing ---
 static void process_image_data_for_fft(DoubleBuffer *image_db) {
   if (image_db == NULL) {
     fprintf(stderr, "process_image_data_for_fft: image_db is NULL\n");
@@ -275,7 +300,7 @@ static void process_image_data_for_fft(DoubleBuffer *image_db) {
       float sum = 0.0f;
       for (int k = 0; k < history_fill_count; ++k) {
         int idx = (history_write_index - 1 - k + MOVING_AVERAGE_WINDOW_SIZE) %
-                  MOVING_AVERAGE_WINDOW_SIZE; // Corrected history indexing
+                  MOVING_AVERAGE_WINDOW_SIZE;
         sum += image_line_history[idx].line_data[j];
       }
       fft_context.fft_input[j] = sum / history_fill_count;
@@ -302,8 +327,6 @@ static void generate_test_data_for_fft(void) {
   history_write_index = (history_write_index + 1) % MOVING_AVERAGE_WINDOW_SIZE;
   if (history_fill_count < MOVING_AVERAGE_WINDOW_SIZE) {
     history_fill_count++;
-    printf("Historique rempli à %d/%d\n", history_fill_count,
-           MOVING_AVERAGE_WINDOW_SIZE);
   }
   if (history_fill_count > 0) {
     memset(fft_context.fft_input, 0,
@@ -323,6 +346,7 @@ static void generate_test_data_for_fft(void) {
   pthread_mutex_unlock(&image_history_mutex);
 }
 
+// --- Main Thread Function ---
 void *synth_fftMode_thread_func(void *arg) {
   DoubleBuffer *image_db = NULL;
   if (arg != NULL) {
@@ -516,33 +540,74 @@ static float midi_note_to_frequency(int noteNumber) {
 
 void synth_fft_note_on(int noteNumber, int velocity) {
   if (velocity > 0) {
-    g_mono_voice.fundamental_frequency = midi_note_to_frequency(noteNumber);
-    g_mono_voice.active = 1;
-    for (int i = 0; i < NUM_OSCILLATORS; ++i) {
-      g_mono_voice.oscillators[i].phase = 0.0f;
+    int voice_idx = -1;
+    for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+      if (poly_voices[i].voice_state == ADSR_STATE_IDLE) {
+        voice_idx = i;
+        break;
+      }
     }
-    g_mono_voice.last_velocity = (float)velocity / 127.0f;
-    adsr_trigger_attack(&g_mono_voice.volume_adsr);
-    adsr_trigger_attack(&g_mono_voice.filter_adsr);
-    printf("SYNTH_FFT: Note On: %d, Vel: %d (Norm: %.2f), Freq: %f Hz -> ADSR "
-           "Attack (Vol & Filter)\n",
-           noteNumber, velocity, g_mono_voice.last_velocity,
-           g_mono_voice.fundamental_frequency);
+    if (voice_idx == -1) {
+      int oldest_voice_idx = 0;
+      long long oldest_age = -1; // Use a large number or track actual age
+      // Simple: find any voice in release, or just steal oldest
+      // non-newly-triggered one This is a very basic stealing logic, can be
+      // improved
+      for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+        if (poly_voices[i].voice_state ==
+            ADSR_STATE_RELEASE) { // Prefer releasing voice
+          oldest_voice_idx = i;
+          break;
+        }
+        // A more complex age tracking would be needed for true "oldest note"
+        // For now, just cycle through if all are in Attack/Decay/Sustain
+        if (i > oldest_voice_idx &&
+            poly_voices[i].voice_state !=
+                ADSR_STATE_ATTACK) { // Avoid stealing a freshly attacked note
+          // This is still not great, a proper age or note-on timestamp is
+          // better
+          oldest_voice_idx = i;
+        }
+      }
+      voice_idx =
+          oldest_voice_idx; // Fallback to stealing voice 0 or oldest found
+      printf("SYNTH_FFT: No idle voice, stealing voice %d for note %d\n",
+             voice_idx, noteNumber);
+    }
+
+    SynthVoice *voice = &poly_voices[voice_idx];
+    voice->fundamental_frequency = midi_note_to_frequency(noteNumber);
+    voice->midi_note_number = noteNumber;
+    voice->voice_state = ADSR_STATE_ATTACK;
+
+    for (int i = 0; i < NUM_OSCILLATORS; ++i) {
+      voice->oscillators[i].phase = 0.0f;
+    }
+    voice->last_velocity = (float)velocity / 127.0f;
+    adsr_trigger_attack(&voice->volume_adsr);
+    adsr_trigger_attack(&voice->filter_adsr);
+    printf("SYNTH_FFT: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %f Hz "
+           "-> ADSR Attack\n",
+           voice_idx, noteNumber, voice->last_velocity,
+           voice->fundamental_frequency);
   } else {
     synth_fft_note_off(noteNumber);
   }
 }
 
 void synth_fft_note_off(int noteNumber) {
-  float released_note_freq = midi_note_to_frequency(noteNumber);
-  if (g_mono_voice.active &&
-      fabsf(g_mono_voice.fundamental_frequency - released_note_freq) < 0.01f) {
-    adsr_trigger_release(&g_mono_voice.volume_adsr);
-    adsr_trigger_release(&g_mono_voice.filter_adsr);
-    g_mono_voice.active = 0;
-    printf(
-        "SYNTH_FFT: Note Off: %d, Freq: %f Hz -> ADSR Release (Vol & Filter)\n",
-        noteNumber, released_note_freq);
+  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+    if (poly_voices[i].midi_note_number == noteNumber &&
+        poly_voices[i].voice_state != ADSR_STATE_IDLE &&
+        poly_voices[i].voice_state != ADSR_STATE_RELEASE) {
+      adsr_trigger_release(&poly_voices[i].volume_adsr);
+      adsr_trigger_release(&poly_voices[i].filter_adsr);
+      // voice_state will be set to IDLE by adsr_get_output when release
+      // finishes midi_note_number will be set to -1 when voice_state becomes
+      // IDLE in synth_fftMode_process
+      printf("SYNTH_FFT: Voice %d Note Off: %d -> ADSR Release\n", i,
+             noteNumber);
+    }
   }
 }
 
@@ -552,30 +617,40 @@ static void filter_init_spectral_params(SpectralFilterParams *fp,
                                         float filter_env_depth) {
   fp->base_cutoff_hz = base_cutoff_hz;
   fp->filter_env_depth = filter_env_depth;
-  // No prev_output or alpha to init for this spectral approach
+}
+
+// --- LFO Implementation ---
+static void lfo_init(LfoState *lfo, float rate_hz, float depth_semitones,
+                     float sample_rate) {
+  lfo->rate_hz = rate_hz;
+  lfo->depth_semitones = depth_semitones;
+  lfo->phase = 0.0f;
+  lfo->phase_increment = TWO_PI * rate_hz / sample_rate;
+  lfo->current_output = 0.0f;
+}
+
+static float lfo_process(LfoState *lfo) {
+  lfo->current_output = sinf(lfo->phase);
+  lfo->phase += lfo->phase_increment;
+  if (lfo->phase >= TWO_PI) {
+    lfo->phase -= TWO_PI;
+  }
+  return lfo->current_output;
 }
 
 // --- ADSR Parameter Setters ---
 void synth_fft_set_volume_adsr_attack(float attack_s) {
   if (attack_s < 0.0f)
     attack_s = 0.0f;
-  g_mono_voice.volume_adsr.attack_s = attack_s;
-  adsr_init_envelope(
-      &g_mono_voice.volume_adsr, g_mono_voice.volume_adsr.attack_s,
-      g_mono_voice.volume_adsr.decay_s, g_mono_voice.volume_adsr.sustain_level,
-      g_mono_voice.volume_adsr.release_s, (float)SAMPLING_FREQUENCY);
-  printf("SYNTH_FFT: Volume ADSR Attack set to: %.3f s\n", attack_s);
+  G_VOLUME_ADSR_ATTACK_S = attack_s;
+  printf("SYNTH_FFT: Global Volume ADSR Attack set to: %.3f s\n", attack_s);
 }
 
 void synth_fft_set_volume_adsr_decay(float decay_s) {
   if (decay_s < 0.0f)
     decay_s = 0.0f;
-  g_mono_voice.volume_adsr.decay_s = decay_s;
-  adsr_init_envelope(
-      &g_mono_voice.volume_adsr, g_mono_voice.volume_adsr.attack_s,
-      g_mono_voice.volume_adsr.decay_s, g_mono_voice.volume_adsr.sustain_level,
-      g_mono_voice.volume_adsr.release_s, (float)SAMPLING_FREQUENCY);
-  printf("SYNTH_FFT: Volume ADSR Decay set to: %.3f s\n", decay_s);
+  G_VOLUME_ADSR_DECAY_S = decay_s;
+  printf("SYNTH_FFT: Global Volume ADSR Decay set to: %.3f s\n", decay_s);
 }
 
 void synth_fft_set_volume_adsr_sustain(float sustain_level) {
@@ -583,21 +658,32 @@ void synth_fft_set_volume_adsr_sustain(float sustain_level) {
     sustain_level = 0.0f;
   if (sustain_level > 1.0f)
     sustain_level = 1.0f;
-  g_mono_voice.volume_adsr.sustain_level = sustain_level;
-  adsr_init_envelope(
-      &g_mono_voice.volume_adsr, g_mono_voice.volume_adsr.attack_s,
-      g_mono_voice.volume_adsr.decay_s, g_mono_voice.volume_adsr.sustain_level,
-      g_mono_voice.volume_adsr.release_s, (float)SAMPLING_FREQUENCY);
-  printf("SYNTH_FFT: Volume ADSR Sustain set to: %.2f\n", sustain_level);
+  G_VOLUME_ADSR_SUSTAIN_LEVEL = sustain_level;
+  printf("SYNTH_FFT: Global Volume ADSR Sustain set to: %.2f\n", sustain_level);
 }
 
 void synth_fft_set_volume_adsr_release(float release_s) {
   if (release_s < 0.0f)
     release_s = 0.0f;
-  g_mono_voice.volume_adsr.release_s = release_s;
-  adsr_init_envelope(
-      &g_mono_voice.volume_adsr, g_mono_voice.volume_adsr.attack_s,
-      g_mono_voice.volume_adsr.decay_s, g_mono_voice.volume_adsr.sustain_level,
-      g_mono_voice.volume_adsr.release_s, (float)SAMPLING_FREQUENCY);
-  printf("SYNTH_FFT: Volume ADSR Release set to: %.3f s\n", release_s);
+  G_VOLUME_ADSR_RELEASE_S = release_s;
+  printf("SYNTH_FFT: Global Volume ADSR Release set to: %.3f s\n", release_s);
+}
+
+// --- LFO Parameter Setters ---
+void synth_fft_set_vibrato_rate(float rate_hz) {
+  if (rate_hz < 0.0f)
+    rate_hz = 0.0f;
+  // Potentially add a max rate limit, e.g., 20Hz or 30Hz
+  global_vibrato_lfo.rate_hz = rate_hz;
+  global_vibrato_lfo.phase_increment =
+      TWO_PI * rate_hz / (float)SAMPLING_FREQUENCY;
+  printf("SYNTH_FFT: Global Vibrato LFO Rate set to: %.2f Hz\n", rate_hz);
+}
+
+void synth_fft_set_vibrato_depth(float depth_semitones) {
+  // Depth can be positive or negative, typically small values like -2 to 2
+  // semitones
+  global_vibrato_lfo.depth_semitones = depth_semitones;
+  printf("SYNTH_FFT: Global Vibrato LFO Depth set to: %.2f semitones\n",
+         depth_semitones);
 }
