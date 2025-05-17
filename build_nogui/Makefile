@@ -1258,7 +1258,10 @@ build_nogui/obj/midi_controller.o: ../src/core/midi_controller.cpp ../src/core/m
 		../src/core/audio_c_api.h \
 		../src/core/config.h \
 		../src/core/three_band_eq.h \
-		/opt/homebrew/include/rtaudio/RtAudio.h
+		/opt/homebrew/include/rtaudio/RtAudio.h \
+		../src/core/synth_fft.h \
+		../src/core/kissfft/kiss_fftr.h \
+		../src/core/kissfft/kiss_fft.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o build_nogui/obj/midi_controller.o ../src/core/midi_controller.cpp
 
 build_nogui/obj/ZitaRev1.o: ../src/core/ZitaRev1.cpp ../src/core/ZitaRev1.h \

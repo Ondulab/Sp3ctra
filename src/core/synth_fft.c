@@ -644,6 +644,14 @@ void synth_fft_set_volume_adsr_attack(float attack_s) {
     attack_s = 0.0f;
   G_VOLUME_ADSR_ATTACK_S = attack_s;
   printf("SYNTH_FFT: Global Volume ADSR Attack set to: %.3f s\n", attack_s);
+  // Re-initialize ADSR for all voices with the new attack time
+  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+    adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
+                       G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
+                       G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+    // Note: This might also re-initialize filter ADSR if desired, or keep them
+    // separate
+  }
 }
 
 void synth_fft_set_volume_adsr_decay(float decay_s) {
@@ -651,6 +659,12 @@ void synth_fft_set_volume_adsr_decay(float decay_s) {
     decay_s = 0.0f;
   G_VOLUME_ADSR_DECAY_S = decay_s;
   printf("SYNTH_FFT: Global Volume ADSR Decay set to: %.3f s\n", decay_s);
+  // Re-initialize ADSR for all voices with the new decay time
+  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+    adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
+                       G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
+                       G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+  }
 }
 
 void synth_fft_set_volume_adsr_sustain(float sustain_level) {
@@ -660,6 +674,12 @@ void synth_fft_set_volume_adsr_sustain(float sustain_level) {
     sustain_level = 1.0f;
   G_VOLUME_ADSR_SUSTAIN_LEVEL = sustain_level;
   printf("SYNTH_FFT: Global Volume ADSR Sustain set to: %.2f\n", sustain_level);
+  // Re-initialize ADSR for all voices with the new sustain level
+  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+    adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
+                       G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
+                       G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+  }
 }
 
 void synth_fft_set_volume_adsr_release(float release_s) {
@@ -667,6 +687,12 @@ void synth_fft_set_volume_adsr_release(float release_s) {
     release_s = 0.0f;
   G_VOLUME_ADSR_RELEASE_S = release_s;
   printf("SYNTH_FFT: Global Volume ADSR Release set to: %.3f s\n", release_s);
+  // Re-initialize ADSR for all voices with the new release time
+  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+    adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
+                       G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
+                       G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+  }
 }
 
 // --- LFO Parameter Setters ---

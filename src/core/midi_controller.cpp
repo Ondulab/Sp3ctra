@@ -8,6 +8,7 @@
 #include "midi_controller.h"
 #include "audio_rtaudio.h"
 #include "config.h"
+#include "synth_fft.h" // For synth_fft_set_vibrato_rate
 #include "three_band_eq.h"
 #include <algorithm>
 #include <iostream>
@@ -43,7 +44,15 @@ MidiController::MidiController()
       mix_level_synth_ifft(0.0f), // Default IFFT level to 0.0f as requested
       mix_level_synth_fft(0.5f),  // Default FFT level to 0.5f for audibility
       reverb_send_synth_ifft(0.7f),
-      reverb_send_synth_fft(0.0f) { // Initialize all levels
+      reverb_send_synth_fft(0.0f), // Initialize all levels
+      lfo_vibrato_speed(0.5f),     // Default LFO vibrato speed (normalized 0-1)
+      // ADSR values now in seconds (20ms to 2s). Default to mid-range (1.01s)
+      envelope_fft_attack(0.02f +
+                          0.5f * 1.98f), // Default FFT envelope attack (1.01s)
+      envelope_fft_decay(0.02f +
+                         0.5f * 1.98f), // Default FFT envelope decay (1.01s)
+      envelope_fft_release(
+          0.02f + 0.5f * 1.98f) { // Default FFT envelope release (1.01s)
 
   // Initialize with empty callback
   volumeChangeCallback = [](float /*volume*/) {};
@@ -278,10 +287,10 @@ void MidiController::processMidiMessage(double timeStamp,
 
     // Traiter en fonction du numéro de CC
     switch (number) {
-    // Volume principal
-    case LAUNCHKEY_MINI_CC_VOLUME:
-    case LAUNCHKEY_MINI_MK3_CC_MOD:
-    case NANOKONTROL2_CC_VOLUME: {
+    // Volume principal (Molette de modulation CC 1, ou autres CC de volume)
+    case LAUNCHKEY_MINI_MK3_CC_MOD: // CC 1 for Mod Wheel
+    case LAUNCHKEY_MINI_CC_VOLUME:  // Standard CC 7 for volume
+    case NANOKONTROL2_CC_VOLUME: {  // Specific to nanoKONTROL2
       // Convertir avec la fonction originale pour préserver le comportement
       // exact
       float volume = convertCCToVolume(value);
@@ -304,51 +313,6 @@ void MidiController::processMidiMessage(double timeStamp,
 
         // Log pour le débogage avec couleur cyan
         std::cout << "\033[1;36mREVERB MIX: " << (int)(normalizedValue * 100)
-                  << "%\033[0m" << std::endl;
-      }
-      break;
-
-    // Réverbération: Taille de la pièce
-    case LAUNCHKEY_MINI_CC_REVERB_SIZE:
-      if (gAudioSystem) {
-        // Activer la réverbération si ce n'est pas déjà fait
-        if (!gAudioSystem->isReverbEnabled()) {
-          gAudioSystem->enableReverb(true);
-        }
-        gAudioSystem->setReverbRoomSize(normalizedValue);
-
-        // Log pour le débogage avec couleur magenta
-        std::cout << "\033[1;35mREVERB ROOM SIZE: "
-                  << (int)(normalizedValue * 100) << "%\033[0m" << std::endl;
-      }
-      break;
-
-    // Réverbération: Amortissement
-    case LAUNCHKEY_MINI_CC_REVERB_DAMP:
-      if (gAudioSystem) {
-        // Activer la réverbération si ce n'est pas déjà fait
-        if (!gAudioSystem->isReverbEnabled()) {
-          gAudioSystem->enableReverb(true);
-        }
-        gAudioSystem->setReverbDamping(normalizedValue);
-
-        // Log pour le débogage avec couleur bleue
-        std::cout << "\033[1;34mREVERB DAMPING: "
-                  << (int)(normalizedValue * 100) << "%\033[0m" << std::endl;
-      }
-      break;
-
-    // Réverbération: Largeur stéréo
-    case LAUNCHKEY_MINI_CC_REVERB_WIDTH:
-      if (gAudioSystem) {
-        // Activer la réverbération si ce n'est pas déjà fait
-        if (!gAudioSystem->isReverbEnabled()) {
-          gAudioSystem->enableReverb(true);
-        }
-        gAudioSystem->setReverbWidth(normalizedValue);
-
-        // Log pour le débogage avec couleur jaune
-        std::cout << "\033[1;33mREVERB WIDTH: " << (int)(normalizedValue * 100)
                   << "%\033[0m" << std::endl;
       }
       break;
@@ -426,42 +390,130 @@ void MidiController::processMidiMessage(double timeStamp,
       }
       break;
 
-    // nanoKONTROL2 SLIDER/KNOB Control 1 Breath Control (coarse) -> CC 2
-    case 2:
+    // Volume synthèse IFFT (CC 21)
+    case MIDI_CC_IFFT_VOLUME:
       mix_level_synth_ifft = normalizedValue;
-      std::cout << "\033[1;37mMIX IFFT: " << (int)(normalizedValue * 100)
-                << "%\033[0m" << std::endl;
+      std::cout << "\033[1;37mIFFT SYNTH VOLUME: "
+                << (int)(normalizedValue * 100) << "%\033[0m" << std::endl;
       break;
 
-    // nanoKONTROL2 SLIDER/KNOB Control 1 Controller 3 -> CC 3
-    case 3:
+    // Volume synthèse FFT (CC 22)
+    case MIDI_CC_FFT_VOLUME:
       mix_level_synth_fft = normalizedValue;
-      std::cout << "\033[1;37mMIX FFT: " << (int)(normalizedValue * 100)
-                << "%\033[0m" << std::endl;
+      std::cout << "\033[1;37mFFT SYNTH VOLUME: "
+                << (int)(normalizedValue * 100) << "%\033[0m" << std::endl;
       break;
 
-    // Contrôleur pour le niveau d'envoi de réverb pour synth FFT
-    case CC_REVERB_SEND_SYNTH_FFT:
+    // Wet/Dry réverbération FFT (CC 23)
+    case MIDI_CC_REVERB_WET_DRY_FFT:
       reverb_send_synth_fft = normalizedValue;
-      std::cout << "\033[1;36mREVERB SEND FFT: " << (int)(normalizedValue * 100)
-                << "%\033[0m" << std::endl;
-      if (gAudioSystem && normalizedValue > 0.0f) {
-        if (!gAudioSystem->isReverbEnabled()) {
-          gAudioSystem->enableReverb(true);
-        }
-      }
-      break;
-
-    // Contrôleur pour le niveau d'envoi de réverb pour synth IFFT
-    case CC_REVERB_SEND_SYNTH_IFFT:
-      reverb_send_synth_ifft = normalizedValue;
-      std::cout << "\033[1;36mREVERB SEND IFFT: "
+      std::cout << "\033[1;36mFFT REVERB WET/DRY: "
                 << (int)(normalizedValue * 100) << "%\033[0m" << std::endl;
       if (gAudioSystem && normalizedValue > 0.0f) {
         if (!gAudioSystem->isReverbEnabled()) {
           gAudioSystem->enableReverb(true);
         }
       }
+      break;
+
+    // Wet/Dry réverbération IFFT (CC 24)
+    case MIDI_CC_REVERB_WET_DRY_IFFT:
+      reverb_send_synth_ifft = normalizedValue;
+      std::cout << "\033[1;36mIFFT REVERB WET/DRY: "
+                << (int)(normalizedValue * 100) << "%\033[0m" << std::endl;
+      if (gAudioSystem && normalizedValue > 0.0f) {
+        if (!gAudioSystem->isReverbEnabled()) {
+          gAudioSystem->enableReverb(true);
+        }
+      }
+      break;
+
+    // Vitesse LFO vibrato (CC 25)
+    case MIDI_CC_LFO_VIBRATO_SPEED:
+      // Scale normalizedValue (0.0-1.0) to a sensible LFO rate range (e.g., 0.1
+      // Hz to 10 Hz) The actual scaling factor (9.9f here) can be adjusted
+      // based on desired max LFO speed. Minimum LFO speed is 0.1 Hz.
+      lfo_vibrato_speed = 0.1f + normalizedValue * 9.9f;
+      synth_fft_set_vibrato_rate(
+          lfo_vibrato_speed); // Call the function to update LFO rate
+      std::cout << "\033[1;35mVIBRATO LFO SPEED: " << lfo_vibrato_speed
+                << " Hz\033[0m" << std::endl;
+      break;
+
+    // Attack enveloppe FFT (CC 26)
+    case MIDI_CC_ENVELOPE_FFT_ATTACK:
+      // Scale normalizedValue (0.0-1.0) to 0.02s-2.0s
+      envelope_fft_attack = 0.02f + normalizedValue * 1.98f;
+      synth_fft_set_volume_adsr_attack(envelope_fft_attack); // Apply to synth
+      std::cout << "\033[1;33mFFT ENV ATTACK: "
+                << (int)(envelope_fft_attack * 1000) << " ms\033[0m"
+                << std::endl;
+      break;
+
+    // Decay enveloppe FFT (CC 27)
+    case MIDI_CC_ENVELOPE_FFT_DECAY:
+      // Scale normalizedValue (0.0-1.0) to 0.02s-2.0s
+      envelope_fft_decay = 0.02f + normalizedValue * 1.98f;
+      synth_fft_set_volume_adsr_decay(envelope_fft_decay); // Apply to synth
+      std::cout << "\033[1;33mFFT ENV DECAY: "
+                << (int)(envelope_fft_decay * 1000) << " ms\033[0m"
+                << std::endl;
+      break;
+
+    // Release enveloppe FFT (CC 28)
+    case MIDI_CC_ENVELOPE_FFT_RELEASE:
+      // Scale normalizedValue (0.0-1.0) to 0.02s-2.0s
+      envelope_fft_release = 0.02f + normalizedValue * 1.98f;
+      synth_fft_set_volume_adsr_release(envelope_fft_release); // Apply to synth
+      std::cout << "\033[1;33mFFT ENV RELEASE: "
+                << (int)(envelope_fft_release * 1000) << " ms\033[0m"
+                << std::endl;
+      break;
+
+    // Legacy CC mappings (can be removed if nanoKONTROL2 sliders are
+    // re-assigned) nanoKONTROL2 SLIDER/KNOB Control 1 Breath Control (coarse)
+    // -> CC 2
+    case 2: // Kept for backward compatibility or other controllers
+      // This might conflict with MIDI_CC_IFFT_VOLUME if not careful
+      // mix_level_synth_ifft = normalizedValue;
+      // std::cout << "\033[1;37m(Legacy CC2) MIX IFFT: " <<
+      // (int)(normalizedValue * 100)
+      //           << "%\033[0m" << std::endl;
+      break;
+
+    // nanoKONTROL2 SLIDER/KNOB Control 1 Controller 3 -> CC 3
+    case 3: // Kept for backward compatibility or other controllers
+      // This might conflict with MIDI_CC_FFT_VOLUME if not careful
+      // mix_level_synth_fft = normalizedValue;
+      // std::cout << "\033[1;37m(Legacy CC3) MIX FFT: " <<
+      // (int)(normalizedValue * 100)
+      //           << "%\033[0m" << std::endl;
+      break;
+
+    // Contrôleur pour le niveau d'envoi de réverb pour synth FFT (Legacy CC 4)
+    case CC_REVERB_SEND_SYNTH_FFT: // Kept for backward compatibility
+      // This might conflict with MIDI_CC_REVERB_WET_DRY_FFT
+      // reverb_send_synth_fft = normalizedValue;
+      // std::cout << "\033[1;36m(Legacy CC4) REVERB SEND FFT: " <<
+      // (int)(normalizedValue*100) << "%\033[0m" << std::endl; if (gAudioSystem
+      // && normalizedValue > 0.0f) {
+      //     if (!gAudioSystem->isReverbEnabled()) {
+      //         gAudioSystem->enableReverb(true);
+      //     }
+      // }
+      break;
+
+    // Contrôleur pour le niveau d'envoi de réverb pour synth IFFT (Legacy CC 5)
+    case CC_REVERB_SEND_SYNTH_IFFT: // Kept for backward compatibility
+      // This might conflict with MIDI_CC_REVERB_WET_DRY_IFFT
+      // reverb_send_synth_ifft = normalizedValue;
+      // std::cout << "\033[1;36m(Legacy CC5) REVERB SEND IFFT: " <<
+      // (int)(normalizedValue*100) << "%\033[0m" << std::endl; if (gAudioSystem
+      // && normalizedValue > 0.0f) {
+      //     if (!gAudioSystem->isReverbEnabled()) {
+      //         gAudioSystem->enableReverb(true);
+      //     }
+      // }
       break;
 
     // Autres contrôleurs non gérés
@@ -526,6 +578,19 @@ float MidiController::getReverbSendSynthIfft() const {
 
 float MidiController::getReverbSendSynthFft() const {
   return reverb_send_synth_fft;
+}
+
+// Accessors for new MIDI controls
+float MidiController::getLfoVibratoSpeed() const { return lfo_vibrato_speed; }
+
+float MidiController::getEnvelopeFftAttack() const {
+  return envelope_fft_attack;
+}
+
+float MidiController::getEnvelopeFftDecay() const { return envelope_fft_decay; }
+
+float MidiController::getEnvelopeFftRelease() const {
+  return envelope_fft_release;
 }
 
 // C API functions for compatibility with existing code

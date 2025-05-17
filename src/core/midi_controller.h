@@ -21,6 +21,16 @@ typedef enum {
   // Other controllers can be added here
 } MidiControllerType;
 
+// MIDI CC definitions for new controls
+#define MIDI_CC_IFFT_VOLUME 21
+#define MIDI_CC_FFT_VOLUME 22
+#define MIDI_CC_REVERB_WET_DRY_FFT 23
+#define MIDI_CC_REVERB_WET_DRY_IFFT 24
+#define MIDI_CC_LFO_VIBRATO_SPEED 25
+#define MIDI_CC_ENVELOPE_FFT_ATTACK 26
+#define MIDI_CC_ENVELOPE_FFT_DECAY 27
+#define MIDI_CC_ENVELOPE_FFT_RELEASE 28
+
 // Structure for MIDI CC values
 typedef struct {
   unsigned char number; // CC number
@@ -60,6 +70,12 @@ public:
   float reverb_send_synth_ifft;
   float reverb_send_synth_fft;
 
+  // Variables for new MIDI controls
+  float lfo_vibrato_speed;
+  float envelope_fft_attack;
+  float envelope_fft_decay;
+  float envelope_fft_release;
+
   MidiController();
   ~MidiController();
 
@@ -98,6 +114,12 @@ public:
   // Accessors for reverb send levels
   float getReverbSendSynthIfft() const;
   float getReverbSendSynthFft() const;
+
+  // Accessors for new MIDI controls
+  float getLfoVibratoSpeed() const;
+  float getEnvelopeFftAttack() const;
+  float getEnvelopeFftDecay() const;
+  float getEnvelopeFftRelease() const;
 };
 
 // Global instance for C API compatibility
