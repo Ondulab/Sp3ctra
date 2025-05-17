@@ -546,6 +546,7 @@ int main(int argc, char **argv) {
   // visual_freeze_cleanup(); // Removed: Old visual-only freeze
   displayable_synth_buffers_cleanup(); // Cleanup displayable synth buffers
   synth_data_freeze_cleanup();         // Cleanup synth data freeze resources
+  cleanupDoubleBuffer(&db);            // Cleanup DoubleBuffer resources
   midi_Cleanup();
   audio_Cleanup(); // Nettoyage de RtAudio
 

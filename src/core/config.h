@@ -96,7 +96,7 @@
 /**************************************************************************************
  * DAC Definitions
  **************************************************************************************/
-#define SAMPLING_FREQUENCY (48000)
+#define SAMPLING_FREQUENCY (96000)
 #define AUDIO_CHANNEL (2)
 #define AUDIO_BUFFER_SIZE (512)
 
@@ -150,8 +150,8 @@
 #define SEMITONE_PER_OCTAVE (12)
 #define COMMA_PER_SEMITONE (36)
 
-#define VOLUME_INCREMENT (10)
-#define VOLUME_DECREMENT (10)
+#define VOLUME_INCREMENT (1)
+#define VOLUME_DECREMENT (1)
 
 #define PIXELS_PER_NOTE (1)
 #define NUMBER_OF_NOTES (CIS_MAX_PIXELS_NB / PIXELS_PER_NOTE)

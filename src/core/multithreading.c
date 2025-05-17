@@ -65,6 +65,26 @@ void initDoubleBuffer(DoubleBuffer *db) {
   db->dataReady = 0;
 }
 
+void cleanupDoubleBuffer(DoubleBuffer *db) {
+  if (db) {
+    free(db->activeBuffer_R);
+    free(db->activeBuffer_G);
+    free(db->activeBuffer_B);
+    free(db->processingBuffer_R);
+    free(db->processingBuffer_G);
+    free(db->processingBuffer_B);
+    db->activeBuffer_R = NULL;
+    db->activeBuffer_G = NULL;
+    db->activeBuffer_B = NULL;
+    db->processingBuffer_R = NULL;
+    db->processingBuffer_G = NULL;
+    db->processingBuffer_B = NULL;
+
+    pthread_mutex_destroy(&db->mutex);
+    pthread_cond_destroy(&db->cond);
+  }
+}
+
 void swapBuffers(DoubleBuffer *db) {
   uint8_t *temp = NULL;
 
