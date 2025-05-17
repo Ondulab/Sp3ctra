@@ -23,15 +23,6 @@
     Helper Functions
 ------------------------------------------------------------------------------*/
 
-// Wait for the double buffer to be ready
-static void WaitForDoubleBuffer(DoubleBuffer *db) {
-  pthread_mutex_lock(&db->mutex);
-  while (!db->dataReady) {
-    pthread_cond_wait(&db->cond, &db->mutex);
-  }
-  pthread_mutex_unlock(&db->mutex);
-}
-
 /*
 // Wait for DMX color update using condition variable
 static void WaitForDMXColorUpdate(DMXContext *ctx) {
@@ -263,20 +254,38 @@ void *dmxSendingThread(void *arg) {
 void *audioProcessingThread(void *arg) {
   Context *context = (Context *)arg;
   DoubleBuffer *db = context->doubleBuffer;
+  // Local buffers for synth_AudioProcess to avoid holding mutex during synth
+  uint8_t local_R[CIS_MAX_PIXELS_NB];
+  uint8_t local_G[CIS_MAX_PIXELS_NB];
+  uint8_t local_B[CIS_MAX_PIXELS_NB];
 
   while (context->running) {
-    // Wait until one of the buffers is ready for processing
-    WaitForDoubleBuffer(db);
-
-    // Mark double buffer as free, swap it
     pthread_mutex_lock(&db->mutex);
-    db->dataReady = 0;
-    swapBuffers(db);
+    while (!db->dataReady && context->running) {
+      pthread_cond_wait(&db->cond, &db->mutex);
+    }
+
+    if (!context->running) {
+      pthread_mutex_unlock(&db->mutex);
+      break;
+    }
+
+    // At this point, dataReady is true and the mutex is locked.
+    // Copy data quickly to local buffers to release the main db mutex.
+    memcpy(local_R, db->processingBuffer_R, CIS_MAX_PIXELS_NB);
+    memcpy(local_G, db->processingBuffer_G, CIS_MAX_PIXELS_NB);
+    memcpy(local_B, db->processingBuffer_B, CIS_MAX_PIXELS_NB);
+
+    // We don't set db->dataReady = 0 here.
+    // The main loop (display consumer) is responsible for that,
+    // ensuring both consumers (display and audio) can access the same new data
+    // frame. This assumes that audio processing can tolerate occasionally
+    // reprocessing the same frame if it runs faster than the display, or that
+    // display loop is the primary "pacer".
     pthread_mutex_unlock(&db->mutex);
 
-    // Call your synthesis routine to fill the audio buffers
-    synth_AudioProcess(db->processingBuffer_R, db->processingBuffer_G,
-                       db->processingBuffer_B);
+    // Call synthesis routine with the local copy of data
+    synth_AudioProcess(local_R, local_G, local_B);
   }
 
   return NULL;

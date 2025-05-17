@@ -31,6 +31,10 @@ typedef enum {
 #define MIDI_CC_ENVELOPE_FFT_DECAY 27
 #define MIDI_CC_ENVELOPE_FFT_RELEASE 28
 
+// Visual Freeze MIDI CC definitions
+#define MIDI_CC_VISUAL_FREEZE 105
+#define MIDI_CC_VISUAL_RESUME 115
+
 // Structure for MIDI CC values
 typedef struct {
   unsigned char number; // CC number

@@ -247,6 +247,9 @@ int main(int argc, char **argv) {
   synth_IfftInit();
   synth_fftMode_init(); // Initialize the new FFT synth mode
   display_Init(window);
+  // visual_freeze_init(); // Removed: Old visual-only freeze
+  synth_data_freeze_init();         // Initialize synth data freeze feature
+  displayable_synth_buffers_init(); // Initialize displayable synth buffers
 
   int s = udp_Init(&si_other, &si_me);
   if (s < 0) {
@@ -370,7 +373,13 @@ int main(int argc, char **argv) {
   fflush(stdout); // S'assurer que tout est affiché immédiatement
 
   /* Boucle principale pour le mode CLI */
+  uint8_t local_main_R[CIS_MAX_PIXELS_NB]; // Buffers locaux pour DMX
+  uint8_t local_main_G[CIS_MAX_PIXELS_NB];
+  uint8_t local_main_B[CIS_MAX_PIXELS_NB];
+  int process_this_frame_main_loop;
+
   while (running && context.running && app_running) {
+    process_this_frame_main_loop = 0;
     /* Gérer les événements SFML si la fenêtre est active */
     if (use_sfml_window && window) {
       sfEvent event;
@@ -385,25 +394,33 @@ int main(int argc, char **argv) {
 
     /* Vérifier si le double buffer contient de nouvelles données */
     pthread_mutex_lock(&db.mutex);
-    int dataReady = db.dataReady;
-    if (dataReady) {
-      db.dataReady = 0;
+    if (db.dataReady) {
+      // Copier les données pour DMX pendant que le mutex est verrouillé
+      memcpy(local_main_R, db.processingBuffer_R, CIS_MAX_PIXELS_NB);
+      memcpy(local_main_G, db.processingBuffer_G, CIS_MAX_PIXELS_NB);
+      memcpy(local_main_B, db.processingBuffer_B, CIS_MAX_PIXELS_NB);
+      db.dataReady = 0; // Marquer comme consommé par la boucle principale
+      process_this_frame_main_loop = 1;
     }
     pthread_mutex_unlock(&db.mutex);
 
-    if (dataReady) {
+    if (process_this_frame_main_loop) {
       /* Rendu de la nouvelle ligne si SFML est activé */
       if (use_sfml_window && window) {
-        printImageRGB(window, db.processingBuffer_R, db.processingBuffer_G,
-                      db.processingBuffer_B, backgroundTexture,
-                      foregroundTexture);
+        // Lock mutex before accessing displayable synth buffers
+        pthread_mutex_lock(&g_displayable_synth_mutex);
+        printImageRGB(window, g_displayable_synth_R, g_displayable_synth_G,
+                      g_displayable_synth_B, backgroundTexture,
+                      foregroundTexture); // Utilise les données de synth.c
+        pthread_mutex_unlock(&g_displayable_synth_mutex);
       }
 
       /* Calcul de la couleur moyenne et mise à jour du contexte DMX */
+      // DMX utilise les données copiées local_main_R,G,B (qui sont les données
+      // live de db.processingBuffer)
       DMXSpot zoneSpots[DMX_NUM_SPOTS];
-      computeAverageColorPerZone(db.processingBuffer_R, db.processingBuffer_G,
-                                 db.processingBuffer_B, CIS_MAX_PIXELS_NB,
-                                 zoneSpots);
+      computeAverageColorPerZone(local_main_R, local_main_G, local_main_B,
+                                 CIS_MAX_PIXELS_NB, zoneSpots);
 
       pthread_mutex_lock(&dmxCtx->mutex);
       memcpy(dmxCtx->spots, zoneSpots, sizeof(zoneSpots));
@@ -434,7 +451,15 @@ int main(int argc, char **argv) {
   }
 #else
   /* Boucle principale avec affichage graphique */
+  // uint8_t local_main_R,G,B sont déjà déclarés plus haut si CLI_MODE est
+  // défini. S'il n'est pas défini, il faut les déclarer ici. Pour simplifier,
+  // on les sort de la condition #ifdef. Déjà fait en dehors de la boucle
+  // CLI_MODE.
+
   while (sfRenderWindow_isOpen(window)) {
+    process_this_frame_main_loop = 0;
+    sfEvent event; // Déplacé ici car non utilisé si CLI_MODE n'est pas défini
+                   // et event n'est pas utilisé
     /* Gestion des événements dans le thread principal */
     while (sfRenderWindow_pollEvent(window, &event)) {
       if (event.type == sfEvtClosed) {
@@ -446,23 +471,30 @@ int main(int argc, char **argv) {
 
     /* Vérifier si le double buffer contient de nouvelles données */
     pthread_mutex_lock(&db.mutex);
-    int dataReady = db.dataReady;
-    if (dataReady) {
+    if (db.dataReady) {
+      memcpy(local_main_R, db.processingBuffer_R, CIS_MAX_PIXELS_NB);
+      memcpy(local_main_G, db.processingBuffer_G, CIS_MAX_PIXELS_NB);
+      memcpy(local_main_B, db.processingBuffer_B, CIS_MAX_PIXELS_NB);
       db.dataReady = 0;
+      process_this_frame_main_loop = 1;
     }
     pthread_mutex_unlock(&db.mutex);
 
-    if (dataReady) {
+    if (process_this_frame_main_loop) {
       /* Rendu de la nouvelle ligne à partir du buffer */
-      printImageRGB(window, db.processingBuffer_R, db.processingBuffer_G,
-                    db.processingBuffer_B, backgroundTexture,
+      pthread_mutex_lock(&g_displayable_synth_mutex);
+      printImageRGB(window, g_displayable_synth_R, g_displayable_synth_G,
+                    g_displayable_synth_B,
+                    backgroundTexture, // Utilise les données de synth.c
                     foregroundTexture);
+      pthread_mutex_unlock(&g_displayable_synth_mutex);
 
       /* Calcul de la couleur moyenne et mise à jour du contexte DMX */
+      // DMX utilise les données copiées local_main_R,G,B (qui sont les données
+      // live de db.processingBuffer)
       DMXSpot zoneSpots[DMX_NUM_SPOTS];
-      computeAverageColorPerZone(db.processingBuffer_R, db.processingBuffer_G,
-                                 db.processingBuffer_B, CIS_MAX_PIXELS_NB,
-                                 zoneSpots);
+      computeAverageColorPerZone(local_main_R, local_main_G, local_main_B,
+                                 CIS_MAX_PIXELS_NB, zoneSpots);
 
       pthread_mutex_lock(&dmxCtx->mutex);
       memcpy(dmxCtx->spots, zoneSpots, sizeof(zoneSpots));
@@ -511,6 +543,9 @@ int main(int argc, char **argv) {
 #endif
 
   // Nettoyage MIDI et audio
+  // visual_freeze_cleanup(); // Removed: Old visual-only freeze
+  displayable_synth_buffers_cleanup(); // Cleanup displayable synth buffers
+  synth_data_freeze_cleanup();         // Cleanup synth data freeze resources
   midi_Cleanup();
   audio_Cleanup(); // Nettoyage de RtAudio
 

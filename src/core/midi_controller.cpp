@@ -8,10 +8,12 @@
 #include "midi_controller.h"
 #include "audio_rtaudio.h"
 #include "config.h"
+#include "synth.h"     // For synth data freeze global variables and mutex
 #include "synth_fft.h" // For synth_fft_set_vibrato_rate
 #include "three_band_eq.h"
 #include <algorithm>
 #include <iostream>
+#include <pthread.h> // Required for pthread_mutex_lock/unlock
 
 // Global instance
 MidiController *gMidiController = nullptr;
@@ -278,7 +280,10 @@ void MidiController::processMidiMessage(double timeStamp,
   unsigned char channel = status & 0x0F;
 
   unsigned char messageType = status & 0xF0;
-  unsigned char midiChannel = status & 0x0F; // MIDI channel 0-15
+  // unsigned char midiChannel = status & 0x0F; // MIDI channel 0-15 - Marked as
+  // unused, commenting out
+  (void)channel; // Mark channel as potentially unused if DEBUG_MIDI is off for
+                 // CCs
 
   // Check if this is a Control Change message (0xB0-0xBF)
   if (messageType == 0xB0) {
@@ -468,6 +473,33 @@ void MidiController::processMidiMessage(double timeStamp,
       std::cout << "\033[1;33mFFT ENV RELEASE: "
                 << (int)(envelope_fft_release * 1000) << " ms\033[0m"
                 << std::endl;
+      break;
+
+    // Synth Data Freeze Controls (was Visual Freeze)
+    case MIDI_CC_VISUAL_FREEZE: // CC 105 - Keeping define name for now, but
+                                // controls synth data
+      if (value > 0) {
+        pthread_mutex_lock(&g_synth_data_freeze_mutex);
+        g_is_synth_data_frozen = 1;
+        g_is_synth_data_fading_out = 0; // Stop any ongoing fade
+        pthread_mutex_unlock(&g_synth_data_freeze_mutex);
+        std::cout << "\033[1;34mSYNTH DATA FREEZE: ON\033[0m" << std::endl;
+      }
+      break;
+
+    case MIDI_CC_VISUAL_RESUME: // CC 115 - Keeping define name for now, but
+                                // controls synth data
+      if (value > 0) {
+        pthread_mutex_lock(&g_synth_data_freeze_mutex);
+        if (g_is_synth_data_frozen && !g_is_synth_data_fading_out) {
+          g_is_synth_data_fading_out = 1;
+          // g_synth_data_fade_start_time will be set in synth.c when fade
+          // starts
+        }
+        pthread_mutex_unlock(&g_synth_data_freeze_mutex);
+        std::cout << "\033[1;34mSYNTH DATA RESUME: Initiating fade out\033[0m"
+                  << std::endl;
+      }
       break;
 
     // Legacy CC mappings (can be removed if nanoKONTROL2 sliders are

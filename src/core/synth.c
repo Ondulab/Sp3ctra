@@ -10,6 +10,7 @@
 
 #include "stdio.h"
 #include "stdlib.h"
+#include <string.h> // For memset, memcpy
 /* Commenté pour éviter l'erreur avec cblas.h */
 /* #include <Accelerate/Accelerate.h> */
 #include <math.h>
@@ -30,6 +31,58 @@
 /* Private define ------------------------------------------------------------*/
 
 /* Private macro -------------------------------------------------------------*/
+
+/* Synth Data Freeze Feature - Definitions */
+volatile int g_is_synth_data_frozen = 0;
+int32_t g_frozen_grayscale_buffer[CIS_MAX_PIXELS_NB];
+volatile int g_is_synth_data_fading_out = 0;
+double g_synth_data_fade_start_time = 0.0;
+const double G_SYNTH_DATA_FADE_DURATION_SECONDS =
+    5.0; // Corresponds to visual fade
+pthread_mutex_t g_synth_data_freeze_mutex;
+
+// Helper function to get current time in seconds
+static double synth_getCurrentTimeInSeconds() {
+  struct timespec ts;
+  clock_gettime(
+      CLOCK_MONOTONIC,
+      &ts); // CLOCK_MONOTONIC is usually preferred for time differences
+  return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+}
+
+void synth_data_freeze_init(void) {
+  if (pthread_mutex_init(&g_synth_data_freeze_mutex, NULL) != 0) {
+    perror("Failed to initialize synth data freeze mutex");
+    // Handle error appropriately, e.g., exit or log
+  }
+  memset(g_frozen_grayscale_buffer, 0, sizeof(g_frozen_grayscale_buffer));
+}
+
+void synth_data_freeze_cleanup(void) {
+  pthread_mutex_destroy(&g_synth_data_freeze_mutex);
+}
+
+/* Buffers for display to reflect synth data (grayscale converted to RGB) -
+ * Definitions */
+uint8_t g_displayable_synth_R[CIS_MAX_PIXELS_NB];
+uint8_t g_displayable_synth_G[CIS_MAX_PIXELS_NB];
+uint8_t g_displayable_synth_B[CIS_MAX_PIXELS_NB];
+pthread_mutex_t g_displayable_synth_mutex;
+
+void displayable_synth_buffers_init(void) {
+  if (pthread_mutex_init(&g_displayable_synth_mutex, NULL) != 0) {
+    perror("Failed to initialize displayable synth data mutex");
+    // Handle error
+  }
+  memset(g_displayable_synth_R, 0, sizeof(g_displayable_synth_R));
+  memset(g_displayable_synth_G, 0, sizeof(g_displayable_synth_G));
+  memset(g_displayable_synth_B, 0, sizeof(g_displayable_synth_B));
+}
+
+void displayable_synth_buffers_cleanup(void) {
+  pthread_mutex_destroy(&g_displayable_synth_mutex);
+}
+/* End Synth Data Freeze Feature */
 
 /* Private variables ---------------------------------------------------------*/
 
@@ -346,7 +399,9 @@ static float calculate_contrast(int32_t *imageData, size_t size) {
  */
 // #pragma GCC push_options
 // #pragma GCC optimize ("unroll-loops")
-void synth_IfftMode(int32_t *imageData, float *audioData) {
+void synth_IfftMode(
+    int32_t *imageData,
+    float *audioData) { // imageData is now potentially frozen/faded g_grayScale
   // Mode IFFT (logs limités)
   if (log_counter % LOG_FREQUENCY == 0) {
     // printf("===== IFFT Mode appelé =====\n"); // Supprimé ou commenté
@@ -529,7 +584,10 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     return;
   }
   int index = __atomic_load_n(&current_buffer_index, __ATOMIC_RELAXED);
-  static int32_t g_grayScale[CIS_MAX_PIXELS_NB];
+  static int32_t
+      g_grayScale_live[CIS_MAX_PIXELS_NB]; // Buffer for live grayscale data
+  int32_t processed_grayScale[CIS_MAX_PIXELS_NB]; // Buffer for data to be
+                                                  // passed to synth_IfftMode
 
   // Attendre que le buffer destinataire soit libre
   pthread_mutex_lock(&buffers_R[index].mutex);
@@ -540,11 +598,85 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
 
 #if 1
   // On lance la conversion en niveaux de gris
-  greyScale(buffer_R, buffer_G, buffer_B, g_grayScale, CIS_MAX_PIXELS_NB);
+  greyScale(buffer_R, buffer_G, buffer_B, g_grayScale_live, CIS_MAX_PIXELS_NB);
 
-  // Lancer la synthèse
-  synth_IfftMode(g_grayScale, buffers_R[index].data); // Process synthesis
+  // --- Synth Data Freeze/Fade Logic ---
+  pthread_mutex_lock(&g_synth_data_freeze_mutex);
+  int local_is_frozen = g_is_synth_data_frozen;
+  int local_is_fading = g_is_synth_data_fading_out;
 
+  static int prev_frozen_state_synth = 0;
+  if (local_is_frozen && !prev_frozen_state_synth && !local_is_fading) {
+    memcpy(g_frozen_grayscale_buffer, g_grayScale_live,
+           sizeof(g_grayScale_live));
+  }
+  prev_frozen_state_synth = local_is_frozen;
+
+  static int prev_fading_state_synth = 0;
+  if (local_is_fading && !prev_fading_state_synth) {
+    g_synth_data_fade_start_time = synth_getCurrentTimeInSeconds();
+  }
+  prev_fading_state_synth = local_is_fading;
+  pthread_mutex_unlock(&g_synth_data_freeze_mutex);
+
+  float alpha_blend = 1.0f; // For cross-fade
+
+  if (local_is_fading) {
+    double elapsed_time =
+        synth_getCurrentTimeInSeconds() - g_synth_data_fade_start_time;
+    if (elapsed_time >= G_SYNTH_DATA_FADE_DURATION_SECONDS) {
+      pthread_mutex_lock(&g_synth_data_freeze_mutex);
+      g_is_synth_data_fading_out = 0;
+      g_is_synth_data_frozen = 0;
+      pthread_mutex_unlock(&g_synth_data_freeze_mutex);
+      memcpy(processed_grayScale, g_grayScale_live,
+             sizeof(g_grayScale_live)); // Use live data
+    } else {
+      alpha_blend =
+          (float)(elapsed_time /
+                  G_SYNTH_DATA_FADE_DURATION_SECONDS); // Alpha from 0 (frozen)
+                                                       // to 1 (live)
+      alpha_blend = (alpha_blend < 0.0f)
+                        ? 0.0f
+                        : ((alpha_blend > 1.0f) ? 1.0f : alpha_blend);
+      for (int i = 0; i < CIS_MAX_PIXELS_NB; ++i) {
+        processed_grayScale[i] =
+            (int32_t)(g_frozen_grayscale_buffer[i] * (1.0f - alpha_blend) +
+                      g_grayScale_live[i] * alpha_blend);
+      }
+    }
+  } else if (local_is_frozen) {
+    memcpy(processed_grayScale, g_frozen_grayscale_buffer,
+           sizeof(g_frozen_grayscale_buffer)); // Use frozen data
+  } else {
+    memcpy(processed_grayScale, g_grayScale_live,
+           sizeof(g_grayScale_live)); // Use live data
+  }
+  // --- End Synth Data Freeze/Fade Logic ---
+
+  // Lancer la synthèse avec les données potentiellement gelées/fondues
+  synth_IfftMode(processed_grayScale,
+                 buffers_R[index].data); // Process synthesis
+
+  // Mettre à jour les buffers d'affichage globaux avec les données traitées
+  // (processed_grayScale) Convertir processed_grayScale (int32_t, 0-65535) en
+  // R,G,B (uint8_t, 0-255)
+  pthread_mutex_lock(&g_displayable_synth_mutex);
+  for (int i = 0; i < CIS_MAX_PIXELS_NB; ++i) {
+    // Normaliser la valeur grayscale (0-65535) vers 0-255 pour uint8_t
+    // La valeur max de gray[i] dans greyScale est 65535.
+    uint8_t val_8bit = (uint8_t)(processed_grayScale[i] /
+                                 256); // Simple division pour normaliser
+    if (processed_grayScale[i] > 65535)
+      val_8bit = 255; // Clamp
+    if (processed_grayScale[i] < 0)
+      val_8bit = 0; // Clamp
+
+    g_displayable_synth_R[i] = val_8bit;
+    g_displayable_synth_G[i] = val_8bit;
+    g_displayable_synth_B[i] = val_8bit;
+  }
+  pthread_mutex_unlock(&g_displayable_synth_mutex);
   // Synthèse IFFT terminée
 #endif
 

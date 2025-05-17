@@ -36,10 +36,14 @@ typedef struct {
 #include <stdlib.h>
 #include <string.h>
 #include <termios.h>
+#include <time.h> // For clock_gettime
 #include <unistd.h>
 
 #include "display.h"
 #include "error.h"
+
+// NOTE: All Visual Freeze Feature code previously here has been removed
+// as the freeze logic is now handled in synth.c for synth data.
 
 int display_Init(sfRenderWindow *window) {
 #ifdef CLI_MODE
@@ -79,6 +83,13 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
     return;
   }
 #endif
+
+  // NOTE: Visual Freeze logic previously here has been removed.
+  // printImageRGB now directly uses the provided buffer_R, buffer_G, buffer_B
+  // for display. The decision of whether these buffers contain "live" or
+  // "frozen/faded" data (derived from synth.c's processed_grayScale)
+  // will be handled by the caller in main.c, which will prepare
+  // appropriate R,G,B buffers to pass here.
 
   // Create an image of one line (width = CIS_MAX_PIXELS_NB, height = 1)
   sfImage *image = sfImage_create(CIS_MAX_PIXELS_NB, 1);
@@ -122,8 +133,13 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
 
   // Cleanup
   sfImage_destroy(image);
-  sfTexture_destroy(line_texture);
-  sfSprite_destroy(foreground_sprite);
+  // sfTexture_destroy(line_texture); // line_texture is created from image, no
+  // need to destroy if image is destroyed? Actually, SFML docs say
+  // sfTexture_createFromImage creates a new texture that must be destroyed.
+  if (line_texture)
+    sfTexture_destroy(line_texture);
+  if (foreground_sprite)
+    sfSprite_destroy(foreground_sprite);
 }
 
 // Ancienne fonction utilisant un buffer 32-bit combiné
@@ -177,8 +193,10 @@ void printImage(sfRenderWindow *window, int32_t *image_buff,
 
   // Cleanup
   sfImage_destroy(image);
-  sfTexture_destroy(line_texture);
-  sfSprite_destroy(foreground_sprite);
+  if (line_texture)
+    sfTexture_destroy(line_texture);
+  if (foreground_sprite)
+    sfSprite_destroy(foreground_sprite);
 }
 
 void printRawData(sfRenderWindow *window, uint32_t *image_buff,
