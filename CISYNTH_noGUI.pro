@@ -35,6 +35,8 @@ SOURCES += \
     src/core/display.c \
     src/core/dmx.c \
     src/core/error.c \
+    src/core/kissfft/kiss_fft.c \
+    src/core/kissfft/kiss_fftr.c \
     src/core/main.c \
     src/core/multithreading.c \
     src/core/shared.c \
@@ -59,6 +61,8 @@ HEADERS += \
     src/core/dmx.h \
     src/core/doublebuffer.h \
     src/core/error.h \
+    src/core/kissfft/kiss_fft.h \
+    src/core/kissfft/kiss_fftr.h \
     src/core/multithreading.h \
     src/core/midi_controller.h \
     src/core/shared.h \

@@ -17,6 +17,7 @@
 typedef enum {
   MIDI_NONE = 0,
   MIDI_LAUNCHKEY_MINI = 1,
+  MIDI_NANO_KONTROL2 = 2, // Added for nanoKONTROL2
   // Other controllers can be added here
 } MidiControllerType;
 
@@ -35,6 +36,9 @@ private:
 
   // Callback function for volume change
   std::function<void(float)> volumeChangeCallback;
+  // Callbacks for Note On/Off events
+  std::function<void(int noteNumber, int velocity)> noteOnCallback;
+  std::function<void(int noteNumber)> noteOffCallback;
 
   // Static callback wrapper required by RtMidi
   static void midiCallback(double timeStamp,
@@ -74,6 +78,10 @@ public:
 
   // Set callback for volume changes
   void setVolumeChangeCallback(std::function<void(float)> callback);
+  // Set callbacks for Note On/Off events
+  void
+  setNoteOnCallback(std::function<void(int noteNumber, int velocity)> callback);
+  void setNoteOffCallback(std::function<void(int noteNumber)> callback);
 
   // Check if specific controller is connected
   bool isControllerConnected(MidiControllerType type);
@@ -103,6 +111,10 @@ int midi_Connect();
 void midi_Disconnect();
 void midi_SetupVolumeControl(); // Nouvelle fonction pour le contrôle du volume
                                 // en mode CLI
+
+// C-wrapper functions for setting note callbacks
+void midi_set_note_on_callback(void (*callback)(int noteNumber, int velocity));
+void midi_set_note_off_callback(void (*callback)(int noteNumber));
 }
 
 #endif /* MIDI_CONTROLLER_H */

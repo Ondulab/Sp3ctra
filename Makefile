@@ -37,7 +37,7 @@ MOVE          = mv -f
 TAR           = tar -cf
 COMPRESS      = gzip -9f
 DISTNAME      = CISYNTH_noGUI1.0.0
-DISTDIR = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI_contrasteLigne/build_nogui/obj/CISYNTH_noGUI1.0.0
+DISTDIR = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI/build_nogui/obj/CISYNTH_noGUI1.0.0
 LINK          = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
 LFLAGS        = -stdlib=libc++ -Wl,-no_warn_duplicate_libraries -Wl,-headerpad_max_install_names -headerpad_max_install_names $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wl,-rpath,@executable_path/../Frameworks
 LIBS          = $(SUBLIBS) -F/opt/homebrew/Cellar/qt@5/5.15.16_1/lib -L/opt/homebrew/lib -lfftw3 -lsndfile -L/opt/homebrew/Cellar/sfml@2/2.6.2_1/lib -lsfml-graphics -lsfml-window -lsfml-system -lcsfml-graphics -lcsfml-window -lcsfml-system -lrtaudio -lrtmidi -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa -framework QtGui -framework AppKit -framework Metal -framework QtCore -framework DiskArbitration -framework IOKit -framework OpenGL -framework AGL   
@@ -55,10 +55,13 @@ OBJECTS_DIR   = build_nogui/obj/
 SOURCES       = src/core/display.c \
 		src/core/dmx.c \
 		src/core/error.c \
+		src/core/kissfft/kiss_fft.c \
+		src/core/kissfft/kiss_fftr.c \
 		src/core/main.c \
 		src/core/multithreading.c \
 		src/core/shared.c \
 		src/core/synth.c \
+		src/core/synth_fft.c \
 		src/core/udp.c \
 		src/core/wave_generation.c \
 		src/core/audio_rtaudio.cpp \
@@ -70,10 +73,13 @@ SOURCES       = src/core/display.c \
 OBJECTS       = build_nogui/obj/display.o \
 		build_nogui/obj/dmx.o \
 		build_nogui/obj/error.o \
+		build_nogui/obj/kiss_fft.o \
+		build_nogui/obj/kiss_fftr.o \
 		build_nogui/obj/main.o \
 		build_nogui/obj/multithreading.o \
 		build_nogui/obj/shared.o \
 		build_nogui/obj/synth.o \
+		build_nogui/obj/synth_fft.o \
 		build_nogui/obj/udp.o \
 		build_nogui/obj/wave_generation.o \
 		build_nogui/obj/audio_rtaudio.o \
@@ -301,10 +307,13 @@ DIST          = /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_pre.pr
 		src/core/dmx.h \
 		src/core/doublebuffer.h \
 		src/core/error.h \
+		src/core/kissfft/kiss_fft.h \
+		src/core/kissfft/kiss_fftr.h \
 		src/core/multithreading.h \
 		src/core/midi_controller.h \
 		src/core/shared.h \
 		src/core/synth.h \
+		src/core/synth_fft.h \
 		src/core/udp.h \
 		src/core/wave_generation.h \
 		src/core/ZitaRev1.h \
@@ -314,10 +323,13 @@ DIST          = /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_pre.pr
 		src/core/three_band_eq.h src/core/display.c \
 		src/core/dmx.c \
 		src/core/error.c \
+		src/core/kissfft/kiss_fft.c \
+		src/core/kissfft/kiss_fftr.c \
 		src/core/main.c \
 		src/core/multithreading.c \
 		src/core/shared.c \
 		src/core/synth.c \
+		src/core/synth_fft.c \
 		src/core/udp.c \
 		src/core/wave_generation.c \
 		src/core/audio_rtaudio.cpp \
@@ -334,12 +346,12 @@ TARGET        = CISYNTH_noGUI
 EXPORT_QMAKE_MAC_SDK = macosx
 EXPORT_QMAKE_MAC_SDK_VERSION = 15.4
 EXPORT_QMAKE_XCODE_DEVELOPER_PATH = /Applications/Xcode.app/Contents/Developer
-EXPORT__QMAKE_STASH_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI_contrasteLigne/.qmake.stash
+EXPORT__QMAKE_STASH_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI/.qmake.stash
 EXPORT_VALID_ARCHS = arm64
 EXPORT_DEFAULT_ARCHS = arm64
 EXPORT_ARCHS = $(filter $(EXPORT_VALID_ARCHS), $(if $(ARCHS), $(ARCHS), $(if $(EXPORT_DEFAULT_ARCHS), $(EXPORT_DEFAULT_ARCHS), $(EXPORT_VALID_ARCHS))))
 EXPORT_ARCH_ARGS = $(foreach arch, $(if $(EXPORT_ARCHS), $(EXPORT_ARCHS), $(EXPORT_VALID_ARCHS)), -arch $(arch))
-EXPORT__PRO_FILE_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI_contrasteLigne/CISYNTH_noGUI.pro
+EXPORT__PRO_FILE_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI/CISYNTH_noGUI.pro
 
 
 include /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/mac/sdk.mk
@@ -793,8 +805,8 @@ distdir: FORCE
 	@test -d $(DISTDIR) || mkdir -p $(DISTDIR)
 	$(COPY_FILE) --parents $(DIST) $(DISTDIR)/
 	$(COPY_FILE) --parents /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp $(DISTDIR)/
-	$(COPY_FILE) --parents src/core/audio_rtaudio.h src/core/audio_c_api.h src/core/config.h src/core/context.h src/core/display.h src/core/dmx.h src/core/doublebuffer.h src/core/error.h src/core/multithreading.h src/core/midi_controller.h src/core/shared.h src/core/synth.h src/core/udp.h src/core/wave_generation.h src/core/ZitaRev1.h src/core/reverb.h src/core/pareq.h src/core/global.h src/core/three_band_eq.h $(DISTDIR)/
-	$(COPY_FILE) --parents src/core/display.c src/core/dmx.c src/core/error.c src/core/main.c src/core/multithreading.c src/core/shared.c src/core/synth.c src/core/udp.c src/core/wave_generation.c src/core/audio_rtaudio.cpp src/core/midi_controller.cpp src/core/ZitaRev1.cpp src/core/reverb.cpp src/core/pareq.cpp src/core/three_band_eq.cpp $(DISTDIR)/
+	$(COPY_FILE) --parents src/core/audio_rtaudio.h src/core/audio_c_api.h src/core/config.h src/core/context.h src/core/display.h src/core/dmx.h src/core/doublebuffer.h src/core/error.h src/core/kissfft/kiss_fft.h src/core/kissfft/kiss_fftr.h src/core/multithreading.h src/core/midi_controller.h src/core/shared.h src/core/synth.h src/core/synth_fft.h src/core/udp.h src/core/wave_generation.h src/core/ZitaRev1.h src/core/reverb.h src/core/pareq.h src/core/global.h src/core/three_band_eq.h $(DISTDIR)/
+	$(COPY_FILE) --parents src/core/display.c src/core/dmx.c src/core/error.c src/core/kissfft/kiss_fft.c src/core/kissfft/kiss_fftr.c src/core/main.c src/core/multithreading.c src/core/shared.c src/core/synth.c src/core/synth_fft.c src/core/udp.c src/core/wave_generation.c src/core/audio_rtaudio.cpp src/core/midi_controller.cpp src/core/ZitaRev1.cpp src/core/reverb.cpp src/core/pareq.cpp src/core/three_band_eq.cpp $(DISTDIR)/
 
 
 clean: compiler_clean 
@@ -931,6 +943,13 @@ build_nogui/obj/dmx.o: src/core/dmx.c src/core/config.h \
 build_nogui/obj/error.o: src/core/error.c src/core/error.h
 	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/error.o src/core/error.c
 
+build_nogui/obj/kiss_fft.o: src/core/kissfft/kiss_fft.c src/core/kissfft/kiss_fft.h
+	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/kiss_fft.o src/core/kissfft/kiss_fft.c
+
+build_nogui/obj/kiss_fftr.o: src/core/kissfft/kiss_fftr.c src/core/kissfft/kiss_fftr.h \
+		src/core/kissfft/kiss_fft.h
+	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/kiss_fftr.o src/core/kissfft/kiss_fftr.c
+
 build_nogui/obj/main.o: src/core/main.c src/core/audio_c_api.h \
 		src/core/config.h \
 		src/core/context.h \
@@ -1014,6 +1033,9 @@ build_nogui/obj/main.o: src/core/main.c src/core/audio_c_api.h \
 		src/core/synth.h \
 		src/core/wave_generation.h \
 		src/core/shared.h \
+		src/core/synth_fft.h \
+		src/core/kissfft/kiss_fftr.h \
+		src/core/kissfft/kiss_fft.h \
 		src/core/udp.h
 	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/main.o src/core/main.c
 
@@ -1115,6 +1137,89 @@ build_nogui/obj/synth.o: src/core/synth.c src/core/config.h \
 		src/core/wave_generation.h
 	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/synth.o src/core/synth.c
 
+build_nogui/obj/synth_fft.o: src/core/synth_fft.c src/core/synth_fft.h \
+		src/core/config.h \
+		src/core/kissfft/kiss_fftr.h \
+		src/core/kissfft/kiss_fft.h \
+		src/core/context.h \
+		src/core/audio_c_api.h \
+		src/core/dmx.h \
+		src/core/doublebuffer.h \
+		/opt/homebrew/include/SFML/Graphics.h \
+		/opt/homebrew/include/SFML/Window.h \
+		/opt/homebrew/include/SFML/System.h \
+		/opt/homebrew/include/SFML/Config.h \
+		/opt/homebrew/include/SFML/System/Buffer.h \
+		/opt/homebrew/include/SFML/System/Export.h \
+		/opt/homebrew/include/SFML/System/Types.h \
+		/opt/homebrew/include/SFML/System/Clock.h \
+		/opt/homebrew/include/SFML/System/Time.h \
+		/opt/homebrew/include/SFML/System/InputStream.h \
+		/opt/homebrew/include/SFML/System/Mutex.h \
+		/opt/homebrew/include/SFML/System/Sleep.h \
+		/opt/homebrew/include/SFML/System/Thread.h \
+		/opt/homebrew/include/SFML/System/Vector2.h \
+		/opt/homebrew/include/SFML/System/Vector3.h \
+		/opt/homebrew/include/SFML/Window/Clipboard.h \
+		/opt/homebrew/include/SFML/Window/Export.h \
+		/opt/homebrew/include/SFML/Window/Types.h \
+		/opt/homebrew/include/SFML/Window/Context.h \
+		/opt/homebrew/include/SFML/Window/Window.h \
+		/opt/homebrew/include/SFML/Window/Event.h \
+		/opt/homebrew/include/SFML/Window/Joystick.h \
+		/opt/homebrew/include/SFML/Window/JoystickIdentification.h \
+		/opt/homebrew/include/SFML/Window/Keyboard.h \
+		/opt/homebrew/include/SFML/Window/Mouse.h \
+		/opt/homebrew/include/SFML/Window/Sensor.h \
+		/opt/homebrew/include/SFML/Window/VideoMode.h \
+		/opt/homebrew/include/SFML/Window/WindowBase.h \
+		/opt/homebrew/include/SFML/Window/WindowHandle.h \
+		/opt/homebrew/include/SFML/Window/Vulkan.h \
+		/opt/homebrew/include/SFML/Window/Cursor.h \
+		/opt/homebrew/include/SFML/Window/Touch.h \
+		/opt/homebrew/include/SFML/Graphics/BlendMode.h \
+		/opt/homebrew/include/SFML/Graphics/Export.h \
+		/opt/homebrew/include/SFML/Graphics/CircleShape.h \
+		/opt/homebrew/include/SFML/Graphics/Color.h \
+		/opt/homebrew/include/SFML/Graphics/Rect.h \
+		/opt/homebrew/include/SFML/Graphics/Transform.h \
+		/opt/homebrew/include/SFML/Graphics/Types.h \
+		/opt/homebrew/include/SFML/Graphics/ConvexShape.h \
+		/opt/homebrew/include/SFML/Graphics/Font.h \
+		/opt/homebrew/include/SFML/Graphics/FontInfo.h \
+		/opt/homebrew/include/SFML/Graphics/Glyph.h \
+		/opt/homebrew/include/SFML/Graphics/Image.h \
+		/opt/homebrew/include/SFML/Graphics/PrimitiveType.h \
+		/opt/homebrew/include/SFML/Graphics/RectangleShape.h \
+		/opt/homebrew/include/SFML/Graphics/RenderStates.h \
+		/opt/homebrew/include/SFML/Graphics/RenderTexture.h \
+		/opt/homebrew/include/SFML/Graphics/Vertex.h \
+		/opt/homebrew/include/SFML/Graphics/RenderWindow.h \
+		/opt/homebrew/include/SFML/Graphics/Shader.h \
+		/opt/homebrew/include/SFML/Graphics/Glsl.h \
+		/opt/homebrew/include/SFML/Graphics/Shape.h \
+		/opt/homebrew/include/SFML/Graphics/Sprite.h \
+		/opt/homebrew/include/SFML/Graphics/Text.h \
+		/opt/homebrew/include/SFML/Graphics/Texture.h \
+		/opt/homebrew/include/SFML/Graphics/Transformable.h \
+		/opt/homebrew/include/SFML/Graphics/VertexArray.h \
+		/opt/homebrew/include/SFML/Graphics/VertexBuffer.h \
+		/opt/homebrew/include/SFML/Graphics/View.h \
+		/opt/homebrew/include/SFML/Network.h \
+		/opt/homebrew/include/SFML/Network/Ftp.h \
+		/opt/homebrew/include/SFML/Network/Export.h \
+		/opt/homebrew/include/SFML/Network/IpAddress.h \
+		/opt/homebrew/include/SFML/Network/Types.h \
+		/opt/homebrew/include/SFML/Network/Http.h \
+		/opt/homebrew/include/SFML/Network/Packet.h \
+		/opt/homebrew/include/SFML/Network/SocketSelector.h \
+		/opt/homebrew/include/SFML/Network/SocketStatus.h \
+		/opt/homebrew/include/SFML/Network/TcpListener.h \
+		/opt/homebrew/include/SFML/Network/TcpSocket.h \
+		/opt/homebrew/include/SFML/Network/UdpSocket.h \
+		src/core/error.h
+	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/synth_fft.o src/core/synth_fft.c
+
 build_nogui/obj/udp.o: src/core/udp.c src/core/config.h \
 		src/core/error.h \
 		src/core/udp.h
@@ -1135,7 +1240,12 @@ build_nogui/obj/audio_rtaudio.o: src/core/audio_rtaudio.cpp src/core/audio_rtaud
 		src/core/audio_c_api.h \
 		src/core/config.h \
 		src/core/three_band_eq.h \
-		/opt/homebrew/include/rtaudio/RtAudio.h
+		/opt/homebrew/include/rtaudio/RtAudio.h \
+		src/core/midi_controller.h \
+		/opt/homebrew/include/rtmidi/RtMidi.h \
+		src/core/synth_fft.h \
+		src/core/kissfft/kiss_fftr.h \
+		src/core/kissfft/kiss_fft.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o build_nogui/obj/audio_rtaudio.o src/core/audio_rtaudio.cpp
 
 build_nogui/obj/midi_controller.o: src/core/midi_controller.cpp src/core/midi_controller.h \

@@ -14,6 +14,10 @@ extern void midi_Init(void);
 extern void midi_Cleanup(void);
 extern int midi_Connect(void);
 extern void midi_SetupVolumeControl(void);
+// Add declarations for the new C-API MIDI callback setters
+extern void midi_set_note_on_callback(void (*callback)(int noteNumber,
+                                                       int velocity));
+extern void midi_set_note_off_callback(void (*callback)(int noteNumber));
 
 #ifdef __LINUX__
 // Vérifier si SFML est désactivé
@@ -203,6 +207,13 @@ int main(int argc, char **argv) {
   // Essayer de connecter au Launchkey Mini
   if (midi_Connect()) {
     printf("MIDI: Launchkey Mini connected\n");
+    // Setup note callbacks if MIDI connected successfully
+    // No need to check gMidiController here, the C-wrappers will do it.
+    midi_set_note_on_callback(synth_fft_note_on);
+    midi_set_note_off_callback(synth_fft_note_off);
+    printf("MIDI: Note On/Off callbacks for synth_fft registered via C API.\n");
+    // The following if(gMidiController) block is removed as it's C++ specific
+    // and was causing compilation errors in C.
   } else {
     printf("MIDI: No Launchkey Mini device found\n");
     // Note: nous ne pouvons pas afficher la liste des périphériques ici car
@@ -329,7 +340,7 @@ int main(int argc, char **argv) {
 
   // Create and start the FFT synth thread
   if (pthread_create(&fftSynthThreadId, NULL, synth_fftMode_thread_func,
-                     NULL) != 0) {
+                     (void *)&context) != 0) {
     perror("Error creating FFT synth thread");
     // Consider cleanup for other threads if this fails mid-startup
     sfRenderWindow_destroy(window);

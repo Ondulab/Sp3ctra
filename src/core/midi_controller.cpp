@@ -40,13 +40,15 @@ MidiController *gMidiController = nullptr;
 
 MidiController::MidiController()
     : midiIn(nullptr), isConnected(false), currentController(MIDI_NONE),
-      mix_level_synth_ifft(0.5f),
-      mix_level_synth_fft(0.0f), // FFT à 0 par défaut
+      mix_level_synth_ifft(0.0f), // Default IFFT level to 0.0f as requested
+      mix_level_synth_fft(0.5f),  // Default FFT level to 0.5f for audibility
       reverb_send_synth_ifft(0.7f),
       reverb_send_synth_fft(0.0f) { // Initialize all levels
 
   // Initialize with empty callback
   volumeChangeCallback = [](float /*volume*/) {};
+  noteOnCallback = nullptr;
+  noteOffCallback = nullptr;
 }
 
 MidiController::~MidiController() { cleanup(); }
@@ -143,7 +145,7 @@ bool MidiController::connectToDevice(unsigned int portNumber) {
     if (portName.find("Launchkey Mini") != std::string::npos) {
       currentController = MIDI_LAUNCHKEY_MINI;
     } else if (portName.find("nanoKONTROL2") != std::string::npos) {
-      currentController = MIDI_LAUNCHKEY_MINI; // Use same mapping for now
+      currentController = MIDI_NANO_KONTROL2; // Correctly identify nanoKONTROL2
     } else {
       currentController = MIDI_NONE;
     }
@@ -205,6 +207,16 @@ void MidiController::setVolumeChangeCallback(
   volumeChangeCallback = callback;
 }
 
+void MidiController::setNoteOnCallback(
+    std::function<void(int noteNumber, int velocity)> callback) {
+  this->noteOnCallback = callback;
+}
+
+void MidiController::setNoteOffCallback(
+    std::function<void(int noteNumber)> callback) {
+  this->noteOffCallback = callback;
+}
+
 bool MidiController::isControllerConnected(MidiControllerType type) {
   return isConnected && (currentController == type);
 }
@@ -223,6 +235,8 @@ std::string MidiController::getCurrentControllerName() {
   switch (currentController) {
   case MIDI_LAUNCHKEY_MINI:
     return "Launchkey Mini MK3";
+  case MIDI_NANO_KONTROL2:
+    return "nanoKONTROL2";
   default:
     return "Unknown controller";
   }
@@ -254,8 +268,11 @@ void MidiController::processMidiMessage(double timeStamp,
   // Get channel number (0-15)
   unsigned char channel = status & 0x0F;
 
+  unsigned char messageType = status & 0xF0;
+  unsigned char midiChannel = status & 0x0F; // MIDI channel 0-15
+
   // Check if this is a Control Change message (0xB0-0xBF)
-  if ((status & 0xF0) == 0xB0) {
+  if (messageType == 0xB0) {
     // Convertir en valeur normalisée (0.0 - 1.0)
     float normalizedValue = static_cast<float>(value) / 127.0f;
 
@@ -456,7 +473,36 @@ void MidiController::processMidiMessage(double timeStamp,
 #endif
       break;
     }
+  } else if (messageType == 0x90) { // Note On message
+    int noteNumber = number;        // message->at(1) is 'number'
+    int velocity = value;           // message->at(2) is 'value'
+#ifdef DEBUG_MIDI
+    std::cout << "MIDI Note On: Channel=" << (int)midiChannel
+              << ", Note=" << noteNumber << ", Velocity=" << velocity
+              << std::endl;
+#endif
+    if (velocity > 0) {
+      if (noteOnCallback) {
+        noteOnCallback(noteNumber, velocity);
+      }
+    } else { // Velocity 0 is typically a Note Off
+      if (noteOffCallback) {
+        noteOffCallback(noteNumber);
+      }
+    }
+  } else if (messageType == 0x80) { // Note Off message
+    int noteNumber = number;        // message->at(1) is 'number'
+    // int velocity = value; // Velocity for note off
+#ifdef DEBUG_MIDI
+    std::cout << "MIDI Note Off: Channel=" << (int)midiChannel
+              << ", Note=" << noteNumber << ", Velocity=" << (int)value
+              << std::endl;
+#endif
+    if (noteOffCallback) {
+      noteOffCallback(noteNumber);
+    }
   }
+  // Other MIDI messages (Pitch Bend, Program Change, etc.) can be handled here
 }
 
 float MidiController::convertCCToVolume(unsigned char value) {
@@ -532,6 +578,21 @@ void midi_SetupVolumeControl() {
   } else {
     printf(
         "Cannot setup MIDI volume control - MIDI or Audio not initialized\n");
+  }
+}
+
+// Implementation of C-wrapper functions for setting note callbacks
+void midi_set_note_on_callback(void (*callback)(int noteNumber, int velocity)) {
+  if (gMidiController) {
+    // The std::function can wrap a C function pointer
+    gMidiController->setNoteOnCallback(callback);
+  }
+}
+
+void midi_set_note_off_callback(void (*callback)(int noteNumber)) {
+  if (gMidiController) {
+    // The std::function can wrap a C function pointer
+    gMidiController->setNoteOffCallback(callback);
   }
 }
 

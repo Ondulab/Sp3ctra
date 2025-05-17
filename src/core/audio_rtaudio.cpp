@@ -53,16 +53,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   // Traitement des frames demandées, potentiellement en utilisant plusieurs
   // buffers
   while (framesToRender > 0) {
-    // Si le buffer actuel n'est pas prêt = underrun
-    if (buffers_R[localReadIndex].ready != 1) {
-      // On génère du silence uniquement pour le reste manquant, pas le buffer
-      // entier
-      memset(outLeft, 0, framesToRender * sizeof(float));
-      memset(outRight, 0, framesToRender * sizeof(float));
-      break; // On sort, mais sans erreur - juste du silence pour cette partie
-    }
-
-    // Combien de frames reste-t-il dans le buffer actuel?
+    // Combien de frames reste-t-il dans le buffer actuel? (synth_IfftMode)
     unsigned int framesAvailable = AUDIO_BUFFER_SIZE - readOffset;
 
     // On consomme soit tout ce qui reste, soit ce dont on a besoin
@@ -70,16 +61,33 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         (framesToRender < framesAvailable) ? framesToRender : framesAvailable;
 
     // Copier les données de synth_IfftMode dans tempBuffer
-    memcpy(tempBuffer, &buffers_R[localReadIndex].data[readOffset],
-           chunk * sizeof(float));
+    if (buffers_R[localReadIndex].ready != 1) {
+      // Underrun pour synth_IfftMode, remplir tempBuffer de silence pour ce
+      // chunk Cela évite de silencier synth_fft si synth_ifft n'est pas prêt.
+      memset(tempBuffer, 0, chunk * sizeof(float));
+      // Ne pas 'break' ici, continuer pour traiter synth_fft.
+      // La gestion de readOffset et localReadIndex pour buffers_R se fera quand
+      // même, mais elle lira potentiellement des buffers non prêts ou anciens
+      // si le producteur IFFT est bloqué. C'est un pis-aller pour le débogage.
+      // Le producteur IFFT doit être vérifié.
+    } else {
+      memcpy(tempBuffer, &buffers_R[localReadIndex].data[readOffset],
+             chunk * sizeof(float));
+    }
 
     // Récupérer les niveaux de mixage
-    float level_ifft = 0.5f; // Default if no controller
-    float level_fft = 0.5f;  // Default if no controller
+    float level_ifft = 0.0f; // Default for IFFT set to 0.0f as requested
+    float level_fft = 0.5f;  // Default if no controller - Kept at 0.5f
     if (gMidiController && gMidiController->isAnyControllerConnected()) {
       level_ifft = gMidiController->getMixLevelSynthIfft();
+      // The duplicate line for level_ifft inside the if was already removed or
+      // is a comment.
       level_fft = gMidiController->getMixLevelSynthFft();
     }
+
+    // DEBUG: Levels are now controlled by MIDI or defaults again
+    // level_ifft = 0.0f; // REVERTED
+    // level_fft = 0.5f; // REVERTED
 
     // Lire les données de synth_fftMode
     if (fft_audio_buffers[fft_localReadIndex].ready != 1) {
@@ -116,6 +124,9 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       reverb_send_ifft = gMidiController->getReverbSendSynthIfft();
       reverb_send_fft = gMidiController->getReverbSendSynthFft();
     }
+
+    // DEBUG: Ensure FFT path is dry for testing - REVERTED
+    // reverb_send_fft = 0.0f;
 
     // Appliquer le volume master (avec log pour le débogage)
     static float lastLoggedVolume = -1.0f;
