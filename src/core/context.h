@@ -10,18 +10,30 @@
 // Vérifier si SFML est désactivé
 #ifdef NO_SFML
 // Déclarations simplifiées pour compilation sans SFML
-typedef void sfRenderWindow;
-typedef void sfEvent;
+// Utiliser la forme struct pour permettre les pointeurs opaques
+typedef struct sfRenderWindow sfRenderWindow;
+typedef struct sfEvent sfEvent;
+// Ajoutez d'autres types si nécessaire, ex:
+// typedef struct sfTexture sfTexture;
 #else
 // SFML disponible sur Linux
 #include <SFML/Graphics.h>
 #include <SFML/Network.h>
-#endif
+#endif // NO_SFML
+#else  // Pas __LINUX__ (par exemple macOS)
+// Sur les autres plateformes (comme macOS), vérifier si SFML est désactivé
+#ifdef NO_SFML
+// Déclarations simplifiées pour compilation sans SFML
+// Utiliser la forme struct pour permettre les pointeurs opaques
+typedef struct sfRenderWindow sfRenderWindow;
+typedef struct sfEvent sfEvent;
+// Ajoutez d'autres types si nécessaire
 #else
-// macOS a toujours SFML
+// SFML disponible sur macOS (et NO_SFML n'est pas défini)
 #include <SFML/Graphics.h>
 #include <SFML/Network.h>
-#endif
+#endif // NO_SFML
+#endif // __LINUX__
 
 typedef struct {
   int fd;

@@ -19,33 +19,43 @@ extern void midi_set_note_on_callback(void (*callback)(int noteNumber,
                                                        int velocity));
 extern void midi_set_note_off_callback(void (*callback)(int noteNumber));
 
-#ifdef __LINUX__
-// Vérifier si SFML est désactivé
 #ifdef NO_SFML
-// Structures de base pour les horloges
+// Si SFML est désactivé, fournir des stubs/déclarations anticipées pour les
+// types SFML utilisés. Ceci est global pour main.c lorsque NO_SFML est défini.
 typedef struct {
   unsigned long long microseconds;
 } sfTime;
 
-typedef struct sfClock sfClock;
+typedef struct sfClock sfClock; // Déclaration anticipée pour sfClock
+
+// Stubs pour les fonctions sfClock si elles sont appelées (elles ne devraient
+// pas l'être grâce aux gardes #ifndef NO_SFML plus bas) Mais le compilateur a
+// besoin de les voir si PRINT_FPS est actif et qu'il essaie de compiler les
+// appels. Les gardes autour des appels sfClock_* dans la boucle principale
+// devraient empêcher cela. Cependant, pour que `sfClock *clock = NULL;` soit
+// valide, la déclaration de type est suffisante. Les définitions de fonctions
+// ici sont pour la complétude si jamais elles étaient appelées par erreur.
 sfClock *sfClock_create(void) { return NULL; }
 void sfClock_destroy(sfClock *clock) { (void)clock; }
 sfTime sfClock_getElapsedTime(const sfClock *clock) {
   (void)clock;
-  sfTime time = {0};
-  return time;
+  sfTime t = {0};
+  return t;
 }
 void sfClock_restart(sfClock *clock) { (void)clock; }
-#else
-// SFML disponible sur Linux
+
+// D'autres types SFML pourraient nécessiter des déclarations anticipées ici
+// s'ils sont utilisés dans main.c en dehors des blocs #ifndef NO_SFML et ne
+// sont pas déjà couverts par context.h/display.h Par exemple: typedef struct
+// sfVideoMode sfVideoMode; // Si utilisé directement Mais sfVideoMode mode =
+// ... est déjà dans un bloc #ifndef NO_SFML
+
+#else // NO_SFML n'est PAS défini, donc SFML est activé
+// Inclure les vrais en-têtes SFML
 #include <SFML/Graphics.h>
 #include <SFML/Network.h>
-#endif
-#else
-// macOS a toujours SFML
-#include <SFML/Graphics.h>
-#include <SFML/Network.h>
-#endif
+#endif // NO_SFML
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -165,8 +175,10 @@ int main(int argc, char **argv) {
   pthread_cond_init(&dmxCtx->cond, NULL);
 
   /* Initialize CSFML */
-  sfVideoMode mode = {WINDOWS_WIDTH, WINDOWS_HEIGHT, 32};
   sfRenderWindow *window = NULL;
+#ifndef NO_SFML
+  // Tout ce bloc ne s'exécute que si SFML est activé
+  sfVideoMode mode = {WINDOWS_WIDTH, WINDOWS_HEIGHT, 32};
 
 #ifndef CLI_MODE
   // Mode GUI normal, toujours créer la fenêtre
@@ -190,7 +202,8 @@ int main(int argc, char **argv) {
       return EXIT_FAILURE;
     }
   }
-#endif
+#endif // CLI_MODE
+#endif // NO_SFML
 
   /* Initialize UDP and Audio */
   struct sockaddr_in si_other, si_me;
@@ -254,7 +267,10 @@ int main(int argc, char **argv) {
   int s = udp_Init(&si_other, &si_me);
   if (s < 0) {
     perror("Error initializing UDP");
-    sfRenderWindow_destroy(window);
+#ifndef NO_SFML
+    if (window)
+      sfRenderWindow_destroy(window);
+#endif
     close(dmxCtx->fd);
     free(dmxCtx);
     return EXIT_FAILURE;
@@ -289,6 +305,8 @@ int main(int argc, char **argv) {
   sfSprite *backgroundSprite = NULL;
   sfSprite *foregroundSprite = NULL;
 
+#ifndef NO_SFML
+// Ce bloc ne s'exécute que si SFML est activé
 #ifndef CLI_MODE
   // Mode GUI normal, toujours créer les textures
   backgroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
@@ -307,7 +325,8 @@ int main(int argc, char **argv) {
     sfSprite_setTexture(backgroundSprite, backgroundTexture, sfTrue);
     sfSprite_setTexture(foregroundSprite, foregroundTexture, sfTrue);
   }
-#endif
+#endif // CLI_MODE
+#endif // NO_SFML
 
   /* Create threads for UDP, Audio, and DMX (pas de thread d'affichage) */
   pthread_t udpThreadId, audioThreadId, dmxThreadId,
@@ -320,20 +339,29 @@ int main(int argc, char **argv) {
       perror("Error creating DMX thread");
       close(dmxCtx->fd);
       free(dmxCtx);
-      sfRenderWindow_destroy(window);
+#ifndef NO_SFML
+      if (window)
+        sfRenderWindow_destroy(window);
+#endif
       return EXIT_FAILURE;
     }
   }
 #endif
   if (pthread_create(&udpThreadId, NULL, udpThread, (void *)&context) != 0) {
     perror("Error creating UDP thread");
-    sfRenderWindow_destroy(window);
+#ifndef NO_SFML
+    if (window)
+      sfRenderWindow_destroy(window);
+#endif
     return EXIT_FAILURE;
   }
   if (pthread_create(&audioThreadId, NULL, audioProcessingThread,
                      (void *)&context) != 0) {
     perror("Error creating audio processing thread");
-    sfRenderWindow_destroy(window);
+#ifndef NO_SFML
+    if (window)
+      sfRenderWindow_destroy(window);
+#endif
     return EXIT_FAILURE;
   }
 
@@ -346,14 +374,22 @@ int main(int argc, char **argv) {
                      (void *)&context) != 0) {
     perror("Error creating FFT synth thread");
     // Consider cleanup for other threads if this fails mid-startup
-    sfRenderWindow_destroy(window);
+#ifndef NO_SFML
+    if (window)
+      sfRenderWindow_destroy(window);
+#endif
     return EXIT_FAILURE;
   }
   // Optionally set scheduling parameters for fftSynthThreadId as well if needed
 
   /* Main loop (gestion des événements et rendu) */
   // sfEvent event; // Unused variable
-  sfClock *clock = sfClock_create();
+  sfClock *clock = NULL;
+#ifndef NO_SFML
+  // Créer l'horloge uniquement si SFML est utilisé
+  clock = sfClock_create();
+#endif // NO_SFML
+
 #ifdef PRINT_FPS
   unsigned int frameCount = 0;
 #endif
@@ -380,7 +416,9 @@ int main(int argc, char **argv) {
 
   while (running && context.running && app_running) {
     process_this_frame_main_loop = 0;
-    /* Gérer les événements SFML si la fenêtre est active */
+    /* Gérer les événements SFML si la fenêtre est active et si SFML est compilé
+     */
+#ifndef NO_SFML
     if (use_sfml_window && window) {
       sfEvent event;
       while (sfRenderWindow_pollEvent(window, &event)) {
@@ -391,6 +429,16 @@ int main(int argc, char **argv) {
         }
       }
     }
+#else
+    // Si NO_SFML est défini, mais que use_sfml_window est vrai,
+    // cela indique une incohérence de configuration.
+    // On pourrait ajouter un avertissement ici, ou simplement ne rien faire.
+    if (use_sfml_window && window) {
+      // Ce bloc ne devrait pas être atteint si NO_SFML est défini et que window
+      // est NULL. Si window est non-NULL ici, c'est une erreur de logique dans
+      // la création de la fenêtre.
+    }
+#endif // NO_SFML
 
     /* Vérifier si le double buffer contient de nouvelles données */
     pthread_mutex_lock(&db.mutex);
@@ -435,16 +483,25 @@ int main(int argc, char **argv) {
 
 #ifdef PRINT_FPS
     float elapsedTime = 0.0f;
-    /* Calcul du temps écoulé et affichage du taux de rafraîchissement */
-    elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
-    if (elapsedTime >= 1.0f) {
-      float fps = frameCount / elapsedTime;
-      (void)fps; // Mark fps as used to silence warning if printf is commented
-      // printf("Processing rate: %.2f FPS\n", fps); // Supprimé ou commenté
-      sfClock_restart(clock);
-      frameCount = 0; // Réinitialiser frameCount ici
+#ifndef NO_SFML
+    if (clock) { // Vérifier si clock a été initialisé
+      elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
+      if (elapsedTime >= 1.0f) {
+        float fps = frameCount / elapsedTime;
+        (void)fps; // Mark fps as used to silence warning if printf is commented
+        // printf("Processing rate: %.2f FPS\n", fps); // Supprimé ou commenté
+        sfClock_restart(clock);
+        frameCount = 0; // Réinitialiser frameCount ici
+      }
     }
-#endif
+#else
+    // Alternative pour le timing si NO_SFML est défini et que PRINT_FPS est
+    // actif (nécessiterait une implémentation de clock non-SFML, comme celles
+    // au début du fichier) Pour l'instant, on ne fait rien pour le FPS si
+    // NO_SFML.
+    (void)elapsedTime; // Supprimer l'avertissement unused
+#endif // NO_SFML
+#endif // PRINT_FPS
 
     /* Petite pause pour limiter la charge CPU */
     usleep(100);
@@ -456,10 +513,12 @@ int main(int argc, char **argv) {
   // on les sort de la condition #ifdef. Déjà fait en dehors de la boucle
   // CLI_MODE.
 
-  while (sfRenderWindow_isOpen(window)) {
+  while (sfRenderWindow_isOpen(
+      window)) { // Cette boucle ne s'exécute que si window est valide (donc
+                 // SFML est utilisé)
     process_this_frame_main_loop = 0;
-    sfEvent event; // Déplacé ici car non utilisé si CLI_MODE n'est pas défini
-                   // et event n'est pas utilisé
+#ifndef NO_SFML
+    sfEvent event;
     /* Gestion des événements dans le thread principal */
     while (sfRenderWindow_pollEvent(window, &event)) {
       if (event.type == sfEvtClosed) {
@@ -468,6 +527,7 @@ int main(int argc, char **argv) {
         dmxCtx->running = 0;
       }
     }
+#endif // NO_SFML
 
     /* Vérifier si le double buffer contient de nouvelles données */
     pthread_mutex_lock(&db.mutex);
@@ -509,23 +569,32 @@ int main(int argc, char **argv) {
 
 #ifdef PRINT_FPS
     float elapsedTime = 0.0f;
-    /* Calcul du temps écoulé et affichage du taux de rafraîchissement */
-    elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
-    if (elapsedTime >= 1.0f) {
-      float fps = frameCount / elapsedTime;
-      (void)fps; // Mark fps as used to silence warning if printf is commented
-      // printf("Refresh rate: %.2f FPS\n", fps); // Supprimé ou commenté
-      sfClock_restart(clock);
-      frameCount = 0; // Réinitialiser frameCount ici
+#ifndef NO_SFML
+    if (clock) { // Vérifier si clock a été initialisé
+      elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
+      if (elapsedTime >= 1.0f) {
+        float fps = frameCount / elapsedTime;
+        (void)fps; // Mark fps as used to silence warning if printf is commented
+        // printf("Refresh rate: %.2f FPS\n", fps); // Supprimé ou commenté
+        sfClock_restart(clock);
+        frameCount = 0; // Réinitialiser frameCount ici
+      }
     }
-#endif
+#else
+    (void)elapsedTime; // Supprimer l'avertissement unused
+#endif // NO_SFML
+#endif // PRINT_FPS
 
     /* Petite pause pour limiter la charge CPU */
     usleep(100);
   }
 #endif
 
-  sfClock_destroy(clock);
+#ifndef NO_SFML
+  if (clock) {
+    sfClock_destroy(clock);
+  }
+#endif // NO_SFML
 
   printf("\nTerminaison des threads et nettoyage...\n");
   /* Terminaison et synchronisation */
@@ -551,23 +620,38 @@ int main(int argc, char **argv) {
   audio_Cleanup(); // Nettoyage de RtAudio
 
   /* Nettoyage des ressources graphiques */
+#ifndef NO_SFML
+// Ce bloc ne s'exécute que si SFML est activé
 #ifndef CLI_MODE
-  // Mode GUI normal, toujours nettoyer
-  sfTexture_destroy(backgroundTexture);
-  sfTexture_destroy(foregroundTexture);
-  sfSprite_destroy(backgroundSprite);
-  sfSprite_destroy(foregroundSprite);
-  sfRenderWindow_destroy(window);
-#else
-  // Mode CLI, nettoyer seulement si la fenêtre SFML était utilisée
-  if (use_sfml_window) {
+                   // Mode GUI normal, toujours nettoyer
+  if (backgroundTexture)
     sfTexture_destroy(backgroundTexture);
+  if (foregroundTexture)
     sfTexture_destroy(foregroundTexture);
+  if (backgroundSprite)
     sfSprite_destroy(backgroundSprite);
+  if (foregroundSprite)
     sfSprite_destroy(foregroundSprite);
+  if (window)
     sfRenderWindow_destroy(window);
+#else
+                   // Mode CLI, nettoyer seulement si la fenêtre SFML était
+                   // utilisée
+  if (use_sfml_window &&
+      window) { // window ne sera non-NULL que si use_sfml_window était vrai ET
+                // la création a réussi
+    if (backgroundTexture)
+      sfTexture_destroy(backgroundTexture);
+    if (foregroundTexture)
+      sfTexture_destroy(foregroundTexture);
+    if (backgroundSprite)
+      sfSprite_destroy(backgroundSprite);
+    if (foregroundSprite)
+      sfSprite_destroy(foregroundSprite);
+    sfRenderWindow_destroy(window); // window est garanti non-NULL ici
   }
-#endif
+#endif // CLI_MODE
+#endif // NO_SFML
 
   return 0;
 }

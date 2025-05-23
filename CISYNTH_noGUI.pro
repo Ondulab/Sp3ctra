@@ -7,11 +7,25 @@ CONFIG += console
 cli_mode {
     DEFINES += CLI_MODE
     message("Mode CLI activé - l'application fonctionnera sans interface graphique")
-    
-    # Désactiver la génération de bundle sur macOS en mode CLI
+
     macx {
         CONFIG -= app_bundle
         message("Génération de bundle macOS désactivée - un exécutable standard sera créé")
+        # En mode CLI sur macOS, désactiver SFML par défaut.
+        # L'utilisateur peut l'activer en passant CONFIG+=use_sfml à qmake.
+        !use_sfml {
+            DEFINES += NO_SFML
+            message("Mode CLI sur macOS: SFML/CSFML désactivé (NO_SFML défini). Pour activer, passez CONFIG+=use_sfml à qmake.")
+        } else {
+            message("Mode CLI sur macOS: SFML/CSFML activé via CONFIG+=use_sfml.")
+        }
+    }
+
+    # Pour Linux en mode CLI, SFML est toujours désactivé comme demandé par l'utilisateur pour RPi
+    linux-g++ {
+        # Cette condition est dans cli_mode -> linux-g++
+        DEFINES += NO_SFML
+        message("Mode CLI sur Linux: SFML/CSFML désactivé (NO_SFML défini).")
     }
 }
 
@@ -81,21 +95,25 @@ INCLUDEPATH += src/core
 
 # Configuration macOS spécifique
 macx {
-    # Dépendances via Homebrew
-    LIBS += -L/opt/homebrew/lib \
-        -lfftw3 \
-        -lsndfile \
-        -L/opt/homebrew/Cellar/sfml@2/2.6.2_1/lib \
-        -lsfml-graphics -lsfml-window -lsfml-system \
-        -lcsfml-graphics -lcsfml-window -lcsfml-system \
-        -lrtaudio \
-        -lrtmidi
-    
-    # Chemins d'inclusion pour Homebrew
+    # Si NO_SFML N'EST PAS défini, configurer SFML/CSFML
+    !defined(NO_SFML, DEFINES) {
+        message("macOS: Configuration de SFML/CSFML...")
+        LIBS += -L/opt/homebrew/Cellar/sfml@2/2.6.2_1/lib \
+                -lsfml-graphics -lsfml-window -lsfml-system \
+                -lcsfml-graphics -lcsfml-window -lcsfml-system
+        INCLUDEPATH += /opt/homebrew/Cellar/sfml@2/2.6.2_1/include
+        # Assurer que les en-têtes CSFML sont trouvables.
+        # /opt/homebrew/include est déjà ajouté plus bas, ce qui devrait suffire si CSFML y est.
+        # Sinon, un chemin spécifique comme /opt/homebrew/opt/csfml/include pourrait être nécessaire.
+    } else {
+        message("macOS: SFML/CSFML n'est pas configuré (NO_SFML est défini).")
+    }
+
+    # Dépendances non-SFML et chemins d'inclusion de base pour Homebrew (toujours requis)
+    LIBS += -L/opt/homebrew/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi
     INCLUDEPATH += /opt/homebrew/include
-    INCLUDEPATH += /opt/homebrew/Cellar/sfml@2/2.6.2_1/include
     
-    # Frameworks macOS requis
+    # Frameworks macOS requis (toujours requis)
     LIBS += -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa
     
     # Configuration de signature simplifiée (signature ad-hoc correcte)
@@ -115,51 +133,31 @@ linux-g++ {
     # Définir que nous sommes sur Linux
     DEFINES += __LINUX__
     
-    # Dépendances pour Linux
+    # Dépendances pour Linux (non-SFML)
     LIBS += -lfftw3 -lsndfile
-    
-    # Tentative de configuration SFML et CSFML
-    # On suppose que si on est sous Linux pour ce projet, on veut SFML/CSFML
-    # car install_dependencies_raspberry.sh les installe.
 
-    SFML_CONFIG_SUCCESS = false
-    # Essayer de trouver sfml-graphics et csfml-graphics via pkg-config
-    system("pkg-config --exists sfml-graphics && pkg-config --exists csfml-graphics") {
-        message("SFML et CSFML trouvés via pkg-config.")
-        # Utiliser pkg-config pour obtenir les flags de liaison et d'inclusion
-        # Note: CSFML dépend de SFML, donc lier les deux est généralement nécessaire.
-        LIBS += $(shell pkg-config --libs sfml-graphics sfml-window sfml-system csfml-graphics csfml-window csfml-system)
-        # Les chemins d'inclusion sont souvent gérés par les paquets -dev, mais peuvent être ajoutés si nécessaire:
-        # INCLUDEPATH += $(shell pkg-config --cflags sfml-graphics csfml-graphics)
-        SFML_CONFIG_SUCCESS = true
-    }
-
-    if (!$$SFML_CONFIG_SUCCESS) {
-        message("pkg-config n'a pas trouvé sfml-graphics et/ou csfml-graphics. Tentative de liaison manuelle.")
-        message("Veuillez vérifier que libsfml-dev, libcsfml-dev et pkg-config sont correctement installés.")
-        # Ajout manuel des bibliothèques. Cela suppose qu'elles sont dans les chemins standards.
-        # Ordre modifié: CSFML d'abord, puis SFML car CSFML dépend de SFML.
-        LIBS += -lcsfml-graphics -lcsfml-window -lcsfml-system
-        LIBS += -lsfml-graphics -lsfml-window -lsfml-system
-        # Si des erreurs persistent, vous pourriez avoir besoin d'ajouter explicitement des chemins de bibliothèques
-        # avec -L/chemin/vers/libs et des chemins d'inclusion avec INCLUDEPATH += /chemin/vers/includes
-        # Toutefois, une installation correcte via apt devrait rendre cela inutile.
+    # Si NO_SFML N'EST PAS défini (c.a.d. mode non-CLI sur Linux, car cli_mode->linux-g++ définit NO_SFML)
+    !defined(NO_SFML, DEFINES) {
+        message("Linux (non-CLI): Tentative de configuration SFML/CSFML.")
+        SFML_CONFIG_SUCCESS = false
+        system("pkg-config --exists sfml-graphics") {
+            message("sfml-graphics trouvé via pkg-config pour Linux (non-CLI).")
+            LIBS += $(shell pkg-config --libs sfml-graphics sfml-window sfml-system)
+            LIBS += -lcsfml-graphics -lcsfml-window -lcsfml-system # Lier CSFML manuellement
+            SFML_CONFIG_SUCCESS = true
+        }
+        if (!$$SFML_CONFIG_SUCCESS) {
+            message("pkg-config n'a pas trouvé sfml-graphics pour Linux (non-CLI). Tentative de liaison manuelle SFML/CSFML.")
+            LIBS += -lcsfml-graphics -lcsfml-window -lcsfml-system
+            LIBS += -lsfml-graphics -lsfml-window -lsfml-system
+        } else {
+            message("SFML et CSFML configurés pour Linux (non-CLI).")
+        }
     } else {
-        message("SFML et CSFML configurés avec succès via pkg-config.")
+        message("Linux: SFML/CSFML n'est pas configuré (NO_SFML est défini).")
     }
-
-    # Si vous souhaitez avoir une option pour compiler SANS SFML/CSFML (par exemple, pour un mode purement CLI sans affichage),
-    # vous devriez introduire une variable de configuration (ex: CONFIG += no_sfml_build)
-    # et conditionner l'ensemble de ce bloc SFML/CSFML avec cette variable.
-    # Pour l'instant, l'objectif est de résoudre le problème de liaison.
-    # Si, après ces tentatives, la liaison échoue toujours, le problème est probablement plus profond :
-    # - Bibliothèques non installées correctement (vérifiez avec `dpkg -L libsfml-dev libcsfml-dev`)
-    # - Versions incompatibles
-    # - Problème avec l'environnement de l'éditeur de liens (LD_LIBRARY_PATH, etc., bien que moins probable pour la compilation)
-    # - pkg-config lui-même non installé (le script d'installation ne l'installe pas explicitement)
-    #   Vous pouvez l'installer avec: sudo apt install pkg-config
     
-    # Threads POSIX
+    # Threads POSIX (toujours requis pour Linux)
     LIBS += -lpthread
     
     # Support audio et MIDI

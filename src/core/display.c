@@ -11,18 +11,20 @@
 #ifdef __LINUX__
 // Sur Linux, vérifier si SFML est explicitement désactivé
 #ifndef NO_SFML
-// SFML disponible sur Linux
-#include <SFML/Graphics.h>
-#include <SFML/Network.h>
-#endif // NO_SFML
-#else  // Pas __LINUX__ (par exemple macOS)
-// Sur les autres plateformes (comme macOS), on suppose que SFML est disponible
-// à moins que NO_SFML ne soit également défini pour ces plateformes.
+// SFML/CSFML disponible sur Linux
+// Utiliser les en-têtes CSFML pour les fichiers C
+#include <CSFML/Graphics.h>
+#include <CSFML/Network.h> // Si CSFML/Network est utilisé
+#endif                     // NO_SFML
+#else                      // Pas __LINUX__ (par exemple macOS)
+// Sur les autres plateformes (comme macOS), on suppose que SFML/CSFML est
+// disponible à moins que NO_SFML ne soit également défini pour ces plateformes.
 #ifndef NO_SFML
-#include <SFML/Graphics.h>
-#include <SFML/Network.h>
-#endif // NO_SFML
-#endif // __LINUX__
+// Utiliser les en-têtes CSFML pour les fichiers C
+#include <CSFML/Graphics.h>
+#include <CSFML/Network.h> // Si CSFML/Network est utilisé
+#endif                     // NO_SFML
+#endif                     // __LINUX__
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>

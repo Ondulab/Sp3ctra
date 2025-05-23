@@ -10,8 +10,11 @@
 #include "synth.h"
 #include "udp.h"
 
+#ifndef NO_SFML
 #include <SFML/Graphics.h>
 #include <SFML/Network.h>
+#endif // NO_SFML
+
 #include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
