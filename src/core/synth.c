@@ -170,9 +170,9 @@ int32_t synth_IfftInit(void) {
   wavesGeneratorParams.commaPerSemitone = COMMA_PER_SEMITONE;
   wavesGeneratorParams.startFrequency =
       (uint32_t)START_FREQUENCY; // Cast to uint32_t
-  wavesGeneratorParams.harmonizationType = MAJOR;
+  wavesGeneratorParams.harmonization = MAJOR;
   wavesGeneratorParams.harmonizationLevel = 100;
-  wavesGeneratorParams.waveformType = SIN_WAVE;
+  wavesGeneratorParams.waveform = SIN_WAVE;
   wavesGeneratorParams.waveformOrder = 1;
 
   buffer_len = init_waves(unitary_waveform, waves,

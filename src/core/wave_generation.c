@@ -63,7 +63,7 @@ static uint32_t calculate_waveform(uint32_t current_aera_size,
   uint32_t currentValue = 0;
   uint32_t overshootCompensation = 0;
 
-  switch (params->waveformType) {
+  switch (params->waveform) {
   case SIN_WAVE:
     // fill unitary_waveform buffer with sinusoidal waveform for each comma
     for (uint32_t x = 0; x < current_aera_size; x++) {
