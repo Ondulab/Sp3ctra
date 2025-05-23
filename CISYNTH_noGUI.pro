@@ -138,8 +138,9 @@ linux-g++ {
         message("pkg-config n'a pas trouvé sfml-graphics et/ou csfml-graphics. Tentative de liaison manuelle.")
         message("Veuillez vérifier que libsfml-dev, libcsfml-dev et pkg-config sont correctement installés.")
         # Ajout manuel des bibliothèques. Cela suppose qu'elles sont dans les chemins standards.
-        LIBS += -lsfml-graphics -lsfml-window -lsfml-system
+        # Ordre modifié: CSFML d'abord, puis SFML car CSFML dépend de SFML.
         LIBS += -lcsfml-graphics -lcsfml-window -lcsfml-system
+        LIBS += -lsfml-graphics -lsfml-window -lsfml-system
         # Si des erreurs persistent, vous pourriez avoir besoin d'ajouter explicitement des chemins de bibliothèques
         # avec -L/chemin/vers/libs et des chemins d'inclusion avec INCLUDEPATH += /chemin/vers/includes
         # Toutefois, une installation correcte via apt devrait rendre cela inutile.
