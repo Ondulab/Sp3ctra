@@ -87,7 +87,7 @@ typedef struct {
 } SynthVoice;
 
 /* Définitions pour la moyenne glissante */
-#define MOVING_AVERAGE_WINDOW_SIZE 8 // Reduced from 32 for faster response
+#define MOVING_AVERAGE_WINDOW_SIZE 1 // Reduced from 32 for faster response
 
 /* Structure pour stocker une ligne d'image en niveaux de gris */
 typedef struct {

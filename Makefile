@@ -1259,6 +1259,9 @@ build_nogui/obj/midi_controller.o: src/core/midi_controller.cpp src/core/midi_co
 		src/core/config.h \
 		src/core/three_band_eq.h \
 		/opt/homebrew/include/rtaudio/RtAudio.h \
+		src/core/synth.h \
+		src/core/wave_generation.h \
+		src/core/shared.h \
 		src/core/synth_fft.h \
 		src/core/kissfft/kiss_fftr.h \
 		src/core/kissfft/kiss_fft.h
