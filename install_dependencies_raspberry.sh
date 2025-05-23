@@ -12,7 +12,7 @@ sudo apt update
 echo "Installation des bibliothèques de développement..."
 sudo apt install -y build-essential libqt5gui5 libqt5core5a qtbase5-dev qttools5-dev-tools qt5-qmake qtchooser
 sudo apt install -y libfftw3-dev libsndfile1-dev
-sudo apt install -y libasound2-dev librtaudio-dev
+sudo apt install -y libasound2-dev librtaudio-dev librtmidi-dev
 sudo apt install -y libpthread-stubs0-dev
 
 # Optionnel: SFML (si disponible)
