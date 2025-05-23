@@ -118,14 +118,45 @@ linux-g++ {
     # Dépendances pour Linux
     LIBS += -lfftw3 -lsndfile
     
-    # Vérifier si SFML est disponible
-    system("pkg-config --exists sfml-graphics") {
-        message("SFML trouvé, inclusion des bibliothèques SFML")
-        LIBS += -lsfml-graphics -lsfml-window -lsfml-system -lcsfml-graphics -lcsfml-window -lcsfml-system
-    } else {
-        message("SFML non trouvé, désactivation des fonctionnalités graphiques")
-        DEFINES += NO_SFML
+    # Tentative de configuration SFML et CSFML
+    # On suppose que si on est sous Linux pour ce projet, on veut SFML/CSFML
+    # car install_dependencies_raspberry.sh les installe.
+
+    SFML_CONFIG_SUCCESS = false
+    # Essayer de trouver sfml-graphics et csfml-graphics via pkg-config
+    system("pkg-config --exists sfml-graphics && pkg-config --exists csfml-graphics") {
+        message("SFML et CSFML trouvés via pkg-config.")
+        # Utiliser pkg-config pour obtenir les flags de liaison et d'inclusion
+        # Note: CSFML dépend de SFML, donc lier les deux est généralement nécessaire.
+        LIBS += $(shell pkg-config --libs sfml-graphics sfml-window sfml-system csfml-graphics csfml-window csfml-system)
+        # Les chemins d'inclusion sont souvent gérés par les paquets -dev, mais peuvent être ajoutés si nécessaire:
+        # INCLUDEPATH += $(shell pkg-config --cflags sfml-graphics csfml-graphics)
+        SFML_CONFIG_SUCCESS = true
     }
+
+    if (!$$SFML_CONFIG_SUCCESS) {
+        message("pkg-config n'a pas trouvé sfml-graphics et/ou csfml-graphics. Tentative de liaison manuelle.")
+        message("Veuillez vérifier que libsfml-dev, libcsfml-dev et pkg-config sont correctement installés.")
+        # Ajout manuel des bibliothèques. Cela suppose qu'elles sont dans les chemins standards.
+        LIBS += -lsfml-graphics -lsfml-window -lsfml-system
+        LIBS += -lcsfml-graphics -lcsfml-window -lcsfml-system
+        # Si des erreurs persistent, vous pourriez avoir besoin d'ajouter explicitement des chemins de bibliothèques
+        # avec -L/chemin/vers/libs et des chemins d'inclusion avec INCLUDEPATH += /chemin/vers/includes
+        # Toutefois, une installation correcte via apt devrait rendre cela inutile.
+    } else {
+        message("SFML et CSFML configurés avec succès via pkg-config.")
+    }
+
+    # Si vous souhaitez avoir une option pour compiler SANS SFML/CSFML (par exemple, pour un mode purement CLI sans affichage),
+    # vous devriez introduire une variable de configuration (ex: CONFIG += no_sfml_build)
+    # et conditionner l'ensemble de ce bloc SFML/CSFML avec cette variable.
+    # Pour l'instant, l'objectif est de résoudre le problème de liaison.
+    # Si, après ces tentatives, la liaison échoue toujours, le problème est probablement plus profond :
+    # - Bibliothèques non installées correctement (vérifiez avec `dpkg -L libsfml-dev libcsfml-dev`)
+    # - Versions incompatibles
+    # - Problème avec l'environnement de l'éditeur de liens (LD_LIBRARY_PATH, etc., bien que moins probable pour la compilation)
+    # - pkg-config lui-même non installé (le script d'installation ne l'installe pas explicitement)
+    #   Vous pouvez l'installer avec: sudo apt install pkg-config
     
     # Threads POSIX
     LIBS += -lpthread
