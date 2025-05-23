@@ -9,27 +9,20 @@
 #include <stdint.h> // Pour uint8_t, uint32_t et autres types entiers de taille fixe
 
 #ifdef __LINUX__
-// Vérifier si SFML est désactivé
-#ifdef NO_SFML
-// Déclarations simplifiées pour compilation sans SFML
-typedef void sfRenderWindow;
-typedef void sfTexture;
-typedef void sfImage;
-typedef void sfSprite;
-typedef void sfColor;
-typedef struct {
-  float x, y;
-} sfVector2f;
-#else
+// Sur Linux, vérifier si SFML est explicitement désactivé
+#ifndef NO_SFML
 // SFML disponible sur Linux
 #include <SFML/Graphics.h>
 #include <SFML/Network.h>
-#endif
-#else
-// macOS a toujours SFML
+#endif // NO_SFML
+#else  // Pas __LINUX__ (par exemple macOS)
+// Sur les autres plateformes (comme macOS), on suppose que SFML est disponible
+// à moins que NO_SFML ne soit également défini pour ces plateformes.
+#ifndef NO_SFML
 #include <SFML/Graphics.h>
 #include <SFML/Network.h>
-#endif
+#endif // NO_SFML
+#endif // __LINUX__
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -69,6 +62,7 @@ int display_Init(sfRenderWindow *window) {
 void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
                    uint8_t *buffer_B, sfTexture *background_texture,
                    sfTexture *foreground_texture) {
+#ifndef NO_SFML
 #ifdef CLI_MODE
   // En mode CLI, vérifier si une fenêtre SFML est disponible
   if (!window || !background_texture || !foreground_texture) {
@@ -140,11 +134,22 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
     sfTexture_destroy(line_texture);
   if (foreground_sprite)
     sfSprite_destroy(foreground_sprite);
+#else
+  // NO_SFML is defined, do nothing.
+  // Add (void) casts to prevent unused parameter warnings if necessary.
+  (void)window;
+  (void)buffer_R;
+  (void)buffer_G;
+  (void)buffer_B;
+  (void)background_texture;
+  (void)foreground_texture;
+#endif
 }
 
 // Ancienne fonction utilisant un buffer 32-bit combiné
 void printImage(sfRenderWindow *window, int32_t *image_buff,
                 sfTexture *background_texture, sfTexture *foreground_texture) {
+#ifndef NO_SFML
 #ifdef CLI_MODE
   // En mode CLI, vérifier si une fenêtre SFML est disponible
   if (!window || !background_texture || !foreground_texture) {
@@ -197,11 +202,19 @@ void printImage(sfRenderWindow *window, int32_t *image_buff,
     sfTexture_destroy(line_texture);
   if (foreground_sprite)
     sfSprite_destroy(foreground_sprite);
+#else
+  // NO_SFML is defined, do nothing.
+  (void)window;
+  (void)image_buff;
+  (void)background_texture;
+  (void)foreground_texture;
+#endif
 }
 
 void printRawData(sfRenderWindow *window, uint32_t *image_buff,
                   sfTexture *background_texture,
                   sfTexture *foreground_texture) {
+#ifndef NO_SFML
 #ifdef CLI_MODE
   // En mode CLI, vérifier si une fenêtre SFML est disponible
   if (!window || !background_texture || !foreground_texture) {
@@ -259,4 +272,11 @@ void printRawData(sfRenderWindow *window, uint32_t *image_buff,
   // Clean up
   sfSprite_destroy(background_sprite);
   sfSprite_destroy(foreground_sprite);
+#else
+  // NO_SFML is defined, do nothing.
+  (void)window;
+  (void)image_buff;
+  (void)background_texture;
+  (void)foreground_texture;
+#endif
 }

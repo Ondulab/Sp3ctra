@@ -14,21 +14,20 @@
 #include <stdio.h>
 
 // SFML Includes needed for type definitions in function prototypes
-#ifdef __LINUX__
 #ifndef NO_SFML
+// If SFML is NOT disabled, include the SFML headers
 #include <SFML/Graphics.h>
-#endif
-#else // macOS
-#include <SFML/Graphics.h>
-#endif
-
-// Forward declare SFML types if NO_SFML is defined and SFML/Graphics.h isn't
-// included
-#if defined(__LINUX__) && defined(NO_SFML)
+#else
+// If SFML IS disabled (NO_SFML is defined),
+// provide forward declarations for SFML types used in function prototypes.
 typedef struct sfRenderWindow sfRenderWindow;
 typedef struct sfTexture sfTexture;
+typedef struct sfImage
+    sfImage; // Added as it's used internally by display functions
+typedef struct sfSprite sfSprite; // Added
+typedef struct sfColor sfColor;   // Added
 // Add other SFML types if they appear in prototypes and NO_SFML is possible
-#endif
+#endif // NO_SFML
 
 int display_Init(sfRenderWindow *window);
 void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
