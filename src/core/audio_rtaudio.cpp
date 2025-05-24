@@ -387,7 +387,13 @@ void AudioSystem::processReverb(float inputL, float inputR, float &outputL,
 
 // Initialisation
 bool AudioSystem::initialize() {
+  // Forcer l'utilisation de l'API ALSA sur Linux
+#ifdef __linux__
+  std::cout << "Attempting to initialize RtAudio with ALSA API..." << std::endl;
+  audio = new RtAudio(RtAudio::LINUX_ALSA);
+#else
   audio = new RtAudio();
+#endif
 
   // Vérifier si RtAudio a été correctement créé
   if (!audio) {
