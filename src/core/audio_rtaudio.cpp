@@ -414,6 +414,8 @@ bool AudioSystem::initialize() {
                       &bufferSize, &AudioSystem::rtCallback, this, &options);
   } catch (std::exception &e) {
     std::cerr << "Erreur RtAudio: " << e.what() << std::endl;
+    delete audio;    // Nettoyer l'objet RtAudio en cas d'échec
+    audio = nullptr; // Mettre le pointeur à nullptr
     return false;
   }
 
