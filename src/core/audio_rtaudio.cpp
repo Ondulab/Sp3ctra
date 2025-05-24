@@ -6,6 +6,8 @@
 #include "synth_fft.h"       // For fft_audio_buffers and related variables
 #include <cstring>
 #include <iostream>
+#include <rtaudio/RtAudio.h> // Explicitly include RtAudio.h
+#include <stdexcept>         // For std::exception
 
 // Variables globales pour compatibilité avec l'ancien code
 AudioDataBuffers buffers_L[2];
@@ -401,9 +403,89 @@ bool AudioSystem::initialize() {
     return false;
   }
 
+  // Get and print available devices
+  unsigned int deviceCount = 0;
+  try {
+    deviceCount = audio->getDeviceCount();
+  } catch (const std::exception &error) {
+    std::cerr << "Error getting device count: " << error.what() << std::endl;
+    delete audio;
+    audio = nullptr;
+    return false;
+  }
+
+  std::cout << "Available output devices:" << std::endl;
+  unsigned int preferredDeviceId = audio->getDefaultOutputDevice(); // Default
+  bool foundSpecificPreferred = false;
+
+  for (unsigned int i = 0; i < deviceCount; i++) {
+    try {
+      RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
+      bool isDefault = info.isDefaultOutput; // Store default status
+
+      if (info.outputChannels > 0) { // Only consider output devices
+        std::cout << "  Device ID " << i << ": " << info.name
+                  << (isDefault ? " (Default Output)" : "")
+                  << " [Output Channels: " << info.outputChannels << "]"
+                  << std::endl;
+
+        std::string deviceName(info.name);
+        // Prefer "Headphones" or "bcm2835 ALSA" (non-HDMI)
+        bool isHeadphones =
+            (deviceName.find("Headphones") != std::string::npos);
+        bool isAnalogue =
+            (deviceName.find("bcm2835 ALSA") != std::string::npos &&
+             deviceName.find("HDMI") == std::string::npos);
+
+        if (isHeadphones) {
+          std::cout << "    -> Found 'Headphones' device: " << deviceName
+                    << " with ID " << i << std::endl;
+          preferredDeviceId = i;
+          foundSpecificPreferred = true;
+          // Prioritize headphones over other analogue if both found
+        } else if (isAnalogue && !foundSpecificPreferred) {
+          std::cout << "    -> Found 'bcm2835 ALSA' (non-HDMI) device: "
+                    << deviceName << " with ID " << i << std::endl;
+          preferredDeviceId = i;
+          // Don't set foundSpecificPreferred to true here, to allow
+          // 'Headphones' to override if found later
+        }
+      }
+    } catch (const std::exception &error) {
+      // This is where the "Unknown error 524" might originate if getDeviceInfo
+      // fails for certain hw IDs
+      std::cerr
+          << "RtApiAlsa::getDeviceInfo: snd_pcm_open error for device (hw:" << i
+          << ",0 likely), " << error.what() << std::endl;
+    }
+  }
+
+  if (foundSpecificPreferred) {
+    std::cout << "Using specifically preferred device ID " << preferredDeviceId
+              << " (" << audio->getDeviceInfo(preferredDeviceId).name << ")"
+              << std::endl;
+  } else if (preferredDeviceId != audio->getDefaultOutputDevice() &&
+             deviceCount > 0) { // A bcm2835 ALSA (non-HDMI) was found but not
+                                // "Headphones"
+    std::cout << "Using preferred analogue device ID " << preferredDeviceId
+              << " (" << audio->getDeviceInfo(preferredDeviceId).name << ")"
+              << std::endl;
+  } else if (deviceCount > 0) {
+    std::cout
+        << "No specific preferred device found, using default output device ID "
+        << preferredDeviceId << " ("
+        << audio->getDeviceInfo(preferredDeviceId).name << ")" << std::endl;
+  } else {
+    std::cout << "No output devices found!" << std::endl;
+    delete audio;
+    audio = nullptr;
+    return false;
+  }
+
   // Paramètres du stream
   RtAudio::StreamParameters params;
-  params.deviceId = audio->getDefaultOutputDevice();
+  params.deviceId =
+      preferredDeviceId; // Utiliser le preferredDeviceId trouvé ou le défaut
   params.nChannels = channels;
   params.firstChannel = 0;
 
