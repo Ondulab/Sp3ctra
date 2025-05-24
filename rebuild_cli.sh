@@ -45,4 +45,11 @@ echo "./build_nogui/CISYNTH_noGUI --cli --silent-dmx"
 echo ""
 echo "Pour quitter l'application: Appuyez sur Ctrl+C"
 
+echo ""
+echo "-----------------------------------------------------"
+echo "Listing available audio devices for CISYNTH_noGUI:"
+echo "-----------------------------------------------------"
+./build_nogui/CISYNTH_noGUI --cli --no-dmx --list-audio-devices
+echo "-----------------------------------------------------"
+
 exit 0
