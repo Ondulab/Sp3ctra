@@ -98,7 +98,7 @@
  **************************************************************************************/
 #define SAMPLING_FREQUENCY (48000)
 #define AUDIO_CHANNEL (2)
-#define AUDIO_BUFFER_SIZE (512)
+#define AUDIO_BUFFER_SIZE (256)
 
 /**************************************************************************************
  * Image Definitions
