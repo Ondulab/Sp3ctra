@@ -5,7 +5,7 @@
 # dans la configuration sont pris en compte
 
 echo "Nettoyage des fichiers de build précédents..."
-rm -rf build_nogui
+# rm -rf build_nogui # Commenté pour ne plus supprimer le répertoire build_nogui
 
 echo "Compilation du projet en mode CLI..."
 ./build_nogui.sh --cli

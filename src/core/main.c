@@ -236,13 +236,21 @@ int main(int argc, char **argv) {
   // Traiter les options audio
   if (list_audio_devices) {
     printAudioDevices();
-    // Si on a demandé uniquement la liste des périphériques, on quitte
-    if (argc == 2) {
-      audio_Cleanup();
-      close(dmxCtx->fd);
+    // Si --list-audio-devices est spécifié, on nettoie et on quitte,
+    // peu importe les autres arguments.
+    printf("Audio device listing complete. Exiting.\n");
+    audio_Cleanup();
+    midi_Cleanup();          // Assurer le nettoyage de MIDI aussi
+    if (dmxCtx) {            // Vérifier si dmxCtx a été alloué
+      if (dmxCtx->fd >= 0) { // Vérifier si le fd est valide avant de fermer
+        close(dmxCtx->fd);
+      }
+      pthread_mutex_destroy(&dmxCtx->mutex); // Nettoyer mutex et cond
+      pthread_cond_destroy(&dmxCtx->cond);
       free(dmxCtx);
-      return EXIT_SUCCESS;
+      dmxCtx = NULL; // Éviter double free ou utilisation après libération
     }
+    return EXIT_SUCCESS;
   }
 
   // Sélectionner le périphérique audio si spécifié
