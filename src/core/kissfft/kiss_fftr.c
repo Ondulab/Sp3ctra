@@ -91,9 +91,19 @@ kiss_fftr_cfg kiss_fftr_alloc(int nfft, int inverse_fft, void *mem,
   }
   nfft >>= 1;
 
-  subsize = sizeof(struct kiss_fft_state) + sizeof(kiss_fft_cpx) * (nfft - 1);
+  // Calculate the size needed for the sub-state (complex FFT)
+  // The 'subsize' variable will be filled by kiss_fft_alloc with the required
+  // size.
+  kiss_fft_alloc(nfft, inverse_fft, NULL, &subsize);
+  // Now subsize holds the actual memory needed for the substate (kiss_fft_state
+  // + its twiddles)
+
+  // Calculate total memory needed for kiss_fftr_state and its buffers
   memneeded =
-      sizeof(struct kiss_fftr_state) + sizeof(kiss_fft_cpx) * (nfft * 3 / 2);
+      sizeof(struct kiss_fftr_state) + // kiss_fftr_state structure itself
+      subsize +                        // memory for the substate (kiss_fft_cfg)
+      sizeof(kiss_fft_cpx) * nfft +    // for tmpbuf
+      sizeof(kiss_fft_cpx) * (nfft / 2); // for super_twiddles
 
   if (lenmem == NULL) {
     st = (kiss_fftr_cfg)KISS_FFT_MALLOC(memneeded);
