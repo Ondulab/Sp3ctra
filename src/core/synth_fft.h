@@ -14,8 +14,8 @@
 #include <stdint.h>            // For uint32_t, etc.
 
 /* Synth Definitions */
-#define NUM_OSCILLATORS 30
-#define NUM_POLY_VOICES 32 // Increased to 32 polyphonic voices
+#define NUM_OSCILLATORS 12
+#define NUM_POLY_VOICES 12 // Increased to 32 polyphonic voices
 #define DEFAULT_FUNDAMENTAL_FREQUENCY 440.0f // A4 for testing
 
 /* ADSR Envelope Definitions */
@@ -87,7 +87,7 @@ typedef struct {
 } SynthVoice;
 
 /* Définitions pour la moyenne glissante */
-#define MOVING_AVERAGE_WINDOW_SIZE 1 // Reduced from 32 for faster response
+#define MOVING_AVERAGE_WINDOW_SIZE 32 // Reduced from 32 for faster response
 
 /* Structure pour stocker une ligne d'image en niveaux de gris */
 typedef struct {

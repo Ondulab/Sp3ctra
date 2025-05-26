@@ -14,10 +14,10 @@ EQ            = =
 
 CC            = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang
 CXX           = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
-DEFINES       = -DCLI_MODE -DUSE_RTAUDIO -DPRINT_FPS -DQT_NO_DEBUG -DQT_GUI_LIB -DQT_CORE_LIB
-CFLAGS        = -pipe -O2 $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
-CXXFLAGS      = -pipe -stdlib=libc++ -O2 -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
-INCPATH       = -I. -Isrc/core -I/opt/homebrew/include -I/opt/homebrew/Cellar/sfml@2/2.6.2_1/include -I/opt/homebrew/Cellar/qt@5/5.15.16_1/lib/QtGui.framework/Headers -I/opt/homebrew/Cellar/qt@5/5.15.16_1/lib/QtCore.framework/Headers -Ibuild_nogui/moc -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk/System/Library/Frameworks/OpenGL.framework/Headers -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk/System/Library/Frameworks/AGL.framework/Headers -I/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/macx-clang -F/opt/homebrew/Cellar/qt@5/5.15.16_1/lib
+DEFINES       = -DCLI_MODE -DNO_SFML -DUSE_RTAUDIO -DPRINT_FPS -DQT_NO_DEBUG -DQT_GUI_LIB -DQT_CORE_LIB
+CFLAGS        = -pipe -O3 -ffast-math $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
+CXXFLAGS      = -pipe -stdlib=libc++ -O3 -ffast-math -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
+INCPATH       = -I. -Isrc/core -I/opt/homebrew/Cellar/sfml@2/2.6.2_1/include -I/opt/homebrew/include -I/opt/homebrew/Cellar/qt@5/5.15.16_1/lib/QtGui.framework/Headers -I/opt/homebrew/Cellar/qt@5/5.15.16_1/lib/QtCore.framework/Headers -Ibuild_nogui/moc -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk/System/Library/Frameworks/OpenGL.framework/Headers -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk/System/Library/Frameworks/AGL.framework/Headers -I/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/macx-clang -F/opt/homebrew/Cellar/qt@5/5.15.16_1/lib
 QMAKE         = /opt/homebrew/opt/qt@5/bin/qmake
 DEL_FILE      = rm -f
 CHK_DIR_EXISTS= test -d
@@ -40,7 +40,7 @@ DISTNAME      = CISYNTH_noGUI1.0.0
 DISTDIR = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI/build_nogui/obj/CISYNTH_noGUI1.0.0
 LINK          = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
 LFLAGS        = -stdlib=libc++ -Wl,-no_warn_duplicate_libraries -Wl,-headerpad_max_install_names -headerpad_max_install_names $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wl,-rpath,@executable_path/../Frameworks
-LIBS          = $(SUBLIBS) -F/opt/homebrew/Cellar/qt@5/5.15.16_1/lib -L/opt/homebrew/lib -lfftw3 -lsndfile -L/opt/homebrew/Cellar/sfml@2/2.6.2_1/lib -lsfml-graphics -lsfml-window -lsfml-system -lcsfml-graphics -lcsfml-window -lcsfml-system -lrtaudio -lrtmidi -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa -framework QtGui -framework AppKit -framework Metal -framework QtCore -framework DiskArbitration -framework IOKit -framework OpenGL -framework AGL   
+LIBS          = $(SUBLIBS) -F/opt/homebrew/Cellar/qt@5/5.15.16_1/lib -L/opt/homebrew/Cellar/sfml@2/2.6.2_1/lib -lsfml-graphics -lsfml-window -lsfml-system -lcsfml-graphics -lcsfml-window -lcsfml-system -L/opt/homebrew/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa -framework QtGui -framework AppKit -framework Metal -framework QtCore -framework DiskArbitration -framework IOKit -framework OpenGL -framework AGL   
 AR            = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar cq
 RANLIB        = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ranlib -s
 SED           = sed
@@ -839,7 +839,7 @@ compiler_moc_predefs_make_all: build_nogui/moc/moc_predefs.h
 compiler_moc_predefs_clean:
 	-$(DEL_FILE) build_nogui/moc/moc_predefs.h
 build_nogui/moc/moc_predefs.h: /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp
-	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -pipe -stdlib=libc++ -O2 -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -dM -E -o build_nogui/moc/moc_predefs.h /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp
+	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -pipe -stdlib=libc++ -O3 -ffast-math -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -dM -E -o build_nogui/moc/moc_predefs.h /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp
 
 compiler_moc_header_make_all:
 compiler_moc_header_clean:
@@ -860,6 +860,7 @@ compiler_clean: compiler_moc_predefs_clean
 ####### Compile
 
 build_nogui/obj/display.o: src/core/display.c src/core/config.h \
+		src/core/display.h \
 		/opt/homebrew/include/SFML/Graphics.h \
 		/opt/homebrew/include/SFML/Window.h \
 		/opt/homebrew/include/SFML/System.h \
@@ -920,19 +921,6 @@ build_nogui/obj/display.o: src/core/display.c src/core/config.h \
 		/opt/homebrew/include/SFML/Graphics/VertexArray.h \
 		/opt/homebrew/include/SFML/Graphics/VertexBuffer.h \
 		/opt/homebrew/include/SFML/Graphics/View.h \
-		/opt/homebrew/include/SFML/Network.h \
-		/opt/homebrew/include/SFML/Network/Ftp.h \
-		/opt/homebrew/include/SFML/Network/Export.h \
-		/opt/homebrew/include/SFML/Network/IpAddress.h \
-		/opt/homebrew/include/SFML/Network/Types.h \
-		/opt/homebrew/include/SFML/Network/Http.h \
-		/opt/homebrew/include/SFML/Network/Packet.h \
-		/opt/homebrew/include/SFML/Network/SocketSelector.h \
-		/opt/homebrew/include/SFML/Network/SocketStatus.h \
-		/opt/homebrew/include/SFML/Network/TcpListener.h \
-		/opt/homebrew/include/SFML/Network/TcpSocket.h \
-		/opt/homebrew/include/SFML/Network/UdpSocket.h \
-		src/core/display.h \
 		src/core/error.h
 	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/display.o src/core/display.c
 

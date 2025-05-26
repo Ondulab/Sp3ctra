@@ -41,11 +41,11 @@ static void process_image_data_for_fft(DoubleBuffer *image_db);
 static void generate_test_data_for_fft(void);
 
 // --- Synth Parameters & Globals ---
-#define NORM_FACTOR_BIN0 881280.0f
-#define NORM_FACTOR_HARMONICS 220320.0f
-#define MASTER_VOLUME 0.5f
+#define NORM_FACTOR_BIN0 881280.0f * 1.1f
+#define NORM_FACTOR_HARMONICS 220320.0f * 2.0f
+#define MASTER_VOLUME 0.10f
 #define AMPLITUDE_SMOOTHING_ALPHA 0.005f
-#define AMPLITUDE_GAMMA 2.5f
+#define AMPLITUDE_GAMMA 2.0f // Increased to enhance variations
 
 // Polyphony related globals
 unsigned long long g_current_trigger_order =
@@ -105,8 +105,21 @@ void synth_fftMode_init(void) {
     die("Failed to initialize image history mutex");
   }
   history_write_index = 0;
-  history_fill_count = 0;
-  memset(image_line_history, 0, sizeof(image_line_history));
+  // Pre-fill image_line_history with a default white line
+  // This ensures that the FFT has valid, non-zero data from the start.
+  float default_white_line[CIS_MAX_PIXELS_NB];
+  for (int i = 0; i < CIS_MAX_PIXELS_NB; ++i) {
+    default_white_line[i] = 255.0f; // Max brightness for a white line
+  }
+  for (int i = 0; i < MOVING_AVERAGE_WINDOW_SIZE; ++i) {
+    memcpy(image_line_history[i].line_data, default_white_line,
+           CIS_MAX_PIXELS_NB * sizeof(float));
+  }
+  history_fill_count =
+      MOVING_AVERAGE_WINDOW_SIZE; // History is now full with default data
+  printf("synth_fftMode: Image history pre-filled with default white lines. "
+         "Fill count: %d\n",
+         history_fill_count);
 
   fft_context.fft_cfg = kiss_fftr_alloc(CIS_MAX_PIXELS_NB, 0, NULL, NULL);
   if (fft_context.fft_cfg == NULL) {
@@ -149,6 +162,13 @@ void synth_fftMode_init(void) {
 }
 
 // --- Audio Processing ---
+
+// Counter for rate-limiting FFT debug prints
+static int g_fft_print_counter = 0;
+// Print roughly once per second (assuming SAMPLING_FREQUENCY=44100,
+// AUDIO_BUFFER_SIZE=512 -> ~86 calls/sec)
+#define FFT_PRINT_INTERVAL 86
+
 void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
   if (audio_buffer == NULL) {
     fprintf(stderr, "synth_fftMode_process: audio_buffer is NULL\n");
@@ -156,6 +176,7 @@ void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
   }
   memset(audio_buffer, 0, buffer_size * sizeof(float));
 
+  // Calculate smoothed magnitudes (original logic)
   global_smoothed_magnitudes[0] =
       fft_context.fft_output[0].r / NORM_FACTOR_BIN0;
   if (global_smoothed_magnitudes[0] < 0.0f) {
@@ -174,6 +195,44 @@ void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
         AMPLITUDE_SMOOTHING_ALPHA * target_mag +
         (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * global_smoothed_magnitudes[i];
   }
+
+  // --- BEGIN FFT DEBUG TRACE ---
+  if ((++g_fft_print_counter % FFT_PRINT_INTERVAL) == 0) {
+    int print_limit = (NUM_OSCILLATORS < 10) ? NUM_OSCILLATORS : 10;
+    printf("\n--- FFT DEBUG TRACE (Cycle: %d) ---\n",
+           g_fft_print_counter / FFT_PRINT_INTERVAL);
+
+    printf(
+        "Raw FFT Output (fft_context.fft_output) - First %d bins (approx):\n",
+        print_limit);
+    // DC component (Bin 0)
+    printf("Bin 0 (DC): Real = %.4e\n", fft_context.fft_output[0].r);
+    // Note: For kiss_fftr, fft_context.fft_output[0].i may store Nyquist
+    // component if N is even. We are typically interested in the magnitudes
+    // derived for the oscillators.
+
+    for (int k = 1; k < print_limit && k < (CIS_MAX_PIXELS_NB / 2 + 1); ++k) {
+      // Iterate up to print_limit or half the FFT size (number of complex bins)
+      float r_raw = fft_context.fft_output[k].r;
+      float im_raw = fft_context.fft_output[k].i;
+      float mag_raw = sqrtf(r_raw * r_raw + im_raw * im_raw);
+      float phase_raw =
+          atan2f(im_raw, r_raw) * 180.0f / M_PI; // Phase in degrees
+      printf("Bin %2d: Real=%.2e, Imag=%.2e, Mag=%.2e, Phase=%.1f deg\n", k,
+             r_raw, im_raw, mag_raw, phase_raw);
+    }
+
+    printf("Processed Magnitudes (global_smoothed_magnitudes) - First %d "
+           "oscillators:\n",
+           print_limit);
+    for (int k = 0; k < print_limit && k < NUM_OSCILLATORS; ++k) {
+      printf("Osc %2d (maps to FFT bin %d): SmoothedMag=%.4f\n", k, k,
+             global_smoothed_magnitudes[k]);
+    }
+    printf("---------------------------------------\n");
+    fflush(stdout); // Ensure it prints immediately
+  }
+  // --- END FFT DEBUG TRACE ---
 
   for (unsigned int sample_idx = 0; sample_idx < buffer_size; ++sample_idx) {
     float master_sample_sum = 0.0f;
@@ -211,7 +270,8 @@ void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
       float actual_fundamental_freq = base_freq * freq_mod_factor;
 
       float voice_sample_sum = 0.0f;
-      for (int osc_idx = 0; osc_idx < NUM_OSCILLATORS; ++osc_idx) {
+      // Start from osc_idx = 1 to skip the fundamental frequency
+      for (int osc_idx = 1; osc_idx < NUM_OSCILLATORS; ++osc_idx) {
         float harmonic_multiple = (float)(osc_idx + 1);
         float osc_freq = actual_fundamental_freq *
                          harmonic_multiple; // Use LFO modulated fundamental

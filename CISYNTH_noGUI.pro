@@ -183,6 +183,6 @@ DEFINES += PRINT_FPS
 QMAKE_CFLAGS_RELEASE -= -O2
 QMAKE_CXXFLAGS_RELEASE -= -O2
 
-# Ajouter Ofast
-QMAKE_CFLAGS_RELEASE += -Ofast
-QMAKE_CXXFLAGS_RELEASE += -Ofast
+# Ajouter -O3 -ffast-math au lieu de -Ofast (déprécié)
+QMAKE_CFLAGS_RELEASE += -O3 -ffast-math
+QMAKE_CXXFLAGS_RELEASE += -O3 -ffast-math

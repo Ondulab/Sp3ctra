@@ -15,8 +15,8 @@ EQ            = =
 CC            = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang
 CXX           = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
 DEFINES       = -DCLI_MODE -DNO_SFML -DUSE_RTAUDIO -DPRINT_FPS -DQT_NO_DEBUG -DQT_GUI_LIB -DQT_CORE_LIB
-CFLAGS        = -pipe -O2 $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
-CXXFLAGS      = -pipe -stdlib=libc++ -Ofast -O2 -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
+CFLAGS        = -pipe -O3 -ffast-math $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
+CXXFLAGS      = -pipe -stdlib=libc++ -Ofast -O3 -ffast-math -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
 INCPATH       = -I../../CISYNTH_MIDI -I. -I../src/core -I/opt/homebrew/Cellar/sfml@2/2.6.2_1/include -I/opt/homebrew/include -I/opt/homebrew/Cellar/qt@5/5.15.16_1/lib/QtGui.framework/Headers -I/opt/homebrew/Cellar/qt@5/5.15.16_1/lib/QtCore.framework/Headers -Ibuild_nogui/moc -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk/System/Library/Frameworks/OpenGL.framework/Headers -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk/System/Library/Frameworks/AGL.framework/Headers -I/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/macx-clang -F/opt/homebrew/Cellar/qt@5/5.15.16_1/lib
 QMAKE         = /opt/homebrew/opt/qt@5/bin/qmake
 DEL_FILE      = rm -f
@@ -839,7 +839,7 @@ compiler_moc_predefs_make_all: build_nogui/moc/moc_predefs.h
 compiler_moc_predefs_clean:
 	-$(DEL_FILE) build_nogui/moc/moc_predefs.h
 build_nogui/moc/moc_predefs.h: /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp
-	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -pipe -stdlib=libc++ -Ofast -O2 -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -dM -E -o build_nogui/moc/moc_predefs.h /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp
+	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -pipe -stdlib=libc++ -Ofast -O3 -ffast-math -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk -mmacosx-version-min=10.13 -Wall -Wextra -dM -E -o build_nogui/moc/moc_predefs.h /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp
 
 compiler_moc_header_make_all:
 compiler_moc_header_clean:
