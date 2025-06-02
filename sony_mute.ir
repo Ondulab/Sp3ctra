@@ -1,0 +1,6 @@
+# Sony HT-X8500 Mute command (0x14)
+# Protocol: Sony SIRC 12-bit
+# Device: 0x10 (Audio device)
+# Command: 0x14 (Mute)
+# Combined: 0x14
++2400 -600 +600 -600 +600 -600 +1200 -600 +600 -600 +1200 -600 +600 -600 +1200 -600 +600 -600 +600 -600 +1200 -600 +600 -25000

@@ -44,14 +44,14 @@ static void generate_test_data_for_fft(void);
 #define NORM_FACTOR_BIN0 881280.0f * 1.1f
 #define NORM_FACTOR_HARMONICS 220320.0f * 2.0f
 #define MASTER_VOLUME 0.10f
-#define AMPLITUDE_SMOOTHING_ALPHA 0.005f
-#define AMPLITUDE_GAMMA 2.0f // Increased to enhance variations
+#define AMPLITUDE_SMOOTHING_ALPHA 0.1f // Increased for more responsiveness
+#define AMPLITUDE_GAMMA 2.0f           // Increased to enhance variations
 
 // Polyphony related globals
 unsigned long long g_current_trigger_order =
     0; // Global trigger order counter, starts at 0
 SynthVoice poly_voices[NUM_POLY_VOICES];
-float global_smoothed_magnitudes[NUM_OSCILLATORS];
+float global_smoothed_magnitudes[MAX_MAPPED_OSCILLATORS];
 SpectralFilterParams global_spectral_filter_params;
 LfoState global_vibrato_lfo; // Definition for the global LFO
 
@@ -146,7 +146,7 @@ void synth_fftMode_init(void) {
     poly_voices[i].midi_note_number = -1;
     poly_voices[i].last_velocity = 1.0f;
     poly_voices[i].last_triggered_order = 0; // Initialize trigger order
-    for (int j = 0; j < NUM_OSCILLATORS; ++j) {
+    for (int j = 0; j < MAX_MAPPED_OSCILLATORS; ++j) {
       poly_voices[i].oscillators[j].phase = 0.0f;
     }
     adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
@@ -183,7 +183,7 @@ void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
     global_smoothed_magnitudes[0] = 0.0f;
   }
 
-  for (int i = 1; i < NUM_OSCILLATORS; ++i) {
+  for (int i = 1; i < MAX_MAPPED_OSCILLATORS; ++i) {
     float real = fft_context.fft_output[i].r;
     float imag = fft_context.fft_output[i].i;
     float magnitude = sqrtf(real * real + imag * imag);
@@ -198,7 +198,8 @@ void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
 
   // --- BEGIN FFT DEBUG TRACE ---
   if ((++g_fft_print_counter % FFT_PRINT_INTERVAL) == 0) {
-    int print_limit = (NUM_OSCILLATORS < 10) ? NUM_OSCILLATORS : 10;
+    int print_limit =
+        (MAX_MAPPED_OSCILLATORS < 10) ? MAX_MAPPED_OSCILLATORS : 10;
     printf("\n--- FFT DEBUG TRACE (Cycle: %d) ---\n",
            g_fft_print_counter / FFT_PRINT_INTERVAL);
 
@@ -225,9 +226,36 @@ void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
     printf("Processed Magnitudes (global_smoothed_magnitudes) - First %d "
            "oscillators:\n",
            print_limit);
-    for (int k = 0; k < print_limit && k < NUM_OSCILLATORS; ++k) {
+    for (int k = 0; k < print_limit && k < MAX_MAPPED_OSCILLATORS; ++k) {
       printf("Osc %2d (maps to FFT bin %d): SmoothedMag=%.4f\n", k, k,
              global_smoothed_magnitudes[k]);
+    }
+    // Add debug print for active harmonics count for the first active voice
+    for (int v_idx_debug = 0; v_idx_debug < NUM_POLY_VOICES; ++v_idx_debug) {
+      if (poly_voices[v_idx_debug].voice_state != ADSR_STATE_IDLE) {
+        int active_harmonics_count = 0;
+        float base_freq_debug = poly_voices[v_idx_debug].fundamental_frequency;
+        // Recalculate how many harmonics would be used based on Nyquist for
+        // this voice
+        for (int osc_idx_debug = 0; osc_idx_debug < MAX_MAPPED_OSCILLATORS;
+             ++osc_idx_debug) {
+          float harmonic_multiple_debug;
+          if (osc_idx_debug == 0)
+            harmonic_multiple_debug = 1.0f;
+          else
+            harmonic_multiple_debug = (float)(osc_idx_debug + 1);
+          float osc_freq_debug = base_freq_debug * harmonic_multiple_debug;
+          if (osc_freq_debug >= (float)SAMPLING_FREQUENCY / 2.0f) {
+            break;
+          }
+          active_harmonics_count++;
+        }
+        printf("Voice %d (Note %d, Freq %.0fHz): Active Harmonics (due to "
+               "Nyquist) = %d / %d\n",
+               v_idx_debug, poly_voices[v_idx_debug].midi_note_number,
+               base_freq_debug, active_harmonics_count, MAX_MAPPED_OSCILLATORS);
+        break; // Print for the first active voice only to avoid flooding
+      }
     }
     printf("---------------------------------------\n");
     fflush(stdout); // Ensure it prints immediately
@@ -270,11 +298,25 @@ void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
       float actual_fundamental_freq = base_freq * freq_mod_factor;
 
       float voice_sample_sum = 0.0f;
-      // Start from osc_idx = 1 to skip the fundamental frequency
-      for (int osc_idx = 1; osc_idx < NUM_OSCILLATORS; ++osc_idx) {
-        float harmonic_multiple = (float)(osc_idx + 1);
+      // Loop now starts from osc_idx = 0 to include the fundamental frequency
+      // modulated by global_smoothed_magnitudes[0] (DC component)
+      // It iterates up to MAX_MAPPED_OSCILLATORS and includes Nyquist check.
+      for (int osc_idx = 0; osc_idx < MAX_MAPPED_OSCILLATORS; ++osc_idx) {
+        float harmonic_multiple;
+        if (osc_idx == 0) {
+          harmonic_multiple = 1.0f; // Fundamental frequency for osc_idx 0
+        } else {
+          harmonic_multiple = (float)(osc_idx + 1); // Harmonics for osc_idx > 0
+        }
         float osc_freq = actual_fundamental_freq *
                          harmonic_multiple; // Use LFO modulated fundamental
+
+        // Nyquist check: if harmonic frequency is too high, stop adding
+        // harmonics for this voice
+        if (osc_freq >= (float)SAMPLING_FREQUENCY / 2.0f) {
+          break;
+        }
+
         float phase_increment = TWO_PI * osc_freq / (float)SAMPLING_FREQUENCY;
 
         float smoothed_amplitude = global_smoothed_magnitudes[osc_idx];
@@ -785,7 +827,7 @@ void synth_fft_note_on(int noteNumber, int velocity) {
   voice->last_velocity = (float)velocity / 127.0f;
   voice->last_triggered_order = g_current_trigger_order;
 
-  for (int i = 0; i < NUM_OSCILLATORS; ++i) {
+  for (int i = 0; i < MAX_MAPPED_OSCILLATORS; ++i) {
     voice->oscillators[i].phase = 0.0f;
   }
 
