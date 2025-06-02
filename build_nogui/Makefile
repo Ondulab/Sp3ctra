@@ -272,7 +272,6 @@ DIST          = /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_pre.pr
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/qt_config.prf \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/macx-clang/qmake.conf \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_post.prf \
-		../.qmake.stash \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/exclusive_builds.prf \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/mac/sdk.prf \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/toolchain.prf \
@@ -346,7 +345,7 @@ TARGET        = ./CISYNTH_noGUI
 EXPORT_QMAKE_MAC_SDK = macosx
 EXPORT_QMAKE_MAC_SDK_VERSION = 15.5
 EXPORT_QMAKE_XCODE_DEVELOPER_PATH = /Applications/Xcode.app/Contents/Developer
-EXPORT__QMAKE_STASH_ = /Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH_MIDI/build_nogui/.qmake.stash
+EXPORT__QMAKE_STASH_ = 
 EXPORT_VALID_ARCHS = arm64
 EXPORT_DEFAULT_ARCHS = arm64
 EXPORT_ARCHS = $(filter $(EXPORT_VALID_ARCHS), $(if $(ARCHS), $(ARCHS), $(if $(EXPORT_DEFAULT_ARCHS), $(EXPORT_DEFAULT_ARCHS), $(EXPORT_VALID_ARCHS))))
@@ -546,7 +545,6 @@ Makefile: ../CISYNTH_noGUI.pro /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/macx-
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/qt_config.prf \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/macx-clang/qmake.conf \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_post.prf \
-		.qmake.stash \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/exclusive_builds.prf \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/mac/sdk.prf \
 		/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/toolchain.prf \
@@ -761,7 +759,6 @@ Makefile: ../CISYNTH_noGUI.pro /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/macx-
 /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/qt_config.prf:
 /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/macx-clang/qmake.conf:
 /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_post.prf:
-.qmake.stash:
 /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/exclusive_builds.prf:
 /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/mac/sdk.prf:
 /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/toolchain.prf:
@@ -817,7 +814,6 @@ clean: compiler_clean
 
 distclean: clean 
 	-$(DEL_FILE) $(TARGET) 
-	-$(DEL_FILE) .qmake.stash
 	-$(DEL_FILE) Makefile
 
 

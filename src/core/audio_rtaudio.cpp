@@ -542,10 +542,136 @@ bool AudioSystem::initialize() {
   options.numberOfBuffers =
       4; // Augmentation du nombre de buffers pour plus de stabilité
 
+  // DIAGNOSTIC: Vérifier les capacités du périphérique avant ouverture
+  std::cout << "\n=== DIAGNOSTIC PÉRIPHÉRIQUE AUDIO ===" << std::endl;
+  std::cout << "Device ID demandé: " << preferredDeviceId << std::endl;
+
+  try {
+    RtAudio::DeviceInfo deviceInfo = audio->getDeviceInfo(preferredDeviceId);
+    std::cout << "✅ getDeviceInfo() réussie pour device " << preferredDeviceId
+              << std::endl;
+    std::cout << "Device Name: " << deviceInfo.name << std::endl;
+    std::cout << "Output Channels: " << deviceInfo.outputChannels << std::endl;
+    std::cout << "Duplex Channels: " << deviceInfo.duplexChannels << std::endl;
+    std::cout << "Input Channels: " << deviceInfo.inputChannels << std::endl;
+    std::cout << "Native Formats: ";
+    if (deviceInfo.nativeFormats & RTAUDIO_SINT8)
+      std::cout << "INT8 ";
+    if (deviceInfo.nativeFormats & RTAUDIO_SINT16)
+      std::cout << "INT16 ";
+    if (deviceInfo.nativeFormats & RTAUDIO_SINT24)
+      std::cout << "INT24 ";
+    if (deviceInfo.nativeFormats & RTAUDIO_SINT32)
+      std::cout << "INT32 ";
+    if (deviceInfo.nativeFormats & RTAUDIO_FLOAT32)
+      std::cout << "FLOAT32 ";
+    if (deviceInfo.nativeFormats & RTAUDIO_FLOAT64)
+      std::cout << "FLOAT64 ";
+    std::cout << std::endl;
+    std::cout << "Sample Rates: ";
+    for (unsigned int rate : deviceInfo.sampleRates) {
+      std::cout << rate << "Hz ";
+    }
+    std::cout << std::endl;
+    std::cout << "Preferred Sample Rate: " << deviceInfo.preferredSampleRate
+              << "Hz" << std::endl;
+
+    // Vérifier si 96kHz est supporté
+    bool supports96k = false;
+    for (unsigned int rate : deviceInfo.sampleRates) {
+      if (rate == 96000) {
+        supports96k = true;
+        break;
+      }
+    }
+
+    if (!supports96k) {
+      std::cerr << "\n❌ ERREUR: Le périphérique ne supporte pas 96kHz !"
+                << std::endl;
+      std::cerr << "Fréquences supportées: ";
+      for (unsigned int rate : deviceInfo.sampleRates) {
+        std::cerr << rate << "Hz ";
+      }
+      std::cerr << std::endl;
+      // Continuons quand même pour voir ce qui se passe
+    } else {
+      std::cout << "✅ Le périphérique supporte 96kHz" << std::endl;
+    }
+  } catch (std::exception &e) {
+    std::cerr << "❌ getDeviceInfo() a échoué: " << e.what() << std::endl;
+    std::cerr
+        << "Impossible de récupérer les capacités détaillées du périphérique."
+        << std::endl;
+    std::cerr << "Cela explique peut-être pourquoi ALSA génère des erreurs 524."
+              << std::endl;
+  }
+  std::cout << "======================================\n" << std::endl;
+
+  // FORCER 96kHz: Modifier la fréquence d'échantillonnage si nécessaire
+  unsigned int forcedSampleRate = 96000;
+  if (sampleRate != forcedSampleRate) {
+    std::cout << "🔧 FORÇAGE: Changement de " << sampleRate << "Hz vers "
+              << forcedSampleRate << "Hz" << std::endl;
+    sampleRate = forcedSampleRate;
+  }
+
   // Ouvrir le flux audio avec les options de faible latence
   try {
+    std::cout << "Tentative d'ouverture du stream avec:" << std::endl;
+    std::cout << "  - Device ID: " << params.deviceId << std::endl;
+    std::cout << "  - Channels: " << params.nChannels << std::endl;
+    std::cout << "  - Sample Rate: " << sampleRate << "Hz" << std::endl;
+    std::cout << "  - Buffer Size: " << bufferSize << " frames" << std::endl;
+    std::cout << "  - Format: RTAUDIO_FLOAT32" << std::endl;
+
     audio->openStream(&params, nullptr, RTAUDIO_FLOAT32, sampleRate,
                       &bufferSize, &AudioSystem::rtCallback, this, &options);
+
+    // Vérifier la fréquence réellement négociée
+    if (audio->isStreamOpen()) {
+      std::cout << "✅ Stream ouvert avec succès !" << std::endl;
+
+      unsigned int actualSampleRate = audio->getStreamSampleRate();
+      std::cout << "📊 Fréquence négociée: " << actualSampleRate << "Hz"
+                << std::endl;
+      std::cout << "📊 Latence du stream: " << audio->getStreamLatency()
+                << " frames" << std::endl;
+
+      std::cout << "\n🔍 DIAGNOSTIC CRITIQUE:" << std::endl;
+      std::cout << "   Demandé: 96000Hz" << std::endl;
+      std::cout << "   Négocié: " << actualSampleRate << "Hz" << std::endl;
+
+      if (actualSampleRate != 96000) {
+        std::cerr << "\n🚨 PROBLÈME DÉTECTÉ !" << std::endl;
+        std::cerr << "   Le périphérique USB SPDIF ne supporte PAS 96kHz !"
+                  << std::endl;
+        std::cerr << "   Il fonctionne à " << actualSampleRate
+                  << "Hz au lieu de 96000Hz" << std::endl;
+
+        float pitchRatio = (float)actualSampleRate / 96000.0f;
+        std::cerr << "   Ratio de pitch: " << pitchRatio << " ("
+                  << (pitchRatio < 1.0f ? "plus grave" : "plus aigu") << ")"
+                  << std::endl;
+
+        if (actualSampleRate == 48000) {
+          std::cerr
+              << "   Vos sons sont d'UNE OCTAVE plus grave (48kHz vs 96kHz) !"
+              << std::endl;
+        }
+
+        std::cerr << "\n💡 SOLUTIONS POSSIBLES:" << std::endl;
+        std::cerr << "   1. Changer SAMPLING_FREQUENCY à " << actualSampleRate
+                  << " dans config.h" << std::endl;
+        std::cerr << "   2. Utiliser un adaptateur USB SPDIF supportant 96kHz"
+                  << std::endl;
+        std::cerr << "   3. Vérifier que votre récepteur audio supporte 96kHz"
+                  << std::endl;
+      } else {
+        std::cout << "🎯 PARFAIT: 96kHz négocié avec succès !" << std::endl;
+        std::cout << "   Votre configuration audio est optimale." << std::endl;
+      }
+      std::cout << "======================================\n" << std::endl;
+    }
   } catch (std::exception &e) {
     std::cerr << "RtAudio error: " << e.what() << std::endl;
     delete audio;    // Nettoyer l'objet RtAudio en cas d'échec
