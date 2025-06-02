@@ -54,6 +54,7 @@ int startAudioUnit(void);
 void stopAudioUnit(void);
 void printAudioDevices(void);
 int setAudioDevice(unsigned int deviceId);
+void setRequestedAudioDevice(int deviceId);
 
 #ifdef __cplusplus
 }

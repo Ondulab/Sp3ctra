@@ -208,7 +208,36 @@ int main(int argc, char **argv) {
   /* Initialize UDP and Audio */
   struct sockaddr_in si_other, si_me;
 
-  // Initialiser l'audio (RtAudio)
+  // Traiter les options audio AVANT d'initialiser le système audio
+  if (list_audio_devices) {
+    // Initialiser temporairement l'audio juste pour lister les périphériques
+    audio_Init();
+    printAudioDevices();
+    // Si --list-audio-devices est spécifié, on nettoie et on quitte,
+    // peu importe les autres arguments.
+    printf("Audio device listing complete. Exiting.\n");
+    audio_Cleanup();
+    midi_Cleanup();          // Assurer le nettoyage de MIDI aussi
+    if (dmxCtx) {            // Vérifier si dmxCtx a été alloué
+      if (dmxCtx->fd >= 0) { // Vérifier si le fd est valide avant de fermer
+        close(dmxCtx->fd);
+      }
+      pthread_mutex_destroy(&dmxCtx->mutex); // Nettoyer mutex et cond
+      pthread_cond_destroy(&dmxCtx->cond);
+      free(dmxCtx);
+      dmxCtx = NULL; // Éviter double free ou utilisation après libération
+    }
+    return EXIT_SUCCESS;
+  }
+
+  // Configurer le périphérique audio AVANT l'initialisation si spécifié
+  if (audio_device_id >= 0) {
+    setRequestedAudioDevice(audio_device_id);
+    printf("Périphérique audio %d configuré pour l'initialisation.\n",
+           audio_device_id);
+  }
+
+  // Initialiser l'audio (RtAudio) avec le bon périphérique
   audio_Init();
 
   // Initialiser le contrôleur MIDI
@@ -231,38 +260,6 @@ int main(int argc, char **argv) {
     printf("MIDI: No Launchkey Mini device found\n");
     // Note: nous ne pouvons pas afficher la liste des périphériques ici car
     // nous n'avons pas accès direct à l'objet C++ depuis C
-  }
-
-  // Traiter les options audio
-  if (list_audio_devices) {
-    printAudioDevices();
-    // Si --list-audio-devices est spécifié, on nettoie et on quitte,
-    // peu importe les autres arguments.
-    printf("Audio device listing complete. Exiting.\n");
-    audio_Cleanup();
-    midi_Cleanup();          // Assurer le nettoyage de MIDI aussi
-    if (dmxCtx) {            // Vérifier si dmxCtx a été alloué
-      if (dmxCtx->fd >= 0) { // Vérifier si le fd est valide avant de fermer
-        close(dmxCtx->fd);
-      }
-      pthread_mutex_destroy(&dmxCtx->mutex); // Nettoyer mutex et cond
-      pthread_cond_destroy(&dmxCtx->cond);
-      free(dmxCtx);
-      dmxCtx = NULL; // Éviter double free ou utilisation après libération
-    }
-    return EXIT_SUCCESS;
-  }
-
-  // Sélectionner le périphérique audio si spécifié
-  if (audio_device_id >= 0) {
-    if (!setAudioDevice(audio_device_id)) {
-      printf("Erreur: Impossible d'utiliser le périphérique audio %d. "
-             "Utilisation du périphérique par défaut.\n",
-             audio_device_id);
-    } else {
-      printf("Périphérique audio %d sélectionné avec succès.\n",
-             audio_device_id);
-    }
   }
 
   synth_IfftInit();

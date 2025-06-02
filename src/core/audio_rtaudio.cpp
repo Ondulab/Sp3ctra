@@ -17,6 +17,12 @@ pthread_mutex_t buffer_index_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 AudioSystem *gAudioSystem = nullptr;
 
+// Global variable to store requested audio device ID before AudioSystem is
+// created
+extern "C" {
+int g_requested_audio_device_id = -1;
+}
+
 // Callbacks
 int AudioSystem::rtCallback(void *outputBuffer, void *inputBuffer,
                             unsigned int nFrames, double streamTime,
@@ -292,7 +298,8 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
     : audio(nullptr), isRunning(false), // Moved isRunning before members that
                                         // might use it implicitly or explicitly
       sampleRate(sampleRate), bufferSize(bufferSize), channels(channels),
-      requestedDeviceId(-1), // -1 = auto-detect, otherwise use specific device
+      requestedDeviceId(g_requested_audio_device_id), // Use global variable if
+                                                      // set, otherwise -1
       masterVolume(1.0f), reverbBuffer(nullptr), reverbMix(0.5f),
       reverbRoomSize(0.95f), reverbDamping(0.4f), reverbWidth(1.0f),
       reverbEnabled(true) {
@@ -928,6 +935,15 @@ int setAudioDevice(unsigned int deviceId) {
     return gAudioSystem->setDevice(deviceId) ? 1 : 0;
   }
   return 0;
+}
+
+void setRequestedAudioDevice(int deviceId) {
+  if (gAudioSystem) {
+    gAudioSystem->setRequestedDeviceId(deviceId);
+  } else {
+    // Store the device ID for when audio system gets created
+    g_requested_audio_device_id = deviceId;
+  }
 }
 
 } // extern "C"
