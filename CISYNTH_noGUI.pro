@@ -96,7 +96,7 @@ INCLUDEPATH += src/core
 # Configuration macOS spécifique
 macx {
     # Si NO_SFML N'EST PAS défini, configurer SFML/CSFML
-    !defined(NO_SFML, DEFINES) {
+    !contains(DEFINES, NO_SFML) {
         message("macOS: Configuration de SFML/CSFML...")
         LIBS += -L/opt/homebrew/Cellar/sfml@2/2.6.2_1/lib \
                 -lsfml-graphics -lsfml-window -lsfml-system \
@@ -137,7 +137,7 @@ linux-g++ {
     LIBS += -lfftw3 -lsndfile
 
     # Si NO_SFML N'EST PAS défini (c.a.d. mode non-CLI sur Linux, car cli_mode->linux-g++ définit NO_SFML)
-    !defined(NO_SFML, DEFINES) {
+    !contains(DEFINES, NO_SFML) {
         message("Linux (non-CLI): Tentative de configuration SFML/CSFML.")
         SFML_CONFIG_SUCCESS = false
         system("pkg-config --exists sfml-graphics") {
