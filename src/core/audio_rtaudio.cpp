@@ -292,12 +292,13 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
     : audio(nullptr), isRunning(false), // Moved isRunning before members that
                                         // might use it implicitly or explicitly
       sampleRate(sampleRate), bufferSize(bufferSize), channels(channels),
+      requestedDeviceId(-1), // -1 = auto-detect, otherwise use specific device
       masterVolume(1.0f), reverbBuffer(nullptr), reverbMix(0.5f),
       reverbRoomSize(0.95f), reverbDamping(0.4f), reverbWidth(1.0f),
       reverbEnabled(true) {
 
-  std::cout << "\033[1;32m[ZitaRev1] Réverbération activée par défaut avec "
-               "l'algorithme Zita-Rev1\033[0m"
+  std::cout << "\033[1;32m[ZitaRev1] Reverb enabled by default with "
+               "Zita-Rev1 algorithm\033[0m"
             << std::endl;
 
   processBuffer.resize(bufferSize * channels);
@@ -399,7 +400,7 @@ bool AudioSystem::initialize() {
 
   // Vérifier si RtAudio a été correctement créé
   if (!audio) {
-    std::cerr << "Impossible de créer l'instance RtAudio" << std::endl;
+    std::cerr << "Unable to create RtAudio instance" << std::endl;
     return false;
   }
 
@@ -417,6 +418,13 @@ bool AudioSystem::initialize() {
   std::cout << "Available output devices:" << std::endl;
   unsigned int preferredDeviceId = audio->getDefaultOutputDevice(); // Default
   bool foundSpecificPreferred = false;
+  bool foundRequestedDevice = false;
+
+  // First, check if a specific device was requested
+  if (requestedDeviceId >= 0) {
+    std::cout << "User requested specific audio device ID: "
+              << requestedDeviceId << std::endl;
+  }
 
   for (unsigned int i = 0; i < deviceCount; i++) {
     try {
@@ -429,26 +437,36 @@ bool AudioSystem::initialize() {
                   << " [Output Channels: " << info.outputChannels << "]"
                   << std::endl;
 
-        std::string deviceName(info.name);
-        // Prefer "Headphones" or "bcm2835 ALSA" (non-HDMI)
-        bool isHeadphones =
-            (deviceName.find("Headphones") != std::string::npos);
-        bool isAnalogue =
-            (deviceName.find("bcm2835 ALSA") != std::string::npos &&
-             deviceName.find("HDMI") == std::string::npos);
-
-        if (isHeadphones) {
-          std::cout << "    -> Found 'Headphones' device: " << deviceName
-                    << " with ID " << i << std::endl;
+        // Check if this is the requested device
+        if (requestedDeviceId >= 0 && i == (unsigned int)requestedDeviceId) {
+          std::cout << "    -> Found requested device ID " << i << ": "
+                    << info.name << std::endl;
           preferredDeviceId = i;
+          foundRequestedDevice = true;
           foundSpecificPreferred = true;
-          // Prioritize headphones over other analogue if both found
-        } else if (isAnalogue && !foundSpecificPreferred) {
-          std::cout << "    -> Found 'bcm2835 ALSA' (non-HDMI) device: "
-                    << deviceName << " with ID " << i << std::endl;
-          preferredDeviceId = i;
-          // Don't set foundSpecificPreferred to true here, to allow
-          // 'Headphones' to override if found later
+        } else if (requestedDeviceId < 0) { // Only do auto-detection if no
+                                            // specific device requested
+          std::string deviceName(info.name);
+          // Prefer "Headphones" or "bcm2835 ALSA" (non-HDMI)
+          bool isHeadphones =
+              (deviceName.find("Headphones") != std::string::npos);
+          bool isAnalogue =
+              (deviceName.find("bcm2835 ALSA") != std::string::npos &&
+               deviceName.find("HDMI") == std::string::npos);
+
+          if (isHeadphones) {
+            std::cout << "    -> Found 'Headphones' device: " << deviceName
+                      << " with ID " << i << std::endl;
+            preferredDeviceId = i;
+            foundSpecificPreferred = true;
+            // Prioritize headphones over other analogue if both found
+          } else if (isAnalogue && !foundSpecificPreferred) {
+            std::cout << "    -> Found 'bcm2835 ALSA' (non-HDMI) device: "
+                      << deviceName << " with ID " << i << std::endl;
+            preferredDeviceId = i;
+            // Don't set foundSpecificPreferred to true here, to allow
+            // 'Headphones' to override if found later
+          }
         }
       }
     } catch (const std::exception &error) {
@@ -458,6 +476,27 @@ bool AudioSystem::initialize() {
           << "RtApiAlsa::getDeviceInfo: snd_pcm_open error for device (hw:" << i
           << ",0 likely), " << error.what() << std::endl;
     }
+  }
+
+  // Validate requested device if specified
+  if (requestedDeviceId >= 0 && !foundRequestedDevice) {
+    std::cerr << "ERROR: Requested audio device ID " << requestedDeviceId
+              << " not found or not available!" << std::endl;
+    std::cerr << "Available device IDs with output channels: ";
+    for (unsigned int i = 0; i < deviceCount; i++) {
+      try {
+        RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
+        if (info.outputChannels > 0) {
+          std::cerr << i << " ";
+        }
+      } catch (const std::exception &error) {
+        // Skip problematic devices
+      }
+    }
+    std::cerr << std::endl;
+    delete audio;
+    audio = nullptr;
+    return false;
   }
 
   if (foundSpecificPreferred) {
@@ -501,7 +540,7 @@ bool AudioSystem::initialize() {
     audio->openStream(&params, nullptr, RTAUDIO_FLOAT32, sampleRate,
                       &bufferSize, &AudioSystem::rtCallback, this, &options);
   } catch (std::exception &e) {
-    std::cerr << "Erreur RtAudio: " << e.what() << std::endl;
+    std::cerr << "RtAudio error: " << e.what() << std::endl;
     delete audio;    // Nettoyer l'objet RtAudio en cas d'échec
     audio = nullptr; // Mettre le pointeur à nullptr
     return false;
@@ -744,6 +783,13 @@ void AudioSystem::setReverbWidth(float width) {
 // Obtenir la largeur stéréo actuelle
 float AudioSystem::getReverbWidth() const { return reverbWidth; }
 
+// Set requested device ID for initialization
+void AudioSystem::setRequestedDeviceId(int deviceId) {
+  requestedDeviceId = deviceId;
+  std::cout << "Audio device ID " << deviceId << " requested for initialization"
+            << std::endl;
+}
+
 // Fonctions C pour la compatibilité avec le code existant
 extern "C" {
 
@@ -877,6 +923,8 @@ void printAudioDevices() {
 // Définir le périphérique audio actif
 int setAudioDevice(unsigned int deviceId) {
   if (gAudioSystem) {
+    // Set the requested device ID for next initialization
+    gAudioSystem->setRequestedDeviceId((int)deviceId);
     return gAudioSystem->setDevice(deviceId) ? 1 : 0;
   }
   return 0;

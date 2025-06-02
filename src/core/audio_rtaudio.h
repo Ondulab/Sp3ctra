@@ -23,6 +23,7 @@ private:
   unsigned int sampleRate;
   unsigned int bufferSize;
   unsigned int channels;
+  int requestedDeviceId; // Device ID specifically requested by user (-1 = auto)
 
   // Callback static (pour faire le lien avec l'instance)
   static int rtCallback(void *outputBuffer, void *inputBuffer,
@@ -75,6 +76,7 @@ public:
   std::vector<std::string> getAvailableDevices();
   bool setDevice(unsigned int deviceId);
   unsigned int getCurrentDevice() const;
+  void setRequestedDeviceId(int deviceId);
 
   // Accesseur pour l'objet RtAudio (à utiliser avec précaution)
   RtAudio *getAudioDevice() const { return audio; }
