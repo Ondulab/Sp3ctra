@@ -47,6 +47,12 @@ static void generate_test_data_for_fft(void);
 #define AMPLITUDE_SMOOTHING_ALPHA 0.1f // Increased for more responsiveness
 #define AMPLITUDE_GAMMA 2.0f           // Increased to enhance variations
 
+// CPU optimization parameters
+#define MIN_AUDIBLE_AMPLITUDE 0.001f // Skip harmonics below this threshold
+#define MAX_HARMONICS_PER_VOICE 32 // Limit harmonics per voice for performance
+#define HIGH_FREQ_HARMONIC_LIMIT                                               \
+  8000.0f // Reduce harmonics above this frequency
+
 // Polyphony related globals
 unsigned long long g_current_trigger_order =
     0; // Global trigger order counter, starts at 0
@@ -298,28 +304,48 @@ void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
       float actual_fundamental_freq = base_freq * freq_mod_factor;
 
       float voice_sample_sum = 0.0f;
-      // Loop now starts from osc_idx = 0 to include the fundamental frequency
-      // modulated by global_smoothed_magnitudes[0] (DC component)
-      // It iterates up to MAX_MAPPED_OSCILLATORS and includes Nyquist check.
-      for (int osc_idx = 0; osc_idx < MAX_MAPPED_OSCILLATORS; ++osc_idx) {
+      // CPU Optimized harmonic processing loop
+      // Calculate adaptive harmonic limits based on frequency and sample rate
+      int max_harmonics = MAX_MAPPED_OSCILLATORS;
+
+      // Reduce harmonics for high frequencies to save CPU
+      if (actual_fundamental_freq > HIGH_FREQ_HARMONIC_LIMIT) {
+        max_harmonics =
+            fminf(MAX_HARMONICS_PER_VOICE / 2, MAX_MAPPED_OSCILLATORS);
+      } else if (actual_fundamental_freq > HIGH_FREQ_HARMONIC_LIMIT / 2) {
+        max_harmonics = fminf(MAX_HARMONICS_PER_VOICE, MAX_MAPPED_OSCILLATORS);
+      }
+
+      for (int osc_idx = 0; osc_idx < max_harmonics; ++osc_idx) {
         float harmonic_multiple;
         if (osc_idx == 0) {
           harmonic_multiple = 1.0f; // Fundamental frequency for osc_idx 0
         } else {
           harmonic_multiple = (float)(osc_idx + 1); // Harmonics for osc_idx > 0
         }
-        float osc_freq = actual_fundamental_freq *
-                         harmonic_multiple; // Use LFO modulated fundamental
+        float osc_freq = actual_fundamental_freq * harmonic_multiple;
 
         // Nyquist check: if harmonic frequency is too high, stop adding
-        // harmonics for this voice
+        // harmonics
         if (osc_freq >= (float)SAMPLING_FREQUENCY / 2.0f) {
           break;
         }
 
+        float smoothed_amplitude = global_smoothed_magnitudes[osc_idx];
+
+        // CPU optimization: Skip harmonics with very low amplitude
+        if (smoothed_amplitude < MIN_AUDIBLE_AMPLITUDE) {
+          // Still update phase to maintain continuity
+          float phase_increment = TWO_PI * osc_freq / (float)SAMPLING_FREQUENCY;
+          current_voice->oscillators[osc_idx].phase += phase_increment;
+          if (current_voice->oscillators[osc_idx].phase >= TWO_PI) {
+            current_voice->oscillators[osc_idx].phase -= TWO_PI;
+          }
+          continue;
+        }
+
         float phase_increment = TWO_PI * osc_freq / (float)SAMPLING_FREQUENCY;
 
-        float smoothed_amplitude = global_smoothed_magnitudes[osc_idx];
         float amplitude_after_gamma = powf(smoothed_amplitude, AMPLITUDE_GAMMA);
         if (smoothed_amplitude < 0.0f &&
             (AMPLITUDE_GAMMA != floorf(AMPLITUDE_GAMMA))) {
@@ -337,9 +363,13 @@ void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
         }
 
         float final_amplitude = amplitude_after_gamma * attenuation;
-        float osc_sample =
-            final_amplitude * sinf(current_voice->oscillators[osc_idx].phase);
-        voice_sample_sum += osc_sample;
+
+        // Only calculate sine if amplitude is significant enough
+        if (final_amplitude > MIN_AUDIBLE_AMPLITUDE) {
+          float osc_sample =
+              final_amplitude * sinf(current_voice->oscillators[osc_idx].phase);
+          voice_sample_sum += osc_sample;
+        }
 
         current_voice->oscillators[osc_idx].phase += phase_increment;
         if (current_voice->oscillators[osc_idx].phase >= TWO_PI) {

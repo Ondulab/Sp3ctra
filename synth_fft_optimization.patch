@@ -1,0 +1,21 @@
+--- Optimizations for synth_fft to reduce CPU load while maintaining quality ---
+
+1. **Adaptive harmonic count based on note frequency**
+   - High notes: fewer harmonics needed (they're naturally bright)
+   - Low notes: more harmonics needed (for richness)
+
+2. **Smart amplitude processing**
+   - Skip harmonics with very low amplitude 
+   - Use threshold to avoid processing inaudible harmonics
+
+3. **Optimized FFT processing rate**
+   - Reduce FFT calculation frequency for less critical parts
+   - Use interpolation between FFT frames
+
+4. **Voice allocation optimization**
+   - Prioritize voices to reduce simultaneous processing
+
+5. **Buffer optimization**
+   - Ensure synth_fft doesn't starve synth_ifft buffers
+
+These changes will allow 96kHz to work smoothly with full harmonic content.
