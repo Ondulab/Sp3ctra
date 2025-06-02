@@ -535,12 +535,12 @@ bool AudioSystem::initialize() {
   params.nChannels = channels;
   params.firstChannel = 0;
 
-  // Options pour optimiser la stabilité sur Jetson Nano
+  // Options pour optimiser la stabilité sur Raspberry Pi
   RtAudio::StreamOptions options;
   options.flags =
       RTAUDIO_NONINTERLEAVED; // Suppression de RTAUDIO_MINIMIZE_LATENCY
   options.numberOfBuffers =
-      4; // Augmentation du nombre de buffers pour plus de stabilité
+      8; // Increased from 4 to 8 for better stability on Pi
 
   // DIAGNOSTIC: Vérifier les capacités du périphérique avant ouverture
   std::cout << "\n=== DIAGNOSTIC PÉRIPHÉRIQUE AUDIO ===" << std::endl;
@@ -576,18 +576,19 @@ bool AudioSystem::initialize() {
     std::cout << "Preferred Sample Rate: " << deviceInfo.preferredSampleRate
               << "Hz" << std::endl;
 
-    // Vérifier si 96kHz est supporté
-    bool supports96k = false;
+    // Vérifier si la fréquence configurée est supportée
+    bool supportsConfigRate = false;
+    unsigned int configRate = SAMPLING_FREQUENCY;
     for (unsigned int rate : deviceInfo.sampleRates) {
-      if (rate == 96000) {
-        supports96k = true;
+      if (rate == configRate) {
+        supportsConfigRate = true;
         break;
       }
     }
 
-    if (!supports96k) {
-      std::cerr << "\n❌ ERREUR: Le périphérique ne supporte pas 96kHz !"
-                << std::endl;
+    if (!supportsConfigRate) {
+      std::cerr << "\n❌ ERREUR: Le périphérique ne supporte pas " << configRate
+                << "Hz !" << std::endl;
       std::cerr << "Fréquences supportées: ";
       for (unsigned int rate : deviceInfo.sampleRates) {
         std::cerr << rate << "Hz ";
@@ -595,7 +596,8 @@ bool AudioSystem::initialize() {
       std::cerr << std::endl;
       // Continuons quand même pour voir ce qui se passe
     } else {
-      std::cout << "✅ Le périphérique supporte 96kHz" << std::endl;
+      std::cout << "✅ Le périphérique supporte " << configRate << "Hz"
+                << std::endl;
     }
   } catch (std::exception &e) {
     std::cerr << "❌ getDeviceInfo() a échoué: " << e.what() << std::endl;
@@ -607,12 +609,12 @@ bool AudioSystem::initialize() {
   }
   std::cout << "======================================\n" << std::endl;
 
-  // FORCER 96kHz: Modifier la fréquence d'échantillonnage si nécessaire
-  unsigned int forcedSampleRate = 96000;
-  if (sampleRate != forcedSampleRate) {
-    std::cout << "🔧 FORÇAGE: Changement de " << sampleRate << "Hz vers "
-              << forcedSampleRate << "Hz" << std::endl;
-    sampleRate = forcedSampleRate;
+  // Use SAMPLING_FREQUENCY from config.h instead of hard-coding 96kHz
+  unsigned int configSampleRate = SAMPLING_FREQUENCY;
+  if (sampleRate != configSampleRate) {
+    std::cout << "🔧 CONFIGURATION: Changement de " << sampleRate << "Hz vers "
+              << configSampleRate << "Hz (défini dans config.h)" << std::endl;
+    sampleRate = configSampleRate;
   }
 
   // Ouvrir le flux audio avec les options de faible latence
@@ -638,22 +640,22 @@ bool AudioSystem::initialize() {
                 << " frames" << std::endl;
 
       std::cout << "\n🔍 DIAGNOSTIC CRITIQUE:" << std::endl;
-      std::cout << "   Demandé: 96000Hz" << std::endl;
+      std::cout << "   Demandé: " << configSampleRate << "Hz" << std::endl;
       std::cout << "   Négocié: " << actualSampleRate << "Hz" << std::endl;
 
-      if (actualSampleRate != 96000) {
+      if (actualSampleRate != configSampleRate) {
         std::cerr << "\n🚨 PROBLÈME DÉTECTÉ !" << std::endl;
-        std::cerr << "   Le périphérique USB SPDIF ne supporte PAS 96kHz !"
-                  << std::endl;
+        std::cerr << "   Le périphérique ne supporte PAS " << configSampleRate
+                  << "Hz !" << std::endl;
         std::cerr << "   Il fonctionne à " << actualSampleRate
-                  << "Hz au lieu de 96000Hz" << std::endl;
+                  << "Hz au lieu de " << configSampleRate << "Hz" << std::endl;
 
-        float pitchRatio = (float)actualSampleRate / 96000.0f;
+        float pitchRatio = (float)actualSampleRate / (float)configSampleRate;
         std::cerr << "   Ratio de pitch: " << pitchRatio << " ("
                   << (pitchRatio < 1.0f ? "plus grave" : "plus aigu") << ")"
                   << std::endl;
 
-        if (actualSampleRate == 48000) {
+        if (configSampleRate == 96000 && actualSampleRate == 48000) {
           std::cerr
               << "   Vos sons sont d'UNE OCTAVE plus grave (48kHz vs 96kHz) !"
               << std::endl;
@@ -662,12 +664,13 @@ bool AudioSystem::initialize() {
         std::cerr << "\n💡 SOLUTIONS POSSIBLES:" << std::endl;
         std::cerr << "   1. Changer SAMPLING_FREQUENCY à " << actualSampleRate
                   << " dans config.h" << std::endl;
-        std::cerr << "   2. Utiliser un adaptateur USB SPDIF supportant 96kHz"
-                  << std::endl;
-        std::cerr << "   3. Vérifier que votre récepteur audio supporte 96kHz"
-                  << std::endl;
+        std::cerr << "   2. Utiliser un périphérique supportant "
+                  << configSampleRate << "Hz" << std::endl;
+        std::cerr << "   3. Vérifier que votre récepteur audio supporte "
+                  << configSampleRate << "Hz" << std::endl;
       } else {
-        std::cout << "🎯 PARFAIT: 96kHz négocié avec succès !" << std::endl;
+        std::cout << "🎯 PARFAIT: " << configSampleRate
+                  << "Hz négocié avec succès !" << std::endl;
         std::cout << "   Votre configuration audio est optimale." << std::endl;
       }
       std::cout << "======================================\n" << std::endl;
@@ -773,12 +776,12 @@ bool AudioSystem::setDevice(unsigned int deviceId) {
   params.nChannels = channels;
   params.firstChannel = 0;
 
-  // Options pour optimiser la stabilité sur Jetson Nano
+  // Options pour optimiser la stabilité sur Raspberry Pi
   RtAudio::StreamOptions options;
   options.flags =
       RTAUDIO_NONINTERLEAVED; // Suppression de RTAUDIO_MINIMIZE_LATENCY
   options.numberOfBuffers =
-      4; // Augmentation du nombre de buffers pour plus de stabilité
+      8; // Increased from 4 to 8 for better stability on Pi
 
   // Ouvrir le flux audio avec les options de faible latence
   try {

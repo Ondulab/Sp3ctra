@@ -98,11 +98,48 @@ fastlane/.env
 *.idb
 *.pdb
 
-# Build directories
-build_nogui/build_nogui/obj/
-build_nogui/build_nogui/moc/
+# === Qt/qmake specific ===
 .qmake.stash
+*.pro.user
+*.pro.user.*
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+Makefile*
+!Makefile.am
+!Makefile.in
+
+# Build directories
+build/
+build_*/
+build_nogui/build_nogui/
+build_nogui/Makefile
+*.build/
+
+# Object and intermediate files
+*.o
+*.obj
+*.moc
+*.rcc
+*.qrc.depends
+*.qm
 
 # Generated binaries
 build_nogui/CISYNTH_noGUI
+CISYNTH_noGUI
 CISYNTH_noGUI.app/
+
+# Test logs and temporary files
+test_device*.log
+*.tmp
+*.temp
+
+# CMake (if used)
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/

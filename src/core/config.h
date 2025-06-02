@@ -98,7 +98,7 @@
  **************************************************************************************/
 #define SAMPLING_FREQUENCY (96000)
 #define AUDIO_CHANNEL (2)
-#define AUDIO_BUFFER_SIZE (512)
+#define AUDIO_BUFFER_SIZE (1024) // Increased from 512 to reduce underruns on Pi
 
 /**************************************************************************************
  * Image Definitions
