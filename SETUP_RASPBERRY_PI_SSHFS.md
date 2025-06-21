@@ -48,6 +48,93 @@ Cette section décrit comment préparer une image de Raspberry Pi OS Lite pour u
     *   Connectez l'alimentation. Le Pi devrait démarrer et se connecter automatiquement au réseau Wi-Fi configuré.
     *   Après quelques minutes, vous devriez pouvoir vous connecter via SSH en utilisant le nom d'hôte et les informations d'identification que vous avez configurés (par exemple, `ssh sp3ctra@pi.local`).
 
+## Configuration d'une IP statique sur l'interface Ethernet (optionnel)
+
+Si vous souhaitez configurer une IP statique sur l'interface Ethernet du Raspberry Pi (par exemple pour une connexion directe ou un réseau local dédié), voici les commandes à exécuter sur le Pi :
+
+1.  **Renommer proprement la connexion (facultatif mais plus clair) :**
+    ```bash
+    sudo nmcli connection modify "Wired connection 1" connection.id eth0-static
+    ```
+
+2.  **Fixer l'IP à 192.168.100.10/24 :**
+    ```bash
+    # Remplacez 192.168.100.1 par la passerelle de votre segment Ethernet
+    # Si ce réseau est isolé et n'a pas de route vers Internet, omettez la ligne gateway
+    sudo nmcli connection modify eth0-static \
+         ipv4.addresses 192.168.100.10/24 \
+         ipv4.gateway 192.168.100.1 \
+         ipv4.dns "8.8.8.8 1.1.1.1" \
+         ipv4.method manual
+    ```
+
+3.  **S'assurer qu'elle se lève automatiquement au démarrage :**
+    ```bash
+    sudo nmcli connection modify eth0-static connection.autoconnect yes
+    ```
+
+4.  **Appliquer immédiatement (pas de redémarrage nécessaire) :**
+    ```bash
+    sudo nmcli connection down eth0-static
+    sudo nmcli connection up eth0-static
+    ```
+
+5.  **Éviter les conflits de routage (configuration hybride Wi-Fi + Ethernet) :**
+    Si vous souhaitez que le Raspberry Pi utilise le Wi-Fi pour l'accès Internet et l'Ethernet uniquement pour la communication locale, exécutez ces commandes supplémentaires :
+    ```bash
+    # Empêcher cette interface d'être utilisée comme route par défaut
+    sudo nmcli connection modify "eth0-static" ipv4.never-default yes
+    
+    # Supprimer la passerelle configurée précédemment
+    sudo nmcli connection modify "eth0-static" ipv4.gateway ""
+    
+    # Redémarrer la connexion pour appliquer les changements
+    sudo nmcli connection down "eth0-static"
+    sudo nmcli connection up "eth0-static"
+    ```
+
+*Remarque : Cette configuration est utile pour créer un réseau local dédié entre votre ordinateur et le Raspberry Pi, ou pour intégrer le Pi dans un réseau existant avec une IP fixe. Les commandes de l'étape 5 permettent d'éviter les conflits de routage en gardant le Wi-Fi pour l'accès Internet et l'Ethernet pour la communication locale uniquement.*
+
+## Configuration de la carte audio PCM5122 (optionnel)
+
+Si vous utilisez une carte audio PCM5122 (comme celle disponible sur [Amazon](https://www.amazon.fr/dp/B0D12M8D2T)) avec votre Raspberry Pi, vous devez configurer ALSA pour l'utiliser comme périphérique audio par défaut.
+
+1.  **Créer ou modifier le fichier de configuration ALSA :**
+    ```bash
+    nano ~/.asoundrc
+    ```
+
+2.  **Ajouter la configuration suivante dans le fichier :**
+    ```
+    pcm.!default {
+        type plug
+        slave {
+            pcm "hw:2,0"
+            format S32_LE
+            rate 48000
+        }
+    }
+
+    ctl.!default {
+        type hw
+        card 2
+    }
+    ```
+
+3.  **Sauvegarder et fermer le fichier :**
+    *   Appuyez sur `Ctrl+X` pour quitter nano
+    *   Appuyez sur `Y` pour confirmer la sauvegarde
+    *   Appuyez sur `Entrée` pour confirmer le nom du fichier
+
+4.  **Redémarrer le service audio ou redémarrer le Pi :**
+    ```bash
+    sudo systemctl restart alsa-state
+    # ou simplement redémarrer
+    sudo reboot
+    ```
+
+*Remarque : Cette configuration force ALSA à utiliser la carte PCM5122 (carte 2) comme périphérique par défaut avec un format audio 32-bit LE à 48kHz. Vérifiez que votre carte est bien reconnue comme carte 2 avec la commande `aplay -l`.*
+
 ## Configuration de SSHFS pour monter un répertoire Raspberry Pi sur macOS
 
 ### Prérequis sur macOS
