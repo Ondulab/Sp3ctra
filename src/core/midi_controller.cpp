@@ -43,7 +43,8 @@ MidiController *gMidiController = nullptr;
 
 MidiController::MidiController()
     : midiIn(nullptr), isConnected(false), currentController(MIDI_NONE),
-      mix_level_synth_ifft(0.0f), // Default IFFT level to 0.0f as requested
+      mix_level_synth_ifft(1.0f), // Default IFFT level to 1.0f (100%) for
+                                  // audibility when no MIDI
       mix_level_synth_fft(0.5f),  // Default FFT level to 0.5f for audibility
       reverb_send_synth_ifft(0.7f),
       reverb_send_synth_fft(0.0f), // Initialize all levels

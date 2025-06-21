@@ -84,8 +84,9 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     }
 
     // Récupérer les niveaux de mixage
-    float level_ifft = 0.0f; // Default for IFFT set to 0.0f as requested
-    float level_fft = 0.5f;  // Default if no controller - Kept at 0.5f
+    float level_ifft =
+        1.0f; // Default for IFFT set to 1.0f (100%) for audibility when no MIDI
+    float level_fft = 0.5f; // Default if no controller - Kept at 0.5f
     if (gMidiController && gMidiController->isAnyControllerConnected()) {
       level_ifft = gMidiController->getMixLevelSynthIfft();
       // The duplicate line for level_ifft inside the if was already removed or
