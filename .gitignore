@@ -113,8 +113,7 @@ Makefile*
 # Build directories
 build/
 build_*/
-build_nogui/build_nogui/
-build_nogui/Makefile
+build_nogui/
 *.build/
 
 # Object and intermediate files
@@ -125,10 +124,17 @@ build_nogui/Makefile
 *.qrc.depends
 *.qm
 
-# Generated binaries
-build_nogui/CISYNTH_noGUI
+# Generated binaries and executables
 CISYNTH_noGUI
 CISYNTH_noGUI.app/
+CISYNTH_noGUI.exe
+
+# qmake generated files
+.qmake.stash
+Makefile
+Makefile.*
+!Makefile.am
+!Makefile.in
 
 # Test logs and temporary files
 test_device*.log

@@ -36,17 +36,11 @@ set -x
 # Créer le répertoire de build si nécessaire
 mkdir -p build_nogui
 
-# Définir les variables QMAKE supplémentaires si nécessaire
-QMAKE_OPTIONS=""
-if [ "$ENABLE_CLI_MODE" -eq 1 ]; then
-  QMAKE_OPTIONS="CONFIG+=cli_mode"
-  echo "Mode CLI activé"
-fi
-
+# Define additional qmake variables if needed
 QMAKE_OPTIONS=""
 if [ "$ENABLE_CLI_MODE" -eq 1 ]; then
   QMAKE_OPTIONS="CONFIG+=cli_mode CONFIG+=release QMAKE_CXXFLAGS+=-Ofast QMAKE_LFLAGS+=-s"
-  echo "Mode CLI activé avec optimisation Ofast"
+  echo "CLI mode enabled with Ofast optimization"
 fi
 
 # Générer le Makefile avec qmake

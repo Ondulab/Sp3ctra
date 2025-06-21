@@ -8,9 +8,8 @@
 
 #include "error.h"
 
-// Fonction pour quitter avec un message d'erreur
-void die(const char *s)
-{
-    perror(s);
-    exit(1);
+// Function to exit with an error message
+void die(const char *s) {
+  perror(s);
+  exit(1);
 }

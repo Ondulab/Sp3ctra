@@ -1,6 +1,0 @@
-# Sony HT-X8500 Power command (0x54)
-# Protocol: Sony SIRC 12-bit
-# Device: 0x10 (Audio device)
-# Command: 0x15 (Power)
-# Combined: 0x54
-+2400 -600 +600 -600 +600 -600 +1200 -600 +600 -600 +1200 -600 +600 -600 +600 -600 +600 -600 +600 -600 +1200 -600 +600 -25000
