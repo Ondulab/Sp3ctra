@@ -96,9 +96,10 @@
 /**************************************************************************************
  * DAC Definitions
  **************************************************************************************/
-#define SAMPLING_FREQUENCY (96000)
+#define SAMPLING_FREQUENCY (48000)
 #define AUDIO_CHANNEL (2)
-#define AUDIO_BUFFER_SIZE (1024) // Increased from 512 to reduce underruns on Pi
+#define AUDIO_BUFFER_SIZE                                                      \
+  (512) // Reduced buffer size with lower sample rate for better latency
 
 /**************************************************************************************
  * Image Definitions
