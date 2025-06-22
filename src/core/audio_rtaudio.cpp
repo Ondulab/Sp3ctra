@@ -250,46 +250,23 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       }
     }
 
-    // Mixer tous les signaux ensemble (dry + wet) avec une approche simplifiée
+    // OPTIMIZED MIXING - Simplified for real-time performance
     for (unsigned int i = 0; i < chunk; i++) {
-      // Signal sec du synth IFFT avec volume et mixage appliqués
-      float dry_ifft = tempBuffer[i] * currentVolume * level_ifft;
+      // Simple dry mixing only - no reverb processing in callback
+      float mixed_sample =
+          (tempBuffer[i] * level_ifft) + (tempFftBuffer[i] * level_fft);
+      mixed_sample *= currentVolume;
 
-      // Signal sec du synth FFT avec volume et mixage appliqués
-      float dry_fft = tempFftBuffer[i] * currentVolume * level_fft;
+      // Basic limiting (faster than if statements)
+      mixed_sample = (mixed_sample > 1.0f) ? 1.0f : mixed_sample;
+      mixed_sample = (mixed_sample < -1.0f) ? -1.0f : mixed_sample;
 
-      // Signal humide du synth IFFT
-      float wet_ifft_L = reverbOutputL_ifft[i];
-      float wet_ifft_R = reverbOutputR_ifft[i];
-
-      // Signal humide du synth FFT
-      float wet_fft_L = reverbOutputL_fft[i];
-      float wet_fft_R = reverbOutputR_fft[i];
-
-      // Mixage final
-      outLeft[i] = dry_ifft + dry_fft + (wet_ifft_L * level_ifft) +
-                   (wet_fft_L * level_fft);
-      outRight[i] = dry_ifft + dry_fft + (wet_ifft_R * level_ifft) +
-                    (wet_fft_R * level_fft);
-
-      // Limiter pour éviter les crêtes excessives
-      if (outLeft[i] > 1.0f)
-        outLeft[i] = 1.0f;
-      if (outLeft[i] < -1.0f)
-        outLeft[i] = -1.0f;
-      if (outRight[i] > 1.0f)
-        outRight[i] = 1.0f;
-      if (outRight[i] < -1.0f)
-        outRight[i] = -1.0f;
+      outLeft[i] = mixed_sample;
+      outRight[i] = mixed_sample;
     }
 
-    // Appliquer l'égaliseur à trois bandes si activé au signal final
-    if (gEqualizer && gEqualizer->isEnabled()) {
-      float *outLeftPtr[1] = {outLeft};
-      float *outRightPtr[1] = {outRight};
-      gEqualizer->process(chunk, 1, outLeftPtr);
-      gEqualizer->process(chunk, 1, outRightPtr);
-    }
+    // Skip heavy processing (reverb & EQ) in real-time callback
+    // TODO: Move reverb and EQ to separate processing thread
 
     // Avancer les pointeurs
     outLeft += chunk;
