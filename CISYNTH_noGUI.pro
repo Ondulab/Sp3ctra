@@ -139,15 +139,13 @@ linux-g++ {
         message("Detected ARM64 architecture: $$ARCH")
         message("Applying Raspberry Pi 5 (ARM Cortex-A76) optimizations...")
         
-        # Optimisations spécifiques ARM Cortex-A76 (Pi 5)
+        # Optimisations spécifiques ARM Cortex-A76 (Pi 5) - ARM64 uniquement
         QMAKE_CFLAGS += -march=armv8.2-a+fp16+rcpc+dotprod -mtune=cortex-a76
-        QMAKE_CFLAGS += -mfpu=neon-fp-armv8 -mfloat-abi=hard
         QMAKE_CFLAGS += -ftree-vectorize -fvect-cost-model=cheap
         QMAKE_CFLAGS += -funroll-loops -fprefetch-loop-arrays
         QMAKE_CFLAGS += -fomit-frame-pointer -ffunction-sections -fdata-sections
         
         QMAKE_CXXFLAGS += -march=armv8.2-a+fp16+rcpc+dotprod -mtune=cortex-a76
-        QMAKE_CXXFLAGS += -mfpu=neon-fp-armv8 -mfloat-abi=hard
         QMAKE_CXXFLAGS += -ftree-vectorize -fvect-cost-model=cheap
         QMAKE_CXXFLAGS += -funroll-loops -fprefetch-loop-arrays
         QMAKE_CXXFLAGS += -fomit-frame-pointer -ffunction-sections -fdata-sections
