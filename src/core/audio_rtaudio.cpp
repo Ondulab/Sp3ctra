@@ -65,233 +65,109 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     return 0; // Success - no dropouts with minimal processing
   }
 
-  // REGULAR CALLBACK - potentially causing dropouts
+  // ULTRA-OPTIMIZED CALLBACK - for 96kHz performance
   // Configuration stéréo non-entrelacée (comme RtAudio par défaut)
   float *outLeft = outputBuffer;
   float *outRight = outputBuffer + nFrames;
 
   // Variables statiques pour maintenir l'état entre les appels
-  static unsigned int readOffset = 0; // Combien de frames ont été consommées
-                                      // dans le buffer actuel (synth_IfftMode)
-  static int localReadIndex =
-      0; // Quel buffer on lit actuellement (synth_IfftMode)
-
-  // Variables pour synth_fftMode
+  static unsigned int readOffset = 0;
+  static int localReadIndex = 0;
   static unsigned int fft_readOffset = 0;
   static int fft_localReadIndex = 0;
-  static float tempFftBuffer[AUDIO_BUFFER_SIZE]; // Buffer temporaire pour
-                                                 // synth_fftMode data
 
-  // Buffer temporaire pour appliquer le volume (sera utilisé pour le signal de
-  // synth_IfftMode initialement)
-  static float tempBuffer[AUDIO_BUFFER_SIZE];
+  // Cache MIDI levels to avoid repeated function calls
+  static float cached_level_ifft = 1.0f;
+  static float cached_level_fft = 0.5f;
+  static float cached_volume = 1.0f;
+  static int cache_counter = 0;
+
+  // Update cache every 64 calls (~1.33ms at 48kHz, 0.67ms at 96kHz)
+  if (++cache_counter >= 64) {
+    cache_counter = 0;
+    cached_volume = this->masterVolume;
+    if (gMidiController && gMidiController->isAnyControllerConnected()) {
+      cached_level_ifft = gMidiController->getMixLevelSynthIfft();
+      cached_level_fft = gMidiController->getMixLevelSynthFft();
+    }
+  }
 
   unsigned int framesToRender = nFrames;
 
-  // Traitement des frames demandées, potentiellement en utilisant plusieurs
-  // buffers
+  // Process frames using multiple buffers if needed
   while (framesToRender > 0) {
-    // Combien de frames reste-t-il dans le buffer actuel? (synth_IfftMode)
+    // How many frames available in current buffer?
     unsigned int framesAvailable = AUDIO_BUFFER_SIZE - readOffset;
-
-    // On consomme soit tout ce qui reste, soit ce dont on a besoin
     unsigned int chunk =
         (framesToRender < framesAvailable) ? framesToRender : framesAvailable;
 
-    // Copier les données de synth_IfftMode dans tempBuffer
-    if (buffers_R[localReadIndex].ready != 1) {
-      // Underrun pour synth_IfftMode, remplir tempBuffer de silence pour ce
-      // chunk Cela évite de silencier synth_fft si synth_ifft n'est pas prêt.
-      memset(tempBuffer, 0, chunk * sizeof(float));
-      // Ne pas 'break' ici, continuer pour traiter synth_fft.
-      // La gestion de readOffset et localReadIndex pour buffers_R se fera quand
-      // même, mais elle lira potentiellement des buffers non prêts ou anciens
-      // si le producteur IFFT est bloqué. C'est un pis-aller pour le débogage.
-      // Le producteur IFFT doit être vérifié.
-    } else {
-      memcpy(tempBuffer, &buffers_R[localReadIndex].data[readOffset],
-             chunk * sizeof(float));
+    // Get source pointers directly - avoid memcpy when possible
+    float *source_ifft = nullptr;
+    float *source_fft = nullptr;
+
+    if (buffers_R[localReadIndex].ready == 1) {
+      source_ifft = &buffers_R[localReadIndex].data[readOffset];
     }
 
-    // Récupérer les niveaux de mixage
-    float level_ifft =
-        1.0f; // Default for IFFT set to 1.0f (100%) for audibility when no MIDI
-    float level_fft = 0.5f; // Default if no controller - Kept at 0.5f
-    if (gMidiController && gMidiController->isAnyControllerConnected()) {
-      level_ifft = gMidiController->getMixLevelSynthIfft();
-      // The duplicate line for level_ifft inside the if was already removed or
-      // is a comment.
-      level_fft = gMidiController->getMixLevelSynthFft();
-    }
-
-    // DEBUG: Levels are now controlled by MIDI or defaults again
-    // level_ifft = 0.0f; // REVERTED
-    // level_fft = 0.5f; // REVERTED
-
-    // Lire les données de synth_fftMode
-    if (fft_audio_buffers[fft_localReadIndex].ready != 1) {
-      // Underrun pour synth_fftMode, remplir tempFftBuffer de silence
-      memset(tempFftBuffer, 0, chunk * sizeof(float));
-    } else {
-      // Copier les données de synth_fftMode dans tempFftBuffer
+    if (fft_audio_buffers[fft_localReadIndex].ready == 1) {
       unsigned int fft_framesAvailable = AUDIO_BUFFER_SIZE - fft_readOffset;
-      unsigned int fft_chunk =
-          (chunk < fft_framesAvailable)
-              ? chunk
-              : fft_framesAvailable; // Should be same as 'chunk' if buffers are
-                                     // aligned
-
-      if (fft_chunk <
-          chunk) { // Not enough data in current fft buffer, fill rest with 0
-        memcpy(tempFftBuffer,
-               &fft_audio_buffers[fft_localReadIndex].data[fft_readOffset],
-               fft_chunk * sizeof(float));
-        memset(tempFftBuffer + fft_chunk, 0,
-               (chunk - fft_chunk) * sizeof(float));
-      } else {
-        memcpy(tempFftBuffer,
-               &fft_audio_buffers[fft_localReadIndex].data[fft_readOffset],
-               chunk * sizeof(float));
+      if (fft_framesAvailable >= chunk) {
+        source_fft =
+            &fft_audio_buffers[fft_localReadIndex].data[fft_readOffset];
       }
     }
 
-    // Récupérer les niveaux d'envoi vers la réverbération
-    float reverb_send_ifft =
-        0.7f; // Valeur par défaut identique au constructeur MidiController
-    float reverb_send_fft = 0.0f; // Valeur par défaut (initialement à 0)
-    if (gMidiController && gMidiController->isAnyControllerConnected()) {
-      reverb_send_ifft = gMidiController->getReverbSendSynthIfft();
-      reverb_send_fft = gMidiController->getReverbSendSynthFft();
-    }
-
-    // DEBUG: Ensure FFT path is dry for testing - REVERTED
-    // reverb_send_fft = 0.0f;
-
-    // Appliquer le volume master (avec log pour le débogage)
-    static float lastLoggedVolume = -1.0f;
-    float currentVolume = this->masterVolume;
-
-    // Log le volume seulement s'il a changé significativement
-    if (fabs(currentVolume - lastLoggedVolume) > 0.01f) {
-      // std::cout << "AUDIO: Applying volume: " << currentVolume << std::endl;
-      lastLoggedVolume = currentVolume;
-    }
-
-    // Buffers temporaires pour stocker les sorties de réverbération
-    float reverbOutputL_ifft[AUDIO_BUFFER_SIZE];
-    float reverbOutputR_ifft[AUDIO_BUFFER_SIZE];
-    float reverbOutputL_fft[AUDIO_BUFFER_SIZE];
-    float reverbOutputR_fft[AUDIO_BUFFER_SIZE];
-
-    // Traiter la réverbération pour le signal synth_IFFT
+    // OPTIMIZED MIXING - Direct to output, single loop
     for (unsigned int i = 0; i < chunk; i++) {
-      float sample_ifft = tempBuffer[i] * currentVolume; // Apply volume
-      float inputL_ifft = sample_ifft;
-      float inputR_ifft = sample_ifft; // Même signal pour les deux canaux
+      float mixed_sample = 0.0f;
 
-      // Appliquer la réverbération au signal synth_IFFT
-      if (reverb_send_ifft > 0.0f && reverbEnabled) {
-        // Processus de réverbération ajusté par le niveau d'envoi
-        float tempL, tempR;
-        processReverb(inputL_ifft * reverb_send_ifft,
-                      inputR_ifft * reverb_send_ifft, tempL, tempR);
-        // Stocker le signal réverbéré
-        reverbOutputL_ifft[i] = tempL;
-        reverbOutputR_ifft[i] = tempR;
-      } else {
-        // Pas d'envoi à la réverbération - affecter des zéros pour éviter le
-        // bruit
-        reverbOutputL_ifft[i] = 0.0f;
-        reverbOutputR_ifft[i] = 0.0f;
+      // Add IFFT contribution
+      if (source_ifft) {
+        mixed_sample += source_ifft[i] * cached_level_ifft;
       }
+
+      // Add FFT contribution
+      if (source_fft) {
+        mixed_sample += source_fft[i] * cached_level_fft;
+      }
+
+      // Apply volume and limiting in one step
+      mixed_sample *= cached_volume;
+      mixed_sample = (mixed_sample > 1.0f)    ? 1.0f
+                     : (mixed_sample < -1.0f) ? -1.0f
+                                              : mixed_sample;
+
+      // Mono to stereo
+      outLeft[i] = outRight[i] = mixed_sample;
     }
 
-    // Pour le signal synth_FFT, simplifions considérablement le traitement pour
-    // éviter les problèmes
-    // Ne traiter la réverbération que si BOTH le volume FFT ET le niveau
-    // d'envoi reverb sont > 0
-    bool fft_has_reverb =
-        (reverb_send_fft > 0.01f) && reverbEnabled && (level_fft > 0.01f);
-
-    if (fft_has_reverb) {
-      // Préparer un buffer temporaire pour le traitement de réverbération du
-      // synth_FFT
-      float temp_fft_buffer[AUDIO_BUFFER_SIZE];
-
-      // Copier les données avec volume ET niveau de mixage appliqués
-      for (unsigned int i = 0; i < chunk; i++) {
-        temp_fft_buffer[i] =
-            tempFftBuffer[i] * currentVolume * reverb_send_fft * level_fft;
-      }
-
-      // Appliquer la réverbération au buffer entier plutôt qu'échantillon par
-      // échantillon
-      float tempOutL[AUDIO_BUFFER_SIZE] = {0};
-      float tempOutR[AUDIO_BUFFER_SIZE] = {0};
-
-      // Traiter la réverbération en une seule fois
-      for (unsigned int i = 0; i < chunk; i++) {
-        float tmp_l = 0, tmp_r = 0;
-        processReverb(temp_fft_buffer[i], temp_fft_buffer[i], tmp_l, tmp_r);
-        tempOutL[i] = tmp_l;
-        tempOutR[i] = tmp_r;
-      }
-
-      // Stocker les résultats
-      for (unsigned int i = 0; i < chunk; i++) {
-        reverbOutputL_fft[i] = tempOutL[i];
-        reverbOutputR_fft[i] = tempOutR[i];
-      }
-    } else {
-      // Aucune réverbération pour synth_FFT - mettre des zéros
-      for (unsigned int i = 0; i < chunk; i++) {
-        reverbOutputL_fft[i] = 0.0f;
-        reverbOutputR_fft[i] = 0.0f;
-      }
-    }
-
-    // OPTIMIZED MIXING - Simplified for real-time performance
-    for (unsigned int i = 0; i < chunk; i++) {
-      // Simple dry mixing only - no reverb processing in callback
-      float mixed_sample =
-          (tempBuffer[i] * level_ifft) + (tempFftBuffer[i] * level_fft);
-      mixed_sample *= currentVolume;
-
-      // Basic limiting (faster than if statements)
-      mixed_sample = (mixed_sample > 1.0f) ? 1.0f : mixed_sample;
-      mixed_sample = (mixed_sample < -1.0f) ? -1.0f : mixed_sample;
-
-      outLeft[i] = mixed_sample;
-      outRight[i] = mixed_sample;
-    }
-
-    // Skip heavy processing (reverb & EQ) in real-time callback
-    // TODO: Move reverb and EQ to separate processing thread
-
-    // Avancer les pointeurs
+    // Advance pointers
     outLeft += chunk;
     outRight += chunk;
     readOffset += chunk;
+    fft_readOffset += chunk;
     framesToRender -= chunk;
 
-    // Si on a consommé tout le buffer de synth_IfftMode, on le marque comme
-    // libre et on passe au suivant
+    // Handle buffer transitions - IFFT
     if (readOffset >= AUDIO_BUFFER_SIZE) {
-      pthread_mutex_lock(&buffers_R[localReadIndex].mutex);
-      buffers_R[localReadIndex].ready = 0;
-      pthread_cond_signal(&buffers_R[localReadIndex].cond);
-      pthread_mutex_unlock(&buffers_R[localReadIndex].mutex);
+      if (buffers_R[localReadIndex].ready == 1) {
+        pthread_mutex_lock(&buffers_R[localReadIndex].mutex);
+        buffers_R[localReadIndex].ready = 0;
+        pthread_cond_signal(&buffers_R[localReadIndex].cond);
+        pthread_mutex_unlock(&buffers_R[localReadIndex].mutex);
+      }
       localReadIndex = (localReadIndex == 0) ? 1 : 0;
       readOffset = 0;
     }
 
-    // Gérer le buffer de synth_fftMode
-    fft_readOffset += chunk; // Consommé 'chunk' frames de fft_buffer aussi
+    // Handle buffer transitions - FFT
     if (fft_readOffset >= AUDIO_BUFFER_SIZE) {
-      pthread_mutex_lock(&fft_audio_buffers[fft_localReadIndex].mutex);
-      fft_audio_buffers[fft_localReadIndex].ready = 0;
-      pthread_cond_signal(&fft_audio_buffers[fft_localReadIndex].cond);
-      pthread_mutex_unlock(&fft_audio_buffers[fft_localReadIndex].mutex);
+      if (fft_audio_buffers[fft_localReadIndex].ready == 1) {
+        pthread_mutex_lock(&fft_audio_buffers[fft_localReadIndex].mutex);
+        fft_audio_buffers[fft_localReadIndex].ready = 0;
+        pthread_cond_signal(&fft_audio_buffers[fft_localReadIndex].cond);
+        pthread_mutex_unlock(&fft_audio_buffers[fft_localReadIndex].mutex);
+      }
       fft_localReadIndex = (fft_localReadIndex == 0) ? 1 : 0;
       fft_readOffset = 0;
     }

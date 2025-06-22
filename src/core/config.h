@@ -96,7 +96,7 @@
 /**************************************************************************************
  * DAC Definitions - Optimized for Raspberry Pi Module 5
  **************************************************************************************/
-#define SAMPLING_FREQUENCY (48000)
+#define SAMPLING_FREQUENCY (96000)
 #define AUDIO_CHANNEL (2)
 
 // Buffer size optimized for Pi Module 5 with real-time synthesis
