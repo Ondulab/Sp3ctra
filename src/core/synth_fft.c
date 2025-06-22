@@ -202,71 +202,8 @@ void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
         (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * global_smoothed_magnitudes[i];
   }
 
-  // --- BEGIN FFT DEBUG TRACE ---
-  if ((++g_fft_print_counter % FFT_PRINT_INTERVAL) == 0) {
-    int print_limit =
-        (MAX_MAPPED_OSCILLATORS < 10) ? MAX_MAPPED_OSCILLATORS : 10;
-    printf("\n--- FFT DEBUG TRACE (Cycle: %d) ---\n",
-           g_fft_print_counter / FFT_PRINT_INTERVAL);
-
-    printf(
-        "Raw FFT Output (fft_context.fft_output) - First %d bins (approx):\n",
-        print_limit);
-    // DC component (Bin 0)
-    printf("Bin 0 (DC): Real = %.4e\n", fft_context.fft_output[0].r);
-    // Note: For kiss_fftr, fft_context.fft_output[0].i may store Nyquist
-    // component if N is even. We are typically interested in the magnitudes
-    // derived for the oscillators.
-
-    for (int k = 1; k < print_limit && k < (CIS_MAX_PIXELS_NB / 2 + 1); ++k) {
-      // Iterate up to print_limit or half the FFT size (number of complex bins)
-      float r_raw = fft_context.fft_output[k].r;
-      float im_raw = fft_context.fft_output[k].i;
-      float mag_raw = sqrtf(r_raw * r_raw + im_raw * im_raw);
-      float phase_raw =
-          atan2f(im_raw, r_raw) * 180.0f / M_PI; // Phase in degrees
-      printf("Bin %2d: Real=%.2e, Imag=%.2e, Mag=%.2e, Phase=%.1f deg\n", k,
-             r_raw, im_raw, mag_raw, phase_raw);
-    }
-
-    printf("Processed Magnitudes (global_smoothed_magnitudes) - First %d "
-           "oscillators:\n",
-           print_limit);
-    for (int k = 0; k < print_limit && k < MAX_MAPPED_OSCILLATORS; ++k) {
-      printf("Osc %2d (maps to FFT bin %d): SmoothedMag=%.4f\n", k, k,
-             global_smoothed_magnitudes[k]);
-    }
-    // Add debug print for active harmonics count for the first active voice
-    for (int v_idx_debug = 0; v_idx_debug < NUM_POLY_VOICES; ++v_idx_debug) {
-      if (poly_voices[v_idx_debug].voice_state != ADSR_STATE_IDLE) {
-        int active_harmonics_count = 0;
-        float base_freq_debug = poly_voices[v_idx_debug].fundamental_frequency;
-        // Recalculate how many harmonics would be used based on Nyquist for
-        // this voice
-        for (int osc_idx_debug = 0; osc_idx_debug < MAX_MAPPED_OSCILLATORS;
-             ++osc_idx_debug) {
-          float harmonic_multiple_debug;
-          if (osc_idx_debug == 0)
-            harmonic_multiple_debug = 1.0f;
-          else
-            harmonic_multiple_debug = (float)(osc_idx_debug + 1);
-          float osc_freq_debug = base_freq_debug * harmonic_multiple_debug;
-          if (osc_freq_debug >= (float)SAMPLING_FREQUENCY / 2.0f) {
-            break;
-          }
-          active_harmonics_count++;
-        }
-        printf("Voice %d (Note %d, Freq %.0fHz): Active Harmonics (due to "
-               "Nyquist) = %d / %d\n",
-               v_idx_debug, poly_voices[v_idx_debug].midi_note_number,
-               base_freq_debug, active_harmonics_count, MAX_MAPPED_OSCILLATORS);
-        break; // Print for the first active voice only to avoid flooding
-      }
-    }
-    printf("---------------------------------------\n");
-    fflush(stdout); // Ensure it prints immediately
-  }
-  // --- END FFT DEBUG TRACE ---
+  // FFT Debug logging disabled for performance
+  // (was causing audio dropouts due to printf() blocking)
 
   for (unsigned int sample_idx = 0; sample_idx < buffer_size; ++sample_idx) {
     float master_sample_sum = 0.0f;
