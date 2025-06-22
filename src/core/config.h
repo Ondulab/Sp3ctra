@@ -94,12 +94,20 @@
 #define DMX_NUM_SPOTS (18) // Nombre de spots DMX à gérer
 
 /**************************************************************************************
- * DAC Definitions
+ * DAC Definitions - Optimized for Raspberry Pi Module 5
  **************************************************************************************/
 #define SAMPLING_FREQUENCY (48000)
 #define AUDIO_CHANNEL (2)
-#define AUDIO_BUFFER_SIZE                                                      \
-  (512) // Reduced buffer size with lower sample rate for better latency
+
+// Buffer size optimized for Pi Module 5 with real-time synthesis
+// Larger buffer reduces audio dropouts during intensive FFT processing
+#ifdef __ARM_ARCH
+// ARM architecture (Raspberry Pi) - larger buffer for stability
+#define AUDIO_BUFFER_SIZE (1024) // 21.3ms latency at 48kHz - good balance
+#else
+// x86/x64 architecture - can use smaller buffer
+#define AUDIO_BUFFER_SIZE (512) // 10.7ms latency at 48kHz
+#endif
 
 /**************************************************************************************
  * Image Definitions

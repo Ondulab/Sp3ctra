@@ -128,10 +128,61 @@ macx {
     TARGET_APP = $${TARGET}
 }
 
-# Configuration pour Jetson Nano (Linux ARM)
+# Configuration pour Raspberry Pi / Linux ARM
 linux-g++ {
     # Définir que nous sommes sur Linux
     DEFINES += __LINUX__
+    
+    # Détection de l'architecture pour optimisations spécifiques
+    ARCH = $$system(uname -m)
+    contains(ARCH, "aarch64") {
+        message("Detected ARM64 architecture: $$ARCH")
+        message("Applying Raspberry Pi 5 (ARM Cortex-A76) optimizations...")
+        
+        # Optimisations spécifiques ARM Cortex-A76 (Pi 5)
+        QMAKE_CFLAGS += -march=armv8.2-a+fp16+rcpc+dotprod -mtune=cortex-a76
+        QMAKE_CFLAGS += -mfpu=neon-fp-armv8 -mfloat-abi=hard
+        QMAKE_CFLAGS += -ftree-vectorize -fvect-cost-model=cheap
+        QMAKE_CFLAGS += -funroll-loops -fprefetch-loop-arrays
+        QMAKE_CFLAGS += -fomit-frame-pointer -ffunction-sections -fdata-sections
+        
+        QMAKE_CXXFLAGS += -march=armv8.2-a+fp16+rcpc+dotprod -mtune=cortex-a76
+        QMAKE_CXXFLAGS += -mfpu=neon-fp-armv8 -mfloat-abi=hard
+        QMAKE_CXXFLAGS += -ftree-vectorize -fvect-cost-model=cheap
+        QMAKE_CXXFLAGS += -funroll-loops -fprefetch-loop-arrays
+        QMAKE_CXXFLAGS += -fomit-frame-pointer -ffunction-sections -fdata-sections
+        
+        # Optimisations mathématiques pour l'audio
+        QMAKE_CFLAGS += -fno-signed-zeros -fno-trapping-math
+        QMAKE_CFLAGS += -fassociative-math -ffinite-math-only
+        QMAKE_CXXFLAGS += -fno-signed-zeros -fno-trapping-math  
+        QMAKE_CXXFLAGS += -fassociative-math -ffinite-math-only
+        
+        # Optimisations de linking pour réduire la taille
+        QMAKE_LFLAGS += -Wl,--gc-sections -Wl,-O1 -Wl,--as-needed
+        
+        message("ARM64 Cortex-A76 optimizations applied for Pi 5")
+    } else {
+        contains(ARCH, "armv7l") {
+            message("Detected ARM32 architecture: $$ARCH")
+            message("Applying Raspberry Pi 4 (ARM Cortex-A72) optimizations...")
+            
+            # Optimisations spécifiques ARM Cortex-A72 (Pi 4)
+            QMAKE_CFLAGS += -march=armv7-a+fp+simd -mtune=cortex-a72
+            QMAKE_CFLAGS += -mfpu=neon-fp-armv8 -mfloat-abi=hard
+            QMAKE_CXXFLAGS += -march=armv7-a+fp+simd -mtune=cortex-a72
+            QMAKE_CXXFLAGS += -mfpu=neon-fp-armv8 -mfloat-abi=hard
+            
+            message("ARM32 Cortex-A72 optimizations applied for Pi 4")
+        } else {
+            message("Generic ARM architecture detected: $$ARCH")
+            message("Applying generic ARM optimizations...")
+            
+            # Optimisations génériques ARM
+            QMAKE_CFLAGS += -march=native -mtune=native
+            QMAKE_CXXFLAGS += -march=native -mtune=native
+        }
+    }
     
     # Dépendances pour Linux (non-SFML)
     LIBS += -lfftw3 -lsndfile
@@ -163,8 +214,8 @@ linux-g++ {
     # Support audio et MIDI
     LIBS += -lasound -lrtaudio -lrtmidi
     
-    # C++11 pour support RtAudio
-    CONFIG += c++11
+    # C++17 pour support RtAudio moderne et optimisations
+    CONFIG += c++17
 }
 
 # Configuration pour Windows (si besoin dans le futur)

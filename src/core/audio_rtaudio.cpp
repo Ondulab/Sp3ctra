@@ -557,12 +557,21 @@ bool AudioSystem::initialize() {
   params.nChannels = channels;
   params.firstChannel = 0;
 
-  // Options pour optimiser la stabilité sur Raspberry Pi
+  // Options pour optimiser la stabilité sur Raspberry Pi Module 5
   RtAudio::StreamOptions options;
-  options.flags =
-      RTAUDIO_NONINTERLEAVED; // Suppression de RTAUDIO_MINIMIZE_LATENCY
-  options.numberOfBuffers =
-      8; // Increased from 4 to 8 for better stability on Pi
+  options.flags = RTAUDIO_NONINTERLEAVED | RTAUDIO_SCHEDULE_REALTIME;
+
+  // Buffer configuration optimized for Pi Module 5
+#ifdef __ARM_ARCH
+  options.numberOfBuffers = 12; // Increased for ARM (Pi Module 5) stability
+  options.streamName = "CISYNTH_Pi5_Optimized";
+#else
+  options.numberOfBuffers = 8; // Standard for x86/x64
+  options.streamName = "CISYNTH_Standard";
+#endif
+
+  // High priority for audio thread on Pi Module 5
+  options.priority = 90; // Real-time priority for audio processing
 
   // DIAGNOSTIC: Vérifier les capacités du périphérique avant ouverture
   std::cout << "\n=== DIAGNOSTIC PÉRIPHÉRIQUE AUDIO ===" << std::endl;
