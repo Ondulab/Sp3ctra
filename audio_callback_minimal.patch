@@ -1,0 +1,176 @@
+--- src/core/audio_rtaudio.cpp.original
++++ src/core/audio_rtaudio.cpp
+@@ -32,6 +32,10 @@
+                                      nFrames);
+ }
+ 
++// Minimal audio callback for debugging dropouts
++static bool use_minimal_callback = false;
++static float minimal_test_volume = 0.1f;
++
+ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
++  // MINIMAL CALLBACK MODE - for debugging audio dropouts
++  if (use_minimal_callback) {
++    float *outLeft = outputBuffer;
++    float *outRight = outputBuffer + nFrames;
++    
++    // Simple test tone generation - no complex processing
++    static float phase = 0.0f;
++    static const float frequency = 440.0f; // A4 note
++    static const float sample_rate = 48000.0f;
++    static const float phase_increment = 2.0f * M_PI * frequency / sample_rate;
++    
++    for (unsigned int i = 0; i < nFrames; i++) {
++      float sample = sinf(phase) * minimal_test_volume;
++      outLeft[i] = sample;
++      outRight[i] = sample;
++      
++      phase += phase_increment;
++      if (phase >= 2.0f * M_PI) {
++        phase -= 2.0f * M_PI;
++      }
++    }
++    
++    return 0; // Success - no dropouts with minimal processing
++  }
++  
++  // REGULAR CALLBACK - potentially causing dropouts
+   // Configuration stéréo non-entrelacée (comme RtAudio par défaut)
+   float *outLeft = outputBuffer;
+   float *outRight = outputBuffer + nFrames;
+@@ -144,88 +168,31 @@
+     }
+ 
+-    // Buffers temporaires pour stocker les sorties de réverbération
+-    float reverbOutputL_ifft[AUDIO_BUFFER_SIZE];
+-    float reverbOutputR_ifft[AUDIO_BUFFER_SIZE];
+-    float reverbOutputL_fft[AUDIO_BUFFER_SIZE];
+-    float reverbOutputR_fft[AUDIO_BUFFER_SIZE];
+-
+-    // Traiter la réverbération pour le signal synth_IFFT
+-    for (unsigned int i = 0; i < chunk; i++) {
+-      float sample_ifft = tempBuffer[i] * currentVolume; // Apply volume
+-      float inputL_ifft = sample_ifft;
+-      float inputR_ifft = sample_ifft; // Même signal pour les deux canaux
+-
+-      // Appliquer la réverbération au signal synth_IFFT
+-      if (reverb_send_ifft > 0.0f && reverbEnabled) {
+-        // Processus de réverbération ajusté par le niveau d'envoi
+-        float tempL, tempR;
+-        processReverb(inputL_ifft * reverb_send_ifft,
+-                      inputR_ifft * reverb_send_ifft, tempL, tempR);
+-        // Stocker le signal réverbéré
+-        reverbOutputL_ifft[i] = tempL;
+-        reverbOutputR_ifft[i] = tempR;
+-      } else {
+-        // Pas d'envoi à la réverbération - affecter des zéros pour éviter le
+-        // bruit
+-        reverbOutputL_ifft[i] = 0.0f;
+-        reverbOutputR_ifft[i] = 0.0f;
+-      }
+-    }
+-
+-    // Pour le signal synth_FFT, simplifions considérablement le traitement pour
+-    // éviter les problèmes
+-    // Ne traiter la réverbération que si BOTH le volume FFT ET le niveau
+-    // d'envoi reverb sont > 0
+-    bool fft_has_reverb =
+-        (reverb_send_fft > 0.01f) && reverbEnabled && (level_fft > 0.01f);
+-
+-    if (fft_has_reverb) {
+-      // Préparer un buffer temporaire pour le traitement de réverbération du
+-      // synth_FFT
+-      float temp_fft_buffer[AUDIO_BUFFER_SIZE];
+-
+-      // Copier les données avec volume ET niveau de mixage appliqués
+-      for (unsigned int i = 0; i < chunk; i++) {
+-        temp_fft_buffer[i] =
+-            tempFftBuffer[i] * currentVolume * reverb_send_fft * level_fft;
+-      }
+-
+-      // Appliquer la réverbération au buffer entier plutôt qu'échantillon par
+-      // échantillon
+-      float tempOutL[AUDIO_BUFFER_SIZE] = {0};
+-      float tempOutR[AUDIO_BUFFER_SIZE] = {0};
+-
+-      // Traiter la réverbération en une seule fois
+-      for (unsigned int i = 0; i < chunk; i++) {
+-        float tmp_l = 0, tmp_r = 0;
+-        processReverb(temp_fft_buffer[i], temp_fft_buffer[i], tmp_l, tmp_r);
+-        tempOutL[i] = tmp_l;
+-        tempOutR[i] = tmp_r;
+-      }
+-
+-      // Stocker les résultats
+-      for (unsigned int i = 0; i < chunk; i++) {
+-        reverbOutputL_fft[i] = tempOutL[i];
+-        reverbOutputR_fft[i] = tempOutR[i];
+-      }
+-    } else {
+-      // Aucune réverbération pour synth_FFT - mettre des zéros
+-      for (unsigned int i = 0; i < chunk; i++) {
+-        reverbOutputL_fft[i] = 0.0f;
+-        reverbOutputR_fft[i] = 0.0f;
+-      }
+-    }
+-
+-    // Mixer tous les signaux ensemble (dry + wet) avec une approche simplifiée
++    // SIMPLIFIED MIXING - no reverb processing in real-time callback
+     for (unsigned int i = 0; i < chunk; i++) {
+       // Signal sec du synth IFFT avec volume et mixage appliqués
+       float dry_ifft = tempBuffer[i] * currentVolume * level_ifft;
+ 
+       // Signal sec du synth FFT avec volume et mixage appliqués
+       float dry_fft = tempFftBuffer[i] * currentVolume * level_fft;
+ 
+-      // Signal humide du synth IFFT
+-      float wet_ifft_L = reverbOutputL_ifft[i];
+-      float wet_ifft_R = reverbOutputR_ifft[i];
+-
+-      // Signal humide du synth FFT
+-      float wet_fft_L = reverbOutputL_fft[i];
+-      float wet_fft_R = reverbOutputR_fft[i];
+-
+-      // Mixage final
+-      outLeft[i] = dry_ifft + dry_fft + (wet_ifft_L * level_ifft) +
+-                   (wet_fft_L * level_fft);
+-      outRight[i] = dry_ifft + dry_fft + (wet_ifft_R * level_ifft) +
+-                    (wet_fft_R * level_fft);
++      // Simple dry mixing - no reverb in callback
++      outLeft[i] = dry_ifft + dry_fft;
++      outRight[i] = dry_ifft + dry_fft;
+ 
+       // Limiter pour éviter les crêtes excessives
+       if (outLeft[i] > 1.0f)
+@@ -238,13 +205,6 @@
+         outRight[i] = -1.0f;
+     }
+ 
+-    // Appliquer l'égaliseur à trois bandes si activé au signal final
+-    if (gEqualizer && gEqualizer->isEnabled()) {
+-      float *outLeftPtr[1] = {outLeft};
+-      float *outRightPtr[1] = {outRight};
+-      gEqualizer->process(chunk, 1, outLeftPtr);
+-      gEqualizer->process(chunk, 1, outRightPtr);
+-    }
+-
+     // Avancer les pointeurs
+     outLeft += chunk;
+     outRight += chunk;
+@@ -278,6 +238,15 @@
+   return 0;
+ }
+ 
++// C functions to control callback mode
++extern "C" {
++void setMinimalCallbackMode(int enabled) {
++  use_minimal_callback = (enabled != 0);
++  printf("Audio callback mode: %s\n", enabled ? "MINIMAL" : "FULL");
++}
++
++void setMinimalTestVolume(float volume) {
++  minimal_test_volume = (volume < 0.0f) ? 0.0f : (volume > 1.0f) ? 1.0f : volume;
++}
++}
++
+ // Constructeur
