@@ -428,6 +428,27 @@ bool AudioSystem::initialize() {
   bool foundSpecificPreferred = false;
   bool foundRequestedDevice = false;
 
+  // FORCE BOSSDAC USAGE - Auto-detect and force BossDAC selection
+  std::cout << "🔧 Auto-detecting BossDAC for forced usage..." << std::endl;
+  for (unsigned int i = 0; i < deviceCount; i++) {
+    try {
+      RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
+      if (info.outputChannels > 0) {
+        std::string deviceName(info.name);
+        if (deviceName.find("BossDAC") != std::string::npos ||
+            deviceName.find("pcm512x") != std::string::npos) {
+          preferredDeviceId = i;
+          foundSpecificPreferred = true;
+          std::cout << "🎯 FORCED: Using BossDAC device ID " << i << ": "
+                    << deviceName << std::endl;
+          break;
+        }
+      }
+    } catch (const std::exception &error) {
+      // Skip problematic devices during BossDAC detection
+    }
+  }
+
   // First, check if a specific device was requested
   if (requestedDeviceId >= 0) {
     std::cout << "User requested specific audio device ID: "
