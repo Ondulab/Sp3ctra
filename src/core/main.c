@@ -175,6 +175,10 @@ int main(int argc, char **argv) {
     } else if (strncmp(argv[i], "--audio-device=", 15) == 0) {
       audio_device_id = atoi(argv[i] + 15);
       printf("Using audio device: %d\n", audio_device_id);
+    } else if (strcmp(argv[i], "--test-tone") == 0) {
+      printf("🎵 Test tone mode enabled (440Hz)\n");
+      // Enable minimal callback mode for testing
+      setMinimalCallbackMode(1);
     } else {
       printf("Unknown option: %s\n", argv[i]);
       printf("Use --help for usage information\n");

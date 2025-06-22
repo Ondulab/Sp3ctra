@@ -23,6 +23,10 @@ extern "C" {
 int g_requested_audio_device_id = -1;
 }
 
+// Minimal audio callback control
+static bool use_minimal_callback = false;
+static float minimal_test_volume = 0.1f;
+
 // Callbacks
 int AudioSystem::rtCallback(void *outputBuffer, void *inputBuffer,
                             unsigned int nFrames, double streamTime,
@@ -36,6 +40,32 @@ int AudioSystem::rtCallback(void *outputBuffer, void *inputBuffer,
 }
 
 int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
+  // MINIMAL CALLBACK MODE - for debugging audio dropouts
+  if (use_minimal_callback) {
+    float *outLeft = outputBuffer;
+    float *outRight = outputBuffer + nFrames;
+
+    // Simple test tone generation - no complex processing
+    static float phase = 0.0f;
+    static const float frequency = 440.0f; // A4 note
+    static const float sample_rate = 48000.0f;
+    static const float phase_increment = 2.0f * M_PI * frequency / sample_rate;
+
+    for (unsigned int i = 0; i < nFrames; i++) {
+      float sample = sinf(phase) * minimal_test_volume;
+      outLeft[i] = sample;
+      outRight[i] = sample;
+
+      phase += phase_increment;
+      if (phase >= 2.0f * M_PI) {
+        phase -= 2.0f * M_PI;
+      }
+    }
+
+    return 0; // Success - no dropouts with minimal processing
+  }
+
+  // REGULAR CALLBACK - potentially causing dropouts
   // Configuration stéréo non-entrelacée (comme RtAudio par défaut)
   float *outLeft = outputBuffer;
   float *outRight = outputBuffer + nFrames;
@@ -1104,6 +1134,20 @@ void setRequestedAudioDevice(int deviceId) {
     // Store the device ID for when audio system gets created
     g_requested_audio_device_id = deviceId;
   }
+}
+
+// Control minimal callback mode for debugging audio dropouts
+void setMinimalCallbackMode(int enabled) {
+  use_minimal_callback = (enabled != 0);
+  printf("🔧 Audio callback mode: %s\n",
+         enabled ? "MINIMAL (440Hz test tone)" : "FULL (synth processing)");
+}
+
+void setMinimalTestVolume(float volume) {
+  minimal_test_volume = (volume < 0.0f)   ? 0.0f
+                        : (volume > 1.0f) ? 1.0f
+                                          : volume;
+  printf("🔊 Minimal test volume set to: %.2f\n", minimal_test_volume);
 }
 
 } // extern "C"

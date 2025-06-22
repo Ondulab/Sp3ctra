@@ -56,6 +56,10 @@ void printAudioDevices(void);
 int setAudioDevice(unsigned int deviceId);
 void setRequestedAudioDevice(int deviceId);
 
+// Control minimal callback mode for debugging audio dropouts
+void setMinimalCallbackMode(int enabled);
+void setMinimalTestVolume(float volume);
+
 #ifdef __cplusplus
 }
 #endif
