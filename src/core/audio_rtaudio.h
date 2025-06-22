@@ -8,8 +8,10 @@
 #include "config.h"
 #include "three_band_eq.h"
 #include <atomic>
+#include <condition_variable>
 #include <mutex>
 #include <rtaudio/RtAudio.h>
+#include <thread>
 #include <vector>
 
 class AudioSystem {
@@ -53,7 +55,52 @@ private:
   float reverbWidth;    // Largeur stéréo (0.0 - 1.0)
   bool reverbEnabled;   // Activation/désactivation de la réverbération
 
-  // Fonction de traitement de la réverbération
+  // === MULTI-THREADED REVERB SYSTEM ===
+  static const int REVERB_THREAD_BUFFER_SIZE =
+      8192; // Buffer circulaire pour thread reverb
+
+  // Buffer circulaire pour données d'entrée de la réverbération (thread-safe)
+  struct ReverbInputBuffer {
+    float data[REVERB_THREAD_BUFFER_SIZE];
+    std::atomic<int> write_pos;
+    std::atomic<int> read_pos;
+    std::atomic<int> available_samples;
+
+    ReverbInputBuffer() : write_pos(0), read_pos(0), available_samples(0) {
+      std::fill(data, data + REVERB_THREAD_BUFFER_SIZE, 0.0f);
+    }
+  } reverbInputBuffer;
+
+  // Buffer circulaire pour données de sortie de la réverbération (thread-safe)
+  struct ReverbOutputBuffer {
+    float left[REVERB_THREAD_BUFFER_SIZE];
+    float right[REVERB_THREAD_BUFFER_SIZE];
+    std::atomic<int> write_pos;
+    std::atomic<int> read_pos;
+    std::atomic<int> available_samples;
+
+    ReverbOutputBuffer() : write_pos(0), read_pos(0), available_samples(0) {
+      std::fill(left, left + REVERB_THREAD_BUFFER_SIZE, 0.0f);
+      std::fill(right, right + REVERB_THREAD_BUFFER_SIZE, 0.0f);
+    }
+  } reverbOutputBuffer;
+
+  // Thread de traitement de la réverbération
+  std::thread reverbThread;
+  std::atomic<bool> reverbThreadRunning;
+  std::condition_variable reverbCondition;
+  std::mutex reverbMutex;
+
+  // Fonction principale du thread de réverbération
+  void reverbThreadFunction();
+
+  // Fonctions pour les buffers circulaires thread-safe
+  bool writeToReverbInput(float sample);
+  bool readFromReverbInput(float &sample);
+  bool writeToReverbOutput(float sampleL, float sampleR);
+  bool readFromReverbOutput(float &sampleL, float &sampleR);
+
+  // Fonction de traitement de la réverbération (legacy)
   void processReverb(float inputL, float inputR, float &outputL,
                      float &outputR);
 

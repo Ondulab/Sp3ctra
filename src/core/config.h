@@ -101,13 +101,7 @@
 
 // Buffer size optimized for Pi Module 5 with real-time synthesis
 // Larger buffer reduces audio dropouts during intensive FFT processing
-#ifdef __ARM_ARCH
-// ARM architecture (Raspberry Pi) - larger buffer for stability
-#define AUDIO_BUFFER_SIZE (1024) // 21.3ms latency at 48kHz - good balance
-#else
-// x86/x64 architecture - can use smaller buffer
-#define AUDIO_BUFFER_SIZE (512) // 10.7ms latency at 48kHz
-#endif
+#define AUDIO_BUFFER_SIZE (256) // 21.3ms latency at 48kHz - good balance
 
 /**************************************************************************************
  * Image Definitions
