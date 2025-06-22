@@ -121,7 +121,37 @@ int main(int argc, char **argv) {
   int use_sfml_window = 0; // Par défaut, pas de fenêtre SFML en mode CLI
 
   for (int i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "--cli") == 0) {
+    if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+      printf("CISYNTH - Real-time audio synthesis application\n\n");
+      printf("Usage: %s [OPTIONS]\n\n", argv[0]);
+      printf("OPTIONS:\n");
+      printf("  --help, -h               Show this help message\n");
+      printf("  --cli                    Run in CLI mode (no GUI)\n");
+      printf("  --sfml-window            Enable SFML visual window (CLI mode "
+             "only)\n");
+      printf(
+          "  --list-audio-devices     List available audio devices and exit\n");
+      printf("  --audio-device=<ID>      Use specific audio device ID\n");
+      printf("  --no-dmx                 Disable DMX lighting output\n");
+      printf(
+          "  --dmx-port=<PORT>        Specify DMX serial port (default: %s)\n",
+          DMX_PORT);
+      printf("  --silent-dmx             Suppress DMX error messages\n");
+      printf("\nExamples:\n");
+      printf("  %s --cli --audio-device=3           # Use audio device 3 in "
+             "CLI mode\n",
+             argv[0]);
+      printf("  %s --list-audio-devices             # List all audio devices\n",
+             argv[0]);
+      printf("  %s --cli --no-dmx                   # Run without DMX\n",
+             argv[0]);
+      printf(
+          "  %s --sfml-window --audio-device=1   # CLI with visual display\n",
+          argv[0]);
+      printf("\nFor Pi Module 5 optimization, use: "
+             "./launch_cisynth_optimized.sh\n");
+      return EXIT_SUCCESS;
+    } else if (strcmp(argv[i], "--cli") == 0) {
       printf(
           "Running in CLI mode (no GUI window unless --sfml-window is used)\n");
 #ifndef CLI_MODE
@@ -145,6 +175,10 @@ int main(int argc, char **argv) {
     } else if (strncmp(argv[i], "--audio-device=", 15) == 0) {
       audio_device_id = atoi(argv[i] + 15);
       printf("Using audio device: %d\n", audio_device_id);
+    } else {
+      printf("Unknown option: %s\n", argv[i]);
+      printf("Use --help for usage information\n");
+      return EXIT_FAILURE;
     }
   }
 
