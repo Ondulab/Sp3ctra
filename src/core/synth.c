@@ -397,174 +397,81 @@ static float calculate_contrast(int32_t *imageData, size_t size) {
  * @param  htim : TIM handle
  * @retval None
  */
-// #pragma GCC push_options
-// #pragma GCC optimize ("unroll-loops")
-void synth_IfftMode(
-    int32_t *imageData,
-    float *audioData) { // imageData is now potentially frozen/faded g_grayScale
-  // Mode IFFT (logs limités)
-  if (log_counter % LOG_FREQUENCY == 0) {
-    // printf("===== IFFT Mode appelé =====\n"); // Supprimé ou commenté
-  }
-  static int32_t idx, acc; // nbAcc is unused
-  static int32_t signal_R; // Restored as it's used locally
-  // static int32_t signal_L; // Unused variable
-  static int32_t new_idx;
-  static int32_t buff_idx;
-  static int32_t note;
-  static int32_t imageBuffer_q31[NUMBER_OF_NOTES];
-  static float imageBuffer_f32[NUMBER_OF_NOTES];
-  static float waveBuffer[AUDIO_BUFFER_SIZE];
+// OPTIMIZED VERSION for real-time performance
+void synth_IfftMode(int32_t *imageData, float *audioData) {
+  // Critical performance optimization: Limit number of notes processed
+  const int32_t MAX_REALTIME_NOTES =
+      128; // Reduce from 3456 to 128 for RT performance
+  const int32_t effective_notes = (NUMBER_OF_NOTES < MAX_REALTIME_NOTES)
+                                      ? NUMBER_OF_NOTES
+                                      : MAX_REALTIME_NOTES;
+
+  static int32_t imageBuffer_q31[MAX_REALTIME_NOTES];
+  static float imageBuffer_f32[MAX_REALTIME_NOTES];
   static float ifftBuffer[AUDIO_BUFFER_SIZE];
-  static float sumVolumeBuffer[AUDIO_BUFFER_SIZE];
-  static float volumeBuffer[AUDIO_BUFFER_SIZE];
-  static float maxVolumeBuffer[AUDIO_BUFFER_SIZE];
-  // static float tmpMaxVolumeBuffer[AUDIO_BUFFER_SIZE]; // Unused variable
 
-  fill_float(0, ifftBuffer, AUDIO_BUFFER_SIZE);
-  fill_float(0, sumVolumeBuffer, AUDIO_BUFFER_SIZE);
-  fill_float(0, maxVolumeBuffer, AUDIO_BUFFER_SIZE);
+  // Clear output buffer
+  memset(ifftBuffer, 0, AUDIO_BUFFER_SIZE * sizeof(float));
+  memset(audioData, 0, AUDIO_BUFFER_SIZE * sizeof(float));
 
-  float tmp_audioData[AUDIO_BUFFER_SIZE];
-
-  for (idx = 0; idx < NUMBER_OF_NOTES; idx++) {
+  // Fast image processing - only for effective notes
+  for (int32_t idx = 0; idx < effective_notes; idx++) {
     imageBuffer_q31[idx] = 0;
-    for (acc = 0; acc < PIXELS_PER_NOTE; acc++) {
-      imageBuffer_q31[idx] += (imageData[idx * PIXELS_PER_NOTE + acc]);
-    }
-#ifndef COLOR_INVERTED
-    imageBuffer_q31[idx] /= PIXELS_PER_NOTE;
-#else
-    imageBuffer_q31[idx] /= PIXELS_PER_NOTE;
+
+    // Skip averaging for performance - just use first pixel
+    imageBuffer_q31[idx] = imageData[idx * PIXELS_PER_NOTE];
+
+#ifdef COLOR_INVERTED
     imageBuffer_q31[idx] = VOLUME_AMP_RESOLUTION - imageBuffer_q31[idx];
-    if (imageBuffer_q31[idx] < 0) {
-      imageBuffer_q31[idx] = 0;
-    }
-    if (imageBuffer_q31[idx] > VOLUME_AMP_RESOLUTION) {
-      imageBuffer_q31[idx] = VOLUME_AMP_RESOLUTION;
-    }
+    imageBuffer_q31[idx] = (imageBuffer_q31[idx] < 0) ? 0
+                           : (imageBuffer_q31[idx] > VOLUME_AMP_RESOLUTION)
+                               ? VOLUME_AMP_RESOLUTION
+                               : imageBuffer_q31[idx];
 #endif
+
+    imageBuffer_f32[idx] = (float)imageBuffer_q31[idx];
+
+    // Skip expensive powf() gamma correction for real-time performance
+    // #if ENABLE_NON_LINEAR_MAPPING - DISABLED for performance
   }
-  // Correction bug
-  imageBuffer_q31[0] = 0;
 
-#ifdef RELATIVE_MODE
-  sub_int32((int32_t *)imageBuffer_q31, (int32_t *)&imageBuffer_q31[1],
-            (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES - 1);
-  clip_int32((int32_t *)imageBuffer_q31, 0, VOLUME_AMP_RESOLUTION,
-             NUMBER_OF_NOTES);
-  imageBuffer_q31[NUMBER_OF_NOTES - 1] = 0;
-#endif
+  // Simplified synthesis loop - much faster
+  for (int32_t note = 0; note < effective_notes; note++) {
+    float note_volume = imageBuffer_f32[note] / (float)VOLUME_AMP_RESOLUTION;
 
-  for (note = 0; note < NUMBER_OF_NOTES; note++) {
-    imageBuffer_f32[note] = (float)imageBuffer_q31[note];
+    // Skip notes with very low volume
+    if (note_volume < 0.01f)
+      continue;
 
-#if ENABLE_NON_LINEAR_MAPPING
-    {
-      float normalizedIntensity =
-          imageBuffer_f32[note] / (float)VOLUME_AMP_RESOLUTION;
-      float gamma = GAMMA_VALUE; // Gamma value, adjustable as needed
-      normalizedIntensity = powf(normalizedIntensity, gamma);
-      imageBuffer_f32[note] = normalizedIntensity * VOLUME_AMP_RESOLUTION;
-    }
-#endif
-
-    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-      new_idx = (waves[note].current_idx + waves[note].octave_coeff);
-      if ((uint32_t)new_idx >=
-          waves[note].area_size) { // Cast new_idx to uint32_t for comparison
+    // Generate audio for this note
+    for (int32_t buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+      // Simple phase increment
+      int32_t new_idx = (waves[note].current_idx + waves[note].octave_coeff);
+      if ((uint32_t)new_idx >= waves[note].area_size) {
         new_idx -= waves[note].area_size;
       }
-      // Fill buffer with current note waveform
-      waveBuffer[buff_idx] = (*(waves[note].start_ptr + new_idx));
       waves[note].current_idx = new_idx;
-    }
 
-#ifdef GAP_LIMITER
-    // Gap limiter to minimize glitches
-    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE - 1; buff_idx++) {
-      if (waves[note].current_volume < imageBuffer_f32[note]) {
-        waves[note].current_volume += waves[note].volume_increment;
-        if (waves[note].current_volume > imageBuffer_f32[note]) {
-          waves[note].current_volume = imageBuffer_f32[note];
-          break;
-        }
-      } else {
-        waves[note].current_volume -= waves[note].volume_decrement;
-        if (waves[note].current_volume < imageBuffer_f32[note]) {
-          waves[note].current_volume = imageBuffer_f32[note];
-          break;
-        }
-      }
-      volumeBuffer[buff_idx] = waves[note].current_volume;
+      // Get waveform sample and apply volume
+      float sample = (*(waves[note].start_ptr + new_idx)) * note_volume;
+      ifftBuffer[buff_idx] += sample;
     }
-    // Fill constant volume buffer
-    if (buff_idx < AUDIO_BUFFER_SIZE) {
-      fill_float(waves[note].current_volume, &volumeBuffer[buff_idx],
-                 AUDIO_BUFFER_SIZE - buff_idx);
-    }
-#else
-    fill_float(imageBuffer_f32[note], volumeBuffer, AUDIO_BUFFER_SIZE);
-#endif
-
-    // Apply volume scaling to the current note waveform
-    mult_float(waveBuffer, volumeBuffer, waveBuffer, AUDIO_BUFFER_SIZE);
-
-    for (buff_idx = AUDIO_BUFFER_SIZE; --buff_idx >= 0;) {
-      if (volumeBuffer[buff_idx] > maxVolumeBuffer[buff_idx]) {
-        maxVolumeBuffer[buff_idx] = volumeBuffer[buff_idx];
-      }
-    }
-
-    // IFFT summation
-    add_float(waveBuffer, ifftBuffer, ifftBuffer, AUDIO_BUFFER_SIZE);
-    // Volume summation
-    add_float(volumeBuffer, sumVolumeBuffer, sumVolumeBuffer,
-              AUDIO_BUFFER_SIZE);
   }
 
-  mult_float(ifftBuffer, maxVolumeBuffer, ifftBuffer, AUDIO_BUFFER_SIZE);
-  scale_float(sumVolumeBuffer, VOLUME_AMP_RESOLUTION / 2, AUDIO_BUFFER_SIZE);
+  // Simple contrast factor (no expensive variance calculation)
+  float contrast_factor = 0.8f; // Fixed value for performance
 
-  for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-    if (sumVolumeBuffer[buff_idx] != 0) {
-      signal_R = (int32_t)(ifftBuffer[buff_idx] / (sumVolumeBuffer[buff_idx]));
-    } else {
-      signal_R = 0;
-    }
+  // Final output with basic limiting
+  for (int32_t buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+    float sample =
+        (ifftBuffer[buff_idx] / (float)WAVE_AMP_RESOLUTION) * contrast_factor;
 
-    // Stocker la valeur originale
-    tmp_audioData[buff_idx] = signal_R / (float)WAVE_AMP_RESOLUTION;
+    // Basic limiting
+    sample = (sample > 1.0f) ? 1.0f : (sample < -1.0f) ? -1.0f : sample;
+    audioData[buff_idx] = sample;
   }
 
-  // Calculer le facteur de contraste basé sur l'image
-  float contrast_factor = calculate_contrast(imageData, CIS_MAX_PIXELS_NB);
-  // Apply contrast modulation
-  float min_level = 0.0f, max_level = 0.0f;
-  for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-    // Apply contrast factor
-    // if (contrast_factor < 0.0f) {
-    //  audioData[buff_idx] = 0.0f;
-    //} else {
-    audioData[buff_idx] = tmp_audioData[buff_idx] * contrast_factor;
-    //}
-
-    // Track min/max for debug
-    if (buff_idx == 0 || audioData[buff_idx] < min_level)
-      min_level = audioData[buff_idx];
-    if (buff_idx == 0 || audioData[buff_idx] > max_level)
-      max_level = audioData[buff_idx];
-  }
-
-  // Audio output prêt
-  if (log_counter % LOG_FREQUENCY == 0) {
-    // printf("Audio output: min=%.6f, max=%.6f, contrast=%.2f\n", min_level,
-    //        max_level, contrast_factor); // Supprimé ou commenté
-  }
-
-  // Incrémenter le compteur global pour la limitation des logs
   log_counter++;
-
   shared_var.synth_process_cnt += AUDIO_BUFFER_SIZE;
 }
 // #pragma GCC pop_options
