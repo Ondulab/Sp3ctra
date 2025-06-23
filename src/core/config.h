@@ -96,15 +96,15 @@
 /**************************************************************************************
  * DAC Definitions - Optimized for Raspberry Pi Module 5
  **************************************************************************************/
-#define SAMPLING_FREQUENCY (48000)
+#define SAMPLING_FREQUENCY (96000)
 #define AUDIO_CHANNEL (2)
 
 // Buffer size optimized for Pi Module 5 with real-time synthesis
 // Larger buffer reduces audio dropouts during intensive FFT processing
 // 48kHz: 150 frames = 3.125ms latency (optimal for real-time)
-// 96kHz: 300 frames = 3.125ms latency (same latency, double buffer size)
+// 96kHz: 600 frames = 6.25ms latency (double latency for synthesis headroom)
 #if SAMPLING_FREQUENCY >= 96000
-#define AUDIO_BUFFER_SIZE (300)
+#define AUDIO_BUFFER_SIZE (600)
 #elif SAMPLING_FREQUENCY >= 48000
 #define AUDIO_BUFFER_SIZE (150)
 #else
