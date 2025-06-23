@@ -812,8 +812,37 @@ bool AudioSystem::initialize() {
                 << " frames" << std::endl;
 
       std::cout << "\n🔍 DIAGNOSTIC CRITIQUE:" << std::endl;
-      std::cout << "   Demandé: " << configSampleRate << "Hz" << std::endl;
-      std::cout << "   Négocié: " << actualSampleRate << "Hz" << std::endl;
+      std::cout << "   FRÉQUENCE - Demandé: " << configSampleRate
+                << "Hz, Négocié: " << actualSampleRate << "Hz" << std::endl;
+      std::cout << "   BUFFER SIZE - Demandé: " << AUDIO_BUFFER_SIZE
+                << " frames, Négocié: " << bufferSize << " frames" << std::endl;
+
+      // Vérifier si le buffer size a été modifié par le hardware
+      if (bufferSize != AUDIO_BUFFER_SIZE) {
+        std::cerr << "\n🚨 PROBLÈME BUFFER SIZE DÉTECTÉ !" << std::endl;
+        std::cerr << "   Le BossDAC/Hardware a FORCÉ une taille différente !"
+                  << std::endl;
+        std::cerr << "   Config.h: " << AUDIO_BUFFER_SIZE << " frames"
+                  << std::endl;
+        std::cerr << "   Hardware: " << bufferSize << " frames" << std::endl;
+        std::cerr << "   Ratio: "
+                  << (float)bufferSize / (float)AUDIO_BUFFER_SIZE << "x"
+                  << std::endl;
+        std::cerr << "\n💡 CAUSE DU SON HACHÉ:" << std::endl;
+        std::cerr << "   - Synthèse produit des buffers de "
+                  << AUDIO_BUFFER_SIZE << " frames" << std::endl;
+        std::cerr << "   - Hardware demande des buffers de " << bufferSize
+                  << " frames" << std::endl;
+        std::cerr << "   - Désynchronisation = glitches audio" << std::endl;
+        std::cerr << "\n🔧 SOLUTIONS:" << std::endl;
+        std::cerr << "   1. Changer AUDIO_BUFFER_SIZE à " << bufferSize
+                  << " dans config.h" << std::endl;
+        std::cerr << "   2. Ou forcer le hardware à accepter "
+                  << AUDIO_BUFFER_SIZE << " frames" << std::endl;
+      } else {
+        std::cout << "✅ BUFFER SIZE: Parfaitement aligné (" << bufferSize
+                  << " frames)" << std::endl;
+      }
 
       if (actualSampleRate != configSampleRate) {
         std::cerr << "\n🚨 PROBLÈME DÉTECTÉ !" << std::endl;
