@@ -874,7 +874,7 @@ void synth_IfftMode(
       }
     }
 
-    // Phase 4: Combiner les résultats des threads
+    // Phase 4: Combiner les résultats des threads avec normalisation
     for (int i = 0; i < 3; i++) {
       add_float(thread_pool[i].thread_ifftBuffer, ifftBuffer, ifftBuffer,
                 AUDIO_BUFFER_SIZE);
@@ -890,6 +890,11 @@ void synth_IfftMode(
         }
       }
     }
+
+    // 🔧 CORRECTION: Normaliser pour compenser l'accumulation des 3 threads
+    scale_float(ifftBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
+    scale_float(sumVolumeBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
+    scale_float(maxVolumeBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
 
     // 🔍 DIAGNOSTIC: Analyser le signal après accumulation des threads
     if (log_counter % LOG_FREQUENCY == 0) {
