@@ -15,6 +15,7 @@
 /* #include <Accelerate/Accelerate.h> */
 #include <math.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -105,6 +106,15 @@ void synth_IfftMode(int32_t *imageData, float *audioData);
 
 static float calculate_contrast(int32_t *imageData, size_t size);
 
+// Forward declarations for thread pool functions
+typedef struct synth_thread_worker_s synth_thread_worker_t;
+static int synth_init_thread_pool(void);
+static int synth_start_worker_threads(void);
+void synth_shutdown_thread_pool(void); // Non-static pour atexit()
+static void synth_process_worker_range(synth_thread_worker_t *worker);
+static void synth_precompute_wave_data(int32_t *imageData);
+void *synth_persistent_worker_thread(void *arg);
+
 /* Private user code ---------------------------------------------------------*/
 
 void sub_int32(const int32_t *a, const int32_t *b, int32_t *result,
@@ -165,6 +175,9 @@ int32_t synth_IfftInit(void) {
 
   printf("---------- SYNTH INIT ---------\n");
   printf("-------------------------------\n");
+
+  // Register cleanup function for thread pool
+  atexit(synth_shutdown_thread_pool);
 
   // initialize default parameters
   wavesGeneratorParams.commaPerSemitone = COMMA_PER_SEMITONE;
@@ -393,136 +406,543 @@ static float calculate_contrast(int32_t *imageData, size_t size) {
 }
 
 /**
- * @brief  Period elapsed callback in non blocking mode
- * @param  htim : TIM handle
+ * @brief  Structure pour le pool de threads persistants optimisé
+ */
+typedef struct synth_thread_worker_s {
+  int thread_id;      // ID du thread (0, 1, 2)
+  int start_note;     // Note de départ pour ce thread
+  int end_note;       // Note de fin pour ce thread
+  int32_t *imageData; // Données d'image d'entrée (partagé)
+
+  // Buffers de sortie locaux au thread
+  float thread_ifftBuffer[AUDIO_BUFFER_SIZE];
+  float thread_sumVolumeBuffer[AUDIO_BUFFER_SIZE];
+  float thread_maxVolumeBuffer[AUDIO_BUFFER_SIZE];
+
+  // Buffers de travail locaux (évite VLA sur pile)
+  int32_t imageBuffer_q31[NUMBER_OF_NOTES / 3 + 100]; // +100 pour sécurité
+  float imageBuffer_f32[NUMBER_OF_NOTES / 3 + 100];
+  float waveBuffer[AUDIO_BUFFER_SIZE];
+  float volumeBuffer[AUDIO_BUFFER_SIZE];
+
+  // Données waves[] pré-calculées (lecture seule)
+  int32_t precomputed_new_idx[NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
+  float precomputed_wave_data[NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
+  float precomputed_volume[NUMBER_OF_NOTES / 3 + 100];
+  float precomputed_volume_increment[NUMBER_OF_NOTES / 3 + 100];
+  float precomputed_volume_decrement[NUMBER_OF_NOTES / 3 + 100];
+
+  // Synchronisation
+  pthread_mutex_t work_mutex;
+  pthread_cond_t work_cond;
+  volatile int work_ready;
+  volatile int work_done;
+
+} synth_thread_worker_t;
+
+// Pool de threads persistants
+static synth_thread_worker_t thread_pool[3];
+static pthread_t worker_threads[3];
+static volatile int synth_pool_initialized = 0;
+static volatile int synth_pool_shutdown = 0;
+
+// Mutex global pour protéger l'accès aux données waves[] pendant le pré-calcul
+static pthread_mutex_t waves_global_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/**
+ * @brief  Initialise le pool de threads persistants
+ * @retval 0 en cas de succès, -1 en cas d'erreur
+ */
+static int synth_init_thread_pool(void) {
+  if (synth_pool_initialized)
+    return 0;
+
+  int notes_per_thread = NUMBER_OF_NOTES / 3;
+
+  for (int i = 0; i < 3; i++) {
+    synth_thread_worker_t *worker = &thread_pool[i];
+
+    // Configuration du worker
+    worker->thread_id = i;
+    worker->start_note = i * notes_per_thread;
+    worker->end_note = (i == 2) ? NUMBER_OF_NOTES : (i + 1) * notes_per_thread;
+    worker->work_ready = 0;
+    worker->work_done = 0;
+
+    // Initialisation de la synchronisation
+    if (pthread_mutex_init(&worker->work_mutex, NULL) != 0) {
+      printf("Erreur lors de l'initialisation du mutex pour le thread %d\n", i);
+      return -1;
+    }
+    if (pthread_cond_init(&worker->work_cond, NULL) != 0) {
+      printf(
+          "Erreur lors de l'initialisation de la condition pour le thread %d\n",
+          i);
+      return -1;
+    }
+  }
+
+  synth_pool_initialized = 1;
+  return 0;
+}
+
+/**
+ * @brief  Fonction principale des threads workers persistants
+ * @param  arg Pointeur vers la structure synth_thread_worker_t
+ * @retval Pointeur NULL
+ */
+void *synth_persistent_worker_thread(void *arg) {
+  synth_thread_worker_t *worker = (synth_thread_worker_t *)arg;
+
+  while (!synth_pool_shutdown) {
+    // Attendre du travail
+    pthread_mutex_lock(&worker->work_mutex);
+    while (!worker->work_ready && !synth_pool_shutdown) {
+      pthread_cond_wait(&worker->work_cond, &worker->work_mutex);
+    }
+    pthread_mutex_unlock(&worker->work_mutex);
+
+    if (synth_pool_shutdown)
+      break;
+
+    // Effectuer le travail
+    synth_process_worker_range(worker);
+
+    // Signaler que le travail est terminé
+    pthread_mutex_lock(&worker->work_mutex);
+    worker->work_done = 1;
+    worker->work_ready = 0;
+    pthread_mutex_unlock(&worker->work_mutex);
+  }
+
+  return NULL;
+}
+
+/**
+ * @brief  Traite une plage de notes pour un worker donné
+ * @param  worker Pointeur vers la structure du worker
  * @retval None
  */
-// #pragma GCC push_options
-// #pragma GCC optimize ("unroll-loops")
+static void synth_process_worker_range(synth_thread_worker_t *worker) {
+  int32_t idx, acc, new_idx, buff_idx, note, local_note_idx;
+
+  // Initialiser les buffers de sortie à zéro
+  fill_float(0, worker->thread_ifftBuffer, AUDIO_BUFFER_SIZE);
+  fill_float(0, worker->thread_sumVolumeBuffer, AUDIO_BUFFER_SIZE);
+  fill_float(0, worker->thread_maxVolumeBuffer, AUDIO_BUFFER_SIZE);
+
+  // Prétraitement: calcul des moyennes et transformation en imageBuffer_q31
+  for (idx = worker->start_note; idx < worker->end_note; idx++) {
+    local_note_idx = idx - worker->start_note;
+    worker->imageBuffer_q31[local_note_idx] = 0;
+
+    for (acc = 0; acc < PIXELS_PER_NOTE; acc++) {
+      worker->imageBuffer_q31[local_note_idx] +=
+          (worker->imageData[idx * PIXELS_PER_NOTE + acc]);
+    }
+
+#ifndef COLOR_INVERTED
+    worker->imageBuffer_q31[local_note_idx] /= PIXELS_PER_NOTE;
+#else
+    worker->imageBuffer_q31[local_note_idx] /= PIXELS_PER_NOTE;
+    worker->imageBuffer_q31[local_note_idx] =
+        VOLUME_AMP_RESOLUTION - worker->imageBuffer_q31[local_note_idx];
+    if (worker->imageBuffer_q31[local_note_idx] < 0) {
+      worker->imageBuffer_q31[local_note_idx] = 0;
+    }
+    if (worker->imageBuffer_q31[local_note_idx] > VOLUME_AMP_RESOLUTION) {
+      worker->imageBuffer_q31[local_note_idx] = VOLUME_AMP_RESOLUTION;
+    }
+#endif
+  }
+
+  // Correction bug - seulement pour le thread qui traite la note 0
+  if (worker->start_note == 0) {
+    worker->imageBuffer_q31[0] = 0;
+  }
+
+#ifdef RELATIVE_MODE
+  // Traitement spécial pour RELATIVE_MODE
+  if (worker->start_note < worker->end_note - 1) {
+    sub_int32((int32_t *)&worker->imageBuffer_q31[0],
+              (int32_t *)&worker->imageBuffer_q31[1],
+              (int32_t *)&worker->imageBuffer_q31[0],
+              worker->end_note - worker->start_note - 1);
+
+    clip_int32((int32_t *)worker->imageBuffer_q31, 0, VOLUME_AMP_RESOLUTION,
+               worker->end_note - worker->start_note);
+  }
+
+  if (worker->end_note == NUMBER_OF_NOTES) {
+    worker->imageBuffer_q31[worker->end_note - worker->start_note - 1] = 0;
+  }
+#endif
+
+  // Traitement principal des notes
+  for (note = worker->start_note; note < worker->end_note; note++) {
+    local_note_idx = note - worker->start_note;
+    worker->imageBuffer_f32[local_note_idx] =
+        (float)worker->imageBuffer_q31[local_note_idx];
+
+#if ENABLE_NON_LINEAR_MAPPING
+    {
+      float normalizedIntensity = worker->imageBuffer_f32[local_note_idx] /
+                                  (float)VOLUME_AMP_RESOLUTION;
+      float gamma = GAMMA_VALUE;
+      normalizedIntensity = powf(normalizedIntensity, gamma);
+      worker->imageBuffer_f32[local_note_idx] =
+          normalizedIntensity * VOLUME_AMP_RESOLUTION;
+    }
+#endif
+
+    // Utiliser les données pré-calculées pour éviter les accès concurrents à
+    // waves[]
+    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+      worker->waveBuffer[buff_idx] =
+          worker->precomputed_wave_data[local_note_idx][buff_idx];
+    }
+
+#ifdef GAP_LIMITER
+    // Gap limiter calculation - DOIT être dynamique pour avoir du son !
+    float current_volume = worker->precomputed_volume[local_note_idx];
+    float target_volume = worker->imageBuffer_f32[local_note_idx];
+    float volume_increment =
+        worker->precomputed_volume_increment[local_note_idx];
+    float volume_decrement =
+        worker->precomputed_volume_decrement[local_note_idx];
+
+    // Calculer dynamiquement le volume avec gap limiter (SANS accès à waves[])
+    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE - 1; buff_idx++) {
+      if (current_volume < target_volume) {
+        current_volume += volume_increment;
+        if (current_volume > target_volume) {
+          current_volume = target_volume;
+          break;
+        }
+      } else {
+        current_volume -= volume_decrement;
+        if (current_volume < target_volume) {
+          current_volume = target_volume;
+          break;
+        }
+      }
+      worker->volumeBuffer[buff_idx] = current_volume;
+    }
+
+    // Fill remaining buffer with final volume value
+    if (buff_idx < AUDIO_BUFFER_SIZE) {
+      fill_float(current_volume, &worker->volumeBuffer[buff_idx],
+                 AUDIO_BUFFER_SIZE - buff_idx);
+    }
+#else
+    fill_float(worker->imageBuffer_f32[local_note_idx], worker->volumeBuffer,
+               AUDIO_BUFFER_SIZE);
+#endif
+
+    // Apply volume scaling to the current note waveform
+    mult_float(worker->waveBuffer, worker->volumeBuffer, worker->waveBuffer,
+               AUDIO_BUFFER_SIZE);
+
+    for (buff_idx = AUDIO_BUFFER_SIZE; --buff_idx >= 0;) {
+      if (worker->volumeBuffer[buff_idx] >
+          worker->thread_maxVolumeBuffer[buff_idx]) {
+        worker->thread_maxVolumeBuffer[buff_idx] =
+            worker->volumeBuffer[buff_idx];
+      }
+    }
+
+    // IFFT summation (local au thread)
+    add_float(worker->waveBuffer, worker->thread_ifftBuffer,
+              worker->thread_ifftBuffer, AUDIO_BUFFER_SIZE);
+    // Volume summation (local au thread)
+    add_float(worker->volumeBuffer, worker->thread_sumVolumeBuffer,
+              worker->thread_sumVolumeBuffer, AUDIO_BUFFER_SIZE);
+  }
+}
+
+/**
+ * @brief  Pré-calcule les données waves[] pour éviter la contention
+ * @param  imageData Données d'image d'entrée
+ * @retval None
+ */
+static void synth_precompute_wave_data(int32_t *imageData) {
+  // Cette fonction s'exécute en single-thread pour éviter les race conditions
+  pthread_mutex_lock(&waves_global_mutex);
+
+  for (int i = 0; i < 3; i++) {
+    synth_thread_worker_t *worker = &thread_pool[i];
+    worker->imageData = imageData;
+
+    for (int note = worker->start_note; note < worker->end_note; note++) {
+      int local_note_idx = note - worker->start_note;
+
+      // Pré-calculer les données de forme d'onde
+      for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+        int32_t new_idx = (waves[note].current_idx + waves[note].octave_coeff);
+        if ((uint32_t)new_idx >= waves[note].area_size) {
+          new_idx -= waves[note].area_size;
+        }
+
+        worker->precomputed_new_idx[local_note_idx][buff_idx] = new_idx;
+        worker->precomputed_wave_data[local_note_idx][buff_idx] =
+            (*(waves[note].start_ptr + new_idx));
+        waves[note].current_idx = new_idx;
+      }
+
+#ifdef GAP_LIMITER
+      // Pour GAP_LIMITER, pré-calculer tous les paramètres nécessaires
+      worker->precomputed_volume[local_note_idx] = waves[note].current_volume;
+      worker->precomputed_volume_increment[local_note_idx] =
+          waves[note].volume_increment;
+      worker->precomputed_volume_decrement[local_note_idx] =
+          waves[note].volume_decrement;
+#endif
+    }
+  }
+
+  pthread_mutex_unlock(&waves_global_mutex);
+}
+
+/**
+ * @brief  Démarre les threads workers persistants
+ * @retval 0 en cas de succès, -1 en cas d'erreur
+ */
+static int synth_start_worker_threads(void) {
+  for (int i = 0; i < 3; i++) {
+    if (pthread_create(&worker_threads[i], NULL, synth_persistent_worker_thread,
+                       &thread_pool[i]) != 0) {
+      printf("Erreur lors de la création du thread worker %d\n", i);
+      return -1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * @brief  Arrête le pool de threads persistants
+ * @retval None
+ */
+void synth_shutdown_thread_pool(void) {
+  if (!synth_pool_initialized)
+    return;
+
+  synth_pool_shutdown = 1;
+
+  // Réveiller tous les threads
+  for (int i = 0; i < 3; i++) {
+    pthread_mutex_lock(&thread_pool[i].work_mutex);
+    pthread_cond_signal(&thread_pool[i].work_cond);
+    pthread_mutex_unlock(&thread_pool[i].work_mutex);
+  }
+
+  // Attendre que tous les threads se terminent
+  for (int i = 0; i < 3; i++) {
+    pthread_join(worker_threads[i], NULL);
+    pthread_mutex_destroy(&thread_pool[i].work_mutex);
+    pthread_cond_destroy(&thread_pool[i].work_cond);
+  }
+
+  synth_pool_initialized = 0;
+}
+
+/**
+ * @brief  Version optimisée de la synthèse IFFT avec pool de threads
+ * persistants
+ * @param  imageData Données d'entrée en niveaux de gris
+ * @param  audioData Buffer de sortie audio
+ * @retval None
+ */
 void synth_IfftMode(
     int32_t *imageData,
     float *audioData) { // imageData is now potentially frozen/faded g_grayScale
+
   // Mode IFFT (logs limités)
   if (log_counter % LOG_FREQUENCY == 0) {
-    // printf("===== IFFT Mode appelé =====\n"); // Supprimé ou commenté
+    // printf("===== IFFT Mode appelé (optimisé) =====\n");
   }
-  static int32_t idx, acc; // nbAcc is unused
-  static int32_t signal_R; // Restored as it's used locally
-  // static int32_t signal_L; // Unused variable
-  static int32_t new_idx;
-  static int32_t buff_idx;
-  static int32_t note;
-  static int32_t imageBuffer_q31[NUMBER_OF_NOTES];
-  static float imageBuffer_f32[NUMBER_OF_NOTES];
-  static float waveBuffer[AUDIO_BUFFER_SIZE];
+
+  static int32_t signal_R;
+  static int buff_idx;
+  static int first_call = 1;
+
+  // Initialiser le pool de threads si première fois
+  if (first_call) {
+    if (synth_init_thread_pool() == 0) {
+      if (synth_start_worker_threads() == 0) {
+        printf("Pool de threads optimisé initialisé avec succès\n");
+      } else {
+        printf(
+            "Erreur lors du démarrage des threads, mode séquentiel activé\n");
+        synth_pool_initialized = 0;
+      }
+    } else {
+      printf(
+          "Erreur lors de l'initialisation du pool, mode séquentiel activé\n");
+      synth_pool_initialized = 0;
+    }
+    first_call = 0;
+  }
+
+  // Buffers finaux pour les résultats combinés
   static float ifftBuffer[AUDIO_BUFFER_SIZE];
   static float sumVolumeBuffer[AUDIO_BUFFER_SIZE];
-  static float volumeBuffer[AUDIO_BUFFER_SIZE];
   static float maxVolumeBuffer[AUDIO_BUFFER_SIZE];
-  // static float tmpMaxVolumeBuffer[AUDIO_BUFFER_SIZE]; // Unused variable
 
+  // Réinitialiser les buffers finaux
   fill_float(0, ifftBuffer, AUDIO_BUFFER_SIZE);
   fill_float(0, sumVolumeBuffer, AUDIO_BUFFER_SIZE);
   fill_float(0, maxVolumeBuffer, AUDIO_BUFFER_SIZE);
 
   float tmp_audioData[AUDIO_BUFFER_SIZE];
 
-  for (idx = 0; idx < NUMBER_OF_NOTES; idx++) {
-    imageBuffer_q31[idx] = 0;
-    for (acc = 0; acc < PIXELS_PER_NOTE; acc++) {
-      imageBuffer_q31[idx] += (imageData[idx * PIXELS_PER_NOTE + acc]);
+  if (synth_pool_initialized && !synth_pool_shutdown) {
+    // === VERSION OPTIMISÉE AVEC POOL DE THREADS ===
+
+    // Phase 1: Pré-calcul des données en single-thread (évite la contention)
+    synth_precompute_wave_data(imageData);
+
+    // Phase 2: Démarrer les workers en parallèle
+    for (int i = 0; i < 3; i++) {
+      pthread_mutex_lock(&thread_pool[i].work_mutex);
+      thread_pool[i].work_ready = 1;
+      thread_pool[i].work_done = 0;
+      pthread_cond_signal(&thread_pool[i].work_cond);
+      pthread_mutex_unlock(&thread_pool[i].work_mutex);
     }
-#ifndef COLOR_INVERTED
-    imageBuffer_q31[idx] /= PIXELS_PER_NOTE;
-#else
-    imageBuffer_q31[idx] /= PIXELS_PER_NOTE;
-    imageBuffer_q31[idx] = VOLUME_AMP_RESOLUTION - imageBuffer_q31[idx];
-    if (imageBuffer_q31[idx] < 0) {
+
+    // Phase 3: Attendre que tous les workers terminent
+    for (int i = 0; i < 3; i++) {
+      pthread_mutex_lock(&thread_pool[i].work_mutex);
+      while (!thread_pool[i].work_done) {
+        // Busy wait optimisé pour faible latence
+        pthread_mutex_unlock(&thread_pool[i].work_mutex);
+        sched_yield(); // Yield CPU pour éviter le busy wait complet
+        pthread_mutex_lock(&thread_pool[i].work_mutex);
+      }
+      pthread_mutex_unlock(&thread_pool[i].work_mutex);
+    }
+
+    // Phase 4: Combiner les résultats des threads
+    for (int i = 0; i < 3; i++) {
+      add_float(thread_pool[i].thread_ifftBuffer, ifftBuffer, ifftBuffer,
+                AUDIO_BUFFER_SIZE);
+      add_float(thread_pool[i].thread_sumVolumeBuffer, sumVolumeBuffer,
+                sumVolumeBuffer, AUDIO_BUFFER_SIZE);
+
+      // Pour maxVolumeBuffer, prendre le maximum
+      for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+        if (thread_pool[i].thread_maxVolumeBuffer[buff_idx] >
+            maxVolumeBuffer[buff_idx]) {
+          maxVolumeBuffer[buff_idx] =
+              thread_pool[i].thread_maxVolumeBuffer[buff_idx];
+        }
+      }
+    }
+
+  } else {
+    // === FALLBACK MODE SÉQUENTIEL (pour compatibilité/debug) ===
+    static int32_t imageBuffer_q31[NUMBER_OF_NOTES];
+    static float imageBuffer_f32[NUMBER_OF_NOTES];
+    static float waveBuffer[AUDIO_BUFFER_SIZE];
+    static float volumeBuffer[AUDIO_BUFFER_SIZE];
+
+    // Version séquentielle simplifiée de l'algorithme original
+    int32_t idx, acc, new_idx, note;
+
+    // Prétraitement: calcul des moyennes
+    for (idx = 0; idx < NUMBER_OF_NOTES; idx++) {
       imageBuffer_q31[idx] = 0;
-    }
-    if (imageBuffer_q31[idx] > VOLUME_AMP_RESOLUTION) {
-      imageBuffer_q31[idx] = VOLUME_AMP_RESOLUTION;
-    }
+      for (acc = 0; acc < PIXELS_PER_NOTE; acc++) {
+        imageBuffer_q31[idx] += (imageData[idx * PIXELS_PER_NOTE + acc]);
+      }
+#ifndef COLOR_INVERTED
+      imageBuffer_q31[idx] /= PIXELS_PER_NOTE;
+#else
+      imageBuffer_q31[idx] /= PIXELS_PER_NOTE;
+      imageBuffer_q31[idx] = VOLUME_AMP_RESOLUTION - imageBuffer_q31[idx];
+      if (imageBuffer_q31[idx] < 0)
+        imageBuffer_q31[idx] = 0;
+      if (imageBuffer_q31[idx] > VOLUME_AMP_RESOLUTION)
+        imageBuffer_q31[idx] = VOLUME_AMP_RESOLUTION;
 #endif
-  }
-  // Correction bug
-  imageBuffer_q31[0] = 0;
+    }
+    imageBuffer_q31[0] = 0; // Correction bug
 
 #ifdef RELATIVE_MODE
-  sub_int32((int32_t *)imageBuffer_q31, (int32_t *)&imageBuffer_q31[1],
-            (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES - 1);
-  clip_int32((int32_t *)imageBuffer_q31, 0, VOLUME_AMP_RESOLUTION,
-             NUMBER_OF_NOTES);
-  imageBuffer_q31[NUMBER_OF_NOTES - 1] = 0;
+    sub_int32((int32_t *)imageBuffer_q31, (int32_t *)&imageBuffer_q31[1],
+              (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES - 1);
+    clip_int32((int32_t *)imageBuffer_q31, 0, VOLUME_AMP_RESOLUTION,
+               NUMBER_OF_NOTES);
+    imageBuffer_q31[NUMBER_OF_NOTES - 1] = 0;
 #endif
 
-  for (note = 0; note < NUMBER_OF_NOTES; note++) {
-    imageBuffer_f32[note] = (float)imageBuffer_q31[note];
+    // Traitement principal des notes
+    for (note = 0; note < NUMBER_OF_NOTES; note++) {
+      imageBuffer_f32[note] = (float)imageBuffer_q31[note];
 
 #if ENABLE_NON_LINEAR_MAPPING
-    {
-      float normalizedIntensity =
-          imageBuffer_f32[note] / (float)VOLUME_AMP_RESOLUTION;
-      float gamma = GAMMA_VALUE; // Gamma value, adjustable as needed
-      normalizedIntensity = powf(normalizedIntensity, gamma);
-      imageBuffer_f32[note] = normalizedIntensity * VOLUME_AMP_RESOLUTION;
-    }
+      {
+        float normalizedIntensity =
+            imageBuffer_f32[note] / (float)VOLUME_AMP_RESOLUTION;
+        float gamma = GAMMA_VALUE;
+        normalizedIntensity = powf(normalizedIntensity, gamma);
+        imageBuffer_f32[note] = normalizedIntensity * VOLUME_AMP_RESOLUTION;
+      }
 #endif
 
-    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-      new_idx = (waves[note].current_idx + waves[note].octave_coeff);
-      if ((uint32_t)new_idx >=
-          waves[note].area_size) { // Cast new_idx to uint32_t for comparison
-        new_idx -= waves[note].area_size;
+      // Génération des formes d'onde
+      for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+        new_idx = (waves[note].current_idx + waves[note].octave_coeff);
+        if ((uint32_t)new_idx >= waves[note].area_size) {
+          new_idx -= waves[note].area_size;
+        }
+        waveBuffer[buff_idx] = (*(waves[note].start_ptr + new_idx));
+        waves[note].current_idx = new_idx;
       }
-      // Fill buffer with current note waveform
-      waveBuffer[buff_idx] = (*(waves[note].start_ptr + new_idx));
-      waves[note].current_idx = new_idx;
-    }
 
 #ifdef GAP_LIMITER
-    // Gap limiter to minimize glitches
-    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE - 1; buff_idx++) {
-      if (waves[note].current_volume < imageBuffer_f32[note]) {
-        waves[note].current_volume += waves[note].volume_increment;
-        if (waves[note].current_volume > imageBuffer_f32[note]) {
-          waves[note].current_volume = imageBuffer_f32[note];
-          break;
-        }
-      } else {
-        waves[note].current_volume -= waves[note].volume_decrement;
+      // Gap limiter
+      for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE - 1; buff_idx++) {
         if (waves[note].current_volume < imageBuffer_f32[note]) {
-          waves[note].current_volume = imageBuffer_f32[note];
-          break;
+          waves[note].current_volume += waves[note].volume_increment;
+          if (waves[note].current_volume > imageBuffer_f32[note]) {
+            waves[note].current_volume = imageBuffer_f32[note];
+            break;
+          }
+        } else {
+          waves[note].current_volume -= waves[note].volume_decrement;
+          if (waves[note].current_volume < imageBuffer_f32[note]) {
+            waves[note].current_volume = imageBuffer_f32[note];
+            break;
+          }
         }
+        volumeBuffer[buff_idx] = waves[note].current_volume;
       }
-      volumeBuffer[buff_idx] = waves[note].current_volume;
-    }
-    // Fill constant volume buffer
-    if (buff_idx < AUDIO_BUFFER_SIZE) {
-      fill_float(waves[note].current_volume, &volumeBuffer[buff_idx],
-                 AUDIO_BUFFER_SIZE - buff_idx);
-    }
+      if (buff_idx < AUDIO_BUFFER_SIZE) {
+        fill_float(waves[note].current_volume, &volumeBuffer[buff_idx],
+                   AUDIO_BUFFER_SIZE - buff_idx);
+      }
 #else
-    fill_float(imageBuffer_f32[note], volumeBuffer, AUDIO_BUFFER_SIZE);
+      fill_float(imageBuffer_f32[note], volumeBuffer, AUDIO_BUFFER_SIZE);
 #endif
 
-    // Apply volume scaling to the current note waveform
-    mult_float(waveBuffer, volumeBuffer, waveBuffer, AUDIO_BUFFER_SIZE);
+      // Apply volume scaling
+      mult_float(waveBuffer, volumeBuffer, waveBuffer, AUDIO_BUFFER_SIZE);
 
-    for (buff_idx = AUDIO_BUFFER_SIZE; --buff_idx >= 0;) {
-      if (volumeBuffer[buff_idx] > maxVolumeBuffer[buff_idx]) {
-        maxVolumeBuffer[buff_idx] = volumeBuffer[buff_idx];
+      for (buff_idx = AUDIO_BUFFER_SIZE; --buff_idx >= 0;) {
+        if (volumeBuffer[buff_idx] > maxVolumeBuffer[buff_idx]) {
+          maxVolumeBuffer[buff_idx] = volumeBuffer[buff_idx];
+        }
       }
-    }
 
-    // IFFT summation
-    add_float(waveBuffer, ifftBuffer, ifftBuffer, AUDIO_BUFFER_SIZE);
-    // Volume summation
-    add_float(volumeBuffer, sumVolumeBuffer, sumVolumeBuffer,
-              AUDIO_BUFFER_SIZE);
+      // Accumulation
+      add_float(waveBuffer, ifftBuffer, ifftBuffer, AUDIO_BUFFER_SIZE);
+      add_float(volumeBuffer, sumVolumeBuffer, sumVolumeBuffer,
+                AUDIO_BUFFER_SIZE);
+    }
   }
 
+  // === PHASE FINALE (commune aux deux modes) ===
   mult_float(ifftBuffer, maxVolumeBuffer, ifftBuffer, AUDIO_BUFFER_SIZE);
   scale_float(sumVolumeBuffer, VOLUME_AMP_RESOLUTION / 2, AUDIO_BUFFER_SIZE);
 
@@ -532,22 +952,16 @@ void synth_IfftMode(
     } else {
       signal_R = 0;
     }
-
-    // Stocker la valeur originale
     tmp_audioData[buff_idx] = signal_R / (float)WAVE_AMP_RESOLUTION;
   }
 
   // Calculer le facteur de contraste basé sur l'image
   float contrast_factor = calculate_contrast(imageData, CIS_MAX_PIXELS_NB);
+
   // Apply contrast modulation
   float min_level = 0.0f, max_level = 0.0f;
   for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-    // Apply contrast factor
-    // if (contrast_factor < 0.0f) {
-    //  audioData[buff_idx] = 0.0f;
-    //} else {
     audioData[buff_idx] = tmp_audioData[buff_idx] * contrast_factor;
-    //}
 
     // Track min/max for debug
     if (buff_idx == 0 || audioData[buff_idx] < min_level)
@@ -558,8 +972,9 @@ void synth_IfftMode(
 
   // Audio output prêt
   if (log_counter % LOG_FREQUENCY == 0) {
-    // printf("Audio output: min=%.6f, max=%.6f, contrast=%.2f\n", min_level,
-    //        max_level, contrast_factor); // Supprimé ou commenté
+    // printf("Audio output: min=%.6f, max=%.6f, contrast=%.2f, mode=%s\n",
+    //        min_level, max_level, contrast_factor,
+    //        synth_pool_initialized ? "parallel" : "sequential");
   }
 
   // Incrémenter le compteur global pour la limitation des logs

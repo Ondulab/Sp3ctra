@@ -148,6 +148,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       // Direct reverb processing in callback - ULTRA OPTIMIZED
       float reverb_left = 0.0f, reverb_right = 0.0f;
 
+#if ENABLE_REVERB
       if (reverbEnabled &&
           (cached_reverb_send_ifft > 0.01f || cached_reverb_send_fft > 0.01f)) {
         float reverb_input = 0.0f;
@@ -164,6 +165,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         processReverbOptimized(reverb_input, reverb_input, reverb_left,
                                reverb_right);
       }
+#endif
 
       // Mix dry + reverb and apply volume
       float final_left = (dry_sample + reverb_left) * cached_volume;
@@ -225,9 +227,10 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
       sampleRate(sampleRate), bufferSize(bufferSize), channels(channels),
       requestedDeviceId(g_requested_audio_device_id), // Use global variable if
                                                       // set, otherwise -1
-      masterVolume(1.0f), reverbBuffer(nullptr), reverbMix(0.5f),
-      reverbRoomSize(0.95f), reverbDamping(0.4f), reverbWidth(1.0f),
-      reverbEnabled(true), reverbThreadRunning(false) {
+      masterVolume(1.0f), reverbBuffer(nullptr), reverbMix(DEFAULT_REVERB_MIX),
+      reverbRoomSize(DEFAULT_REVERB_ROOM_SIZE),
+      reverbDamping(DEFAULT_REVERB_DAMPING), reverbWidth(DEFAULT_REVERB_WIDTH),
+      reverbEnabled(ENABLE_REVERB), reverbThreadRunning(false) {
 
   std::cout << "\033[1;32m[ZitaRev1] Reverb enabled by default with "
                "Zita-Rev1 algorithm\033[0m"

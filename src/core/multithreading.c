@@ -58,14 +58,29 @@ void initDoubleBuffer(DoubleBuffer *db) {
   db->processingBuffer_B =
       (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
 
+  // Allocate persistent image buffers for audio continuity
+  db->lastValidImage_R = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
+  db->lastValidImage_G = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
+  db->lastValidImage_B = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
+
   if (!db->activeBuffer_R || !db->activeBuffer_G || !db->activeBuffer_B ||
       !db->processingBuffer_R || !db->processingBuffer_G ||
-      !db->processingBuffer_B) {
+      !db->processingBuffer_B || !db->lastValidImage_R ||
+      !db->lastValidImage_G || !db->lastValidImage_B) {
     fprintf(stderr, "Error: Allocation of image buffers failed\n");
     exit(EXIT_FAILURE);
   }
 
+  // Initialize persistent image with black (zero)
+  memset(db->lastValidImage_R, 0, CIS_MAX_PIXELS_NB);
+  memset(db->lastValidImage_G, 0, CIS_MAX_PIXELS_NB);
+  memset(db->lastValidImage_B, 0, CIS_MAX_PIXELS_NB);
+
   db->dataReady = 0;
+  db->lastValidImageExists = 0;
+  db->udp_frames_received = 0;
+  db->audio_frames_processed = 0;
+  db->last_udp_frame_time = time(NULL);
 }
 
 void cleanupDoubleBuffer(DoubleBuffer *db) {
@@ -76,12 +91,19 @@ void cleanupDoubleBuffer(DoubleBuffer *db) {
     free(db->processingBuffer_R);
     free(db->processingBuffer_G);
     free(db->processingBuffer_B);
+    free(db->lastValidImage_R);
+    free(db->lastValidImage_G);
+    free(db->lastValidImage_B);
+
     db->activeBuffer_R = NULL;
     db->activeBuffer_G = NULL;
     db->activeBuffer_B = NULL;
     db->processingBuffer_R = NULL;
     db->processingBuffer_G = NULL;
     db->processingBuffer_B = NULL;
+    db->lastValidImage_R = NULL;
+    db->lastValidImage_G = NULL;
+    db->lastValidImage_B = NULL;
 
     pthread_mutex_destroy(&db->mutex);
     pthread_cond_destroy(&db->cond);
@@ -102,6 +124,63 @@ void swapBuffers(DoubleBuffer *db) {
   temp = db->activeBuffer_B;
   db->activeBuffer_B = db->processingBuffer_B;
   db->processingBuffer_B = temp;
+}
+
+/**
+ * @brief Update the persistent image buffer with latest valid image
+ * @param db DoubleBuffer structure
+ * @note Mutex must be locked before calling this function
+ */
+void updateLastValidImage(DoubleBuffer *db) {
+  // Copy processing buffer to persistent image buffer
+  memcpy(db->lastValidImage_R, db->processingBuffer_R, CIS_MAX_PIXELS_NB);
+  memcpy(db->lastValidImage_G, db->processingBuffer_G, CIS_MAX_PIXELS_NB);
+  memcpy(db->lastValidImage_B, db->processingBuffer_B, CIS_MAX_PIXELS_NB);
+
+  db->lastValidImageExists = 1;
+  db->udp_frames_received++;
+  db->last_udp_frame_time = time(NULL);
+
+  // Debug logs removed for production use
+}
+
+/**
+ * @brief Get the last valid image for audio processing (thread-safe)
+ * @param db DoubleBuffer structure
+ * @param out_R Output buffer for red channel
+ * @param out_G Output buffer for green channel
+ * @param out_B Output buffer for blue channel
+ */
+void getLastValidImageForAudio(DoubleBuffer *db, uint8_t *out_R, uint8_t *out_G,
+                               uint8_t *out_B) {
+  pthread_mutex_lock(&db->mutex);
+
+  if (db->lastValidImageExists) {
+    memcpy(out_R, db->lastValidImage_R, CIS_MAX_PIXELS_NB);
+    memcpy(out_G, db->lastValidImage_G, CIS_MAX_PIXELS_NB);
+    memcpy(out_B, db->lastValidImage_B, CIS_MAX_PIXELS_NB);
+    db->audio_frames_processed++;
+  } else {
+    // If no valid image exists, use black (silence)
+    memset(out_R, 0, CIS_MAX_PIXELS_NB);
+    memset(out_G, 0, CIS_MAX_PIXELS_NB);
+    memset(out_B, 0, CIS_MAX_PIXELS_NB);
+    // Debug log removed for production use
+  }
+
+  pthread_mutex_unlock(&db->mutex);
+}
+
+/**
+ * @brief Check if a valid image exists for audio processing
+ * @param db DoubleBuffer structure
+ * @return 1 if valid image exists, 0 otherwise
+ */
+int hasValidImageForAudio(DoubleBuffer *db) {
+  pthread_mutex_lock(&db->mutex);
+  int exists = db->lastValidImageExists;
+  pthread_mutex_unlock(&db->mutex);
+  return exists;
 }
 
 /*------------------------------------------------------------------------------
@@ -191,6 +270,7 @@ void *udpThread(void *arg) {
 #endif
       pthread_mutex_lock(&db->mutex);
       swapBuffers(db);
+      updateLastValidImage(db); // Save image for audio persistence
       db->dataReady = 1;
       pthread_cond_signal(&db->cond);
       pthread_mutex_unlock(&db->mutex);
@@ -282,10 +362,32 @@ void *audioProcessingThread(void *arg) {
   uint8_t local_G[CIS_MAX_PIXELS_NB];
   uint8_t local_B[CIS_MAX_PIXELS_NB];
 
+  // Timeout configuration for non-blocking audio processing
+  struct timespec timeout;
+  const long TIMEOUT_MS =
+      10; // 10ms timeout - audio continues even without new frames
+
+  printf("[AUDIO] Audio processing thread started with 10ms timeout\n");
+
   while (context->running) {
+    // Calculate timeout time (current time + TIMEOUT_MS)
+    clock_gettime(CLOCK_REALTIME, &timeout);
+    timeout.tv_nsec += TIMEOUT_MS * 1000000L; // Convert ms to nanoseconds
+    if (timeout.tv_nsec >= 1000000000L) {
+      timeout.tv_sec += 1;
+      timeout.tv_nsec -= 1000000000L;
+    }
+
     pthread_mutex_lock(&db->mutex);
+
+    // Wait for new data with timeout, or continue if timeout expires
+    int wait_result = 0;
     while (!db->dataReady && context->running) {
-      pthread_cond_wait(&db->cond, &db->mutex);
+      wait_result = pthread_cond_timedwait(&db->cond, &db->mutex, &timeout);
+      if (wait_result == ETIMEDOUT) {
+        // Timeout occurred - continue with last valid image
+        break;
+      }
     }
 
     if (!context->running) {
@@ -293,23 +395,34 @@ void *audioProcessingThread(void *arg) {
       break;
     }
 
-    // At this point, dataReady is true and the mutex is locked.
-    // Copy data quickly to local buffers to release the main db mutex.
-    memcpy(local_R, db->processingBuffer_R, CIS_MAX_PIXELS_NB);
-    memcpy(local_G, db->processingBuffer_G, CIS_MAX_PIXELS_NB);
-    memcpy(local_B, db->processingBuffer_B, CIS_MAX_PIXELS_NB);
+    static uint64_t audio_log_counter = 0;
 
-    // We don't set db->dataReady = 0 here.
-    // The main loop (display consumer) is responsible for that,
-    // ensuring both consumers (display and audio) can access the same new data
-    // frame. This assumes that audio processing can tolerate occasionally
-    // reprocessing the same frame if it runs faster than the display, or that
-    // display loop is the primary "pacer".
+    if (db->dataReady) {
+      // New data available - copy fresh image and reset dataReady flag
+      memcpy(local_R, db->processingBuffer_R, CIS_MAX_PIXELS_NB);
+      memcpy(local_G, db->processingBuffer_G, CIS_MAX_PIXELS_NB);
+      memcpy(local_B, db->processingBuffer_B, CIS_MAX_PIXELS_NB);
+
+      db->dataReady = 0; // Mark as consumed
+
+      // Debug logs removed for production use
+      ++audio_log_counter;
+
+    } else {
+      // Timeout occurred or no new data - use persistent image
+      // Debug logs removed for production use
+    }
+
     pthread_mutex_unlock(&db->mutex);
 
-    // Call synthesis routine with the local copy of data
+    // Always get the most recent valid image for audio processing
+    // This ensures audio continuity even when UDP stream stops
+    getLastValidImageForAudio(db, local_R, local_G, local_B);
+
+    // Call synthesis routine with image data (fresh or persistent)
     synth_AudioProcess(local_R, local_G, local_B);
   }
 
+  printf("[AUDIO] Audio processing thread terminated\n");
   return NULL;
 }

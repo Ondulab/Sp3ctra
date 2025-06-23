@@ -96,12 +96,12 @@
 /**************************************************************************************
  * DAC Definitions - Optimized for Raspberry Pi Module 5
  **************************************************************************************/
-#define SAMPLING_FREQUENCY (48000)
+#define SAMPLING_FREQUENCY (96000)
 #define AUDIO_CHANNEL (2)
 
 // Buffer size optimized for Pi Module 5 with real-time synthesis
 // Larger buffer reduces audio dropouts during intensive FFT processing
-#define AUDIO_BUFFER_SIZE (100) // 21.3ms latency at 48kHz - good balance
+#define AUDIO_BUFFER_SIZE (250)
 
 /**************************************************************************************
  * Image Definitions
@@ -158,6 +158,16 @@
 
 #define PIXELS_PER_NOTE (1)
 #define NUMBER_OF_NOTES (CIS_MAX_PIXELS_NB / PIXELS_PER_NOTE)
+
+/**************************************************************************************
+ * Audio Effects Definitions
+ **************************************************************************************/
+// Reverb Configuration
+#define ENABLE_REVERB 0               // Set to 1 to enable reverb, 0 to disable
+#define DEFAULT_REVERB_MIX 0.3f       // Default dry/wet mix (0.0 - 1.0)
+#define DEFAULT_REVERB_ROOM_SIZE 0.7f // Default room size (0.0 - 1.0)
+#define DEFAULT_REVERB_DAMPING 0.4f   // Default damping (0.0 - 1.0)
+#define DEFAULT_REVERB_WIDTH 1.0f     // Default stereo width (0.0 - 1.0)
 
 /**************************************************************************************
  * Display Definitions
