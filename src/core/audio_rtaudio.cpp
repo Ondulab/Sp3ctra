@@ -331,13 +331,40 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
   }
 
   // Cache statique pour éviter les calculs répétitifs
-  static float cached_wet_gain = 0.5f;
-  static float cached_dry_gain = 0.5f;
+  static float cached_wet_gain = 0.0f; // Commence à 0 pour fade-in
+  static float cached_dry_gain = 1.0f; // Compense pour avoir 100% du signal
   static int param_update_counter = 0;
 
-  // Mettre à jour les gains moins fréquemment (tous les 256 échantillons ~2.7ms
-  // à 96kHz)
-  if (++param_update_counter >= 256) {
+  // Gestion du fade-in pour éviter les clics/pops au démarrage
+  static bool fade_in_complete = false;
+  static int fade_in_counter = 0;
+  static const int FADE_IN_DURATION = 4800; // ~50ms à 96kHz
+
+  // Initialiser les paramètres de réverb avant tout traitement
+  if (!fade_in_complete) {
+    if (fade_in_counter == 0) {
+      // Effacer explicitement les buffers internes pour éviter les craquements
+      zitaRev.clear();
+      // Initialiser les paramètres de base
+      zitaRev.set_roomsize(reverbRoomSize);
+      zitaRev.set_damping(reverbDamping);
+      zitaRev.set_width(reverbWidth);
+    }
+
+    // Fade-in progressif
+    if (++fade_in_counter >= FADE_IN_DURATION) {
+      fade_in_complete = true;
+      cached_wet_gain = reverbMix;
+      cached_dry_gain = 1.0f - reverbMix;
+    } else {
+      // Augmentation progressive du wet gain
+      float fade_ratio = (float)fade_in_counter / FADE_IN_DURATION;
+      cached_wet_gain = reverbMix * fade_ratio;
+      cached_dry_gain = 1.0f - cached_wet_gain; // Toujours 100% du signal
+    }
+  }
+  // Mise à jour régulière des paramètres une fois le fade-in terminé
+  else if (++param_update_counter >= 256) {
     param_update_counter = 0;
     cached_wet_gain = reverbMix;
     cached_dry_gain = 1.0f - reverbMix;
