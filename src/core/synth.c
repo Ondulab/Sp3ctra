@@ -852,6 +852,28 @@ void synth_IfftMode(
       pthread_mutex_unlock(&thread_pool[i].work_mutex);
     }
 
+    // 🔍 DIAGNOSTIC: Analyser les buffers de chaque thread avant accumulation
+    if (log_counter % LOG_FREQUENCY == 0) {
+      for (int i = 0; i < 3; i++) {
+        float thread_min = thread_pool[i].thread_ifftBuffer[0];
+        float thread_max = thread_pool[i].thread_ifftBuffer[0];
+        float thread_sum = 0.0f;
+
+        for (int j = 0; j < AUDIO_BUFFER_SIZE; j++) {
+          float val = thread_pool[i].thread_ifftBuffer[j];
+          if (val < thread_min)
+            thread_min = val;
+          if (val > thread_max)
+            thread_max = val;
+          thread_sum += val * val; // Pour RMS
+        }
+
+        float thread_rms = sqrtf(thread_sum / AUDIO_BUFFER_SIZE);
+        printf("🔍 THREAD %d: min=%.6f, max=%.6f, rms=%.6f\n", i, thread_min,
+               thread_max, thread_rms);
+      }
+    }
+
     // Phase 4: Combiner les résultats des threads
     for (int i = 0; i < 3; i++) {
       add_float(thread_pool[i].thread_ifftBuffer, ifftBuffer, ifftBuffer,
@@ -867,6 +889,26 @@ void synth_IfftMode(
               thread_pool[i].thread_maxVolumeBuffer[buff_idx];
         }
       }
+    }
+
+    // 🔍 DIAGNOSTIC: Analyser le signal après accumulation des threads
+    if (log_counter % LOG_FREQUENCY == 0) {
+      float accum_min = ifftBuffer[0];
+      float accum_max = ifftBuffer[0];
+      float accum_sum = 0.0f;
+
+      for (int j = 0; j < AUDIO_BUFFER_SIZE; j++) {
+        float val = ifftBuffer[j];
+        if (val < accum_min)
+          accum_min = val;
+        if (val > accum_max)
+          accum_max = val;
+        accum_sum += val * val;
+      }
+
+      float accum_rms = sqrtf(accum_sum / AUDIO_BUFFER_SIZE);
+      printf("🎯 ACCUMULATION: min=%.6f, max=%.6f, rms=%.6f\n", accum_min,
+             accum_max, accum_rms);
     }
 
     // ✅ Phase 5 supprimée : Les threads accèdent directement à waves[] donc
@@ -1003,11 +1045,35 @@ void synth_IfftMode(
       max_level = audioData[buff_idx];
   }
 
-  // Audio output prêt
+  // 🔍 DIAGNOSTIC: Analyser la sortie finale et détecter la saturation
   if (log_counter % LOG_FREQUENCY == 0) {
-    // printf("Audio output: min=%.6f, max=%.6f, contrast=%.2f, mode=%s\n",
-    //        min_level, max_level, contrast_factor,
-    //        synth_pool_initialized ? "parallel" : "sequential");
+    float final_rms = 0.0f;
+    int clipped_samples = 0;
+
+    for (int j = 0; j < AUDIO_BUFFER_SIZE; j++) {
+      final_rms += audioData[j] * audioData[j];
+      if (audioData[j] >= 0.95f || audioData[j] <= -0.95f) {
+        clipped_samples++;
+      }
+    }
+    final_rms = sqrtf(final_rms / AUDIO_BUFFER_SIZE);
+
+    printf("🎯 FINAL OUTPUT: min=%.6f, max=%.6f, rms=%.6f, contrast=%.2f\n",
+           min_level, max_level, final_rms, contrast_factor);
+    printf("📊 MODE: %s, CLIPPED: %d/%d samples\n",
+           synth_pool_initialized ? "PARALLEL" : "SEQUENTIAL", clipped_samples,
+           AUDIO_BUFFER_SIZE);
+
+#ifdef __linux__
+    printf("🐧 LINUX/Pi: Signal brut vers BossDAC (pas de protection)\n");
+#else
+    printf("🍎 MAC: CoreAudio avec normalisation automatique\n");
+#endif
+
+    if (clipped_samples > 0) {
+      printf("⚠️  SATURATION DÉTECTÉE: %d échantillons clippés!\n",
+             clipped_samples);
+    }
   }
 
   // Incrémenter le compteur global pour la limitation des logs
