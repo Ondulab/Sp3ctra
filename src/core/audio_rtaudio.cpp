@@ -145,7 +145,9 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         dry_sample += source_fft[i] * cached_level_fft;
       }
 
-      // Send to reverb thread (non-blocking)
+      // Direct reverb processing in callback - ULTRA OPTIMIZED
+      float reverb_left = 0.0f, reverb_right = 0.0f;
+
       if (reverbEnabled &&
           (cached_reverb_send_ifft > 0.01f || cached_reverb_send_fft > 0.01f)) {
         float reverb_input = 0.0f;
@@ -158,14 +160,10 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
               source_fft[i] * cached_level_fft * cached_reverb_send_fft;
         }
 
-        // Non-blocking write to reverb thread (ignore if buffer full)
-        writeToReverbInput(reverb_input);
+        // Single-sample reverb processing (optimized)
+        processReverbOptimized(reverb_input, reverb_input, reverb_left,
+                               reverb_right);
       }
-
-      // Read reverb output (non-blocking)
-      float reverb_left = 0.0f, reverb_right = 0.0f;
-      readFromReverbOutput(reverb_left,
-                           reverb_right); // Returns silence if no data
 
       // Mix dry + reverb and apply volume
       float final_left = (dry_sample + reverb_left) * cached_volume;
@@ -320,6 +318,48 @@ void AudioSystem::processReverb(float inputL, float inputR, float &outputL,
   // Mélanger les signaux
   outputL = inputL * dryGain + outBufferL[0] * wetGain;
   outputR = inputR * dryGain + outBufferR[0] * wetGain;
+}
+
+// ULTRA-OPTIMIZED reverb function for real-time callback
+void AudioSystem::processReverbOptimized(float inputL, float inputR,
+                                         float &outputL, float &outputR) {
+  // Si réverbération désactivée, sortie = entrée
+  if (!reverbEnabled) {
+    outputL = inputL;
+    outputR = inputR;
+    return;
+  }
+
+  // Cache statique pour éviter les calculs répétitifs
+  static float cached_wet_gain = 0.5f;
+  static float cached_dry_gain = 0.5f;
+  static int param_update_counter = 0;
+
+  // Mettre à jour les gains moins fréquemment (tous les 256 échantillons ~2.7ms
+  // à 96kHz)
+  if (++param_update_counter >= 256) {
+    param_update_counter = 0;
+    cached_wet_gain = reverbMix;
+    cached_dry_gain = 1.0f - reverbMix;
+
+    // Mettre à jour les paramètres ZitaRev1 moins fréquemment
+    zitaRev.set_roomsize(reverbRoomSize);
+    zitaRev.set_damping(reverbDamping);
+    zitaRev.set_width(reverbWidth);
+  }
+
+  // Traitement ZitaRev1 optimisé - un seul échantillon
+  float inBufferL[1] = {inputL};
+  float inBufferR[1] = {inputR};
+  float outBufferL[1] = {0.0f};
+  float outBufferR[1] = {0.0f};
+
+  // Appel direct à ZitaRev1 (le coût principal)
+  zitaRev.process(inBufferL, inBufferR, outBufferL, outBufferR, 1);
+
+  // Mix optimisé avec gains en cache
+  outputL = inputL * cached_dry_gain + outBufferL[0] * cached_wet_gain;
+  outputR = inputR * cached_dry_gain + outBufferR[0] * cached_wet_gain;
 }
 
 // === MULTI-THREADED REVERB IMPLEMENTATION ===
@@ -798,34 +838,10 @@ bool AudioSystem::start() {
   if (!audio || !audio->isStreamOpen())
     return false;
 
-  // Démarrer le thread de réverbération avant le stream audio
-  if (!reverbThreadRunning.load()) {
-    reverbThreadRunning.store(true);
-    try {
-      reverbThread = std::thread(&AudioSystem::reverbThreadFunction, this);
-      std::cout
-          << "\033[1;33m[REVERB THREAD] Thread de réverbération lancé\033[0m"
-          << std::endl;
-    } catch (const std::exception &e) {
-      std::cerr << "Erreur création thread réverbération: " << e.what()
-                << std::endl;
-      reverbThreadRunning.store(false);
-      return false;
-    }
-  }
-
   try {
     audio->startStream();
   } catch (std::exception &e) {
     std::cerr << "Erreur démarrage RtAudio: " << e.what() << std::endl;
-
-    // Arrêter le thread de réverbération en cas d'échec
-    if (reverbThreadRunning.load()) {
-      reverbThreadRunning.store(false);
-      if (reverbThread.joinable()) {
-        reverbThread.join();
-      }
-    }
     return false;
   }
 
@@ -842,19 +858,6 @@ void AudioSystem::stop() {
       std::cerr << "Erreur arrêt RtAudio: " << e.what() << std::endl;
     }
     isRunning = false;
-  }
-
-  // Arrêter le thread de réverbération
-  if (reverbThreadRunning.load()) {
-    reverbThreadRunning.store(false);
-    reverbCondition.notify_all(); // Réveiller le thread s'il attend
-
-    if (reverbThread.joinable()) {
-      reverbThread.join();
-      std::cout
-          << "\033[1;33m[REVERB THREAD] Thread de réverbération joint\033[0m"
-          << std::endl;
-    }
   }
 }
 

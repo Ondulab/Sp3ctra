@@ -104,6 +104,10 @@ private:
   void processReverb(float inputL, float inputR, float &outputL,
                      float &outputR);
 
+  // Fonction de traitement de la réverbération optimisée pour callback
+  void processReverbOptimized(float inputL, float inputR, float &outputL,
+                              float &outputR);
+
 public:
   AudioSystem(unsigned int sampleRate = SAMPLING_FREQUENCY,
               unsigned int bufferSize = AUDIO_BUFFER_SIZE,
