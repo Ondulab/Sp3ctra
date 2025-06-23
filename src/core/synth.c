@@ -5,6 +5,11 @@
  *      Author: zhonx
  */
 
+// CPU affinity support - must be defined before any includes
+#ifdef __linux__
+#define _GNU_SOURCE
+#endif
+
 /* Includes ------------------------------------------------------------------*/
 #include "config.h"
 
