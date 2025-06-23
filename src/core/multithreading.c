@@ -419,7 +419,7 @@ void *audioProcessingThread(void *arg) {
     // This ensures audio continuity even when UDP stream stops
     getLastValidImageForAudio(db, local_R, local_G, local_B);
 
-    // Call synthesis routine with image data (fresh or persistent)
+    // Call synthesis routine with image data (fresh, persistent, or test)
     synth_AudioProcess(local_R, local_G, local_B);
   }
 

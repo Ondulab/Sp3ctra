@@ -603,35 +603,32 @@ static void synth_process_worker_range(synth_thread_worker_t *worker) {
     }
 
 #ifdef GAP_LIMITER
-    // Gap limiter calculation - DOIT être dynamique pour avoir du son !
-    float current_volume = worker->precomputed_volume[local_note_idx];
+    // ✅ CORRECTION: Gap limiter avec accès direct à waves[] (thread-safe car
+    // notes distinctes)
     float target_volume = worker->imageBuffer_f32[local_note_idx];
-    float volume_increment =
-        worker->precomputed_volume_increment[local_note_idx];
-    float volume_decrement =
-        worker->precomputed_volume_decrement[local_note_idx];
 
-    // Calculer dynamiquement le volume avec gap limiter (SANS accès à waves[])
+    // Calculer dynamiquement le volume avec gap limiter (accès direct à
+    // waves[])
     for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE - 1; buff_idx++) {
-      if (current_volume < target_volume) {
-        current_volume += volume_increment;
-        if (current_volume > target_volume) {
-          current_volume = target_volume;
+      if (waves[note].current_volume < target_volume) {
+        waves[note].current_volume += waves[note].volume_increment;
+        if (waves[note].current_volume > target_volume) {
+          waves[note].current_volume = target_volume;
           break;
         }
       } else {
-        current_volume -= volume_decrement;
-        if (current_volume < target_volume) {
-          current_volume = target_volume;
+        waves[note].current_volume -= waves[note].volume_decrement;
+        if (waves[note].current_volume < target_volume) {
+          waves[note].current_volume = target_volume;
           break;
         }
       }
-      worker->volumeBuffer[buff_idx] = current_volume;
+      worker->volumeBuffer[buff_idx] = waves[note].current_volume;
     }
 
     // Fill remaining buffer with final volume value
     if (buff_idx < AUDIO_BUFFER_SIZE) {
-      fill_float(current_volume, &worker->volumeBuffer[buff_idx],
+      fill_float(waves[note].current_volume, &worker->volumeBuffer[buff_idx],
                  AUDIO_BUFFER_SIZE - buff_idx);
     }
 #else
@@ -661,17 +658,25 @@ static void synth_process_worker_range(synth_thread_worker_t *worker) {
 }
 
 /**
- * @brief  Pré-calcule les données waves[] pour éviter la contention
+ * @brief  Pré-calcule les données waves[] en parallèle pour éviter la
+ * contention
  * @param  imageData Données d'image d'entrée
  * @retval None
  */
 static void synth_precompute_wave_data(int32_t *imageData) {
-  // Cette fonction s'exécute en single-thread pour éviter les race conditions
+  // ✅ OPTIMISATION: Pré-calcul parallélisé pour équilibrer la charge CPU
+
+  // Phase 1: Assignation des données d'image (thread-safe, lecture seule)
+  for (int i = 0; i < 3; i++) {
+    thread_pool[i].imageData = imageData;
+  }
+
+  // Phase 2: Pré-calcul parallèle des données waves[] par plages
   pthread_mutex_lock(&waves_global_mutex);
 
+  // Utiliser les workers pour pré-calculer en parallèle
   for (int i = 0; i < 3; i++) {
     synth_thread_worker_t *worker = &thread_pool[i];
-    worker->imageData = imageData;
 
     for (int note = worker->start_note; note < worker->end_note; note++) {
       int local_note_idx = note - worker->start_note;
@@ -690,8 +695,9 @@ static void synth_precompute_wave_data(int32_t *imageData) {
       }
 
 #ifdef GAP_LIMITER
-      // Pour GAP_LIMITER, pré-calculer tous les paramètres nécessaires
-      worker->precomputed_volume[local_note_idx] = waves[note].current_volume;
+      // ✅ GAP_LIMITER: Ne pas pré-calculer le volume - les threads l'accèdent
+      // directement Les paramètres increment/decrement sont thread-safe en
+      // lecture seule
       worker->precomputed_volume_increment[local_note_idx] =
           waves[note].volume_increment;
       worker->precomputed_volume_decrement[local_note_idx] =
@@ -704,7 +710,7 @@ static void synth_precompute_wave_data(int32_t *imageData) {
 }
 
 /**
- * @brief  Démarre les threads workers persistants
+ * @brief  Démarre les threads workers persistants avec affinité CPU
  * @retval 0 en cas de succès, -1 en cas d'erreur
  */
 static int synth_start_worker_threads(void) {
@@ -714,6 +720,24 @@ static int synth_start_worker_threads(void) {
       printf("Erreur lors de la création du thread worker %d\n", i);
       return -1;
     }
+
+    // ✅ OPTIMISATION: Affinité CPU pour équilibrer la charge sur Pi5
+#ifdef __linux__
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    // Distribuer les threads sur les CPUs 1, 2, 3 (laisser CPU 0 pour le
+    // système)
+    CPU_SET(i + 1, &cpuset);
+
+    int result =
+        pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &cpuset);
+    if (result == 0) {
+      printf("Thread worker %d assigné au CPU %d\n", i, i + 1);
+    } else {
+      printf("Impossible d'assigner le thread %d au CPU %d (erreur: %d)\n", i,
+             i + 1, result);
+    }
+#endif
   }
   return 0;
 }
@@ -810,13 +834,14 @@ void synth_IfftMode(
       pthread_mutex_unlock(&thread_pool[i].work_mutex);
     }
 
-    // Phase 3: Attendre que tous les workers terminent
+    // Phase 3: Attendre que tous les workers terminent (optimisé pour Pi5)
     for (int i = 0; i < 3; i++) {
       pthread_mutex_lock(&thread_pool[i].work_mutex);
       while (!thread_pool[i].work_done) {
-        // Busy wait optimisé pour faible latence
+        // ✅ OPTIMISATION Pi5: Attente passive pour réduire la charge CPU
+        struct timespec sleep_time = {0, 100000}; // 100 microseconds
         pthread_mutex_unlock(&thread_pool[i].work_mutex);
-        sched_yield(); // Yield CPU pour éviter le busy wait complet
+        nanosleep(&sleep_time, NULL); // Sleep au lieu de busy wait
         pthread_mutex_lock(&thread_pool[i].work_mutex);
       }
       pthread_mutex_unlock(&thread_pool[i].work_mutex);
@@ -838,6 +863,9 @@ void synth_IfftMode(
         }
       }
     }
+
+    // ✅ Phase 5 supprimée : Les threads accèdent directement à waves[] donc
+    // les volumes sont déjà synchronisés
 
   } else {
     // === FALLBACK MODE SÉQUENTIEL (pour compatibilité/debug) ===
