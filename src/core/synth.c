@@ -912,10 +912,16 @@ void synth_IfftMode(
              raw_max, raw_rms);
     }
 
-    // 🔧 CORRECTION: Normaliser pour compenser l'accumulation des 3 threads
+    // 🔧 CORRECTION: Normalisation conditionnelle par plateforme
+#ifdef __linux__
+    // Pi/Linux : Diviser par 3 (BossDAC/ALSA amplifie naturellement)
     scale_float(ifftBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
     scale_float(sumVolumeBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
     scale_float(maxVolumeBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
+#else
+    // Mac : Pas de division (CoreAudio ne compense pas automatiquement)
+    // Signal gardé à pleine amplitude pour volume normal
+#endif
 
     // 🔍 DIAGNOSTIC: Analyser le signal APRÈS normalisation (pour comparaison
     // Mac/Pi)
