@@ -891,10 +891,52 @@ void synth_IfftMode(
       }
     }
 
+    // 🔍 DIAGNOSTIC: Analyser le signal AVANT normalisation (pour comparaison
+    // Mac/Pi)
+    if (log_counter % LOG_FREQUENCY == 0) {
+      float raw_min = ifftBuffer[0];
+      float raw_max = ifftBuffer[0];
+      float raw_sum = 0.0f;
+
+      for (int j = 0; j < AUDIO_BUFFER_SIZE; j++) {
+        float val = ifftBuffer[j];
+        if (val < raw_min)
+          raw_min = val;
+        if (val > raw_max)
+          raw_max = val;
+        raw_sum += val * val;
+      }
+
+      float raw_rms = sqrtf(raw_sum / AUDIO_BUFFER_SIZE);
+      printf("🔍 AVANT NORMALISATION: min=%.6f, max=%.6f, rms=%.6f\n", raw_min,
+             raw_max, raw_rms);
+    }
+
     // 🔧 CORRECTION: Normaliser pour compenser l'accumulation des 3 threads
     scale_float(ifftBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
     scale_float(sumVolumeBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
     scale_float(maxVolumeBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
+
+    // 🔍 DIAGNOSTIC: Analyser le signal APRÈS normalisation (pour comparaison
+    // Mac/Pi)
+    if (log_counter % LOG_FREQUENCY == 0) {
+      float norm_min = ifftBuffer[0];
+      float norm_max = ifftBuffer[0];
+      float norm_sum = 0.0f;
+
+      for (int j = 0; j < AUDIO_BUFFER_SIZE; j++) {
+        float val = ifftBuffer[j];
+        if (val < norm_min)
+          norm_min = val;
+        if (val > norm_max)
+          norm_max = val;
+        norm_sum += val * val;
+      }
+
+      float norm_rms = sqrtf(norm_sum / AUDIO_BUFFER_SIZE);
+      printf("🔍 APRÈS NORMALISATION: min=%.6f, max=%.6f, rms=%.6f\n", norm_min,
+             norm_max, norm_rms);
+    }
 
     // 🔍 DIAGNOSTIC: Analyser le signal après accumulation des threads
     if (log_counter % LOG_FREQUENCY == 0) {
