@@ -326,8 +326,9 @@ void AudioSystem::processReverb(float inputL, float inputR, float &outputL,
 // ULTRA-OPTIMIZED reverb function for real-time callback
 void AudioSystem::processReverbOptimized(float inputL, float inputR,
                                          float &outputL, float &outputR) {
-  // Si réverbération désactivée, sortie = entrée
-  if (!reverbEnabled) {
+  // CPU OPTIMIZATION: Skip all reverb processing if mix is zero or reverb
+  // disabled
+  if (!reverbEnabled || reverbMix <= 0.0f) {
     outputL = inputL;
     outputR = inputR;
     return;

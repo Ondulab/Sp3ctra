@@ -12,6 +12,7 @@
 // (at your option) any later version.
 
 #include "ZitaRev1.h"
+#include "config.h"
 #include <cmath>
 #include <cstring>
 #include <iostream>
@@ -22,12 +23,12 @@ ZitaRev1::ZitaRev1() {
     _parameters[i] = 0.0f;
   }
 
-  // Valeurs par défaut (identiques à l'implémentation actuelle)
-  _parameters[ROOMSIZE] = 0.7f;
-  _parameters[DAMPING] = 0.5f;
-  _parameters[WIDTH] = 1.0f;
-  _parameters[PREDELAY] = 0.02f;
-  _parameters[MIX] = 0.5f;
+  // Valeurs par défaut depuis config.h
+  _parameters[ROOMSIZE] = DEFAULT_REVERB_ROOM_SIZE;
+  _parameters[DAMPING] = DEFAULT_REVERB_DAMPING;
+  _parameters[WIDTH] = DEFAULT_REVERB_WIDTH;
+  _parameters[PREDELAY] = DEFAULT_REVERB_PREDELAY;
+  _parameters[MIX] = DEFAULT_REVERB_MIX;
 
   _sampleRate = 44100.0f;
   _ambisonic = false; // Nous n'utilisons pas le mode ambisonique
