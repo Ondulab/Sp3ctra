@@ -96,7 +96,7 @@
 /**************************************************************************************
  * DAC Definitions - Optimized for Raspberry Pi Module 5
  **************************************************************************************/
-#define SAMPLING_FREQUENCY (96000)
+#define SAMPLING_FREQUENCY (48000)
 #define AUDIO_CHANNEL (2)
 
 // Buffer size optimized for Pi Module 5 with real-time synthesis
@@ -104,7 +104,7 @@
 // 48kHz: 150 frames = 3.125ms latency (optimal for real-time)
 // 96kHz: 600 frames = 6.25ms latency (double latency for synthesis headroom)
 #if SAMPLING_FREQUENCY >= 96000
-#define AUDIO_BUFFER_SIZE (600)
+#define AUDIO_BUFFER_SIZE (250)
 #elif SAMPLING_FREQUENCY >= 48000
 #define AUDIO_BUFFER_SIZE (150)
 #else
@@ -144,7 +144,7 @@
   1.5f // Exponent for adjusting the contrast curve
 
 // Non-Linear Intensity Mapping
-#define GAMMA_VALUE 1.8f // Gamma value for non-linear intensity correction
+#define GAMMA_VALUE 4.8f // Gamma value for non-linear intensity correction
 
 // Logging Parameters
 #define LOG_FREQUENCY                                                          \
@@ -171,11 +171,22 @@
  * Audio Effects Definitions
  **************************************************************************************/
 // Reverb Configuration
-#define ENABLE_REVERB 0               // Set to 1 to enable reverb, 0 to disable
-#define DEFAULT_REVERB_MIX 0.3f       // Default dry/wet mix (0.0 - 1.0)
+#define ENABLE_REVERB 1 // Set to 1 to enable reverb, 0 to disable
+#define DEFAULT_REVERB_MIX                                                     \
+  0.0f // Default dry/wet mix (0.0 - 1.0) - 0 = no reverb
 #define DEFAULT_REVERB_ROOM_SIZE 0.7f // Default room size (0.0 - 1.0)
-#define DEFAULT_REVERB_DAMPING 0.4f   // Default damping (0.0 - 1.0)
+#define DEFAULT_REVERB_DAMPING 0.5f   // Default damping (0.0 - 1.0)
 #define DEFAULT_REVERB_WIDTH 1.0f     // Default stereo width (0.0 - 1.0)
+#define DEFAULT_REVERB_PREDELAY                                                \
+  0.02f // Default pre-delay in seconds (0.0 - 0.1)
+
+// Advanced reverb parameters for Zita-Rev1 algorithm
+#define DEFAULT_REVERB_RT_LOW 3.0f   // Low frequency reverb time (seconds)
+#define DEFAULT_REVERB_RT_MID 2.0f   // Mid frequency reverb time (seconds)
+#define DEFAULT_REVERB_FDAMP 3000.0f // High frequency damping frequency (Hz)
+#define DEFAULT_REVERB_XOVER 200.0f  // Crossover frequency (Hz)
+#define DEFAULT_REVERB_OPMIX 0.0f    // Output mix parameter (0.0 - 1.0)
+#define DEFAULT_REVERB_RGXYZ 0.0f    // Ambisonic parameter (-1.0 - 1.0)
 
 /**************************************************************************************
  * Display Definitions
