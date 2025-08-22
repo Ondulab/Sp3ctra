@@ -1,7 +1,7 @@
 // ZitaRev1.h
 // --------
 // Open source implementation of Fons Adriaensen's zita-rev1 reverb
-// Algorithm adapted for CISYNTH
+// Algorithm adapted for Sp3ctra
 //
 // Original algorithm by Fons Adriaensen <fons@linuxaudio.org>
 // C++ implementation based on PelleJuul's version

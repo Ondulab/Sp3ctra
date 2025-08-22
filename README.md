@@ -1,6 +1,6 @@
-# CISYNTH - Synthétiseur Audio en Temps Réel
+# Sp3ctra - Synthétiseur Audio en Temps Réel
 
-CISYNTH est un synthétiseur audio avancé développé en C/C++ qui peut fonctionner avec ou sans interface graphique. Il utilise RtAudio pour le traitement audio en temps réel et supporte la connectivité DMX pour le contrôle d'éclairage.
+Sp3ctra est un synthétiseur audio avancé développé en C/C++ qui peut fonctionner avec ou sans interface graphique. Il utilise RtAudio pour le traitement audio en temps réel et supporte la connectivité DMX pour le contrôle d'éclairage.
 
 ## Prérequis
 
@@ -56,14 +56,14 @@ Pour une compilation manuelle avec plus de contrôle :
 
 ### Lancement de base
 
-Après compilation, l'exécutable se trouve dans `build_nogui/CISYNTH_noGUI` :
+Après compilation, l'exécutable se trouve dans `build_nogui/Sp3ctra_noGUI` :
 
 ```bash
 # Lancement en mode CLI sans DMX (recommandé pour débuter)
-./build_nogui/CISYNTH_noGUI --cli --no-dmx
+./build_nogui/Sp3ctra_noGUI --cli --no-dmx
 
 # Lancement en mode CLI avec DMX
-./build_nogui/CISYNTH_noGUI --cli
+./build_nogui/Sp3ctra_noGUI --cli
 ```
 
 ### Options disponibles
@@ -82,16 +82,16 @@ L'application supporte plusieurs options de ligne de commande :
 
 ```bash
 # Mode CLI de base sans DMX (idéal pour tester)
-./build_nogui/CISYNTH_noGUI --cli --no-dmx
+./build_nogui/Sp3ctra_noGUI --cli --no-dmx
 
 # Mode CLI avec port DMX spécifique
-./build_nogui/CISYNTH_noGUI --cli --dmx-port=/dev/tty.usbserial-A106X4X3
+./build_nogui/Sp3ctra_noGUI --cli --dmx-port=/dev/tty.usbserial-A106X4X3
 
 # Mode CLI avec DMX silencieux
-./build_nogui/CISYNTH_noGUI --cli --silent-dmx
+./build_nogui/Sp3ctra_noGUI --cli --silent-dmx
 
 # Lister les périphériques audio disponibles
-./build_nogui/CISYNTH_noGUI --cli --no-dmx --list-audio-devices
+./build_nogui/Sp3ctra_noGUI --cli --no-dmx --list-audio-devices
 ```
 
 ## Contrôles
@@ -135,7 +135,7 @@ src/
 ### Problèmes audio
 ```bash
 # Vérifier les périphériques audio disponibles
-./build_nogui/CISYNTH_noGUI --cli --no-dmx --list-audio-devices
+./build_nogui/Sp3ctra_noGUI --cli --no-dmx --list-audio-devices
 
 # Sur Linux, vérifier ALSA
 aplay -l
@@ -144,7 +144,7 @@ aplay -l
 ### Problèmes DMX
 ```bash
 # Lancer sans DMX pour isoler le problème
-./build_nogui/CISYNTH_noGUI --cli --no-dmx
+./build_nogui/Sp3ctra_noGUI --cli --no-dmx
 
 # Vérifier les ports série disponibles
 ls /dev/tty*

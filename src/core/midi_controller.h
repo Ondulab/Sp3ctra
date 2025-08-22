@@ -2,7 +2,7 @@
  * midi_controller.h
  *
  * Created on: 15 May 2025
- * Author: CISYNTH Team
+ * Author: Sp3ctra Team
  */
 
 #ifndef MIDI_CONTROLLER_H

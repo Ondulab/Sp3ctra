@@ -10,11 +10,11 @@
     <true/>
     <key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
     <array>
-        <string>/Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH/sample.wav</string>
+        <string>/Users/zhonx/Documents/Workspaces/Workspace_Xcode/Sp3ctra/sample.wav</string>
     </array>
     <key>com.apple.security.temporary-exception.files.absolute-path.write-only</key>
     <array>
-        <string>/Users/zhonx/Documents/Workspaces/Workspace_Xcode/CISYNTH/</string>
+        <string>/Users/zhonx/Documents/Workspaces/Workspace_Xcode/Sp3ctra/</string>
     </array>
 </dict>
 </plist>
