@@ -125,9 +125,9 @@ build_nogui/
 *.qm
 
 # Generated binaries and executables
-CISYNTH_noGUI
-CISYNTH_noGUI.app/
-CISYNTH_noGUI.exe
+Sp3ctra_noGUI
+Sp3ctra_noGUI.app/
+Sp3ctra_noGUI.exe
 
 # qmake generated files
 .qmake.stash

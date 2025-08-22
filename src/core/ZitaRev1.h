@@ -2,11 +2,11 @@
 // --------
 // Adaptateur pour intégrer l'implémentation originale de zita-rev1 de PelleJuul
 // tout en maintenant la compatibilité avec l'API ZitaRev1 existante dans
-// CISYNTH
+// Sp3ctra
 //
 // Original algorithm by Fons Adriaensen <fons@linuxaudio.org>
 // C++ implementation by PelleJuul
-// Adapter implementation for CISYNTH
+// Adapter implementation for Sp3ctra
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by

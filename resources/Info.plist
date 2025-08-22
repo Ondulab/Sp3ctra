@@ -5,9 +5,9 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>English</string>
     <key>CFBundleExecutable</key>
-    <string>CISYNTH</string>
+    <string>Sp3ctra</string>
     <key>CFBundleGetInfoString</key>
-    <string>CISYNTH 1.0</string>
+    <string>Sp3ctra 1.0</string>
     <key>CFBundleIconFile</key>
     <string></string>
     <key>CFBundleIdentifier</key>
@@ -15,9 +15,9 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleLongVersionString</key>
-    <string>CISYNTH 1.0</string>
+    <string>Sp3ctra 1.0</string>
     <key>CFBundleName</key>
-    <string>CISYNTH</string>
+    <string>Sp3ctra</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

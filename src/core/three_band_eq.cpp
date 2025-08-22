@@ -2,7 +2,7 @@
  * three_band_eq.cpp
  *
  * Created on: 16 May 2025
- * Author: CISYNTH Team
+ * Author: Sp3ctra Team
  */
 
 #include "three_band_eq.h"

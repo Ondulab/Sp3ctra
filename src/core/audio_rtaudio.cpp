@@ -707,10 +707,10 @@ bool AudioSystem::initialize() {
   // Buffer configuration optimized for Pi Module 5
 #ifdef __ARM_ARCH
   options.numberOfBuffers = 12; // Increased for ARM (Pi Module 5) stability
-  options.streamName = "CISYNTH_Pi5_Optimized";
+  options.streamName = "Sp3ctra_Pi5_Optimized";
 #else
   options.numberOfBuffers = 8; // Standard for x86/x64
-  options.streamName = "CISYNTH_Standard";
+  options.streamName = "Sp3ctra_Standard";
 #endif
 
   // High priority for audio thread on Pi Module 5

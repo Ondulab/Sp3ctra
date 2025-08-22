@@ -1,10 +1,10 @@
 // ZitaRev1.cpp
 // --------
-// Implémentation de l'adaptateur pour intégrer zita-rev1 original dans CISYNTH
+// Implémentation de l'adaptateur pour intégrer zita-rev1 original dans Sp3ctra
 //
 // Original algorithm by Fons Adriaensen <fons@linuxaudio.org>
 // C++ implementation by PelleJuul
-// Adapter implementation for CISYNTH
+// Adapter implementation for Sp3ctra
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -91,7 +91,7 @@ float ZitaRev1::get_mix() const { return _parameters[MIX]; }
 
 void ZitaRev1::process(float *inputL, float *inputR, float *outputL,
                        float *outputR, unsigned int numSamples) {
-  // Conversion entre l'API CISYNTH et l'API originale
+  // Conversion entre l'API Sp3ctra et l'API originale
   // L'implémentation originale utilise des tableaux de pointeurs
   float *inputs[2] = {inputL, inputR};
   float *outputs[4] = {

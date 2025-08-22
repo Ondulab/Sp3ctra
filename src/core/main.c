@@ -125,7 +125,7 @@ int main(int argc, char **argv) {
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-      printf("CISYNTH - Real-time audio synthesis application\n\n");
+      printf("Sp3ctra - Real-time audio synthesis application\n\n");
       printf("Usage: %s [OPTIONS]\n\n", argv[0]);
       printf("OPTIONS:\n");
       printf("  --help, -h               Show this help message\n");
@@ -234,7 +234,7 @@ int main(int argc, char **argv) {
 #else
   // Mode CLI, mais avec option de fenêtre SFML si demandée
   if (use_sfml_window) {
-    window = sfRenderWindow_create(mode, "CISYNTH SFML Viewer",
+    window = sfRenderWindow_create(mode, "Sp3ctra SFML Viewer",
                                    sfResize | sfClose, NULL);
     if (!window) {
       perror("Error creating CSFML window");

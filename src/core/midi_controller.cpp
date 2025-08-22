@@ -2,7 +2,7 @@
  * midi_controller.cpp
  *
  * Created on: 15 May 2025
- * Author: CISYNTH Team
+ * Author: Sp3ctra Team
  */
 
 #include "midi_controller.h"
