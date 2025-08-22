@@ -1,4 +1,5 @@
 #include "audio_c_api.h"
+#include "auto_volume.h"
 #include "config.h"
 #include "context.h"
 #include "display.h"
@@ -98,6 +99,8 @@ void signalHandler(int signal) {
     if (global_context->dmxCtx) {
       global_context->dmxCtx->running = 0;
     }
+    // Cleanup UDP socket immediately to prevent port conflicts
+    udp_cleanup(global_context->socket);
   }
   keepRunning = 0; // Variable globale du module DMX
 
@@ -278,27 +281,64 @@ int main(int argc, char **argv) {
   // Initialiser l'audio (RtAudio) avec le bon périphérique
   audio_Init();
 
-  // Initialiser le contrôleur MIDI
-  midi_Init();
+  // Determine synthesis modes based on configuration
+  int enable_fft_synth = 1;
+  int enable_ifft_synth = 1;
+  int enable_midi = 1;
+  int midi_connected = 0;
 
-  // Configurer le callback de volume MIDI
-  midi_SetupVolumeControl();
+  // Check manual disable flags (highest priority)
+#if FORCE_DISABLE_FFT
+  enable_fft_synth = 0;
+  printf("FFT synthesis FORCE DISABLED by configuration\n");
+#endif
 
-  // Essayer de connecter au Launchkey Mini
-  if (midi_Connect()) {
-    printf("MIDI: Launchkey Mini connected\n");
-    // Setup note callbacks if MIDI connected successfully
-    // No need to check gMidiController here, the C-wrappers will do it.
-    midi_set_note_on_callback(synth_fft_note_on);
-    midi_set_note_off_callback(synth_fft_note_off);
-    printf("MIDI: Note On/Off callbacks for synth_fft registered via C API.\n");
-    // The following if(gMidiController) block is removed as it's C++ specific
-    // and was causing compilation errors in C.
-  } else {
-    printf("MIDI: No Launchkey Mini device found\n");
-    // Note: nous ne pouvons pas afficher la liste des périphériques ici car
-    // nous n'avons pas accès direct à l'objet C++ depuis C
+#if FORCE_DISABLE_IFFT
+  enable_ifft_synth = 0;
+  printf("IFFT synthesis FORCE DISABLED by configuration\n");
+#endif
+
+#if !ENABLE_MIDI_POLLING
+  enable_midi = 0;
+  printf("MIDI polling DISABLED by configuration\n");
+#endif
+
+  // Initialize MIDI if enabled
+  if (enable_midi) {
+    midi_Init();
+    midi_SetupVolumeControl();
+
+    // Try to connect to MIDI controller
+    midi_connected = midi_Connect();
+    if (midi_connected) {
+      printf("MIDI: Controller connected\n");
+      // Setup note callbacks if MIDI connected successfully
+      midi_set_note_on_callback(synth_fft_note_on);
+      midi_set_note_off_callback(synth_fft_note_off);
+      printf(
+          "MIDI: Note On/Off callbacks for synth_fft registered via C API.\n");
+    } else {
+      printf("MIDI: No controller found\n");
+    }
   }
+
+  // Check automatic FFT disable based on MIDI presence
+#if AUTO_DISABLE_FFT_WITHOUT_MIDI
+  if (!midi_connected && enable_fft_synth) {
+    enable_fft_synth = 0;
+    printf("FFT synthesis AUTO-DISABLED - no MIDI controller detected\n");
+  }
+#endif
+
+  // Display final synthesis configuration
+  printf("========== SYNTHESIS CONFIGURATION ==========\n");
+  printf("IFFT synthesis: %s\n", enable_ifft_synth ? "ENABLED" : "DISABLED");
+  printf("FFT synthesis:  %s\n", enable_fft_synth ? "ENABLED" : "DISABLED");
+  printf("MIDI polling:   %s\n", enable_midi ? "ENABLED" : "DISABLED");
+  if (enable_midi) {
+    printf("MIDI connected: %s\n", midi_connected ? "YES" : "NO");
+  }
+  printf("============================================\n");
 
   synth_IfftInit();
   synth_fftMode_init(); // Initialize the new FFT synth mode
@@ -328,19 +368,50 @@ int main(int argc, char **argv) {
   DoubleBuffer db;
   initDoubleBuffer(&db);
 
+  /* Create new audio image buffers for continuous audio processing */
+  AudioImageBuffers audioImageBuffers;
+  if (audio_image_buffers_init(&audioImageBuffers) != 0) {
+    printf("Erreur lors de l'initialisation des buffers audio-image\n");
+#ifndef NO_SFML
+    if (window)
+      sfRenderWindow_destroy(window);
+#endif
+    close(dmxCtx->fd);
+    free(dmxCtx);
+    return EXIT_FAILURE;
+  }
+
   /* Build global context structure */
   Context context = {0};
   context.window = window;
   context.socket = s;
   context.si_other = &si_other;
   context.si_me = &si_me;
-  context.audioData = NULL; // RtAudio gère maintenant le buffer audio
-  context.doubleBuffer = &db;
+  context.audioData = NULL;   // RtAudio gère maintenant le buffer audio
+  context.doubleBuffer = &db; // Legacy double buffer (for display)
+  context.audioImageBuffers =
+      &audioImageBuffers; // New dual buffer system for audio
   context.dmxCtx = dmxCtx;
   context.running = 1; // Flag de terminaison pour le contexte
 
   // Sauvegarde du contexte pour le gestionnaire de signaux
   global_context = &context;
+
+  /* Initialize auto-volume controller (reads IMU X from UDP thread and
+     adjusts master volume). Instance is stored in auto_volume.c as
+     gAutoVolumeInstance. */
+  printf("[INIT] Initializing auto-volume controller...\n");
+  printf("[INIT] Auto-volume config: threshold=%.3f, timeout=%ds, fade=%dms\n",
+         IMU_ACTIVE_THRESHOLD_X, IMU_INACTIVITY_TIMEOUT_S, AUTO_VOLUME_FADE_MS);
+  printf("[INIT] Volume levels: active=%.3f, inactive=%.3f\n",
+         AUTO_VOLUME_ACTIVE_LEVEL, AUTO_VOLUME_INACTIVE_LEVEL);
+
+  gAutoVolumeInstance = auto_volume_create(&context);
+  if (!gAutoVolumeInstance) {
+    printf("[INIT] ERROR: Failed to initialize auto-volume controller\n");
+  } else {
+    printf("[INIT] Auto-volume controller initialized successfully\n");
+  }
 
   /* Create textures and sprites for rendering in main thread */
   sfTexture *backgroundTexture = NULL;
@@ -412,18 +483,26 @@ int main(int argc, char **argv) {
   param.sched_priority = 50; // Priorité plus modérée pour le Jetson Nano
   pthread_setschedparam(audioThreadId, SCHED_RR, &param);
 
-  // Create and start the FFT synth thread
-  if (pthread_create(&fftSynthThreadId, NULL, synth_fftMode_thread_func,
-                     (void *)&context) != 0) {
-    perror("Error creating FFT synth thread");
-    // Consider cleanup for other threads if this fails mid-startup
+  // Create and start the FFT synth thread conditionally
+  int fft_thread_created = 0;
+  if (enable_fft_synth) {
+    if (pthread_create(&fftSynthThreadId, NULL, synth_fftMode_thread_func,
+                       (void *)&context) != 0) {
+      perror("Error creating FFT synth thread");
+      // Consider cleanup for other threads if this fails mid-startup
 #ifndef NO_SFML
-    if (window)
-      sfRenderWindow_destroy(window);
+      if (window)
+        sfRenderWindow_destroy(window);
 #endif
-    return EXIT_FAILURE;
+      return EXIT_FAILURE;
+    }
+    fft_thread_created = 1;
+    printf("FFT synthesis thread started successfully\n");
+    // Optionally set scheduling parameters for fftSynthThreadId as well if
+    // needed
+  } else {
+    printf("FFT synthesis thread NOT created (disabled by configuration)\n");
   }
-  // Optionally set scheduling parameters for fftSynthThreadId as well if needed
 
   /* Main loop (gestion des événements et rendu) */
   // sfEvent event; // Unused variable
@@ -647,7 +726,13 @@ int main(int argc, char **argv) {
 
   pthread_join(udpThreadId, NULL);
   pthread_join(audioThreadId, NULL);
-  pthread_join(fftSynthThreadId, NULL); // Join the FFT synth thread
+
+  // Join the FFT synth thread only if it was created
+  if (fft_thread_created) {
+    pthread_join(fftSynthThreadId, NULL);
+    printf("FFT synthesis thread terminated\n");
+  }
+
 #ifdef USE_DMX
   if (use_dmx && dmxFd >= 0) {
     pthread_join(dmxThreadId, NULL);
@@ -659,7 +744,17 @@ int main(int argc, char **argv) {
   displayable_synth_buffers_cleanup(); // Cleanup displayable synth buffers
   synth_data_freeze_cleanup();         // Cleanup synth data freeze resources
   cleanupDoubleBuffer(&db);            // Cleanup DoubleBuffer resources
+  audio_image_buffers_cleanup(
+      &audioImageBuffers);     // Cleanup new audio image buffers
+  udp_cleanup(context.socket); // Cleanup UDP socket to prevent port conflicts
   midi_Cleanup();
+
+  /* Destroy auto-volume controller (if created) before audio cleanup */
+  if (gAutoVolumeInstance) {
+    auto_volume_destroy(gAutoVolumeInstance);
+    gAutoVolumeInstance = NULL;
+  }
+
   audio_Cleanup(); // Nettoyage de RtAudio
 
   /* Nettoyage des ressources graphiques */

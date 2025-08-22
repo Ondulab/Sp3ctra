@@ -15,8 +15,8 @@ EQ            = =
 CC            = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang
 CXX           = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
 DEFINES       = -DCLI_MODE -DNO_SFML -DUSE_RTAUDIO -DPRINT_FPS -DQT_NO_DEBUG -DQT_GUI_LIB -DQT_CORE_LIB
-CFLAGS        = -pipe -O3 -ffast-math $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
-CXXFLAGS      = -pipe -stdlib=libc++ -O3 -ffast-math -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
+CFLAGS        = -pipe -Wno-deprecated-declarations -O3 -ffast-math $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
+CXXFLAGS      = -pipe -stdlib=libc++ -Wno-deprecated-declarations -O3 -ffast-math -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk -mmacosx-version-min=10.13 -Wall -Wextra -fPIC $(DEFINES)
 INCPATH       = -I. -Isrc/core -I/opt/homebrew/include -I/opt/homebrew/Cellar/qt@5/5.15.16_1/lib/QtGui.framework/Headers -I/opt/homebrew/Cellar/qt@5/5.15.16_1/lib/QtCore.framework/Headers -Ibuild_nogui/moc -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/OpenGL.framework/Headers -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/AGL.framework/Headers -I/opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/macx-clang -F/opt/homebrew/Cellar/qt@5/5.15.16_1/lib
 QMAKE         = /opt/homebrew/opt/qt@5/bin/qmake
 DEL_FILE      = rm -f
@@ -52,7 +52,8 @@ OBJECTS_DIR   = build_nogui/obj/
 
 ####### Files
 
-SOURCES       = src/core/display.c \
+SOURCES       = src/core/audio_image_buffers.c \
+		src/core/display.c \
 		src/core/dmx.c \
 		src/core/error.c \
 		src/core/kissfft/kiss_fft.c \
@@ -70,7 +71,8 @@ SOURCES       = src/core/display.c \
 		src/core/reverb.cpp \
 		src/core/pareq.cpp \
 		src/core/three_band_eq.cpp 
-OBJECTS       = build_nogui/obj/display.o \
+OBJECTS       = build_nogui/obj/audio_image_buffers.o \
+		build_nogui/obj/display.o \
 		build_nogui/obj/dmx.o \
 		build_nogui/obj/error.o \
 		build_nogui/obj/kiss_fft.o \
@@ -320,7 +322,8 @@ DIST          = /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/spec_pre.pr
 		src/core/reverb.h \
 		src/core/pareq.h \
 		src/core/global.h \
-		src/core/three_band_eq.h src/core/display.c \
+		src/core/three_band_eq.h src/core/audio_image_buffers.c \
+		src/core/display.c \
 		src/core/dmx.c \
 		src/core/error.c \
 		src/core/kissfft/kiss_fft.c \
@@ -806,7 +809,7 @@ distdir: FORCE
 	$(COPY_FILE) --parents $(DIST) $(DISTDIR)/
 	$(COPY_FILE) --parents /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp $(DISTDIR)/
 	$(COPY_FILE) --parents src/core/audio_rtaudio.h src/core/audio_c_api.h src/core/config.h src/core/context.h src/core/display.h src/core/dmx.h src/core/doublebuffer.h src/core/error.h src/core/kissfft/kiss_fft.h src/core/kissfft/kiss_fftr.h src/core/multithreading.h src/core/midi_controller.h src/core/shared.h src/core/synth.h src/core/synth_fft.h src/core/udp.h src/core/wave_generation.h src/core/ZitaRev1.h src/core/reverb.h src/core/pareq.h src/core/global.h src/core/three_band_eq.h $(DISTDIR)/
-	$(COPY_FILE) --parents src/core/display.c src/core/dmx.c src/core/error.c src/core/kissfft/kiss_fft.c src/core/kissfft/kiss_fftr.c src/core/main.c src/core/multithreading.c src/core/shared.c src/core/synth.c src/core/synth_fft.c src/core/udp.c src/core/wave_generation.c src/core/audio_rtaudio.cpp src/core/midi_controller.cpp src/core/ZitaRev1.cpp src/core/reverb.cpp src/core/pareq.cpp src/core/three_band_eq.cpp $(DISTDIR)/
+	$(COPY_FILE) --parents src/core/audio_image_buffers.c src/core/display.c src/core/dmx.c src/core/error.c src/core/kissfft/kiss_fft.c src/core/kissfft/kiss_fftr.c src/core/main.c src/core/multithreading.c src/core/shared.c src/core/synth.c src/core/synth_fft.c src/core/udp.c src/core/wave_generation.c src/core/audio_rtaudio.cpp src/core/midi_controller.cpp src/core/ZitaRev1.cpp src/core/reverb.cpp src/core/pareq.cpp src/core/three_band_eq.cpp $(DISTDIR)/
 
 
 clean: compiler_clean 
@@ -839,7 +842,7 @@ compiler_moc_predefs_make_all: build_nogui/moc/moc_predefs.h
 compiler_moc_predefs_clean:
 	-$(DEL_FILE) build_nogui/moc/moc_predefs.h
 build_nogui/moc/moc_predefs.h: /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp
-	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -pipe -stdlib=libc++ -O3 -ffast-math -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk -mmacosx-version-min=10.13 -Wall -Wextra -dM -E -o build_nogui/moc/moc_predefs.h /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp
+	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -pipe -stdlib=libc++ -Wno-deprecated-declarations -O3 -ffast-math -std=gnu++1z $(EXPORT_ARCH_ARGS) -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk -mmacosx-version-min=10.13 -Wall -Wextra -dM -E -o build_nogui/moc/moc_predefs.h /opt/homebrew/Cellar/qt@5/5.15.16_1/mkspecs/features/data/dummy.cpp
 
 compiler_moc_header_make_all:
 compiler_moc_header_clean:
@@ -859,8 +862,12 @@ compiler_clean: compiler_moc_predefs_clean
 
 ####### Compile
 
+build_nogui/obj/audio_image_buffers.o: src/core/audio_image_buffers.c src/core/audio_image_buffers.h \
+		src/core/config.h \
+		src/core/error.h
+	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/audio_image_buffers.o src/core/audio_image_buffers.c
+
 build_nogui/obj/display.o: src/core/display.c src/core/config.h \
-		src/core/display.h \
 		/opt/homebrew/include/SFML/Graphics.h \
 		/opt/homebrew/include/SFML/Window.h \
 		/opt/homebrew/include/SFML/System.h \
@@ -921,6 +928,19 @@ build_nogui/obj/display.o: src/core/display.c src/core/config.h \
 		/opt/homebrew/include/SFML/Graphics/VertexArray.h \
 		/opt/homebrew/include/SFML/Graphics/VertexBuffer.h \
 		/opt/homebrew/include/SFML/Graphics/View.h \
+		/opt/homebrew/include/SFML/Network.h \
+		/opt/homebrew/include/SFML/Network/Ftp.h \
+		/opt/homebrew/include/SFML/Network/Export.h \
+		/opt/homebrew/include/SFML/Network/IpAddress.h \
+		/opt/homebrew/include/SFML/Network/Types.h \
+		/opt/homebrew/include/SFML/Network/Http.h \
+		/opt/homebrew/include/SFML/Network/Packet.h \
+		/opt/homebrew/include/SFML/Network/SocketSelector.h \
+		/opt/homebrew/include/SFML/Network/SocketStatus.h \
+		/opt/homebrew/include/SFML/Network/TcpListener.h \
+		/opt/homebrew/include/SFML/Network/TcpSocket.h \
+		/opt/homebrew/include/SFML/Network/UdpSocket.h \
+		src/core/display.h \
 		src/core/error.h
 	$(CC) -c $(CFLAGS) $(INCPATH) -o build_nogui/obj/display.o src/core/display.c
 
@@ -941,6 +961,7 @@ build_nogui/obj/kiss_fftr.o: src/core/kissfft/kiss_fftr.c src/core/kissfft/kiss_
 build_nogui/obj/main.o: src/core/main.c src/core/audio_c_api.h \
 		src/core/config.h \
 		src/core/context.h \
+		src/core/audio_image_buffers.h \
 		src/core/dmx.h \
 		src/core/doublebuffer.h \
 		/opt/homebrew/include/SFML/Graphics.h \
@@ -1032,6 +1053,7 @@ build_nogui/obj/multithreading.o: src/core/multithreading.c src/core/multithread
 		src/core/doublebuffer.h \
 		src/core/audio_c_api.h \
 		src/core/context.h \
+		src/core/audio_image_buffers.h \
 		src/core/dmx.h \
 		/opt/homebrew/include/SFML/Graphics.h \
 		/opt/homebrew/include/SFML/Window.h \
@@ -1131,6 +1153,7 @@ build_nogui/obj/synth_fft.o: src/core/synth_fft.c src/core/synth_fft.h \
 		src/core/kissfft/kiss_fft.h \
 		src/core/context.h \
 		src/core/audio_c_api.h \
+		src/core/audio_image_buffers.h \
 		src/core/dmx.h \
 		src/core/doublebuffer.h \
 		/opt/homebrew/include/SFML/Graphics.h \
@@ -1258,12 +1281,14 @@ build_nogui/obj/midi_controller.o: src/core/midi_controller.cpp src/core/midi_co
 build_nogui/obj/ZitaRev1.o: src/core/ZitaRev1.cpp src/core/ZitaRev1.h \
 		src/core/reverb.h \
 		src/core/pareq.h \
-		src/core/global.h
+		src/core/global.h \
+		src/core/config.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o build_nogui/obj/ZitaRev1.o src/core/ZitaRev1.cpp
 
 build_nogui/obj/reverb.o: src/core/reverb.cpp src/core/reverb.h \
 		src/core/pareq.h \
-		src/core/global.h
+		src/core/global.h \
+		src/core/config.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o build_nogui/obj/reverb.o src/core/reverb.cpp
 
 build_nogui/obj/pareq.o: src/core/pareq.cpp src/core/pareq.h \

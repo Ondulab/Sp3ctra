@@ -8,7 +8,12 @@
  **************************************************************************************/
 // #define PRINT_IFFT_FREQUENCY
 // #define PRINT_IFFT_FREQUENCY_FULL
-#define DEBUG_MIDI
+// #define DEBUG_MIDI
+// #define DEBUG_UDP // Uncomment to enable verbose UDP logging
+// #define DEBUG_BUFFERS // Uncomment to enable verbose buffer swap logging
+// #define DEBUG_AUTO_VOLUME // Enable auto-volume debug logging
+// #define DEBUG_IMU_PACKETS     // Enable IMU packet reception logging
+// #define DEBUG_AUDIO_INTERFACE // Enable audio interface debug logging
 
 /**************************************************************************************
  * Mode Definitions
@@ -106,10 +111,22 @@
 #if SAMPLING_FREQUENCY >= 96000
 #define AUDIO_BUFFER_SIZE (250)
 #elif SAMPLING_FREQUENCY >= 48000
-#define AUDIO_BUFFER_SIZE (150)
+#define AUDIO_BUFFER_SIZE (400) // 150
 #else
 #define AUDIO_BUFFER_SIZE (128)
 #endif
+
+// Automatic cache sizing for smooth volume transitions in audio callback
+// Target: ~2% of buffer size for imperceptible volume steps
+// This ensures smooth volume changes regardless of buffer size
+#define AUDIO_CACHE_UPDATE_FREQUENCY                                           \
+  ((AUDIO_BUFFER_SIZE * 2) / 100) // 2% of buffer size
+
+// Ensure minimum of 4 and maximum of 32 for performance and stability
+#define AUDIO_CACHE_UPDATE_FREQUENCY_CLAMPED                                   \
+  ((AUDIO_CACHE_UPDATE_FREQUENCY < 4)    ? 4                                   \
+   : (AUDIO_CACHE_UPDATE_FREQUENCY > 32) ? 32                                  \
+                                         : AUDIO_CACHE_UPDATE_FREQUENCY)
 
 /**************************************************************************************
  * Image Definitions
@@ -130,8 +147,38 @@
 
 #define COLOR_INVERTED
 
+/* Auto-volume (IMU X) configuration - tune these values on site */
+#define IMU_ACTIVE_THRESHOLD_X                                                 \
+  (0.02f) /* Threshold on accel X to consider active (sensor units) */
+#define IMU_FILTER_ALPHA_X                                                     \
+  (0.25f) /* Exponential smoothing alpha for acc X (0..1) */
+#define IMU_INACTIVITY_TIMEOUT_S                                               \
+  (5) /* Seconds of no activity before dimming                                 \
+       */
+#define AUTO_VOLUME_INACTIVE_LEVEL                                             \
+  (0.09f) /* Target volume when inactive (0.0..1.0) */
+#define AUTO_VOLUME_ACTIVE_LEVEL                                               \
+  (1.0f)                          /* Target volume when active (0.0..1.0) */
+#define AUTO_VOLUME_FADE_MS (600) /* Fade duration in milliseconds */
+#define AUTO_VOLUME_POLL_MS (10)  /* How often auto-volume updates (ms) */
+#define AUTO_VOLUME_DISABLE_WITH_MIDI                                          \
+  1 /* If 1, disable auto-dim when MIDI controller connected */
+
 #define ENABLE_NON_LINEAR_MAPPING                                              \
   1 // Set to 1 to enable non-linear mapping, or 0 to disable
+
+/**************************************************************************************
+ * Synthesis Mode Configuration - Resource Optimization
+ **************************************************************************************/
+// Manual control flags (highest priority)
+#define FORCE_DISABLE_FFT 0  // Set to 1 to force disable FFT synthesis
+#define FORCE_DISABLE_IFFT 0 // Set to 1 to force disable IFFT synthesis
+
+// Automatic optimization flags
+#define AUTO_DISABLE_FFT_WITHOUT_MIDI 1 // Auto-disable FFT if no MIDI detected
+
+// MIDI polling optimization
+#define ENABLE_MIDI_POLLING 1 // Set to 0 to disable MIDI polling entirely
 
 /**************************************************************************************
  * Synth and Image Processing Configuration
@@ -171,7 +218,7 @@
  * Audio Effects Definitions
  **************************************************************************************/
 // Reverb Configuration
-#define ENABLE_REVERB 1 // Set to 1 to enable reverb, 0 to disable
+#define ENABLE_REVERB 0 // Set to 1 to enable reverb, 0 to disable
 #define DEFAULT_REVERB_MIX                                                     \
   0.0f // Default dry/wet mix (0.0 - 1.0) - 0 = no reverb
 #define DEFAULT_REVERB_ROOM_SIZE 0.7f // Default room size (0.0 - 1.0)

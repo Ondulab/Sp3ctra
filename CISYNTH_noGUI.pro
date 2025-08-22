@@ -46,6 +46,9 @@ DEFINES += USE_RTAUDIO
 
 # Fichiers sources C (tous les fichiers .c incluant main.c)
 SOURCES += \
+    src/core/audio_image_buffers.c \
+    src/core/auto_volume.c \
+    src/core/audio_c_interface.cpp \
     src/core/display.c \
     src/core/dmx.c \
     src/core/error.c \
@@ -69,6 +72,8 @@ SOURCES += \
 HEADERS += \
     src/core/audio_rtaudio.h \
     src/core/audio_c_api.h \
+    src/core/audio_c_interface.h \
+    src/core/auto_volume.h \
     src/core/config.h \
     src/core/context.h \
     src/core/display.h \
@@ -95,6 +100,10 @@ INCLUDEPATH += src/core
 
 # Configuration macOS spécifique
 macx {
+    # Supprimer les avertissements de dépréciation de SFML
+    QMAKE_CFLAGS += -Wno-deprecated-declarations
+    QMAKE_CXXFLAGS += -Wno-deprecated-declarations
+
     # Si NO_SFML N'EST PAS défini, configurer SFML/CSFML
     !contains(DEFINES, NO_SFML) {
         message("macOS: Configuration de SFML/CSFML...")
