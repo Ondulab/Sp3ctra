@@ -82,8 +82,9 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   static float cached_volume = 1.0f;
   static int cache_counter = 0;
 
-  // Update cache every 64 calls (~1.33ms at 48kHz, 0.67ms at 96kHz)
-  if (++cache_counter >= 64) {
+  // Update cache automatically based on buffer size for smooth volume
+  // transitions
+  if (++cache_counter >= AUDIO_CACHE_UPDATE_FREQUENCY_CLAMPED) {
     cache_counter = 0;
     cached_volume = this->masterVolume;
     if (gMidiController && gMidiController->isAnyControllerConnected()) {

@@ -170,7 +170,6 @@ void synth_fftMode_init(void) {
 // --- Audio Processing ---
 
 // Counter for rate-limiting FFT debug prints
-static int g_fft_print_counter = 0;
 // Print roughly once per second (assuming SAMPLING_FREQUENCY=44100,
 // AUDIO_BUFFER_SIZE=512 -> ~86 calls/sec)
 #define FFT_PRINT_INTERVAL 86

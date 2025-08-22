@@ -12,5 +12,6 @@
 #include <stdio.h>
 
 int udp_Init(struct sockaddr_in *si_other, struct sockaddr_in *si_me);
+void udp_cleanup(int socket_fd);
 
 #endif /* udp_h */

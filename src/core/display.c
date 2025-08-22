@@ -12,19 +12,21 @@
 // Sur Linux, vérifier si SFML est explicitement désactivé
 #ifndef NO_SFML
 // SFML/CSFML disponible sur Linux
-// Utiliser les en-têtes CSFML pour les fichiers C
-#include <CSFML/Graphics.h>
-#include <CSFML/Network.h> // Si CSFML/Network est utilisé
-#endif                     // NO_SFML
-#else                      // Pas __LINUX__ (par exemple macOS)
+// Utiliser les en-têtes SFML/CSFML pour les fichiers C
+// Note: Homebrew installe les en-têtes CSFML dans le même répertoire que SFML
+#include <SFML/Graphics.h>
+#include <SFML/Network.h> // Si SFML/Network est utilisé
+#endif                    // NO_SFML
+#else                     // Pas __LINUX__ (par exemple macOS)
 // Sur les autres plateformes (comme macOS), on suppose que SFML/CSFML est
 // disponible à moins que NO_SFML ne soit également défini pour ces plateformes.
 #ifndef NO_SFML
-// Utiliser les en-têtes CSFML pour les fichiers C
-#include <CSFML/Graphics.h>
-#include <CSFML/Network.h> // Si CSFML/Network est utilisé
-#endif                     // NO_SFML
-#endif                     // __LINUX__
+// Utiliser les en-têtes SFML/CSFML pour les fichiers C
+// Note: Homebrew installe les en-têtes CSFML dans le même répertoire que SFML
+#include <SFML/Graphics.h>
+#include <SFML/Network.h> // Si SFML/Network est utilisé
+#endif                    // NO_SFML
+#endif                    // __LINUX__
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -118,6 +120,16 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
   // Create a sprite to draw the foreground texture
   sfSprite *foreground_sprite = sfSprite_create();
   sfSprite_setTexture(foreground_sprite, foreground_texture, sfTrue);
+
+  // Add dynamic scaling to fix HiDPI/Retina display issues
+  sfVector2u texture_size = sfTexture_getSize(foreground_texture);
+  sfVector2u window_size = sfRenderWindow_getSize(window);
+  if (texture_size.x > 0 && texture_size.y > 0) {
+    float scale_x = (float)window_size.x / texture_size.x;
+    float scale_y = (float)window_size.y / texture_size.y;
+    sfSprite_setScale(foreground_sprite, (sfVector2f){scale_x, scale_y});
+  }
+
   sfRenderWindow_drawSprite(window, foreground_sprite, NULL);
 
   // Display the window contents
@@ -190,6 +202,16 @@ void printImage(sfRenderWindow *window, int32_t *image_buff,
   // Draw the foreground texture onto the window
   sfSprite *foreground_sprite = sfSprite_create();
   sfSprite_setTexture(foreground_sprite, foreground_texture, sfTrue);
+
+  // Add dynamic scaling to fix HiDPI/Retina display issues
+  sfVector2u texture_size = sfTexture_getSize(foreground_texture);
+  sfVector2u window_size = sfRenderWindow_getSize(window);
+  if (texture_size.x > 0 && texture_size.y > 0) {
+    float scale_x = (float)window_size.x / texture_size.x;
+    float scale_y = (float)window_size.y / texture_size.y;
+    sfSprite_setScale(foreground_sprite, (sfVector2f){scale_x, scale_y});
+  }
+
   sfRenderWindow_drawSprite(window, foreground_sprite, NULL);
 
   // Display the window contents

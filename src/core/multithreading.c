@@ -2,6 +2,7 @@
 
 #include "multithreading.h"
 #include "audio_c_api.h"
+#include "auto_volume.h"
 #include "config.h"
 #include "context.h"
 #include "display.h"
@@ -9,6 +10,7 @@
 #include "error.h"
 #include "synth.h"
 #include "udp.h"
+#include <time.h>
 
 #ifndef NO_SFML
 #include <SFML/Graphics.h>
@@ -194,6 +196,7 @@ int hasValidImageForAudio(DoubleBuffer *db) {
 void *udpThread(void *arg) {
   Context *ctx = (Context *)arg;
   DoubleBuffer *db = ctx->doubleBuffer;
+  AudioImageBuffers *audioBuffers = ctx->audioImageBuffers;
   int s = ctx->socket;
   struct sockaddr_in *si_other = ctx->si_other;
   socklen_t slen = sizeof(*si_other);
@@ -210,39 +213,169 @@ void *udpThread(void *arg) {
   }
   uint32_t fragmentCount = 0;
 
+  // Pointers for audio buffer writing
+  uint8_t *audio_write_R = NULL;
+  uint8_t *audio_write_G = NULL;
+  uint8_t *audio_write_B = NULL;
+  int audio_write_started = 0;
+
+  printf("[UDP] UDP thread started with dual buffer system\n");
+  printf("[UDP] Listening for packets on socket %d, expecting "
+         "IMAGE_DATA_HEADER (0x%02X)\n",
+         s, IMAGE_DATA_HEADER);
+
   while (ctx->running) {
     recv_len = recvfrom(s, &packet, sizeof(packet), 0,
                         (struct sockaddr *)si_other, &slen);
     if (recv_len < 0) {
+      if (errno != EAGAIN && errno != EWOULDBLOCK) {
+        printf("[UDP] recvfrom error: %s\n", strerror(errno));
+      }
+      continue;
+    }
+
+#ifdef DEBUG_UDP
+    // Debug: Log every received packet
+    printf("[UDP] Received packet: size=%zd bytes, type=0x%02X\n", recv_len,
+           packet.type);
+#endif
+
+    if (packet.type == IMU_DATA_HEADER) {
+      /* Lightweight IMU packet handling: update filtered X in Context.
+         Keep this code fast and non-blocking. Comments in English as per
+         project conventions. */
+      struct packet_IMU *imu = (struct packet_IMU *)&packet;
+      pthread_mutex_lock(&ctx->imu_mutex);
+      float raw_x = imu->acc[0]; // X axis accelerometer
+      if (!ctx->imu_has_value) {
+        ctx->imu_x_filtered = raw_x;
+        ctx->imu_has_value = 1;
+#ifdef DEBUG_IMU_PACKETS
+        printf("[IMU] First IMU packet received! raw_x=%.6f\n", raw_x);
+#endif
+      } else {
+        ctx->imu_x_filtered = IMU_FILTER_ALPHA_X * raw_x +
+                              (1.0f - IMU_FILTER_ALPHA_X) * ctx->imu_x_filtered;
+      }
+      ctx->last_imu_time = time(NULL);
+      pthread_mutex_unlock(&ctx->imu_mutex);
+
+#ifdef DEBUG_IMU_PACKETS
+      printf("[IMU] raw_x=%.6f filtered=%.6f threshold=%.6f active=%s\n", raw_x,
+             ctx->imu_x_filtered, IMU_ACTIVE_THRESHOLD_X,
+             (fabsf(ctx->imu_x_filtered) >= IMU_ACTIVE_THRESHOLD_X) ? "YES"
+                                                                    : "NO");
+#endif
+#ifdef DEBUG_UDP
+      printf("[UDP][IMU] raw_x=%.6f filtered=%.6f\n", raw_x,
+             ctx->imu_x_filtered);
+#endif
       continue;
     }
 
     if (packet.type != IMAGE_DATA_HEADER) {
+#ifdef DEBUG_UDP
+      printf("[UDP] Ignoring packet with type 0x%02X (expected 0x%02X)\n",
+             packet.type, IMAGE_DATA_HEADER);
+#endif
       continue;
     }
 
+#ifdef DEBUG_UDP
+    printf("[UDP] Processing IMAGE_DATA packet: line_id=%u, fragment_id=%u/%u, "
+           "size=%u\n",
+           packet.line_id, packet.fragment_id, packet.total_fragments,
+           packet.fragment_size);
+#endif
+
     if (currentLineId != packet.line_id) {
+      // If we had a previous incomplete line, log it
+      if (currentLineId != 0 && fragmentCount > 0) {
+#ifdef DEBUG_UDP
+        printf("[UDP] ⚠️  INCOMPLETE LINE DISCARDED: line_id=%u had %u/%d "
+               "fragments\n",
+               currentLineId, fragmentCount, UDP_MAX_NB_PACKET_PER_LINE);
+#endif
+
+        // Complete the incomplete audio buffer write if it was started
+        if (audio_write_started) {
+          audio_image_buffers_complete_write(audioBuffers);
+          audio_write_started = 0;
+#ifdef DEBUG_UDP
+          printf("[UDP] Completed partial audio buffer write for incomplete "
+                 "line\n");
+#endif
+        }
+      }
+
+      // New line started - prepare for writing
       currentLineId = packet.line_id;
-      memset(receivedFragments, 0, packet.total_fragments * sizeof(int));
+      memset(receivedFragments, 0, UDP_MAX_NB_PACKET_PER_LINE * sizeof(int));
       fragmentCount = 0;
+
+      // Start writing to audio buffers for new line
+      if (audio_image_buffers_start_write(audioBuffers, &audio_write_R,
+                                          &audio_write_G,
+                                          &audio_write_B) == 0) {
+        audio_write_started = 1;
+#ifdef DEBUG_UDP
+        printf("[UDP] Started audio buffer write for line_id=%u\n",
+               packet.line_id);
+#endif
+      } else {
+        audio_write_started = 0;
+        printf("[UDP] Warning: Failed to start audio buffer write\n");
+      }
+    }
+
+    // Validate fragment_id to prevent buffer overflow
+    if (packet.fragment_id >= UDP_MAX_NB_PACKET_PER_LINE) {
+      printf(
+          "[UDP] ERROR: fragment_id %u exceeds maximum %u, ignoring packet\n",
+          packet.fragment_id, UDP_MAX_NB_PACKET_PER_LINE);
+      continue;
     }
 
     uint32_t offset = packet.fragment_id * packet.fragment_size;
     if (!receivedFragments[packet.fragment_id]) {
       receivedFragments[packet.fragment_id] = 1;
       fragmentCount++;
+
+      // Write to legacy double buffer (for display)
       memcpy(&db->activeBuffer_R[offset], packet.imageData_R,
              packet.fragment_size);
       memcpy(&db->activeBuffer_G[offset], packet.imageData_G,
              packet.fragment_size);
       memcpy(&db->activeBuffer_B[offset], packet.imageData_B,
              packet.fragment_size);
+
+      // Write to new audio buffers (for continuous audio)
+      if (audio_write_started) {
+        memcpy(&audio_write_R[offset], packet.imageData_R,
+               packet.fragment_size);
+        memcpy(&audio_write_G[offset], packet.imageData_G,
+               packet.fragment_size);
+        memcpy(&audio_write_B[offset], packet.imageData_B,
+               packet.fragment_size);
+      }
     }
 
+#ifdef DEBUG_UDP
+    printf("[UDP] Fragment count: %u/%u for line %u\n", fragmentCount,
+           packet.total_fragments, packet.line_id);
+#endif
+
     if (fragmentCount == packet.total_fragments) {
+#ifdef DEBUG_UDP
+      printf("[UDP] ✅ COMPLETE LINE RECEIVED! line_id=%u, %u fragments\n",
+             packet.line_id, fragmentCount);
+#endif
+      // Complete line received
 #if ENABLE_IMAGE_TRANSFORM
       if (ctx->enableImageTransform) {
         int lineSize = packet.total_fragments * packet.fragment_size;
+
+        // Apply transform to legacy buffer
         for (int i = 0; i < lineSize; i++) {
           // Retrieve original RGB values
           unsigned char r = db->activeBuffer_R[i];
@@ -266,8 +399,34 @@ void *udpThread(void *arg) {
           db->activeBuffer_G[i] = (uint8_t)round(g * correctedIntensity);
           db->activeBuffer_B[i] = (uint8_t)round(b * correctedIntensity);
         }
+
+        // Apply same transform to audio buffers if writing
+        if (audio_write_started) {
+          for (int i = 0; i < lineSize; i++) {
+            unsigned char r = audio_write_R[i];
+            unsigned char g = audio_write_G[i];
+            unsigned char b = audio_write_B[i];
+
+            double luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+            double invertedLuminance = 255.0 - luminance;
+            double intensity = invertedLuminance / 255.0;
+            double correctedIntensity = pow(intensity, IMAGE_GAMMA);
+
+            audio_write_R[i] = (uint8_t)round(r * correctedIntensity);
+            audio_write_G[i] = (uint8_t)round(g * correctedIntensity);
+            audio_write_B[i] = (uint8_t)round(b * correctedIntensity);
+          }
+        }
       }
 #endif
+
+      // Complete audio buffer write and swap
+      if (audio_write_started) {
+        audio_image_buffers_complete_write(audioBuffers);
+        audio_write_started = 0;
+      }
+
+      // Handle legacy double buffer (for display)
       pthread_mutex_lock(&db->mutex);
       swapBuffers(db);
       updateLastValidImage(db); // Save image for audio persistence
@@ -277,6 +436,7 @@ void *udpThread(void *arg) {
     }
   }
 
+  printf("[UDP] UDP thread terminating\n");
   free(receivedFragments);
   return NULL;
 }
@@ -356,71 +516,48 @@ void *dmxSendingThread(void *arg) {
 
 void *audioProcessingThread(void *arg) {
   Context *context = (Context *)arg;
-  DoubleBuffer *db = context->doubleBuffer;
-  // Local buffers for synth_AudioProcess to avoid holding mutex during synth
-  uint8_t local_R[CIS_MAX_PIXELS_NB];
-  uint8_t local_G[CIS_MAX_PIXELS_NB];
-  uint8_t local_B[CIS_MAX_PIXELS_NB];
+  AudioImageBuffers *audioBuffers = context->audioImageBuffers;
 
-  // Timeout configuration for non-blocking audio processing
-  struct timespec timeout;
-  const long TIMEOUT_MS =
-      10; // 10ms timeout - audio continues even without new frames
+  // Local buffers for synth_AudioProcess - lock-free access!
+  uint8_t *audio_read_R = NULL;
+  uint8_t *audio_read_G = NULL;
+  uint8_t *audio_read_B = NULL;
 
-  printf("[AUDIO] Audio processing thread started with 10ms timeout\n");
+  printf("[AUDIO] Audio processing thread started with lock-free dual buffer "
+         "system\n");
+  printf("[AUDIO] Real-time audio processing guaranteed - no timeouts, no "
+         "blocking!\n");
 
   while (context->running) {
-    // Calculate timeout time (current time + TIMEOUT_MS)
-    clock_gettime(CLOCK_REALTIME, &timeout);
-    timeout.tv_nsec += TIMEOUT_MS * 1000000L; // Convert ms to nanoseconds
-    if (timeout.tv_nsec >= 1000000000L) {
-      timeout.tv_sec += 1;
-      timeout.tv_nsec -= 1000000000L;
-    }
+    // Get current read pointers atomically (no mutex, no blocking!)
+    audio_image_buffers_get_read_pointers(audioBuffers, &audio_read_R,
+                                          &audio_read_G, &audio_read_B);
 
-    pthread_mutex_lock(&db->mutex);
+    // Call synthesis routine directly with stable image data
+    // This will NEVER block, even if scanner disconnects!
+    synth_AudioProcess(audio_read_R, audio_read_G, audio_read_B);
 
-    // Wait for new data with timeout, or continue if timeout expires
-    int wait_result = 0;
-    while (!db->dataReady && context->running) {
-      wait_result = pthread_cond_timedwait(&db->cond, &db->mutex, &timeout);
-      if (wait_result == ETIMEDOUT) {
-        // Timeout occurred - continue with last valid image
-        break;
+    /* Auto-volume periodic update (lightweight). Runs in audioProcessingThread
+       (non-RT) to avoid doing work in the RtAudio callback. */
+    if (gAutoVolumeInstance) {
+      static uint64_t last_auto_ms = 0;
+      struct timespec ts;
+      clock_gettime(CLOCK_MONOTONIC, &ts);
+      uint64_t now =
+          (uint64_t)ts.tv_sec * 1000ull + (uint64_t)(ts.tv_nsec / 1000000ull);
+      if (last_auto_ms == 0) {
+        last_auto_ms = now;
+      }
+      uint64_t dt = (now > last_auto_ms) ? (now - last_auto_ms) : 0;
+      if (dt >= AUTO_VOLUME_POLL_MS) {
+        auto_volume_step(gAutoVolumeInstance, (unsigned int)dt);
+        last_auto_ms = now;
       }
     }
 
-    if (!context->running) {
-      pthread_mutex_unlock(&db->mutex);
-      break;
-    }
-
-    static uint64_t audio_log_counter = 0;
-
-    if (db->dataReady) {
-      // New data available - copy fresh image and reset dataReady flag
-      memcpy(local_R, db->processingBuffer_R, CIS_MAX_PIXELS_NB);
-      memcpy(local_G, db->processingBuffer_G, CIS_MAX_PIXELS_NB);
-      memcpy(local_B, db->processingBuffer_B, CIS_MAX_PIXELS_NB);
-
-      db->dataReady = 0; // Mark as consumed
-
-      // Debug logs removed for production use
-      ++audio_log_counter;
-
-    } else {
-      // Timeout occurred or no new data - use persistent image
-      // Debug logs removed for production use
-    }
-
-    pthread_mutex_unlock(&db->mutex);
-
-    // Always get the most recent valid image for audio processing
-    // This ensures audio continuity even when UDP stream stops
-    getLastValidImageForAudio(db, local_R, local_G, local_B);
-
-    // Call synthesis routine with image data (fresh, persistent, or test)
-    synth_AudioProcess(local_R, local_G, local_B);
+    // Small sleep to prevent excessive CPU usage
+    // This is the only delay in the audio thread
+    usleep(100); // 0.1ms - much smaller than before
   }
 
   printf("[AUDIO] Audio processing thread terminated\n");

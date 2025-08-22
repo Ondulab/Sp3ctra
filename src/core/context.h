@@ -2,9 +2,12 @@
 #define CONTEXT_H
 
 #include "audio_c_api.h"
+#include "audio_image_buffers.h"
 #include "config.h"
 #include "dmx.h"
 #include "doublebuffer.h"
+#include <pthread.h>
+#include <time.h>
 
 #ifdef __LINUX__
 // Vérifier si SFML est désactivé
@@ -50,9 +53,23 @@ typedef struct {
   struct sockaddr_in *si_other;
   struct sockaddr_in *si_me;
   AudioData *audioData;
-  DoubleBuffer *doubleBuffer;
+  DoubleBuffer *doubleBuffer;           // Legacy double buffer (for display)
+  AudioImageBuffers *audioImageBuffers; // New dual buffer system for audio
   DMXContext *dmxCtx;
   volatile int running; // Ajout du flag de terminaison pour Context
+
+  /* IMU + Auto-volume state (protected by imu_mutex) */
+  pthread_mutex_t imu_mutex; /* Protects IMU and auto-volume fields */
+  float imu_x_filtered;      /* Low-pass filtered accelerometer X */
+  time_t last_imu_time;      /* Last IMU packet arrival time (seconds) */
+  int imu_has_value;         /* 0/1: initial IMU value set */
+
+  /* Auto-volume state (mirror of AutoVolume for observability) */
+  float auto_volume_current;      /* Current applied master volume (0..1) */
+  float auto_volume_target;       /* Target volume computed from IMU */
+  time_t auto_last_activity_time; /* Last time activity detected */
+  int auto_is_active;             /* 0/1 */
+
 #if ENABLE_IMAGE_TRANSFORM
   bool enableImageTransform;
 #endif
