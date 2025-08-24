@@ -6,8 +6,8 @@
 #include "dmx.h"
 #include "error.h"
 #include "multithreading.h"
-#include "synth.h"
-#include "synth_fft.h" // Added for the new FFT synth mode
+#include "synth_additive.h"
+#include "synth_polyphonic.h" // Added for the new FFT synth mode
 #include "udp.h"
 
 // Declaration des fonctions MIDI externes (C-compatible)

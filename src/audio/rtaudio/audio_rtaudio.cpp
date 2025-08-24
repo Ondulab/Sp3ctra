@@ -2,8 +2,8 @@
 
 #include "audio_rtaudio.h"
 #include "audio_c_api.h"
-#include "midi_controller.h" // For gMidiController
-#include "synth_fft.h"       // For fft_audio_buffers and related variables
+#include "midi_controller.h"  // For gMidiController
+#include "synth_polyphonic.h" // For fft_audio_buffers and related variables
 #include <cstring>
 #include <iostream>
 #include <rtaudio/RtAudio.h> // Explicitly include RtAudio.h

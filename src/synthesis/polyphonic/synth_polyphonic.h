@@ -5,8 +5,8 @@
  *      Author: Cline
  */
 
-#ifndef SYNTH_FFT_H
-#define SYNTH_FFT_H
+#ifndef SYNTH_POLYPHONIC_H
+#define SYNTH_POLYPHONIC_H
 
 #include "config.h" // For AUDIO_BUFFER_SIZE, SAMPLING_FREQUENCY, CIS_MAX_PIXELS_NB
 #include "kissfft/kiss_fftr.h" // Pour la FFT réelle
@@ -174,4 +174,4 @@ void synth_fft_set_vibrato_depth(float depth_semitones);
 }
 #endif
 
-#endif /* SYNTH_FFT_H */
+#endif /* SYNTH_POLYPHONIC_H */

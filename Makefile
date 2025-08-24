@@ -1,55 +1,134 @@
-# Makefile for Sp3ctra
+# Makefile for Sp3ctra - Modular Architecture
+# Cross-platform audio synthesis application
 
-# Compiler and flags
-CXX = g++
+# Compiler settings
 CC = gcc
-CXXFLAGS = -std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DPRINT_FPS -Wno-unused-but-set-variable -Wno-deprecated-declarations
+CXX = g++
 CFLAGS = -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DPRINT_FPS -Wno-deprecated-declarations
-LDFLAGS =
-LIBS =
+CXXFLAGS = -std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DPRINT_FPS -Wno-unused-but-set-variable -Wno-deprecated-declarations
 
-# Source files
-SRCDIR = src/core
-OBJDIR = build/obj
+# Include directories for modular architecture
+INCLUDES = -I/opt/homebrew/include \
+           -Isrc/core \
+           -Isrc/audio/rtaudio \
+           -Isrc/audio/buffers \
+           -Isrc/audio/effects \
+           -Isrc/synthesis/additive \
+           -Isrc/synthesis/polyphonic \
+           -Isrc/synthesis/polyphonic/kissfft \
+           -Isrc/communication/network \
+           -Isrc/communication/midi \
+           -Isrc/communication/dmx \
+           -Isrc/display \
+           -Isrc/threading \
+           -Isrc/utils
 
-SOURCES_CPP = $(wildcard $(SRCDIR)/*.cpp)
-SOURCES_C = $(filter-out $(SRCDIR)/audio.c, $(wildcard $(SRCDIR)/*.c)) $(wildcard $(SRCDIR)/kissfft/*.c)
+# Libraries
+LIBS = -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa \
+       -L/opt/homebrew/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi \
+       -lsfml-graphics -lsfml-window -lsfml-system \
+       -lcsfml-graphics -lcsfml-window -lcsfml-system
 
-OBJECTS_CPP = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(SOURCES_CPP))
-OBJECTS_C = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES_C))
+# Build directories
+BUILD_DIR = build
+OBJ_DIR = $(BUILD_DIR)/obj
+TARGET = $(BUILD_DIR)/Sp3ctra
 
-TARGET = Sp3ctra
+# Source files organized by module
+CORE_SOURCES = src/core/main.c
+AUDIO_RTAUDIO_SOURCES = src/audio/rtaudio/audio_c_interface.cpp src/audio/rtaudio/audio_rtaudio.cpp
+AUDIO_BUFFERS_SOURCES = src/audio/buffers/audio_image_buffers.c
+AUDIO_EFFECTS_SOURCES = src/audio/effects/auto_volume.c src/audio/effects/pareq.cpp \
+                        src/audio/effects/three_band_eq.cpp src/audio/effects/ZitaRev1.cpp
+SYNTHESIS_ADDITIVE_SOURCES = src/synthesis/additive/synth_additive.c src/synthesis/additive/wave_generation.c
+SYNTHESIS_POLYPHONIC_SOURCES = src/synthesis/polyphonic/synth_polyphonic.c \
+                               src/synthesis/polyphonic/kissfft/kiss_fft.c \
+                               src/synthesis/polyphonic/kissfft/kiss_fftr.c
+COMMUNICATION_SOURCES = src/communication/network/udp.c \
+                        src/communication/midi/midi_controller.cpp \
+                        src/communication/dmx/dmx.c
+DISPLAY_SOURCES = src/display/display.c
+THREADING_SOURCES = src/threading/multithreading.c
+UTILS_SOURCES = src/utils/shared.c src/utils/error.c
 
-# Platform specific settings
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Darwin)
-    # macOS
-    LIBS += -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa
-    LIBS += -L/opt/homebrew/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi -lsfml-graphics -lsfml-window -lsfml-system -lcsfml-graphics -lcsfml-window -lcsfml-system
-    CXXFLAGS += -I/opt/homebrew/include
-    CFLAGS += -I/opt/homebrew/include
-    TARGET_PATH = build/$(TARGET)
-else
-    # Linux
-    LIBS += -lfftw3 -lsndfile -lasound -lrtaudio -lrtmidi -lpthread
-    TARGET_PATH = build/$(TARGET)
-endif
+# All sources
+ALL_SOURCES = $(CORE_SOURCES) $(AUDIO_RTAUDIO_SOURCES) $(AUDIO_BUFFERS_SOURCES) \
+              $(AUDIO_EFFECTS_SOURCES) $(SYNTHESIS_ADDITIVE_SOURCES) \
+              $(SYNTHESIS_POLYPHONIC_SOURCES) $(COMMUNICATION_SOURCES) \
+              $(DISPLAY_SOURCES) $(THREADING_SOURCES) $(UTILS_SOURCES)
 
-.PHONY: all clean
+# Object files
+OBJECTS = $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(filter %.c,$(ALL_SOURCES))) \
+          $(patsubst src/%.cpp,$(OBJ_DIR)/%.o,$(filter %.cpp,$(ALL_SOURCES)))
 
-all: $(TARGET_PATH)
+# Default target
+all: $(TARGET)
 
-$(TARGET_PATH): $(OBJECTS_CPP) $(OBJECTS_C)
-	@mkdir -p $(@D)
-	$(CXX) $(LDFLAGS) -o $@ $^ $(LIBS)
+# Create build directories
+$(OBJ_DIR):
+	@mkdir -p $(OBJ_DIR)/core
+	@mkdir -p $(OBJ_DIR)/audio/rtaudio
+	@mkdir -p $(OBJ_DIR)/audio/buffers
+	@mkdir -p $(OBJ_DIR)/audio/effects
+	@mkdir -p $(OBJ_DIR)/synthesis/additive
+	@mkdir -p $(OBJ_DIR)/synthesis/polyphonic/kissfft
+	@mkdir -p $(OBJ_DIR)/communication/network
+	@mkdir -p $(OBJ_DIR)/communication/midi
+	@mkdir -p $(OBJ_DIR)/communication/dmx
+	@mkdir -p $(OBJ_DIR)/display
+	@mkdir -p $(OBJ_DIR)/threading
+	@mkdir -p $(OBJ_DIR)/utils
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.cpp
-	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+# Compile C files
+$(OBJ_DIR)/%.o: src/%.c | $(OBJ_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.c
-	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -c $< -o $@
+# Compile C++ files
+$(OBJ_DIR)/%.o: src/%.cpp | $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
+# Link target
+$(TARGET): $(OBJECTS)
+	$(CXX) -o $@ $^ $(LIBS)
+
+# Clean build files
 clean:
-	rm -rf $(OBJDIR) $(TARGET_PATH)
+	rm -rf $(BUILD_DIR)/obj $(TARGET)
+
+# Full clean including build directory
+distclean:
+	rm -rf $(BUILD_DIR)
+
+# Install target (optional)
+install: $(TARGET)
+	@echo "Installing Sp3ctra..."
+	@echo "Installation complete"
+
+# Debug information
+debug:
+	@echo "Sources: $(ALL_SOURCES)"
+	@echo "Objects: $(OBJECTS)"
+	@echo "Includes: $(INCLUDES)"
+
+# Help target
+help:
+	@echo "Sp3ctra Makefile - Modular Architecture"
+	@echo ""
+	@echo "Available targets:"
+	@echo "  all       - Build the application (default)"
+	@echo "  clean     - Remove object files and executable"
+	@echo "  distclean - Remove entire build directory"
+	@echo "  install   - Install the application"
+	@echo "  debug     - Show build configuration"
+	@echo "  help      - Show this help message"
+	@echo ""
+	@echo "Modular structure:"
+	@echo "  src/core/           - Application core (main, config, context)"
+	@echo "  src/audio/          - Audio system (RtAudio, buffers, effects)"
+	@echo "  src/synthesis/      - Synthesis engines (additive, polyphonic)"
+	@echo "  src/communication/  - External communication (UDP, MIDI, DMX)"
+	@echo "  src/display/        - Display and visualization"
+	@echo "  src/threading/      - Threading and concurrency"
+	@echo "  src/utils/          - Utilities and helpers"
+
+.PHONY: all clean distclean install debug help

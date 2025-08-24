@@ -11,7 +11,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "shared.h"
-#include "synth.h"
+#include "synth_additive.h"
 
 /* Private includes ----------------------------------------------------------*/
 

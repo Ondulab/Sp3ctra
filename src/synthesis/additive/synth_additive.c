@@ -27,7 +27,7 @@
 #include "audio_c_api.h"
 #include "error.h"
 #include "shared.h"
-#include "synth.h"
+#include "synth_additive.h"
 #include "wave_generation.h"
 
 /* Private includes ----------------------------------------------------------*/
