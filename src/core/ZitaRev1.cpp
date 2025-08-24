@@ -1,60 +1,76 @@
 // ZitaRev1.cpp
 // --------
-// Implémentation de l'adaptateur pour intégrer zita-rev1 original dans Sp3ctra
+// Open source implementation of Fons Adriaensen's zita-rev1 reverb
+// Algorithm adapted for Sp3ctra
 //
 // Original algorithm by Fons Adriaensen <fons@linuxaudio.org>
-// C++ implementation by PelleJuul
-// Adapter implementation for Sp3ctra
+// C++ implementation based on PelleJuul's version
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
-// the Free Software Foundation; either version 3 of the License, or
+// the Free Software Foundation; either version 2 of the License, or
 // (at your option) any later version.
 
 #include "ZitaRev1.h"
 #include "config.h"
-#include <cmath>
-#include <cstring>
 #include <iostream>
 
+// Constantes pour les délais (nombres premiers)
+static const int ZITA_PRIME_DELAYS[8] = {743,  809,  877,  947,
+                                         1019, 1097, 1171, 1259};
+
 ZitaRev1::ZitaRev1() {
-  // Initialisation des paramètres à des valeurs par défaut
-  for (int i = 0; i < NUM_PARAMS; i++) {
+  // Initialisation des paramètres
+  for (int i = 0; i < NUM_PARAMS; i++)
     _parameters[i] = 0.0f;
+
+  // Valeurs par défaut
+  _parameters[ROOMSIZE] = 0.7f;
+  _parameters[DAMPING] = 0.5f;
+  _parameters[WIDTH] = 1.0f;
+  _parameters[PREDELAY] = 0.02f;
+  _parameters[MIX] = 0.5f;
+
+  // Initialisation des buffers
+  memset(_delayLines, 0, sizeof(float) * NUM_DELAY_LINES * MAX_DELAY_SIZE);
+  memset(_preDelayBuffer, 0, sizeof(float) * MAX_PREDELAY_SIZE);
+
+  // Autres paramètres
+  _sampleRate = 44100.0f;
+  _gain0 = 1.0f;                    // Gain interne de la réverbération
+  _gain1 = 1.0f - _parameters[MIX]; // Dry gain
+  _gain2 = _parameters[MIX];        // Wet gain
+
+  // Initialiser les indices et tailles de buffer
+  for (int i = 0; i < NUM_DELAY_LINES; i++) {
+    _delayIndices[i] = 0;
+    _delaySizes[i] = ZITA_PRIME_DELAYS[i];
+    _lpSamples[i] = 0.0f;
   }
 
-  // Valeurs par défaut depuis config.h
-  _parameters[ROOMSIZE] = DEFAULT_REVERB_ROOM_SIZE;
-  _parameters[DAMPING] = DEFAULT_REVERB_DAMPING;
-  _parameters[WIDTH] = DEFAULT_REVERB_WIDTH;
-  _parameters[PREDELAY] = DEFAULT_REVERB_PREDELAY;
-  _parameters[MIX] = DEFAULT_REVERB_MIX;
+  _preDelayIndex = 0;
+  _preDelaySize = (int)(0.1f * _sampleRate); // Max 100ms
 
-  _sampleRate = 44100.0f;
-  _ambisonic = false; // Nous n'utilisons pas le mode ambisonique
+  // Mise à jour des filtres
+  updateReverbParameters();
 }
 
-ZitaRev1::~ZitaRev1() {
-  // Rien à faire ici, les ressources sont libérées automatiquement
-}
+ZitaRev1::~ZitaRev1() {}
 
 void ZitaRev1::init(float sampleRate) {
   _sampleRate = sampleRate;
-  _reverb.init(sampleRate, _ambisonic);
-
-  // Initialiser les paramètres de la reverb originale
   updateReverbParameters();
-
-  std::cout << "\033[1;32m[ZitaRev1] Reverb initialisée à " << sampleRate
+  std::cout << "\033[1;32m[ZitaRev1] Reverb initialized at " << sampleRate
             << " Hz\033[0m" << std::endl;
 }
 
 void ZitaRev1::clear() {
-  // Pas d'équivalent direct dans l'implémentation originale
-  // Nous pouvons le simuler en réinitialisant la reverb
-  _reverb.fini();
-  _reverb.init(_sampleRate, _ambisonic);
-  updateReverbParameters();
+  memset(_delayLines, 0, sizeof(float) * NUM_DELAY_LINES * MAX_DELAY_SIZE);
+  memset(_preDelayBuffer, 0, sizeof(float) * MAX_PREDELAY_SIZE);
+
+  for (int i = 0; i < NUM_DELAY_LINES; i++) {
+    _lpSamples[i] = 0.0f;
+  }
 }
 
 void ZitaRev1::setParameter(int index, float value) {
@@ -72,78 +88,137 @@ float ZitaRev1::getParameter(int index) const {
 }
 
 void ZitaRev1::set_roomsize(float value) { setParameter(ROOMSIZE, value); }
-
 void ZitaRev1::set_damping(float value) { setParameter(DAMPING, value); }
-
 void ZitaRev1::set_width(float value) { setParameter(WIDTH, value); }
-
 void ZitaRev1::set_delay(float value) { setParameter(PREDELAY, value); }
-
 void ZitaRev1::set_mix(float value) { setParameter(MIX, value); }
 
 float ZitaRev1::get_roomsize() const { return _parameters[ROOMSIZE]; }
-
 float ZitaRev1::get_damping() const { return _parameters[DAMPING]; }
-
 float ZitaRev1::get_width() const { return _parameters[WIDTH]; }
-
 float ZitaRev1::get_mix() const { return _parameters[MIX]; }
 
 void ZitaRev1::process(float *inputL, float *inputR, float *outputL,
                        float *outputR, unsigned int numSamples) {
-  // Conversion entre l'API Sp3ctra et l'API originale
-  // L'implémentation originale utilise des tableaux de pointeurs
-  float *inputs[2] = {inputL, inputR};
-  float *outputs[4] = {
-      outputL, outputR, nullptr,
-      nullptr}; // Les deux derniers canaux ne sont utilisés qu'en ambisonique
+  // Paramètres locaux pour performance
+  const float mix = _parameters[MIX];
+  const float width = _parameters[WIDTH];
+  const float g1 = 1.0f - mix; // Gain dry
+  const float g2 = mix;        // Gain wet
 
-  // Mise à jour des paramètres si nécessaire
-  _reverb.prepare(numSamples);
+  // Pour chaque échantillon
+  for (unsigned int i = 0; i < numSamples; i++) {
+    // Mixer les entrées
+    float input = (inputL[i] + inputR[i]) * 0.5f;
 
-  // Process avec l'implémentation originale
-  _reverb.process(numSamples, inputs, outputs);
+    // Appliquer le pré-delay
+    _preDelayBuffer[_preDelayIndex] = input;
+
+    int readIndex =
+        _preDelayIndex - (int)(_preDelaySize * _parameters[PREDELAY]);
+    if (readIndex < 0) {
+      readIndex += _preDelaySize;
+    }
+
+    float preDelayed = _preDelayBuffer[readIndex];
+
+    // Mettre à jour l'index du pré-delay
+    _preDelayIndex = (_preDelayIndex + 1) % _preDelaySize;
+
+    // Variables pour accumuler les réflexions gauche et droite
+    float leftReflections = 0.0f;
+    float rightReflections = 0.0f;
+
+    // Première moitié des lignes de délai pour le canal gauche
+    for (int j = 0; j < NUM_DELAY_LINES / 2; j++) {
+      // Lire l'échantillon actuel
+      float delaySample = readDelay(j);
+
+      // Filtre passe-bas pour simuler l'absorption de l'air
+      float dampingFactor = 0.2f + _parameters[DAMPING] * 0.8f;
+      _lpSamples[j] =
+          delaySample * dampingFactor + _lpSamples[j] * (1.0f - dampingFactor);
+
+      // Appliquer la réverbération et le feedback
+      float processed = _lpSamples[j] * _gain0;
+
+      // Ajouter au canal gauche
+      leftReflections += processed;
+
+      // Écrire dans la ligne de délai avec un mélange de l'entrée et du
+      // feedback
+      writeDelay(j, preDelayed + processed * 0.5f);
+    }
+
+    // Deuxième moitié des lignes de délai pour le canal droit
+    for (int j = NUM_DELAY_LINES / 2; j < NUM_DELAY_LINES; j++) {
+      // Lire l'échantillon actuel
+      float delaySample = readDelay(j);
+
+      // Filtre passe-bas pour simuler l'absorption de l'air
+      float dampingFactor = 0.2f + _parameters[DAMPING] * 0.8f;
+      _lpSamples[j] =
+          delaySample * dampingFactor + _lpSamples[j] * (1.0f - dampingFactor);
+
+      // Appliquer la réverbération et le feedback
+      float processed = _lpSamples[j] * _gain0;
+
+      // Ajouter au canal droit
+      rightReflections += processed;
+
+      // Écrire dans la ligne de délai avec un mélange de l'entrée et du
+      // feedback
+      writeDelay(j, preDelayed + processed * 0.5f);
+    }
+
+    // Normaliser les réflexions
+    leftReflections *= 0.25f;
+    rightReflections *= 0.25f;
+
+    // Appliquer la largeur stéréo
+    float centerComponent = (leftReflections + rightReflections) * 0.7071f;
+    float sideComponent = (leftReflections - rightReflections) * width;
+
+    // Mixer les signaux secs et traités
+    outputL[i] = inputL[i] * g1 + (centerComponent + sideComponent) * g2;
+    outputR[i] = inputR[i] * g1 + (centerComponent - sideComponent) * g2;
+  }
+}
+
+float ZitaRev1::readDelay(int line) {
+  return _delayLines[line][_delayIndices[line]];
+}
+
+void ZitaRev1::writeDelay(int line, float sample) {
+  _delayLines[line][_delayIndices[line]] = sample;
+  _delayIndices[line] = (_delayIndices[line] + 1) % _delaySizes[line];
 }
 
 void ZitaRev1::updateReverbParameters() {
-  // Mappage des paramètres normalisés (0-1) vers les paramètres de
-  // l'implémentation originale
+  // Mettre à jour les tailles des lignes de délai en fonction de la taille de
+  // la pièce
+  float sizeAdjust = 0.4f + _parameters[ROOMSIZE] * 0.6f;
+  for (int i = 0; i < NUM_DELAY_LINES; i++) {
+    int size = (int)(ZITA_PRIME_DELAYS[i] * sizeAdjust);
+    if (size > MAX_DELAY_SIZE) {
+      size = MAX_DELAY_SIZE;
+    }
+    _delaySizes[i] = size;
+  }
 
-  // 1. Délai initial (0-100ms)
-  float delay = _parameters[PREDELAY] * 0.1f; // Jusqu'à 100ms
-  _reverb.set_delay(delay);
+  // Recalculer le pré-delay (max 100ms)
+  _preDelaySize = (int)(0.1f * _sampleRate);
+  if (_preDelaySize > MAX_PREDELAY_SIZE) {
+    _preDelaySize = MAX_PREDELAY_SIZE;
+  }
 
-  // 2. Taille de pièce/Temps de réverbération (0.5s-5s)
-  float rtlow =
-      0.5f +
-      4.5f * _parameters[ROOMSIZE]; // Temps de réverbération basses fréquences
-  float rtmid =
-      rtlow *
-      0.8f; // Temps de réverbération moyennes fréquences un peu plus court
-  _reverb.set_rtlow(rtlow);
-  _reverb.set_rtmid(rtmid);
+  // Calculer le temps de réverbération (0.5s à 3.0s)
+  float revTime = 0.5f + 2.5f * _parameters[ROOMSIZE];
 
-  // 3. Amortissement des hautes fréquences (1kHz-10kHz)
-  float fdamp =
-      1000.0f + 9000.0f * _parameters[DAMPING]; // Fréquence de coupure
-  _reverb.set_fdamp(fdamp);
+  // Calculer le gain interne en fonction du temps de réverbération
+  _gain0 = pow(0.001f, 1.0f / (revTime * _sampleRate));
 
-  // 4. Largeur stéréo (0-1)
-  // Pour l'implémentation originale, le paramètre opmix contrôle partiellement
-  // la largeur stéréo
-  float opmix = 0.5f + 0.5f * _parameters[WIDTH];
-  _reverb.set_opmix(opmix);
-
-  // 5. Mix dry/wet est géré dans l'implémentation originale directement dans
-  // process Nous pouvons l'ajuster via le paramètre rgxyz (bien que ce ne soit
-  // pas son but premier)
-  float rgxyz = _parameters[MIX] * 2.0f - 1.0f; // Convertir 0-1 en -1 à 1
-  _reverb.set_rgxyz(rgxyz);
-
-  // 6. Fréquence de crossover
-  _reverb.set_xover(200.0f); // Crossover fixe à 200Hz pour simplifier
-
-  // 7. Equalizers - laissés neutres pour simplifier
-  _reverb.set_eq1(160.0f, 0.0f);  // 160Hz, gain 0dB
-  _reverb.set_eq2(2500.0f, 0.0f); // 2.5kHz, gain 0dB
+  // Mettre à jour les gains de mixage
+  _gain1 = 1.0f - _parameters[MIX]; // Dry gain
+  _gain2 = _parameters[MIX];        // Wet gain
 }

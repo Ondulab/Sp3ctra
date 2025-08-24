@@ -45,7 +45,7 @@ fastlane/.env
 # === Editor / IDE ===
 *.swp
 .idea/
-.vscode/
+# .vscode/ - Keep VSCode config for development team
 
 # === Signing & Credentials ===
 *.mobileprovision
@@ -128,6 +128,9 @@ build_nogui/
 Sp3ctra_noGUI
 Sp3ctra_noGUI.app/
 Sp3ctra_noGUI.exe
+Sp3ctra
+CISYNTH_noGUI
+CISYNTH_noGUI.app/
 
 # qmake generated files
 .qmake.stash
@@ -140,6 +143,15 @@ Makefile.*
 test_device*.log
 *.tmp
 *.temp
+
+# === Project specific ===
+# Backup files
+*_back
+*_backup
+*.bak
+
+# Personal files directory
+.personalFiles/
 
 # CMake (if used)
 CMakeCache.txt
