@@ -1,16 +1,14 @@
 // ZitaRev1.h
 // --------
-// Adaptateur pour intégrer l'implémentation originale de zita-rev1 de PelleJuul
-// tout en maintenant la compatibilité avec l'API ZitaRev1 existante dans
-// Sp3ctra
+// Open source implementation of Fons Adriaensen's zita-rev1 reverb
+// Algorithm adapted for Sp3ctra
 //
 // Original algorithm by Fons Adriaensen <fons@linuxaudio.org>
-// C++ implementation by PelleJuul
-// Adapter implementation for Sp3ctra
+// C++ implementation based on PelleJuul's version
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
-// the Free Software Foundation; either version 3 of the License, or
+// the Free Software Foundation; either version 2 of the License, or
 // (at your option) any later version.
 //
 // This program is distributed in the hope that it will be useful,
@@ -24,10 +22,10 @@
 #ifndef ZITAREV1_H
 #define ZITAREV1_H
 
-#include "reverb.h"
+#include <algorithm>
+#include <cmath>
+#include <cstring>
 
-// Cette classe maintient l'API actuelle ZitaRev1 mais utilise
-// l'implémentation originale de PelleJuul en interne
 class ZitaRev1 {
 public:
   enum {
@@ -45,7 +43,6 @@ public:
   void init(float sampleRate);
   void clear();
 
-  // Interfaces identiques à l'implémentation actuelle
   void setParameter(int index, float value);
   float getParameter(int index) const;
 
@@ -64,12 +61,34 @@ public:
                unsigned int numSamples);
 
 private:
-  Reverb _reverb;                // Instance de l'implémentation originale
-  float _parameters[NUM_PARAMS]; // Stockage des paramètres
-  float _sampleRate;
-  bool _ambisonic; // Toujours false dans notre cas
+  // Constantes
+  static const int MAX_DELAY_SIZE = 8192;    // Taille max des lignes de délai
+  static const int MAX_PREDELAY_SIZE = 4800; // 100ms @ 48kHz
+  static const int NUM_DELAY_LINES = 8;      // Nombre de lignes de délai
 
-  // Méthode privée pour mettre à jour les paramètres de la reverb originale
+  // Paramètres
+  float _parameters[NUM_PARAMS];
+  float _sampleRate;
+
+  // Gains
+  float _gain0; // Gain interne de la réverbération
+  float _gain1; // Dry gain
+  float _gain2; // Wet gain
+
+  // Buffers de délai
+  float _delayLines[NUM_DELAY_LINES][MAX_DELAY_SIZE];
+  int _delayIndices[NUM_DELAY_LINES];
+  int _delaySizes[NUM_DELAY_LINES];
+  float _lpSamples[NUM_DELAY_LINES]; // Échantillons filtrés (passe-bas)
+
+  // Buffer de pré-delay
+  float _preDelayBuffer[MAX_PREDELAY_SIZE];
+  int _preDelayIndex;
+  int _preDelaySize;
+
+  // Méthodes privées
+  float readDelay(int line);
+  void writeDelay(int line, float sample);
   void updateReverbParameters();
 };
 
