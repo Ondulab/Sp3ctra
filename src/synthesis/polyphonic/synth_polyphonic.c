@@ -2,7 +2,7 @@
  * synth_fft.c
  */
 
-#include "synth_fft.h"
+#include "synth_polyphonic.h"
 #include "config.h"
 #include "context.h"
 #include "doublebuffer.h"

@@ -8,8 +8,8 @@
 #include "midi_controller.h"
 #include "audio_rtaudio.h"
 #include "config.h"
-#include "synth.h"     // For synth data freeze global variables and mutex
-#include "synth_fft.h" // For synth_fft_set_vibrato_rate
+#include "synth_additive.h" // For synth data freeze global variables and mutex
+#include "synth_polyphonic.h" // For synth_fft_set_vibrato_rate
 #include "three_band_eq.h"
 #include <algorithm>
 #include <iostream>

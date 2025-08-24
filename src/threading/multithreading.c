@@ -8,7 +8,7 @@
 #include "display.h"
 #include "dmx.h"
 #include "error.h"
-#include "synth.h"
+#include "synth_additive.h"
 #include "udp.h"
 #include <time.h>
 

@@ -6,8 +6,8 @@
  */
 
 /* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __SYNTH_H
-#define __SYNTH_H
+#ifndef __SYNTH_ADDITIVE_H
+#define __SYNTH_ADDITIVE_H
 
 /* Includes ------------------------------------------------------------------*/
 #include "config.h" // For CIS_MAX_PIXELS_NB
@@ -51,4 +51,4 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
                         uint8_t *buffer_B);
 /* Private defines -----------------------------------------------------------*/
 
-#endif /* __SYNTH_H */
+#endif /* __SYNTH_ADDITIVE_H */
