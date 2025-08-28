@@ -292,6 +292,13 @@ uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
                    int32_t *gray, uint32_t size) {
   uint32_t i = 0;
 
+  // 🔍 DIAGNOSTIC: Log mode configuration once per call
+  static int first_call = 1;
+  if (first_call) {
+    printf("🔍 MONO_GRAYSCALE: Standard weights R=0.299, G=0.587, B=0.114\n");
+    first_call = 0;
+  }
+
   for (i = 0; i < size; i++) {
     uint32_t r = (uint32_t)buffer_R[i];
     uint32_t g = (uint32_t)buffer_G[i];
@@ -300,6 +307,204 @@ uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
     uint32_t weighted = (r * 299 + g * 587 + b * 114);
     // Normalisation en 16 bits (0 - 65535)
     gray[i] = (int32_t)((weighted * 65535UL) / 255000UL);
+
+    // 🔍 DIAGNOSTIC: Log some sample values for comparison with perceptual
+    // algorithm
+    static int sample_counter = 0;
+    if (sample_counter % 10000 == 0 && i < 5) {
+      printf("🔍 MONO[%d]: RGB(%d,%d,%d) → gray=%d (standard weights)\n", i,
+             buffer_R[i], buffer_G[i], buffer_B[i], gray[i]);
+    }
+    sample_counter++;
+  }
+
+  return 0;
+}
+
+/**
+ * Extract warm channel (left stereo) using perceptual color science
+ * Implements opponent color theory with warm colors (red/orange/yellow) → left
+ * channel
+ * @param buffer_R Red channel input buffer (8-bit)
+ * @param buffer_G Green channel input buffer (8-bit)
+ * @param buffer_B Blue channel input buffer (8-bit)
+ * @param warm_output Output buffer for warm channel (16-bit)
+ * @param size Number of pixels to process
+ * @return 0 on success
+ */
+uint32_t extractWarmChannel(uint8_t *buffer_R, uint8_t *buffer_G,
+                            uint8_t *buffer_B, int32_t *warm_output,
+                            uint32_t size) {
+  uint32_t i = 0;
+
+  // 🔍 DIAGNOSTIC: Log mode configuration once per call
+  static int first_call = 1;
+  if (first_call) {
+    printf("🔍 WARM_EXTRACT: SYNTH_MODE=%d, IS_WHITE_BG=%d\n", SYNTH_MODE,
+           IS_WHITE_BACKGROUND());
+    printf("🔍 PERCEPTUAL_WEIGHTS: R=%.2f, G=%.2f, B=%.2f\n",
+           PERCEPTUAL_WEIGHT_R, PERCEPTUAL_WEIGHT_G, PERCEPTUAL_WEIGHT_B);
+    printf("🔍 OPPONENT_WEIGHTS: α=%.2f, β=%.2f\n", OPPONENT_ALPHA,
+           OPPONENT_BETA);
+    first_call = 0;
+  }
+
+  for (i = 0; i < size; i++) {
+    // Step 1: Convert RGB to normalized [0..1] values
+    float r_norm = (float)buffer_R[i] / 255.0f;
+    float g_norm = (float)buffer_G[i] / 255.0f;
+    float b_norm = (float)buffer_B[i] / 255.0f;
+
+    // Step 2: Calculate perceptual luminance Y
+    float luminance_Y = PERCEPTUAL_WEIGHT_R * r_norm +
+                        PERCEPTUAL_WEIGHT_G * g_norm +
+                        PERCEPTUAL_WEIGHT_B * b_norm;
+
+    // Step 3: Calculate opponent axes
+    float O_rb =
+        b_norm -
+        r_norm; // Blue-Red opponent axis (corrected for intuitive behavior)
+    float O_gm =
+        (2.0f * g_norm - r_norm - b_norm) / 2.0f; // Green-Magenta opponent axis
+
+    // Step 4: Calculate warm/cold scores
+    float S_warm = fmaxf(0.0f, OPPONENT_ALPHA * O_rb + OPPONENT_BETA * O_gm);
+    float S_cold =
+        fmaxf(0.0f, OPPONENT_ALPHA * (-O_rb) + OPPONENT_BETA * (-O_gm));
+
+    // Step 5: Determine if color is chromatic or achromatic
+    float total_chroma = S_warm + S_cold;
+    float warm_proportion;
+
+    if (total_chroma > CHROMATIC_THRESHOLD) {
+      // Chromatic color: calculate proportion based on warm/cold scores
+      warm_proportion = S_warm / total_chroma;
+    } else {
+      // Achromatic color (gray/white/black): use 50/50 split
+      warm_proportion = ACHROMATIC_SPLIT;
+    }
+
+    // Step 6: Weight by luminosity and convert to 16-bit
+    float warm_energy;
+    if (total_chroma > CHROMATIC_THRESHOLD) {
+      // Chromatic color: use proportional energy
+      warm_energy = luminance_Y * warm_proportion;
+    } else {
+      // Achromatic color: use full luminance energy (like mono mode)
+      warm_energy = luminance_Y;
+    }
+    int32_t final_value = (int32_t)(warm_energy * VOLUME_AMP_RESOLUTION);
+
+    // Apply color inversion based on SYNTH_MODE (unified system)
+    if (IS_WHITE_BACKGROUND()) {
+      // White background mode: dark pixels = more energy
+      final_value = VOLUME_AMP_RESOLUTION - final_value;
+      if (final_value < 0)
+        final_value = 0;
+      if (final_value > VOLUME_AMP_RESOLUTION)
+        final_value = VOLUME_AMP_RESOLUTION;
+    }
+    // Black background mode: bright pixels = more energy (no inversion needed)
+
+    // 🔍 DIAGNOSTIC: Log some sample values to verify algorithm
+    static int sample_counter = 0;
+    if (sample_counter % 10000 == 0 && i < 5) {
+      printf("🔍 WARM[%d]: RGB(%d,%d,%d) Y=%.3f O_rb=%.3f O_gm=%.3f "
+             "S_warm=%.3f prop=%.3f final=%d\n",
+             i, buffer_R[i], buffer_G[i], buffer_B[i], luminance_Y, O_rb, O_gm,
+             S_warm, warm_proportion, final_value);
+    }
+    sample_counter++;
+
+    warm_output[i] = final_value;
+  }
+
+  return 0;
+}
+
+/**
+ * Extract cold channel (right stereo) using perceptual color science
+ * Implements opponent color theory with cold colors (blue/cyan) → right channel
+ * @param buffer_R Red channel input buffer (8-bit)
+ * @param buffer_G Green channel input buffer (8-bit)
+ * @param buffer_B Blue channel input buffer (8-bit)
+ * @param cold_output Output buffer for cold channel (16-bit)
+ * @param size Number of pixels to process
+ * @return 0 on success
+ */
+uint32_t extractColdChannel(uint8_t *buffer_R, uint8_t *buffer_G,
+                            uint8_t *buffer_B, int32_t *cold_output,
+                            uint32_t size) {
+  uint32_t i = 0;
+
+  for (i = 0; i < size; i++) {
+    // Step 1: Convert RGB to normalized [0..1] values
+    float r_norm = (float)buffer_R[i] / 255.0f;
+    float g_norm = (float)buffer_G[i] / 255.0f;
+    float b_norm = (float)buffer_B[i] / 255.0f;
+
+    // Step 2: Calculate perceptual luminance Y
+    float luminance_Y = PERCEPTUAL_WEIGHT_R * r_norm +
+                        PERCEPTUAL_WEIGHT_G * g_norm +
+                        PERCEPTUAL_WEIGHT_B * b_norm;
+
+    // Step 3: Calculate opponent axes
+    float O_rb =
+        b_norm -
+        r_norm; // Blue-Red opponent axis (corrected for intuitive behavior)
+    float O_gm =
+        (2.0f * g_norm - r_norm - b_norm) / 2.0f; // Green-Magenta opponent axis
+
+    // Step 4: Calculate warm/cold scores
+    float S_warm = fmaxf(0.0f, OPPONENT_ALPHA * O_rb + OPPONENT_BETA * O_gm);
+    float S_cold =
+        fmaxf(0.0f, OPPONENT_ALPHA * (-O_rb) + OPPONENT_BETA * (-O_gm));
+
+    // Step 5: Determine if color is chromatic or achromatic
+    float total_chroma = S_warm + S_cold;
+    float cold_proportion;
+
+    if (total_chroma > CHROMATIC_THRESHOLD) {
+      // Chromatic color: calculate proportion based on warm/cold scores
+      cold_proportion = S_cold / total_chroma;
+    } else {
+      // Achromatic color (gray/white/black): use 50/50 split
+      cold_proportion = 1.0f - ACHROMATIC_SPLIT; // Complement of warm split
+    }
+
+    // Step 6: Weight by luminosity and convert to 16-bit
+    float cold_energy;
+    if (total_chroma > CHROMATIC_THRESHOLD) {
+      // Chromatic color: use proportional energy
+      cold_energy = luminance_Y * cold_proportion;
+    } else {
+      // Achromatic color: use full luminance energy (like mono mode)
+      cold_energy = luminance_Y;
+    }
+    int32_t final_value = (int32_t)(cold_energy * VOLUME_AMP_RESOLUTION);
+
+    // Apply color inversion based on SYNTH_MODE (unified system)
+    if (IS_WHITE_BACKGROUND()) {
+      // White background mode: dark pixels = more energy
+      final_value = VOLUME_AMP_RESOLUTION - final_value;
+      if (final_value < 0)
+        final_value = 0;
+      if (final_value > VOLUME_AMP_RESOLUTION)
+        final_value = VOLUME_AMP_RESOLUTION;
+    }
+    // Black background mode: bright pixels = more energy (no inversion needed)
+
+    // 🔍 DIAGNOSTIC: Log some sample values to verify algorithm
+    static int sample_counter = 0;
+    if (sample_counter % 10000 == 0 && i < 5) {
+      printf("🔍 COLD[%d]: RGB(%d,%d,%d) Y=%.3f O_rb=%.3f O_gm=%.3f "
+             "S_cold=%.3f prop=%.3f final=%d\n",
+             i, buffer_R[i], buffer_G[i], buffer_B[i], luminance_Y, O_rb, O_gm,
+             S_cold, cold_proportion, final_value);
+    }
+    sample_counter++;
+
+    cold_output[i] = final_value;
   }
 
   return 0;
@@ -531,6 +736,15 @@ void *synth_persistent_worker_thread(void *arg) {
 static void synth_process_worker_range(synth_thread_worker_t *worker) {
   int32_t idx, acc, buff_idx, note, local_note_idx;
 
+  // 🔍 DIAGNOSTIC: Check if this function is called (should be for stereo red
+  // channel)
+  static int worker_call_counter = 0;
+  if (worker_call_counter % 1000 == 0) {
+    printf("🔍 WORKER_RANGE: Called (thread %d), IS_WHITE_BG=%d\n",
+           worker->thread_id, IS_WHITE_BACKGROUND());
+  }
+  worker_call_counter++;
+
   // Initialiser les buffers de sortie à zéro
   fill_float(0, worker->thread_ifftBuffer, AUDIO_BUFFER_SIZE);
   fill_float(0, worker->thread_sumVolumeBuffer, AUDIO_BUFFER_SIZE);
@@ -546,19 +760,25 @@ static void synth_process_worker_range(synth_thread_worker_t *worker) {
           (worker->imageData[idx * PIXELS_PER_NOTE + acc]);
     }
 
-#ifndef COLOR_INVERTED
     worker->imageBuffer_q31[local_note_idx] /= PIXELS_PER_NOTE;
-#else
-    worker->imageBuffer_q31[local_note_idx] /= PIXELS_PER_NOTE;
-    worker->imageBuffer_q31[local_note_idx] =
-        VOLUME_AMP_RESOLUTION - worker->imageBuffer_q31[local_note_idx];
-    if (worker->imageBuffer_q31[local_note_idx] < 0) {
-      worker->imageBuffer_q31[local_note_idx] = 0;
+
+    // Apply color inversion for mono mode based on SYNTH_MODE
+    if (!IS_STEREO_MODE()) {
+      // Mono mode: apply inversion based on background color
+      if (IS_WHITE_BACKGROUND()) {
+        // White background mode: dark pixels = more energy
+        worker->imageBuffer_q31[local_note_idx] =
+            VOLUME_AMP_RESOLUTION - worker->imageBuffer_q31[local_note_idx];
+        if (worker->imageBuffer_q31[local_note_idx] < 0)
+          worker->imageBuffer_q31[local_note_idx] = 0;
+        if (worker->imageBuffer_q31[local_note_idx] > VOLUME_AMP_RESOLUTION)
+          worker->imageBuffer_q31[local_note_idx] = VOLUME_AMP_RESOLUTION;
+      }
+      // Black background mode: bright pixels = more energy (no inversion
+      // needed)
     }
-    if (worker->imageBuffer_q31[local_note_idx] > VOLUME_AMP_RESOLUTION) {
-      worker->imageBuffer_q31[local_note_idx] = VOLUME_AMP_RESOLUTION;
-    }
-#endif
+    // Stereo mode: inversion already done in
+    // extractWarmChannel()/extractColdChannel()
   }
 
   // Correction bug - seulement pour le thread qui traite la note 0
@@ -891,7 +1111,7 @@ void synth_IfftMode(
       }
     }
 
-    /*// 🔍 DIAGNOSTIC: Analyser le signal AVANT normalisation (pour comparaison
+    // 🔍 DIAGNOSTIC: Analyser le signal AVANT normalisation (pour comparaison
     // Mac/Pi)
     if (log_counter % LOG_FREQUENCY == 0) {
       float raw_min = ifftBuffer[0];
@@ -910,7 +1130,7 @@ void synth_IfftMode(
       float raw_rms = sqrtf(raw_sum / AUDIO_BUFFER_SIZE);
       printf("🔍 AVANT NORMALISATION: min=%.6f, max=%.6f, rms=%.6f\n", raw_min,
              raw_max, raw_rms);
-    }*/
+    }
 
     // 🔧 CORRECTION: Normalisation conditionnelle par plateforme
 #ifdef __linux__
@@ -983,16 +1203,19 @@ void synth_IfftMode(
       for (acc = 0; acc < PIXELS_PER_NOTE; acc++) {
         imageBuffer_q31[idx] += (imageData[idx * PIXELS_PER_NOTE + acc]);
       }
-#ifndef COLOR_INVERTED
       imageBuffer_q31[idx] /= PIXELS_PER_NOTE;
-#else
-      imageBuffer_q31[idx] /= PIXELS_PER_NOTE;
-      imageBuffer_q31[idx] = VOLUME_AMP_RESOLUTION - imageBuffer_q31[idx];
-      if (imageBuffer_q31[idx] < 0)
-        imageBuffer_q31[idx] = 0;
-      if (imageBuffer_q31[idx] > VOLUME_AMP_RESOLUTION)
-        imageBuffer_q31[idx] = VOLUME_AMP_RESOLUTION;
-#endif
+
+      // Apply color inversion based on SYNTH_MODE (unified system)
+      if (IS_WHITE_BACKGROUND()) {
+        // White background mode: dark pixels = more energy
+        imageBuffer_q31[idx] = VOLUME_AMP_RESOLUTION - imageBuffer_q31[idx];
+        if (imageBuffer_q31[idx] < 0)
+          imageBuffer_q31[idx] = 0;
+        if (imageBuffer_q31[idx] > VOLUME_AMP_RESOLUTION)
+          imageBuffer_q31[idx] = VOLUME_AMP_RESOLUTION;
+      }
+      // Black background mode: bright pixels = more energy (no inversion
+      // needed)
     }
     imageBuffer_q31[0] = 0; // Correction bug
 
@@ -1098,7 +1321,7 @@ void synth_IfftMode(
       max_level = audioData[buff_idx];
   }
 
-  /*// 🔍 DIAGNOSTIC: Analyser la sortie finale et détecter la saturation
+  // 🔍 DIAGNOSTIC LOGS for mono mode comparison
   if (log_counter % LOG_FREQUENCY == 0) {
     float final_rms = 0.0f;
     int clipped_samples = 0;
@@ -1111,23 +1334,11 @@ void synth_IfftMode(
     }
     final_rms = sqrtf(final_rms / AUDIO_BUFFER_SIZE);
 
-    printf("🎯 FINAL OUTPUT: min=%.6f, max=%.6f, rms=%.6f, contrast=%.2f\n",
-           min_level, max_level, final_rms, contrast_factor);
-    printf("📊 MODE: %s, CLIPPED: %d/%d samples\n",
-           synth_pool_initialized ? "PARALLEL" : "SEQUENTIAL", clipped_samples,
-           AUDIO_BUFFER_SIZE);
-
-#ifdef __linux__
-    printf("🐧 LINUX/Pi: Signal brut vers BossDAC (pas de protection)\n");
-#else
-    printf("🍎 MAC: CoreAudio avec normalisation automatique\n");
-#endif
-
-    if (clipped_samples > 0) {
-      printf("⚠️  SATURATION DÉTECTÉE: %d échantillons clippés!\n",
-             clipped_samples);
-    }
-  }*/
+    printf("🎯 MONO_MODE: min=%.6f, max=%.6f, rms=%.6f, clipped=%d/%d, "
+           "contrast=%.3f\n",
+           min_level, max_level, final_rms, clipped_samples, AUDIO_BUFFER_SIZE,
+           contrast_factor);
+  }
 
   // Incrémenter le compteur global pour la limitation des logs
   log_counter++;
@@ -1263,4 +1474,336 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // Changer l'indice pour que le callback lise le buffer rempli et que le
   // prochain écriture se fasse sur l'autre buffer
   __atomic_store_n(&current_buffer_index, 1 - index, __ATOMIC_RELEASE);
+}
+
+/**
+ * Stereo synthesis function - processes red and blue channels independently
+ * Red channel -> Left audio channel, Blue channel -> Right audio channel
+ * @param buffer_R Red channel input buffer (8-bit)
+ * @param buffer_G Green channel input buffer (8-bit) - ignored in stereo mode
+ * @param buffer_B Blue channel input buffer (8-bit)
+ */
+void synth_AudioProcessStereo(uint8_t *buffer_R, uint8_t *buffer_G,
+                              uint8_t *buffer_B) {
+  // Traitement audio stéréo (logs limités)
+  if (log_counter % LOG_FREQUENCY == 0) {
+    // printf("===== Stereo Audio Process appelé =====\n");
+  }
+
+  // Vérifier que les buffers d'entrée ne sont pas NULL
+  if (!buffer_R || !buffer_G || !buffer_B) {
+    printf("ERREUR: Un des buffers d'entrée est NULL!\n");
+    return;
+  }
+
+  int index = __atomic_load_n(&current_buffer_index, __ATOMIC_RELAXED);
+
+  // Buffers pour les canaux chaud et froid séparés (perceptual color science)
+  static int32_t g_warmChannel_live[CIS_MAX_PIXELS_NB];
+  static int32_t g_coldChannel_live[CIS_MAX_PIXELS_NB];
+
+  // Buffers pour les données traitées (freeze/fade)
+  int32_t processed_warmChannel[CIS_MAX_PIXELS_NB];
+  int32_t processed_coldChannel[CIS_MAX_PIXELS_NB];
+
+  // Attendre que le buffer destinataire soit libre
+  pthread_mutex_lock(&buffers_R[index].mutex);
+  while (buffers_R[index].ready != 0) {
+    pthread_cond_wait(&buffers_R[index].cond, &buffers_R[index].mutex);
+  }
+  pthread_mutex_unlock(&buffers_R[index].mutex);
+
+  // Attendre que le buffer gauche soit libre aussi (pour le stéréo)
+  pthread_mutex_lock(&buffers_L[index].mutex);
+  while (buffers_L[index].ready != 0) {
+    pthread_cond_wait(&buffers_L[index].cond, &buffers_L[index].mutex);
+  }
+  pthread_mutex_unlock(&buffers_L[index].mutex);
+
+  // Extraire les canaux chaud et froid séparément (perceptual color science)
+  // L'inversion des couleurs est maintenant gérée directement dans les
+  // fonctions d'extraction
+  extractWarmChannel(buffer_R, buffer_G, buffer_B, g_warmChannel_live,
+                     CIS_MAX_PIXELS_NB);
+  extractColdChannel(buffer_R, buffer_G, buffer_B, g_coldChannel_live,
+                     CIS_MAX_PIXELS_NB);
+
+  // --- Synth Data Freeze/Fade Logic (pour les deux canaux) ---
+  pthread_mutex_lock(&g_synth_data_freeze_mutex);
+  int local_is_frozen = g_is_synth_data_frozen;
+  int local_is_fading = g_is_synth_data_fading_out;
+
+  static int prev_frozen_state_stereo = 0;
+  static int32_t g_frozen_warmChannel[CIS_MAX_PIXELS_NB];
+  static int32_t g_frozen_coldChannel[CIS_MAX_PIXELS_NB];
+
+  if (local_is_frozen && !prev_frozen_state_stereo && !local_is_fading) {
+    memcpy(g_frozen_warmChannel, g_warmChannel_live,
+           sizeof(g_warmChannel_live));
+    memcpy(g_frozen_coldChannel, g_coldChannel_live,
+           sizeof(g_coldChannel_live));
+  }
+  prev_frozen_state_stereo = local_is_frozen;
+
+  static int prev_fading_state_stereo = 0;
+  if (local_is_fading && !prev_fading_state_stereo) {
+    g_synth_data_fade_start_time = synth_getCurrentTimeInSeconds();
+  }
+  prev_fading_state_stereo = local_is_fading;
+  pthread_mutex_unlock(&g_synth_data_freeze_mutex);
+
+  float alpha_blend = 1.0f; // For cross-fade
+
+  if (local_is_fading) {
+    double elapsed_time =
+        synth_getCurrentTimeInSeconds() - g_synth_data_fade_start_time;
+    if (elapsed_time >= G_SYNTH_DATA_FADE_DURATION_SECONDS) {
+      pthread_mutex_lock(&g_synth_data_freeze_mutex);
+      g_is_synth_data_fading_out = 0;
+      g_is_synth_data_frozen = 0;
+      pthread_mutex_unlock(&g_synth_data_freeze_mutex);
+      memcpy(processed_warmChannel, g_warmChannel_live,
+             sizeof(g_warmChannel_live));
+      memcpy(processed_coldChannel, g_coldChannel_live,
+             sizeof(g_coldChannel_live));
+    } else {
+      alpha_blend = (float)(elapsed_time / G_SYNTH_DATA_FADE_DURATION_SECONDS);
+      alpha_blend = (alpha_blend < 0.0f)
+                        ? 0.0f
+                        : ((alpha_blend > 1.0f) ? 1.0f : alpha_blend);
+      for (int i = 0; i < CIS_MAX_PIXELS_NB; ++i) {
+        processed_warmChannel[i] =
+            (int32_t)(g_frozen_warmChannel[i] * (1.0f - alpha_blend) +
+                      g_warmChannel_live[i] * alpha_blend);
+        processed_coldChannel[i] =
+            (int32_t)(g_frozen_coldChannel[i] * (1.0f - alpha_blend) +
+                      g_coldChannel_live[i] * alpha_blend);
+      }
+    }
+  } else if (local_is_frozen) {
+    memcpy(processed_warmChannel, g_frozen_warmChannel,
+           sizeof(g_frozen_warmChannel));
+    memcpy(processed_coldChannel, g_frozen_coldChannel,
+           sizeof(g_frozen_coldChannel));
+  } else {
+    memcpy(processed_warmChannel, g_warmChannel_live,
+           sizeof(g_warmChannel_live));
+    memcpy(processed_coldChannel, g_coldChannel_live,
+           sizeof(g_coldChannel_live));
+  }
+  // --- End Synth Data Freeze/Fade Logic ---
+
+  // 🔧 PERCEPTUAL STEREO: Warm colors → left channel, Cold colors → right
+  // channel 🎯 TRUE STEREO MODE: Both channels active to test crackling issue
+
+  // Left channel: warm colors (red/orange/yellow) using optimized thread pool
+  synth_IfftMode(processed_warmChannel, buffers_L[index].data);
+
+  // Right channel: cold colors (blue/cyan) using stateless version to avoid
+  // interference
+  synth_IfftMode_Stateless(processed_coldChannel, buffers_R[index].data);
+
+  // Mettre à jour les buffers d'affichage globaux avec les données couleur
+  // originales
+  pthread_mutex_lock(&g_displayable_synth_mutex);
+  memcpy(g_displayable_synth_R, buffer_R, CIS_MAX_PIXELS_NB);
+  memcpy(g_displayable_synth_G, buffer_G, CIS_MAX_PIXELS_NB);
+  memcpy(g_displayable_synth_B, buffer_B, CIS_MAX_PIXELS_NB);
+  pthread_mutex_unlock(&g_displayable_synth_mutex);
+
+  // Marquer les buffers comme prêts
+  pthread_mutex_lock(&buffers_L[index].mutex);
+  buffers_L[index].ready = 1;
+  pthread_mutex_unlock(&buffers_L[index].mutex);
+
+  pthread_mutex_lock(&buffers_R[index].mutex);
+  buffers_R[index].ready = 1;
+  pthread_mutex_unlock(&buffers_R[index].mutex);
+
+  // Changer l'indice pour que le callback lise les buffers remplis
+  __atomic_store_n(&current_buffer_index, 1 - index, __ATOMIC_RELEASE);
+}
+
+/**
+ * @brief Thread-safe version of synth_IfftMode for stereo synthesis
+ * This function doesn't modify the global waves[] state, preventing
+ * interference between left and right channel synthesis calls
+ * @param imageData Input grayscale data
+ * @param audioData Output audio buffer
+ * @retval None
+ */
+void synth_IfftMode_Stateless(int32_t *imageData, float *audioData) {
+  // Create local copies of oscillator states to avoid interference
+  static __thread uint32_t local_current_idx[NUMBER_OF_NOTES];
+  static __thread float local_current_volume[NUMBER_OF_NOTES];
+  static __thread int thread_initialized = 0;
+
+  // Initialize thread-local state on first call
+  if (!thread_initialized) {
+    for (int i = 0; i < NUMBER_OF_NOTES; i++) {
+      local_current_idx[i] = waves[i].current_idx;
+      local_current_volume[i] = waves[i].current_volume;
+    }
+    thread_initialized = 1;
+  }
+
+  // Use the same algorithm as synth_IfftMode but with local state
+  static __thread float ifftBuffer[AUDIO_BUFFER_SIZE];
+  static __thread float sumVolumeBuffer[AUDIO_BUFFER_SIZE];
+  static __thread float maxVolumeBuffer[AUDIO_BUFFER_SIZE];
+  static __thread int32_t imageBuffer_q31[NUMBER_OF_NOTES];
+  static __thread float imageBuffer_f32[NUMBER_OF_NOTES];
+  static __thread float waveBuffer[AUDIO_BUFFER_SIZE];
+  static __thread float volumeBuffer[AUDIO_BUFFER_SIZE];
+
+  // Initialize buffers
+  fill_float(0, ifftBuffer, AUDIO_BUFFER_SIZE);
+  fill_float(0, sumVolumeBuffer, AUDIO_BUFFER_SIZE);
+  fill_float(0, maxVolumeBuffer, AUDIO_BUFFER_SIZE);
+
+  int32_t idx, acc, new_idx, note, buff_idx;
+  int32_t signal_R;
+
+  // Preprocessing: calculate averages
+  for (idx = 0; idx < NUMBER_OF_NOTES; idx++) {
+    imageBuffer_q31[idx] = 0;
+    for (acc = 0; acc < PIXELS_PER_NOTE; acc++) {
+      imageBuffer_q31[idx] += (imageData[idx * PIXELS_PER_NOTE + acc]);
+    }
+    imageBuffer_q31[idx] /= PIXELS_PER_NOTE;
+
+    // 🔧 STEREO FIX: No color inversion here for stereo mode
+    // Color inversion is already handled in
+    // extractWarmChannel()/extractColdChannel() Only apply inversion for mono
+    // mode
+    if (!IS_STEREO_MODE()) {
+      // Mono mode: apply inversion based on background color
+      if (IS_WHITE_BACKGROUND()) {
+        // White background mode: dark pixels = more energy
+        imageBuffer_q31[idx] = VOLUME_AMP_RESOLUTION - imageBuffer_q31[idx];
+        if (imageBuffer_q31[idx] < 0)
+          imageBuffer_q31[idx] = 0;
+        if (imageBuffer_q31[idx] > VOLUME_AMP_RESOLUTION)
+          imageBuffer_q31[idx] = VOLUME_AMP_RESOLUTION;
+      }
+      // Black background mode: bright pixels = more energy (no inversion
+      // needed)
+    }
+    // Stereo mode: inversion already done in
+    // extractWarmChannel()/extractColdChannel()
+  }
+  imageBuffer_q31[0] = 0; // Bug correction
+
+#ifdef RELATIVE_MODE
+  sub_int32((int32_t *)imageBuffer_q31, (int32_t *)&imageBuffer_q31[1],
+            (int32_t *)imageBuffer_q31, NUMBER_OF_NOTES - 1);
+  clip_int32((int32_t *)imageBuffer_q31, 0, VOLUME_AMP_RESOLUTION,
+             NUMBER_OF_NOTES);
+  imageBuffer_q31[NUMBER_OF_NOTES - 1] = 0;
+#endif
+
+  // Main note processing loop
+  for (note = 0; note < NUMBER_OF_NOTES; note++) {
+    imageBuffer_f32[note] = (float)imageBuffer_q31[note];
+
+#if ENABLE_NON_LINEAR_MAPPING
+    {
+      float normalizedIntensity =
+          imageBuffer_f32[note] / (float)VOLUME_AMP_RESOLUTION;
+      float gamma = GAMMA_VALUE;
+      normalizedIntensity = powf(normalizedIntensity, gamma);
+      imageBuffer_f32[note] = normalizedIntensity * VOLUME_AMP_RESOLUTION;
+    }
+#endif
+
+    // Generate waveforms using local state
+    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+      new_idx = (local_current_idx[note] + waves[note].octave_coeff);
+      if ((uint32_t)new_idx >= waves[note].area_size) {
+        new_idx -= waves[note].area_size;
+      }
+      waveBuffer[buff_idx] = (*(waves[note].start_ptr + new_idx));
+      local_current_idx[note] = new_idx; // Update local state
+    }
+
+#ifdef GAP_LIMITER
+    // Gap limiter with local volume state
+    float target_volume = imageBuffer_f32[note];
+    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+      if (local_current_volume[note] < target_volume) {
+        local_current_volume[note] += waves[note].volume_increment;
+        if (local_current_volume[note] > target_volume) {
+          local_current_volume[note] = target_volume;
+        }
+      } else {
+        local_current_volume[note] -= waves[note].volume_decrement;
+        if (local_current_volume[note] < target_volume) {
+          local_current_volume[note] = target_volume;
+        }
+      }
+      volumeBuffer[buff_idx] = local_current_volume[note];
+    }
+#else
+    fill_float(imageBuffer_f32[note], volumeBuffer, AUDIO_BUFFER_SIZE);
+#endif
+
+    // Apply volume scaling
+    mult_float(waveBuffer, volumeBuffer, waveBuffer, AUDIO_BUFFER_SIZE);
+
+    for (buff_idx = AUDIO_BUFFER_SIZE; --buff_idx >= 0;) {
+      if (volumeBuffer[buff_idx] > maxVolumeBuffer[buff_idx]) {
+        maxVolumeBuffer[buff_idx] = volumeBuffer[buff_idx];
+      }
+    }
+
+    // Accumulation
+    add_float(waveBuffer, ifftBuffer, ifftBuffer, AUDIO_BUFFER_SIZE);
+    add_float(volumeBuffer, sumVolumeBuffer, sumVolumeBuffer,
+              AUDIO_BUFFER_SIZE);
+  }
+
+  // Final processing
+  mult_float(ifftBuffer, maxVolumeBuffer, ifftBuffer, AUDIO_BUFFER_SIZE);
+  scale_float(sumVolumeBuffer, VOLUME_AMP_RESOLUTION / 2, AUDIO_BUFFER_SIZE);
+
+  for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+    if (sumVolumeBuffer[buff_idx] != 0) {
+      signal_R = (int32_t)(ifftBuffer[buff_idx] / (sumVolumeBuffer[buff_idx]));
+    } else {
+      signal_R = 0;
+    }
+    audioData[buff_idx] = signal_R / (float)WAVE_AMP_RESOLUTION;
+  }
+
+  // Apply contrast modulation
+  float contrast_factor = calculate_contrast(imageData, CIS_MAX_PIXELS_NB);
+  for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+    audioData[buff_idx] *= contrast_factor;
+  }
+
+  // 🔍 DIAGNOSTIC LOGS for stereo mode
+  static int stereo_log_counter = 0;
+  if (stereo_log_counter % 120 ==
+      0) { // Log every ~1 second at 48kHz/400 buffer
+    float min_val = audioData[0], max_val = audioData[0], rms_sum = 0.0f;
+    int clipped_count = 0;
+
+    for (int i = 0; i < AUDIO_BUFFER_SIZE; i++) {
+      float val = audioData[i];
+      if (val < min_val)
+        min_val = val;
+      if (val > max_val)
+        max_val = val;
+      rms_sum += val * val;
+      if (val >= 0.95f || val <= -0.95f)
+        clipped_count++;
+    }
+
+    float rms = sqrtf(rms_sum / AUDIO_BUFFER_SIZE);
+    printf("🎵 STEREO_STATELESS: min=%.6f, max=%.6f, rms=%.6f, clipped=%d/%d, "
+           "contrast=%.3f\n",
+           min_val, max_val, rms, clipped_count, AUDIO_BUFFER_SIZE,
+           contrast_factor);
+  }
+  stereo_log_counter++;
 }

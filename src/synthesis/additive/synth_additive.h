@@ -49,6 +49,23 @@ void displayable_synth_buffers_cleanup(void);
 int32_t synth_IfftInit(void);
 void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
                         uint8_t *buffer_B);
+
+/* New functions for stereo mode - perceptual color science channel extraction
+ */
+uint32_t extractWarmChannel(uint8_t *buffer_R, uint8_t *buffer_G,
+                            uint8_t *buffer_B, int32_t *warm_output,
+                            uint32_t size);
+uint32_t extractColdChannel(uint8_t *buffer_R, uint8_t *buffer_G,
+                            uint8_t *buffer_B, int32_t *cold_output,
+                            uint32_t size);
+
+/* Stereo synthesis functions */
+void synth_AudioProcessStereo(uint8_t *buffer_R, uint8_t *buffer_G,
+                              uint8_t *buffer_B);
+
+/* Thread-safe synthesis function for stereo mode */
+void synth_IfftMode_Stateless(int32_t *imageData, float *audioData);
+
 /* Private defines -----------------------------------------------------------*/
 
 #endif /* __SYNTH_ADDITIVE_H */

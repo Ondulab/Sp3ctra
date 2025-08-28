@@ -142,10 +142,51 @@
  **************************************************************************************/
 // Define waveform type (options: SIN, SAW, SQR)
 #define SIN
-
 #define GAP_LIMITER
 
-#define COLOR_INVERTED
+/**************************************************************************************
+ * Synthesis Mode Configuration
+ **************************************************************************************/
+// Synthesis mode enumeration for mono/stereo and background color options
+typedef enum {
+  SYNTH_MODE_MONO_WHITE_BG = 0,   // Mono, fond blanc
+  SYNTH_MODE_MONO_BLACK_BG = 1,   // Mono, fond noir
+  SYNTH_MODE_STEREO_WHITE_BG = 2, // Stéréo, fond blanc
+  SYNTH_MODE_STEREO_BLACK_BG = 3  // Stéréo, fond noir
+} synth_mode_t;
+
+// Default synthesis mode (maintains current behavior)
+// #define SYNTH_MODE SYNTH_MODE_STEREO_WHITE_BG
+#define SYNTH_MODE SYNTH_MODE_STEREO_BLACK_BG
+// #define SYNTH_MODE SYNTH_MODE_MONO_WHITE_BG
+// #define SYNTH_MODE SYNTH_MODE_MONO_BLACK_BG
+
+// Helper macros for mode detection
+#define IS_STEREO_MODE()                                                       \
+  ((SYNTH_MODE == SYNTH_MODE_STEREO_WHITE_BG) ||                               \
+   (SYNTH_MODE == SYNTH_MODE_STEREO_BLACK_BG))
+#define IS_WHITE_BACKGROUND()                                                  \
+  ((SYNTH_MODE == SYNTH_MODE_MONO_WHITE_BG) ||                                 \
+   (SYNTH_MODE == SYNTH_MODE_STEREO_WHITE_BG))
+
+/**************************************************************************************
+ * Perceptual Stereo Separation Configuration
+ **************************************************************************************/
+// Perceptual luminance weights (more accurate than standard RGB weights)
+#define PERCEPTUAL_WEIGHT_R (0.21f) // Red contribution to perceived brightness
+#define PERCEPTUAL_WEIGHT_G                                                    \
+  (0.72f) // Green contribution to perceived brightness
+#define PERCEPTUAL_WEIGHT_B (0.07f) // Blue contribution to perceived brightness
+
+// Opponent axes weights for warm/cold color separation
+#define OPPONENT_ALPHA (1.0f) // Weight for red-blue opponent axis (O_rb)
+#define OPPONENT_BETA (0.5f)  // Weight for green-magenta opponent axis (O_gm)
+
+// Color separation thresholds
+#define CHROMATIC_THRESHOLD                                                    \
+  (0.1f) // Minimum color saturation to be considered chromatic
+#define ACHROMATIC_SPLIT                                                       \
+  (0.5f) // Left/right split for achromatic colors (0.5 = 50/50)
 
 /* Auto-volume (IMU X) configuration - tune these values on site */
 #define IMU_ACTIVE_THRESHOLD_X                                                 \
