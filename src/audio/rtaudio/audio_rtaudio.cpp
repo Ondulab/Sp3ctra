@@ -103,11 +103,25 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         (framesToRender < framesAvailable) ? framesToRender : framesAvailable;
 
     // Get source pointers directly - avoid memcpy when possible
-    float *source_ifft = nullptr;
+    float *source_ifft_left = nullptr;
+    float *source_ifft_right = nullptr;
     float *source_fft = nullptr;
 
-    if (buffers_R[localReadIndex].ready == 1) {
-      source_ifft = &buffers_R[localReadIndex].data[readOffset];
+    // In stereo mode, use separate left and right channels
+    // In mono mode, use right channel for both
+    if (IS_STEREO_MODE()) {
+      if (buffers_L[localReadIndex].ready == 1) {
+        source_ifft_left = &buffers_L[localReadIndex].data[readOffset];
+      }
+      if (buffers_R[localReadIndex].ready == 1) {
+        source_ifft_right = &buffers_R[localReadIndex].data[readOffset];
+      }
+    } else {
+      // Mono mode: use right buffer for both channels
+      if (buffers_R[localReadIndex].ready == 1) {
+        source_ifft_left = &buffers_R[localReadIndex].data[readOffset];
+        source_ifft_right = &buffers_R[localReadIndex].data[readOffset];
+      }
     }
 
     if (fft_audio_buffers[fft_localReadIndex].ready == 1) {
@@ -134,16 +148,21 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 
     // OPTIMIZED MIXING - Direct to output with threaded reverb
     for (unsigned int i = 0; i < chunk; i++) {
-      float dry_sample = 0.0f;
+      float dry_sample_left = 0.0f;
+      float dry_sample_right = 0.0f;
 
-      // Add IFFT contribution
-      if (source_ifft) {
-        dry_sample += source_ifft[i] * cached_level_ifft;
+      // Add IFFT contribution - separate left and right channels
+      if (source_ifft_left) {
+        dry_sample_left += source_ifft_left[i] * cached_level_ifft;
+      }
+      if (source_ifft_right) {
+        dry_sample_right += source_ifft_right[i] * cached_level_ifft;
       }
 
-      // Add FFT contribution
+      // Add FFT contribution (same for both channels)
       if (source_fft) {
-        dry_sample += source_fft[i] * cached_level_fft;
+        dry_sample_left += source_fft[i] * cached_level_fft;
+        dry_sample_right += source_fft[i] * cached_level_fft;
       }
 
       // Direct reverb processing in callback - ULTRA OPTIMIZED
@@ -152,25 +171,36 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 #if ENABLE_REVERB
       if (reverbEnabled &&
           (cached_reverb_send_ifft > 0.01f || cached_reverb_send_fft > 0.01f)) {
-        float reverb_input = 0.0f;
-        if (source_ifft && cached_reverb_send_ifft > 0.01f) {
-          reverb_input +=
-              source_ifft[i] * cached_level_ifft * cached_reverb_send_ifft;
+        float reverb_input_left = 0.0f;
+        float reverb_input_right = 0.0f;
+
+        if (source_ifft_left && cached_reverb_send_ifft > 0.01f) {
+          reverb_input_left +=
+              source_ifft_left[i] * cached_level_ifft * cached_reverb_send_ifft;
+        }
+        if (source_ifft_right && cached_reverb_send_ifft > 0.01f) {
+          reverb_input_right += source_ifft_right[i] * cached_level_ifft *
+                                cached_reverb_send_ifft;
         }
         if (source_fft && cached_reverb_send_fft > 0.01f) {
-          reverb_input +=
+          float fft_reverb =
               source_fft[i] * cached_level_fft * cached_reverb_send_fft;
+          reverb_input_left += fft_reverb;
+          reverb_input_right += fft_reverb;
         }
 
-        // Single-sample reverb processing (optimized)
-        processReverbOptimized(reverb_input, reverb_input, reverb_left,
-                               reverb_right);
+        // Single-sample reverb processing (optimized) - use average of
+        // left/right for input
+        float reverb_input_mono =
+            (reverb_input_left + reverb_input_right) * 0.5f;
+        processReverbOptimized(reverb_input_mono, reverb_input_mono,
+                               reverb_left, reverb_right);
       }
 #endif
 
       // Mix dry + reverb and apply volume
-      float final_left = (dry_sample + reverb_left) * cached_volume;
-      float final_right = (dry_sample + reverb_right) * cached_volume;
+      float final_left = (dry_sample_left + reverb_left) * cached_volume;
+      float final_right = (dry_sample_right + reverb_right) * cached_volume;
 
       // Limiting
       final_left = (final_left > 1.0f)    ? 1.0f
@@ -192,13 +222,30 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     fft_readOffset += chunk;
     framesToRender -= chunk;
 
-    // Handle buffer transitions - IFFT
+    // Handle buffer transitions - IFFT (both left and right channels)
     if (readOffset >= AUDIO_BUFFER_SIZE) {
-      if (buffers_R[localReadIndex].ready == 1) {
-        pthread_mutex_lock(&buffers_R[localReadIndex].mutex);
-        buffers_R[localReadIndex].ready = 0;
-        pthread_cond_signal(&buffers_R[localReadIndex].cond);
-        pthread_mutex_unlock(&buffers_R[localReadIndex].mutex);
+      // Signal completion for both left and right buffers
+      if (IS_STEREO_MODE()) {
+        if (buffers_L[localReadIndex].ready == 1) {
+          pthread_mutex_lock(&buffers_L[localReadIndex].mutex);
+          buffers_L[localReadIndex].ready = 0;
+          pthread_cond_signal(&buffers_L[localReadIndex].cond);
+          pthread_mutex_unlock(&buffers_L[localReadIndex].mutex);
+        }
+        if (buffers_R[localReadIndex].ready == 1) {
+          pthread_mutex_lock(&buffers_R[localReadIndex].mutex);
+          buffers_R[localReadIndex].ready = 0;
+          pthread_cond_signal(&buffers_R[localReadIndex].cond);
+          pthread_mutex_unlock(&buffers_R[localReadIndex].mutex);
+        }
+      } else {
+        // Mono mode: only signal right buffer
+        if (buffers_R[localReadIndex].ready == 1) {
+          pthread_mutex_lock(&buffers_R[localReadIndex].mutex);
+          buffers_R[localReadIndex].ready = 0;
+          pthread_cond_signal(&buffers_R[localReadIndex].cond);
+          pthread_mutex_unlock(&buffers_R[localReadIndex].mutex);
+        }
       }
       localReadIndex = (localReadIndex == 0) ? 1 : 0;
       readOffset = 0;
