@@ -58,92 +58,19 @@ static uint32_t calculate_waveform(uint32_t current_aera_size,
                                    uint32_t current_unitary_waveform_cell,
                                    uint32_t buffer_len,
                                    volatile struct waveParams *params) {
-  unitary_waveform[current_unitary_waveform_cell] = 0;
-  uint32_t max = 0;
-  uint32_t currentValue = 0;
-  uint32_t overshootCompensation = 0;
+  (void)params; // Suppress unused parameter warning
 
-  switch (params->waveform) {
-  case SIN_WAVE:
-    // fill unitary_waveform buffer with sinusoidal waveform for each comma
-    for (uint32_t x = 0; x < current_aera_size; x++) {
-      // sanity check
-      if (current_unitary_waveform_cell < buffer_len) {
-        unitary_waveform[current_unitary_waveform_cell] =
-            ((sin((x * 2.00 * PI) / (float)current_aera_size))) *
-            (WAVE_AMP_RESOLUTION / 2.00);
-      }
-      current_unitary_waveform_cell++;
+  unitary_waveform[current_unitary_waveform_cell] = 0;
+
+  // Generate sinusoidal waveform (SIN is now implicit)
+  for (uint32_t x = 0; x < current_aera_size; x++) {
+    // sanity check
+    if (current_unitary_waveform_cell < buffer_len) {
+      unitary_waveform[current_unitary_waveform_cell] =
+          ((sin((x * 2.00 * PI) / (float)current_aera_size))) *
+          (WAVE_AMP_RESOLUTION / 2.00);
     }
-    break;
-  case SAW_WAVE:
-    // compute de maximum overshoot value on positive phase
-    for (uint32_t x = 0; x < (current_aera_size / 2); x++) {
-      currentValue = 0;
-      // sanity check
-      if (current_unitary_waveform_cell < buffer_len) {
-        // store overshoot value
-        for (uint32_t n = 0; n < params->waveformOrder; n++) {
-          currentValue +=
-              pow(-1, n) * (WAVE_AMP_RESOLUTION / PI) *
-              sin((n + 1.00) * x * 2.00 * PI / (float)current_aera_size) /
-              ((float)n + 1.00);
-          if (currentValue > max)
-            max = currentValue;
-        }
-      }
-    }
-    // compute overshoot compensation
-    overshootCompensation = ((max * 2) - WAVE_AMP_RESOLUTION);
-    // fill unitary_waveform buffer with saw waveform for each comma
-    for (uint32_t x = 0; x < current_aera_size; x++) {
-      // sanity check
-      if (current_unitary_waveform_cell < buffer_len) {
-        for (uint32_t n = 0; n < params->waveformOrder; n++) {
-          unitary_waveform[current_unitary_waveform_cell] +=
-              pow(-1, n) *
-              ((WAVE_AMP_RESOLUTION - overshootCompensation) / PI) *
-              sin((n + 1.00) * x * 2.00 * PI / (float)current_aera_size) /
-              ((float)n + 1.00);
-        }
-      }
-      current_unitary_waveform_cell++;
-    }
-    break;
-  case SQR_WAVE:
-    // compute de maximum overshoot value on positive phase
-    for (uint32_t x = 0; x < (current_aera_size / 2); x++) {
-      currentValue = 0;
-      // sanity check
-      if (current_unitary_waveform_cell < buffer_len) {
-        // store overshoot value
-        for (uint32_t n = 0; n < params->waveformOrder; n++) {
-          currentValue += (2 * WAVE_AMP_RESOLUTION / PI) *
-                          sin((2.00 * n + 1.00) * x * 2.00 * PI /
-                              (float)current_aera_size) /
-                          (2.00 * (float)n + 1.00);
-          if (currentValue > max)
-            max = currentValue;
-        }
-      }
-    }
-    // compute overshoot compensation
-    overshootCompensation = ((max * 2) - WAVE_AMP_RESOLUTION);
-    // fill unitary_waveform buffer with square waveform for each comma
-    for (uint32_t x = 0; x < current_aera_size; x++) {
-      // sanity check
-      if (current_unitary_waveform_cell < buffer_len) {
-        for (uint32_t n = 0; n < params->waveformOrder; n++) {
-          unitary_waveform[current_unitary_waveform_cell] +=
-              (2 * (WAVE_AMP_RESOLUTION - overshootCompensation) / PI) *
-              sin((2.00 * n + 1.00) * x * 2.00 * PI /
-                  (float)current_aera_size) /
-              (2.00 * (float)n + 1.00);
-        }
-      }
-      current_unitary_waveform_cell++;
-    }
-    break;
+    current_unitary_waveform_cell++;
   }
 
   return current_unitary_waveform_cell;

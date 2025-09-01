@@ -101,6 +101,21 @@ static uint32_t log_counter = 0;
 // static volatile int32_t *full_audio_ptr; // Unused variable
 static int32_t imageRef[NUMBER_OF_NOTES] = {0};
 
+/* Temporal Image Smoothing Filter Structures */
+#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
+typedef struct {
+  float previous_values[CIS_MAX_PIXELS_NB];
+  float smoothed_values[CIS_MAX_PIXELS_NB];
+  int initialized;
+  pthread_mutex_t filter_mutex;
+} ImageTemporalFilter;
+
+// Global filter instances for different processing modes
+static ImageTemporalFilter mono_filter = {0};
+static ImageTemporalFilter warm_filter = {0};
+static ImageTemporalFilter cold_filter = {0};
+#endif
+
 /* Variable used to get converted value */
 // ToChange__IO uint16_t uhADCxConvertedValue = 0;
 
@@ -119,6 +134,15 @@ void synth_shutdown_thread_pool(void); // Non-static pour atexit()
 static void synth_process_worker_range(synth_thread_worker_t *worker);
 static void synth_precompute_wave_data(int32_t *imageData);
 void *synth_persistent_worker_thread(void *arg);
+
+// Temporal image smoothing function prototypes
+#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
+static void init_temporal_filter(ImageTemporalFilter *filter);
+static void cleanup_temporal_filter(ImageTemporalFilter *filter);
+static void apply_temporal_smoothing(int32_t *current_data,
+                                     ImageTemporalFilter *filter,
+                                     uint32_t size);
+#endif
 
 /* Private user code ---------------------------------------------------------*/
 
@@ -190,7 +214,6 @@ int32_t synth_IfftInit(void) {
       (uint32_t)START_FREQUENCY; // Cast to uint32_t
   wavesGeneratorParams.harmonization = MAJOR;
   wavesGeneratorParams.harmonizationLevel = 100;
-  wavesGeneratorParams.waveform = SIN_WAVE;
   wavesGeneratorParams.waveformOrder = 1;
 
   buffer_len = init_waves(unitary_waveform, waves,
@@ -285,6 +308,15 @@ int32_t synth_IfftInit(void) {
 
   fill_int32(65535, (int32_t *)imageRef, NUMBER_OF_NOTES);
 
+#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
+  // Initialize temporal smoothing filters
+  init_temporal_filter(&mono_filter);
+  init_temporal_filter(&warm_filter);
+  init_temporal_filter(&cold_filter);
+  printf(
+      "🔧 TEMPORAL_SMOOTHING: Filters initialized for mono and stereo modes\n");
+#endif
+
   return 0;
 }
 
@@ -323,8 +355,8 @@ uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
 
 /**
  * Extract warm channel (left stereo) using perceptual color science
- * Implements opponent color theory with warm colors (red/orange/yellow) → left
- * channel
+ * Implements opponent color theory with warm colors (red/orange/yellow) →
+ * left channel
  * @param buffer_R Red channel input buffer (8-bit)
  * @param buffer_G Green channel input buffer (8-bit)
  * @param buffer_B Blue channel input buffer (8-bit)
@@ -404,7 +436,8 @@ uint32_t extractWarmChannel(uint8_t *buffer_R, uint8_t *buffer_G,
       if (final_value > VOLUME_AMP_RESOLUTION)
         final_value = VOLUME_AMP_RESOLUTION;
     }
-    // Black background mode: bright pixels = more energy (no inversion needed)
+    // Black background mode: bright pixels = more energy (no inversion
+    // needed)
 
     // 🔍 DIAGNOSTIC: Log some sample values to verify algorithm
     static int sample_counter = 0;
@@ -424,7 +457,8 @@ uint32_t extractWarmChannel(uint8_t *buffer_R, uint8_t *buffer_G,
 
 /**
  * Extract cold channel (right stereo) using perceptual color science
- * Implements opponent color theory with cold colors (blue/cyan) → right channel
+ * Implements opponent color theory with cold colors (blue/cyan) → right
+ * channel
  * @param buffer_R Red channel input buffer (8-bit)
  * @param buffer_G Green channel input buffer (8-bit)
  * @param buffer_B Blue channel input buffer (8-bit)
@@ -492,7 +526,8 @@ uint32_t extractColdChannel(uint8_t *buffer_R, uint8_t *buffer_G,
       if (final_value > VOLUME_AMP_RESOLUTION)
         final_value = VOLUME_AMP_RESOLUTION;
     }
-    // Black background mode: bright pixels = more energy (no inversion needed)
+    // Black background mode: bright pixels = more energy (no inversion
+    // needed)
 
     // 🔍 DIAGNOSTIC: Log some sample values to verify algorithm
     static int sample_counter = 0;
@@ -522,7 +557,8 @@ static float calculate_contrast(int32_t *imageData, size_t size) {
     return 1.0f; // Valeur par défaut = volume maximum
   }
 
-  // Échantillonnage - ne traite pas tous les pixels pour optimiser performance
+  // Échantillonnage - ne traite pas tous les pixels pour optimiser
+  // performance
   const size_t sample_stride =
       (size_t)CONTRAST_STRIDE > 0 ? (size_t)CONTRAST_STRIDE : 1;
   const size_t sample_count = size / sample_stride;
@@ -615,6 +651,124 @@ static float calculate_contrast(int32_t *imageData, size_t size) {
   return result;
 }
 
+#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
+/**
+ * @brief Initialize temporal filter structure
+ * @param filter Pointer to the filter structure to initialize
+ * @retval None
+ */
+static void init_temporal_filter(ImageTemporalFilter *filter) {
+  if (filter == NULL)
+    return;
+
+  // Initialize mutex
+  if (pthread_mutex_init(&filter->filter_mutex, NULL) != 0) {
+    printf("ERROR: Failed to initialize temporal filter mutex\n");
+    return;
+  }
+
+  // Initialize arrays to zero
+  memset(filter->previous_values, 0, sizeof(filter->previous_values));
+  memset(filter->smoothed_values, 0, sizeof(filter->smoothed_values));
+  filter->initialized = 0;
+
+  printf("🔧 TEMPORAL_FILTER: Initialized with alpha=%.3f, threshold=%.3f\n",
+         IMAGE_TEMPORAL_SMOOTHING_ALPHA, IMAGE_NOISE_GATE_THRESHOLD);
+}
+
+/**
+ * @brief Cleanup temporal filter structure
+ * @param filter Pointer to the filter structure to cleanup
+ * @retval None
+ */
+static void cleanup_temporal_filter(ImageTemporalFilter *filter) {
+  if (filter == NULL)
+    return;
+
+  pthread_mutex_destroy(&filter->filter_mutex);
+  filter->initialized = 0;
+}
+
+/**
+ * @brief Apply temporal smoothing to image data to reduce sensor noise
+ * artifacts
+ * @param current_data Input/output buffer containing current frame data
+ * @param filter Temporal filter state structure
+ * @param size Number of pixels to process
+ * @retval None
+ */
+static void apply_temporal_smoothing(int32_t *current_data,
+                                     ImageTemporalFilter *filter,
+                                     uint32_t size) {
+  if (current_data == NULL || filter == NULL || size == 0) {
+    return;
+  }
+
+  pthread_mutex_lock(&filter->filter_mutex);
+
+  const float alpha = IMAGE_TEMPORAL_SMOOTHING_ALPHA;
+  const float noise_threshold =
+      IMAGE_NOISE_GATE_THRESHOLD * VOLUME_AMP_RESOLUTION;
+
+  // Statistics for diagnostics
+  static uint32_t call_counter = 0;
+  uint32_t smoothed_pixels = 0;
+  uint32_t significant_changes = 0;
+
+  for (uint32_t i = 0; i < size; i++) {
+    float current = (float)current_data[i];
+
+    if (!filter->initialized) {
+      // First frame: initialize with current values
+      filter->smoothed_values[i] = current;
+      filter->previous_values[i] = current;
+    } else {
+      // Calculate absolute difference from previous frame
+      float diff = fabsf(current - filter->previous_values[i]);
+
+#if IMAGE_ADAPTIVE_SMOOTHING
+      if (diff < noise_threshold) {
+        // Small variation: apply strong smoothing (likely noise)
+        filter->smoothed_values[i] =
+            alpha * filter->smoothed_values[i] + (1.0f - alpha) * current;
+        smoothed_pixels++;
+      } else {
+        // Significant variation: apply reduced smoothing to preserve
+        // responsiveness
+        float adaptive_alpha = alpha * 0.6f; // Reduce smoothing strength
+        filter->smoothed_values[i] =
+            adaptive_alpha * filter->smoothed_values[i] +
+            (1.0f - adaptive_alpha) * current;
+        significant_changes++;
+      }
+#else
+      // Fixed smoothing without adaptation
+      filter->smoothed_values[i] =
+          alpha * filter->smoothed_values[i] + (1.0f - alpha) * current;
+      smoothed_pixels++;
+#endif
+    }
+
+    // Update previous value and output
+    filter->previous_values[i] = current;
+    current_data[i] = (int32_t)filter->smoothed_values[i];
+  }
+
+  filter->initialized = 1;
+
+  // Diagnostic logging (limited frequency)
+  if (call_counter % (LOG_FREQUENCY * 5) == 0) { // Every 5 seconds
+    float smoothing_ratio = (float)smoothed_pixels / size * 100.0f;
+    float change_ratio = (float)significant_changes / size * 100.0f;
+    printf("🔧 TEMPORAL_SMOOTH: %.1f%% smoothed, %.1f%% significant changes\n",
+           smoothing_ratio, change_ratio);
+  }
+  call_counter++;
+
+  pthread_mutex_unlock(&filter->filter_mutex);
+}
+#endif // ENABLE_IMAGE_TEMPORAL_SMOOTHING
+
 /**
  * @brief  Structure pour le pool de threads persistants optimisé
  */
@@ -625,7 +779,7 @@ typedef struct synth_thread_worker_s {
   int32_t *imageData; // Données d'image d'entrée (partagé)
 
   // Buffers de sortie locaux au thread
-  float thread_ifftBuffer[AUDIO_BUFFER_SIZE];
+  float thread_additiveBuffer[AUDIO_BUFFER_SIZE];
   float thread_sumVolumeBuffer[AUDIO_BUFFER_SIZE];
   float thread_maxVolumeBuffer[AUDIO_BUFFER_SIZE];
 
@@ -656,7 +810,8 @@ static pthread_t worker_threads[3];
 static volatile int synth_pool_initialized = 0;
 static volatile int synth_pool_shutdown = 0;
 
-// Mutex global pour protéger l'accès aux données waves[] pendant le pré-calcul
+// Mutex global pour protéger l'accès aux données waves[] pendant le
+// pré-calcul
 static pthread_mutex_t waves_global_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /**
@@ -685,9 +840,9 @@ static int synth_init_thread_pool(void) {
       return -1;
     }
     if (pthread_cond_init(&worker->work_cond, NULL) != 0) {
-      printf(
-          "Erreur lors de l'initialisation de la condition pour le thread %d\n",
-          i);
+      printf("Erreur lors de l'initialisation de la condition pour le thread "
+             "%d\n",
+             i);
       return -1;
     }
   }
@@ -746,7 +901,7 @@ static void synth_process_worker_range(synth_thread_worker_t *worker) {
   worker_call_counter++;
 
   // Initialiser les buffers de sortie à zéro
-  fill_float(0, worker->thread_ifftBuffer, AUDIO_BUFFER_SIZE);
+  fill_float(0, worker->thread_additiveBuffer, AUDIO_BUFFER_SIZE);
   fill_float(0, worker->thread_sumVolumeBuffer, AUDIO_BUFFER_SIZE);
   fill_float(0, worker->thread_maxVolumeBuffer, AUDIO_BUFFER_SIZE);
 
@@ -832,8 +987,115 @@ static void synth_process_worker_range(synth_thread_worker_t *worker) {
     // notes distinctes)
     float target_volume = worker->imageBuffer_f32[local_note_idx];
 
-    // Calculer dynamiquement le volume avec gap limiter (accès direct à
-    // waves[])
+#if ENABLE_PHASE_AWARE_GAP_LIMITER
+    // Phase-aware gap limiter: modulate volume changes based on waveform phase
+
+    // Static variables for hysteresis anti-oscillation (per note)
+    static int volume_change_allowed[NUMBER_OF_NOTES] = {0};
+    static int hysteresis_initialized = 0;
+
+    // Initialize hysteresis state on first call
+    if (!hysteresis_initialized) {
+      for (int i = 0; i < NUMBER_OF_NOTES; i++) {
+        volume_change_allowed[i] = 1; // Start with changes allowed
+      }
+      hysteresis_initialized = 1;
+    }
+
+    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+      // Calculate phase factor based on current waveform amplitude
+      float current_phase_amplitude = fabs(worker->waveBuffer[buff_idx]);
+      float max_amplitude = WAVE_AMP_RESOLUTION / 2.0f;
+      float phase_factor = 1.0f - (current_phase_amplitude / max_amplitude);
+
+      // Calculate volume difference
+      float volume_diff = target_volume - waves[note].current_volume;
+      int should_change_volume = 0;
+
+#if PHASE_AWARE_MODE == PHASE_AWARE_MODE_ZERO_CROSS
+      // Zero crossing mode: only allow changes near zero crossings
+      float zero_threshold = ZERO_CROSSING_THRESHOLD * max_amplitude;
+      if (current_phase_amplitude <= zero_threshold) {
+        should_change_volume = 1;
+      }
+#else
+      // Continuous mode: use phase-weighted changes
+
+#if ENABLE_HYSTERESIS_ANTI_OSCILLATION
+      // Apply hysteresis anti-oscillation logic
+      if (!volume_change_allowed[note]) {
+        // Currently blocked → check high threshold to enable
+        if (phase_factor > HYSTERESIS_HIGH_THRESHOLD) {
+          volume_change_allowed[note] = 1;
+          should_change_volume = 1;
+        }
+      } else {
+        // Currently allowed → check low threshold to disable
+        if (phase_factor < HYSTERESIS_LOW_THRESHOLD) {
+          volume_change_allowed[note] = 0;
+          should_change_volume = 0;
+        } else {
+          should_change_volume = 1;
+        }
+      }
+#else
+      // Simple phase factor threshold without hysteresis
+      if (phase_factor > MIN_PHASE_FACTOR) {
+        should_change_volume = 1;
+      }
+#endif // ENABLE_HYSTERESIS_ANTI_OSCILLATION
+#endif // PHASE_AWARE_MODE
+
+      // Apply volume changes based on decision logic
+      if (fabs(volume_diff) > SMALL_CHANGE_THRESHOLD && should_change_volume) {
+        // Large change: apply phase-aware modulation
+        if (volume_diff > 0) {
+#if PHASE_AWARE_MODE == PHASE_AWARE_MODE_ZERO_CROSS
+          // Zero crossing mode: full increment at zero crossings
+          waves[note].current_volume += waves[note].volume_increment;
+#else
+          // Continuous mode: phase-weighted increment
+          float adaptive_increment =
+              waves[note].volume_increment * phase_factor;
+          waves[note].current_volume += adaptive_increment;
+#endif
+          if (waves[note].current_volume > target_volume) {
+            waves[note].current_volume = target_volume;
+          }
+        } else {
+#if PHASE_AWARE_MODE == PHASE_AWARE_MODE_ZERO_CROSS
+          // Zero crossing mode: full decrement at zero crossings
+          waves[note].current_volume -= waves[note].volume_decrement;
+#else
+          // Continuous mode: phase-weighted decrement
+          float adaptive_decrement =
+              waves[note].volume_decrement * phase_factor;
+          waves[note].current_volume -= adaptive_decrement;
+#endif
+          if (waves[note].current_volume < target_volume) {
+            waves[note].current_volume = target_volume;
+          }
+        }
+      } else if (fabs(volume_diff) <= SMALL_CHANGE_THRESHOLD) {
+        // Small change: apply directly regardless of phase
+        waves[note].current_volume = target_volume;
+      }
+      // If should_change_volume is false, keep current volume unchanged
+
+      worker->volumeBuffer[buff_idx] = waves[note].current_volume;
+
+#ifdef DEBUG_PHASE_AWARE_GAP_LIMITER
+      if (note == DEBUG_NOTE_INDEX && buff_idx % 100 == 0) {
+        printf("Note %d: amp=%.2f, phase_factor=%.3f, vol_diff=%.2f, "
+               "should_change=%d, allowed=%d, vol=%.2f\n",
+               note, current_phase_amplitude, phase_factor, volume_diff,
+               should_change_volume, volume_change_allowed[note],
+               waves[note].current_volume);
+      }
+#endif
+    }
+#else
+    // Classic gap limiter (original implementation)
     for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE - 1; buff_idx++) {
       if (waves[note].current_volume < target_volume) {
         waves[note].current_volume += waves[note].volume_increment;
@@ -856,10 +1118,11 @@ static void synth_process_worker_range(synth_thread_worker_t *worker) {
       fill_float(waves[note].current_volume, &worker->volumeBuffer[buff_idx],
                  AUDIO_BUFFER_SIZE - buff_idx);
     }
+#endif // ENABLE_PHASE_AWARE_GAP_LIMITER
 #else
     fill_float(worker->imageBuffer_f32[local_note_idx], worker->volumeBuffer,
                AUDIO_BUFFER_SIZE);
-#endif
+#endif // GAP_LIMITER
 
     // Apply volume scaling to the current note waveform
     mult_float(worker->waveBuffer, worker->volumeBuffer, worker->waveBuffer,
@@ -873,9 +1136,9 @@ static void synth_process_worker_range(synth_thread_worker_t *worker) {
       }
     }
 
-    // IFFT summation (local au thread)
-    add_float(worker->waveBuffer, worker->thread_ifftBuffer,
-              worker->thread_ifftBuffer, AUDIO_BUFFER_SIZE);
+    // Additive summation (local to thread)
+    add_float(worker->waveBuffer, worker->thread_additiveBuffer,
+              worker->thread_additiveBuffer, AUDIO_BUFFER_SIZE);
     // Volume summation (local au thread)
     add_float(worker->volumeBuffer, worker->thread_sumVolumeBuffer,
               worker->thread_sumVolumeBuffer, AUDIO_BUFFER_SIZE);
@@ -920,9 +1183,9 @@ static void synth_precompute_wave_data(int32_t *imageData) {
       }
 
 #ifdef GAP_LIMITER
-      // ✅ GAP_LIMITER: Ne pas pré-calculer le volume - les threads l'accèdent
-      // directement Les paramètres increment/decrement sont thread-safe en
-      // lecture seule
+      // ✅ GAP_LIMITER: Ne pas pré-calculer le volume - les threads
+      // l'accèdent directement Les paramètres increment/decrement sont
+      // thread-safe en lecture seule
       worker->precomputed_volume_increment[local_note_idx] =
           waves[note].volume_increment;
       worker->precomputed_volume_decrement[local_note_idx] =
@@ -991,23 +1254,31 @@ void synth_shutdown_thread_pool(void) {
     pthread_cond_destroy(&thread_pool[i].work_cond);
   }
 
+#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
+  // Cleanup temporal smoothing filters
+  cleanup_temporal_filter(&mono_filter);
+  cleanup_temporal_filter(&warm_filter);
+  cleanup_temporal_filter(&cold_filter);
+  printf("🔧 TEMPORAL_SMOOTHING: Filters cleaned up\n");
+#endif
+
   synth_pool_initialized = 0;
 }
 
 /**
- * @brief  Version optimisée de la synthèse IFFT avec pool de threads
- * persistants
- * @param  imageData Données d'entrée en niveaux de gris
+ * @brief  Optimized version of the Additive synthesis with a persistent
+ * thread pool
+ * @param  imageData Grayscale input data
  * @param  audioData Buffer de sortie audio
  * @retval None
  */
-void synth_IfftMode(
-    int32_t *imageData,
-    float *audioData) { // imageData is now potentially frozen/faded g_grayScale
+void synth_IfftMode(int32_t *imageData,
+                    float *audioData) { // imageData is now potentially
+                                        // frozen/faded g_grayScale
 
-  // Mode IFFT (logs limités)
+  // Additive mode (limited logs)
   if (log_counter % LOG_FREQUENCY == 0) {
-    // printf("===== IFFT Mode appelé (optimisé) =====\n");
+    // printf("===== Additive Mode called (optimized) =====\n");
   }
 
   static int32_t signal_R;
@@ -1025,20 +1296,20 @@ void synth_IfftMode(
         synth_pool_initialized = 0;
       }
     } else {
-      printf(
-          "Erreur lors de l'initialisation du pool, mode séquentiel activé\n");
+      printf("Erreur lors de l'initialisation du pool, mode séquentiel "
+             "activé\n");
       synth_pool_initialized = 0;
     }
     first_call = 0;
   }
 
   // Buffers finaux pour les résultats combinés
-  static float ifftBuffer[AUDIO_BUFFER_SIZE];
+  static float additiveBuffer[AUDIO_BUFFER_SIZE];
   static float sumVolumeBuffer[AUDIO_BUFFER_SIZE];
   static float maxVolumeBuffer[AUDIO_BUFFER_SIZE];
 
   // Réinitialiser les buffers finaux
-  fill_float(0, ifftBuffer, AUDIO_BUFFER_SIZE);
+  fill_float(0, additiveBuffer, AUDIO_BUFFER_SIZE);
   fill_float(0, sumVolumeBuffer, AUDIO_BUFFER_SIZE);
   fill_float(0, maxVolumeBuffer, AUDIO_BUFFER_SIZE);
 
@@ -1072,12 +1343,10 @@ void synth_IfftMode(
       pthread_mutex_unlock(&thread_pool[i].work_mutex);
     }
 
-    /*// 🔍 DIAGNOSTIC: Analyser les buffers de chaque thread avant accumulation
-    if (log_counter % LOG_FREQUENCY == 0) {
-      for (int i = 0; i < 3; i++) {
-        float thread_min = thread_pool[i].thread_ifftBuffer[0];
-        float thread_max = thread_pool[i].thread_ifftBuffer[0];
-        float thread_sum = 0.0f;
+    /*// 🔍 DIAGNOSTIC: Analyser les buffers de chaque thread avant
+    accumulation if (log_counter % LOG_FREQUENCY == 0) { for (int i = 0; i <
+    3; i++) { float thread_min = thread_pool[i].thread_ifftBuffer[0]; float
+    thread_max = thread_pool[i].thread_ifftBuffer[0]; float thread_sum = 0.0f;
 
         for (int j = 0; j < AUDIO_BUFFER_SIZE; j++) {
           float val = thread_pool[i].thread_ifftBuffer[j];
@@ -1096,8 +1365,8 @@ void synth_IfftMode(
 
     // Phase 4: Combiner les résultats des threads avec normalisation
     for (int i = 0; i < 3; i++) {
-      add_float(thread_pool[i].thread_ifftBuffer, ifftBuffer, ifftBuffer,
-                AUDIO_BUFFER_SIZE);
+      add_float(thread_pool[i].thread_additiveBuffer, additiveBuffer,
+                additiveBuffer, AUDIO_BUFFER_SIZE);
       add_float(thread_pool[i].thread_sumVolumeBuffer, sumVolumeBuffer,
                 sumVolumeBuffer, AUDIO_BUFFER_SIZE);
 
@@ -1114,12 +1383,12 @@ void synth_IfftMode(
     // 🔍 DIAGNOSTIC: Analyser le signal AVANT normalisation (pour comparaison
     // Mac/Pi)
     if (log_counter % LOG_FREQUENCY == 0) {
-      float raw_min = ifftBuffer[0];
-      float raw_max = ifftBuffer[0];
+      float raw_min = additiveBuffer[0];
+      float raw_max = additiveBuffer[0];
       float raw_sum = 0.0f;
 
       for (int j = 0; j < AUDIO_BUFFER_SIZE; j++) {
-        float val = ifftBuffer[j];
+        float val = additiveBuffer[j];
         if (val < raw_min)
           raw_min = val;
         if (val > raw_max)
@@ -1135,7 +1404,7 @@ void synth_IfftMode(
     // 🔧 CORRECTION: Normalisation conditionnelle par plateforme
 #ifdef __linux__
     // Pi/Linux : Diviser par 3 (BossDAC/ALSA amplifie naturellement)
-    scale_float(ifftBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
+    scale_float(additiveBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
     scale_float(sumVolumeBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
     scale_float(maxVolumeBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
 #else
@@ -1143,7 +1412,8 @@ void synth_IfftMode(
     // Signal gardé à pleine amplitude pour volume normal
 #endif
 
-    /*// 🔍 DIAGNOSTIC: Analyser le signal APRÈS normalisation (pour comparaison
+    /*// 🔍 DIAGNOSTIC: Analyser le signal APRÈS normalisation (pour
+    comparaison
     // Mac/Pi)
     if (log_counter % LOG_FREQUENCY == 0) {
       float norm_min = ifftBuffer[0];
@@ -1160,8 +1430,8 @@ void synth_IfftMode(
       }
 
       float norm_rms = sqrtf(norm_sum / AUDIO_BUFFER_SIZE);
-      printf("🔍 APRÈS NORMALISATION: min=%.6f, max=%.6f, rms=%.6f\n", norm_min,
-             norm_max, norm_rms);
+      printf("🔍 APRÈS NORMALISATION: min=%.6f, max=%.6f, rms=%.6f\n",
+    norm_min, norm_max, norm_rms);
     }*/
 
     /*// 🔍 DIAGNOSTIC: Analyser le signal après accumulation des threads
@@ -1287,19 +1557,21 @@ void synth_IfftMode(
       }
 
       // Accumulation
-      add_float(waveBuffer, ifftBuffer, ifftBuffer, AUDIO_BUFFER_SIZE);
+      add_float(waveBuffer, additiveBuffer, additiveBuffer, AUDIO_BUFFER_SIZE);
       add_float(volumeBuffer, sumVolumeBuffer, sumVolumeBuffer,
                 AUDIO_BUFFER_SIZE);
     }
   }
 
   // === PHASE FINALE (commune aux deux modes) ===
-  mult_float(ifftBuffer, maxVolumeBuffer, ifftBuffer, AUDIO_BUFFER_SIZE);
+  mult_float(additiveBuffer, maxVolumeBuffer, additiveBuffer,
+             AUDIO_BUFFER_SIZE);
   scale_float(sumVolumeBuffer, VOLUME_AMP_RESOLUTION / 2, AUDIO_BUFFER_SIZE);
 
   for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
     if (sumVolumeBuffer[buff_idx] != 0) {
-      signal_R = (int32_t)(ifftBuffer[buff_idx] / (sumVolumeBuffer[buff_idx]));
+      signal_R =
+          (int32_t)(additiveBuffer[buff_idx] / (sumVolumeBuffer[buff_idx]));
     } else {
       signal_R = 0;
     }
@@ -1378,6 +1650,11 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // On lance la conversion en niveaux de gris
   greyScale(buffer_R, buffer_G, buffer_B, g_grayScale_live, CIS_MAX_PIXELS_NB);
 
+#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
+  // Apply temporal smoothing to reduce sensor noise artifacts (mono mode)
+  apply_temporal_smoothing(g_grayScale_live, &mono_filter, CIS_MAX_PIXELS_NB);
+#endif
+
   // --- Synth Data Freeze/Fade Logic ---
   pthread_mutex_lock(&g_synth_data_freeze_mutex);
   int local_is_frozen = g_is_synth_data_frozen;
@@ -1412,8 +1689,8 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     } else {
       alpha_blend =
           (float)(elapsed_time /
-                  G_SYNTH_DATA_FADE_DURATION_SECONDS); // Alpha from 0 (frozen)
-                                                       // to 1 (live)
+                  G_SYNTH_DATA_FADE_DURATION_SECONDS); // Alpha from 0
+                                                       // (frozen) to 1 (live)
       alpha_blend = (alpha_blend < 0.0f)
                         ? 0.0f
                         : ((alpha_blend > 1.0f) ? 1.0f : alpha_blend);
@@ -1443,7 +1720,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   memcpy(g_displayable_synth_G, buffer_G, CIS_MAX_PIXELS_NB);
   memcpy(g_displayable_synth_B, buffer_B, CIS_MAX_PIXELS_NB);
   pthread_mutex_unlock(&g_displayable_synth_mutex);
-  // Synthèse IFFT terminée
+  // Additive synthesis finished
 #endif
 
 #if 0
@@ -1527,6 +1804,12 @@ void synth_AudioProcessStereo(uint8_t *buffer_R, uint8_t *buffer_G,
                      CIS_MAX_PIXELS_NB);
   extractColdChannel(buffer_R, buffer_G, buffer_B, g_coldChannel_live,
                      CIS_MAX_PIXELS_NB);
+
+#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
+  // Apply temporal smoothing to reduce sensor noise artifacts (stereo mode)
+  apply_temporal_smoothing(g_warmChannel_live, &warm_filter, CIS_MAX_PIXELS_NB);
+  apply_temporal_smoothing(g_coldChannel_live, &cold_filter, CIS_MAX_PIXELS_NB);
+#endif
 
   // --- Synth Data Freeze/Fade Logic (pour les deux canaux) ---
   pthread_mutex_lock(&g_synth_data_freeze_mutex);
@@ -1648,7 +1931,7 @@ void synth_IfftMode_Stateless(int32_t *imageData, float *audioData) {
   }
 
   // Use the same algorithm as synth_IfftMode but with local state
-  static __thread float ifftBuffer[AUDIO_BUFFER_SIZE];
+  static __thread float additiveBuffer[AUDIO_BUFFER_SIZE];
   static __thread float sumVolumeBuffer[AUDIO_BUFFER_SIZE];
   static __thread float maxVolumeBuffer[AUDIO_BUFFER_SIZE];
   static __thread int32_t imageBuffer_q31[NUMBER_OF_NOTES];
@@ -1657,7 +1940,7 @@ void synth_IfftMode_Stateless(int32_t *imageData, float *audioData) {
   static __thread float volumeBuffer[AUDIO_BUFFER_SIZE];
 
   // Initialize buffers
-  fill_float(0, ifftBuffer, AUDIO_BUFFER_SIZE);
+  fill_float(0, additiveBuffer, AUDIO_BUFFER_SIZE);
   fill_float(0, sumVolumeBuffer, AUDIO_BUFFER_SIZE);
   fill_float(0, maxVolumeBuffer, AUDIO_BUFFER_SIZE);
 
@@ -1757,18 +2040,20 @@ void synth_IfftMode_Stateless(int32_t *imageData, float *audioData) {
     }
 
     // Accumulation
-    add_float(waveBuffer, ifftBuffer, ifftBuffer, AUDIO_BUFFER_SIZE);
+    add_float(waveBuffer, additiveBuffer, additiveBuffer, AUDIO_BUFFER_SIZE);
     add_float(volumeBuffer, sumVolumeBuffer, sumVolumeBuffer,
               AUDIO_BUFFER_SIZE);
   }
 
   // Final processing
-  mult_float(ifftBuffer, maxVolumeBuffer, ifftBuffer, AUDIO_BUFFER_SIZE);
+  mult_float(additiveBuffer, maxVolumeBuffer, additiveBuffer,
+             AUDIO_BUFFER_SIZE);
   scale_float(sumVolumeBuffer, VOLUME_AMP_RESOLUTION / 2, AUDIO_BUFFER_SIZE);
 
   for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
     if (sumVolumeBuffer[buff_idx] != 0) {
-      signal_R = (int32_t)(ifftBuffer[buff_idx] / (sumVolumeBuffer[buff_idx]));
+      signal_R =
+          (int32_t)(additiveBuffer[buff_idx] / (sumVolumeBuffer[buff_idx]));
     } else {
       signal_R = 0;
     }

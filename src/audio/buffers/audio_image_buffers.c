@@ -217,7 +217,7 @@ void audio_image_buffers_complete_write(AudioImageBuffers *buffers) {
 }
 
 /**
- * @brief Get read pointers for IFFT processing (lock-free)
+ * @brief Get read pointers for Additive synthesis processing (lock-free)
  * @param buffers Pointer to AudioImageBuffers structure
  * @param out_R Pointer to receive R channel read buffer
  * @param out_G Pointer to receive G channel read buffer

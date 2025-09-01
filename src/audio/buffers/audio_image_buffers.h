@@ -9,7 +9,7 @@
 /**
  * @brief Dual buffer system for audio-image data with atomic rotation
  *
- * This system provides continuous access to complete image lines for IFFT
+ * This system provides continuous access to complete image lines for Additive
  * synthesis while allowing UDP thread to write new data without blocking audio
  * processing.
  *
@@ -31,7 +31,7 @@ typedef struct AudioImageBuffers {
   uint8_t *buffer1_B;
 
   // Atomic buffer selection (0 or 1)
-  // - read_buffer_index: which buffer IFFT should read from
+  // - read_buffer_index: which buffer Additive synth should read from
   // - write_buffer_index: which buffer UDP should write to
   atomic_int read_buffer_index;
   atomic_int write_buffer_index;
@@ -58,7 +58,7 @@ int audio_image_buffers_start_write(AudioImageBuffers *buffers, uint8_t **out_R,
                                     uint8_t **out_G, uint8_t **out_B);
 void audio_image_buffers_complete_write(AudioImageBuffers *buffers);
 
-// IFFT thread functions (lock-free read)
+// Additive synth thread functions (lock-free read)
 void audio_image_buffers_get_read_pointers(AudioImageBuffers *buffers,
                                            uint8_t **out_R, uint8_t **out_G,
                                            uint8_t **out_B);
