@@ -43,7 +43,6 @@
 // as the freeze logic is now handled in synth.c for synth data.
 
 int display_Init(sfRenderWindow *window) {
-#ifdef CLI_MODE
   if (window) {
     printf("SFML window detected in CLI mode, using it for display\n");
     printf("SFML CONFIGURED IN CLI+WINDOW MODE\n");
@@ -51,15 +50,6 @@ int display_Init(sfRenderWindow *window) {
     printf("Running in CLI mode, no SFML window required\n");
   }
   return 0;
-#else
-  if (!window) {
-    die("sfRenderWindow_create failed");
-  }
-
-  printf("SFML FULL CONFIGURED\n");
-
-  return 0;
-#endif
 }
 
 // Nouvelle fonction printImageRGB acceptant 6 arguments
@@ -67,20 +57,11 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
                    uint8_t *buffer_B, sfTexture *background_texture,
                    sfTexture *foreground_texture) {
 #ifndef NO_SFML
-#ifdef CLI_MODE
-  // En mode CLI, vérifier si une fenêtre SFML est disponible
+  // En mode CLI, la présence d'une fenêtre SFML est optionnelle.
+  // Si elle n'est pas disponible, on quitte simplement la fonction.
   if (!window || !background_texture || !foreground_texture) {
-    // Si aucune fenêtre ou texture n'est disponible, on ne fait rien
     return;
   }
-  // Sinon, on procède à l'affichage même en mode CLI
-#else
-  // Vérification de sécurité en mode normal
-  if (!window || !background_texture || !foreground_texture) {
-    fprintf(stderr, "Error: Missing window or textures for display\n");
-    return;
-  }
-#endif
 
   // NOTE: Visual Freeze logic previously here has been removed.
   // printImageRGB now directly uses the provided buffer_R, buffer_G, buffer_B
@@ -164,19 +145,11 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
 void printImage(sfRenderWindow *window, int32_t *image_buff,
                 sfTexture *background_texture, sfTexture *foreground_texture) {
 #ifndef NO_SFML
-#ifdef CLI_MODE
-  // En mode CLI, vérifier si une fenêtre SFML est disponible
+  // En mode CLI, la présence d'une fenêtre SFML est optionnelle.
+  // Si elle n'est pas disponible, on quitte simplement la fonction.
   if (!window || !background_texture || !foreground_texture) {
     return;
   }
-  // Sinon, on procède à l'affichage même en mode CLI
-#else
-  // Vérification de sécurité en mode normal
-  if (!window || !background_texture || !foreground_texture) {
-    fprintf(stderr, "Error: Missing window or textures for display\n");
-    return;
-  }
-#endif
 
   // Create an image for the new line
   sfImage *image = sfImage_createFromColor(CIS_MAX_PIXELS_NB, 1, sfBlack);
@@ -239,19 +212,11 @@ void printRawData(sfRenderWindow *window, uint32_t *image_buff,
                   sfTexture *background_texture,
                   sfTexture *foreground_texture) {
 #ifndef NO_SFML
-#ifdef CLI_MODE
-  // En mode CLI, vérifier si une fenêtre SFML est disponible
+  // En mode CLI, la présence d'une fenêtre SFML est optionnelle.
+  // Si elle n'est pas disponible, on quitte simplement la fonction.
   if (!window || !background_texture || !foreground_texture) {
     return;
   }
-  // Sinon, on procède à l'affichage même en mode CLI
-#else
-  // Vérification de sécurité en mode normal
-  if (!window || !background_texture || !foreground_texture) {
-    fprintf(stderr, "Error: Missing window or textures for display\n");
-    return;
-  }
-#endif
 
   sfRenderWindow_clear(window, sfBlack);
 
