@@ -1,5 +1,5 @@
 /*
- * synth_fft.c
+ * synth_polyphonic.c
  */
 
 #include "synth_polyphonic.h"
@@ -76,37 +76,38 @@ static float G_FILTER_ADSR_RELEASE_S = 0.3f;
 static float G_LFO_RATE_HZ = 5.0f;
 static float G_LFO_DEPTH_SEMITONES = 0.25f;
 
-// FFT related globals
-FftAudioDataBuffer fft_audio_buffers[2];
-volatile int fft_current_buffer_index = 0;
-pthread_mutex_t fft_buffer_index_mutex = PTHREAD_MUTEX_INITIALIZER;
+// Polyphonic synthesis related globals
+FftAudioDataBuffer polyphonic_audio_buffers[2];
+volatile int polyphonic_current_buffer_index = 0;
+pthread_mutex_t polyphonic_buffer_index_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 GrayscaleLine image_line_history[MOVING_AVERAGE_WINDOW_SIZE];
 int history_write_index = 0;
 int history_fill_count = 0;
 pthread_mutex_t image_history_mutex = PTHREAD_MUTEX_INITIALIZER;
-FftContext fft_context;
+FftContext polyphonic_context;
 
 extern volatile int keepRunning;
 
 // --- Initialization ---
-void synth_fftMode_init(void) {
-  printf("Initializing synth_fftMode (Polyphonic with LFO)...\n");
+void synth_polyphonicMode_init(void) {
+  printf("Initializing synth_polyphonicMode (Polyphonic with LFO)...\n");
 
   for (int i = 0; i < 2; ++i) {
-    if (pthread_mutex_init(&fft_audio_buffers[i].mutex, NULL) != 0) {
-      die("Failed to initialize FFT audio buffer mutex");
+    if (pthread_mutex_init(&polyphonic_audio_buffers[i].mutex, NULL) != 0) {
+      die("Failed to initialize polyphonic audio buffer mutex");
     }
-    if (pthread_cond_init(&fft_audio_buffers[i].cond, NULL) != 0) {
-      die("Failed to initialize FFT audio buffer condition variable");
+    if (pthread_cond_init(&polyphonic_audio_buffers[i].cond, NULL) != 0) {
+      die("Failed to initialize polyphonic audio buffer condition variable");
     }
-    fft_audio_buffers[i].ready = 0;
-    memset(fft_audio_buffers[i].data, 0, AUDIO_BUFFER_SIZE * sizeof(float));
+    polyphonic_audio_buffers[i].ready = 0;
+    memset(polyphonic_audio_buffers[i].data, 0,
+           AUDIO_BUFFER_SIZE * sizeof(float));
   }
-  if (pthread_mutex_init(&fft_buffer_index_mutex, NULL) != 0) {
-    die("Failed to initialize FFT buffer index mutex");
+  if (pthread_mutex_init(&polyphonic_buffer_index_mutex, NULL) != 0) {
+    die("Failed to initialize polyphonic buffer index mutex");
   }
-  fft_current_buffer_index = 0;
+  polyphonic_current_buffer_index = 0;
   if (pthread_mutex_init(&image_history_mutex, NULL) != 0) {
     die("Failed to initialize image history mutex");
   }
@@ -123,16 +124,19 @@ void synth_fftMode_init(void) {
   }
   history_fill_count =
       MOVING_AVERAGE_WINDOW_SIZE; // History is now full with default data
-  printf("synth_fftMode: Image history pre-filled with default white lines. "
+  printf("synth_polyphonicMode: Image history pre-filled with default white "
+         "lines. "
          "Fill count: %d\n",
          history_fill_count);
 
-  fft_context.fft_cfg = kiss_fftr_alloc(CIS_MAX_PIXELS_NB, 0, NULL, NULL);
-  if (fft_context.fft_cfg == NULL) {
+  polyphonic_context.fft_cfg =
+      kiss_fftr_alloc(CIS_MAX_PIXELS_NB, 0, NULL, NULL);
+  if (polyphonic_context.fft_cfg == NULL) {
     die("Failed to initialize FFT configuration");
   }
-  memset(fft_context.fft_input, 0, sizeof(fft_context.fft_input));
-  memset(fft_context.fft_output, 0, sizeof(fft_context.fft_output));
+  memset(polyphonic_context.fft_input, 0, sizeof(polyphonic_context.fft_input));
+  memset(polyphonic_context.fft_output, 0,
+         sizeof(polyphonic_context.fft_output));
 
   memset(global_smoothed_magnitudes, 0, sizeof(global_smoothed_magnitudes));
   filter_init_spectral_params(&global_spectral_filter_params, 8000.0f,
@@ -163,34 +167,36 @@ void synth_fftMode_init(void) {
                        G_FILTER_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
   }
   printf("%d polyphonic voices initialized.\n", NUM_POLY_VOICES);
-  printf("synth_fftMode initialized with moving average window of %d frames.\n",
+  printf("synth_polyphonicMode initialized with moving average window of %d "
+         "frames.\n",
          MOVING_AVERAGE_WINDOW_SIZE);
 }
 
 // --- Audio Processing ---
 
-// Counter for rate-limiting FFT debug prints
+// Counter for rate-limiting polyphonic debug prints
 // Print roughly once per second (assuming SAMPLING_FREQUENCY=44100,
 // AUDIO_BUFFER_SIZE=512 -> ~86 calls/sec)
-#define FFT_PRINT_INTERVAL 86
+#define POLYPHONIC_PRINT_INTERVAL 86
 
-void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
+void synth_polyphonicMode_process(float *audio_buffer,
+                                  unsigned int buffer_size) {
   if (audio_buffer == NULL) {
-    fprintf(stderr, "synth_fftMode_process: audio_buffer is NULL\n");
+    fprintf(stderr, "synth_polyphonicMode_process: audio_buffer is NULL\n");
     return;
   }
   memset(audio_buffer, 0, buffer_size * sizeof(float));
 
   // Calculate smoothed magnitudes (original logic)
   global_smoothed_magnitudes[0] =
-      fft_context.fft_output[0].r / NORM_FACTOR_BIN0;
+      polyphonic_context.fft_output[0].r / NORM_FACTOR_BIN0;
   if (global_smoothed_magnitudes[0] < 0.0f) {
     global_smoothed_magnitudes[0] = 0.0f;
   }
 
   for (int i = 1; i < MAX_MAPPED_OSCILLATORS; ++i) {
-    float real = fft_context.fft_output[i].r;
-    float imag = fft_context.fft_output[i].i;
+    float real = polyphonic_context.fft_output[i].r;
+    float imag = polyphonic_context.fft_output[i].i;
     float magnitude = sqrtf(real * real + imag * imag);
     float target_mag = fminf(1.0f, magnitude / NORM_FACTOR_HARMONICS);
     if (target_mag < 0.0f) {
@@ -201,7 +207,7 @@ void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size) {
         (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * global_smoothed_magnitudes[i];
   }
 
-  // FFT Debug logging disabled for performance
+  // Polyphonic Debug logging disabled for performance
   // (was causing audio dropouts due to printf() blocking)
 
   for (unsigned int sample_idx = 0; sample_idx < buffer_size; ++sample_idx) {
@@ -369,7 +375,7 @@ static void process_image_data_for_fft(DoubleBuffer *image_db) {
   }
 
   if (history_fill_count > 0) {
-    memset(fft_context.fft_input, 0,
+    memset(polyphonic_context.fft_input, 0,
            CIS_MAX_PIXELS_NB * sizeof(kiss_fft_scalar));
     for (int j = 0; j < CIS_MAX_PIXELS_NB; ++j) {
       float sum = 0.0f;
@@ -378,10 +384,10 @@ static void process_image_data_for_fft(DoubleBuffer *image_db) {
                   MOVING_AVERAGE_WINDOW_SIZE;
         sum += image_line_history[idx].line_data[j];
       }
-      fft_context.fft_input[j] = sum / history_fill_count;
+      polyphonic_context.fft_input[j] = sum / history_fill_count;
     }
-    kiss_fftr(fft_context.fft_cfg, fft_context.fft_input,
-              fft_context.fft_output);
+    kiss_fftr(polyphonic_context.fft_cfg, polyphonic_context.fft_input,
+              polyphonic_context.fft_output);
   }
   pthread_mutex_unlock(&image_history_mutex);
 }
@@ -404,7 +410,7 @@ static void generate_test_data_for_fft(void) {
     history_fill_count++;
   }
   if (history_fill_count > 0) {
-    memset(fft_context.fft_input, 0,
+    memset(polyphonic_context.fft_input, 0,
            CIS_MAX_PIXELS_NB * sizeof(kiss_fft_scalar));
     for (int j = 0; j < CIS_MAX_PIXELS_NB; ++j) {
       float sum = 0.0f;
@@ -413,27 +419,27 @@ static void generate_test_data_for_fft(void) {
                   MOVING_AVERAGE_WINDOW_SIZE;
         sum += image_line_history[idx].line_data[j];
       }
-      fft_context.fft_input[j] = sum / history_fill_count;
+      polyphonic_context.fft_input[j] = sum / history_fill_count;
     }
-    kiss_fftr(fft_context.fft_cfg, fft_context.fft_input,
-              fft_context.fft_output);
+    kiss_fftr(polyphonic_context.fft_cfg, polyphonic_context.fft_input,
+              polyphonic_context.fft_output);
   }
   pthread_mutex_unlock(&image_history_mutex);
 }
 
 // --- Main Thread Function ---
-void *synth_fftMode_thread_func(void *arg) {
+void *synth_polyphonicMode_thread_func(void *arg) {
   DoubleBuffer *image_db = NULL;
   if (arg != NULL) {
     Context *ctx = (Context *)arg;
     image_db = ctx->doubleBuffer;
-    printf(
-        "synth_fftMode_thread_func: DoubleBuffer obtenu depuis le contexte.\n");
+    printf("synth_polyphonicMode_thread_func: DoubleBuffer obtenu depuis le "
+           "contexte.\n");
   } else {
-    printf("synth_fftMode_thread_func: Aucun contexte fourni, pas de "
+    printf("synth_polyphonicMode_thread_func: Aucun contexte fourni, pas de "
            "DoubleBuffer disponible.\n");
   }
-  printf("synth_fftMode_thread_func started.\n");
+  printf("synth_polyphonicMode_thread_func started.\n");
   fflush(stdout);
   srand(time(NULL));
 
@@ -441,46 +447,49 @@ void *synth_fftMode_thread_func(void *arg) {
     if (image_db != NULL) {
       process_image_data_for_fft(image_db);
     } else {
-      printf("synth_fftMode_thread_func: Aucun DoubleBuffer. Utilisation des "
+      printf("synth_polyphonicMode_thread_func: Aucun DoubleBuffer. "
+             "Utilisation des "
              "données de test.\n");
       generate_test_data_for_fft();
     }
     fflush(stdout);
 
     int local_producer_idx;
-    pthread_mutex_lock(&fft_buffer_index_mutex);
-    local_producer_idx = fft_current_buffer_index;
-    pthread_mutex_unlock(&fft_buffer_index_mutex);
+    pthread_mutex_lock(&polyphonic_buffer_index_mutex);
+    local_producer_idx = polyphonic_current_buffer_index;
+    pthread_mutex_unlock(&polyphonic_buffer_index_mutex);
 
-    pthread_mutex_lock(&fft_audio_buffers[local_producer_idx].mutex);
-    while (fft_audio_buffers[local_producer_idx].ready == 1 && keepRunning) {
+    pthread_mutex_lock(&polyphonic_audio_buffers[local_producer_idx].mutex);
+    while (polyphonic_audio_buffers[local_producer_idx].ready == 1 &&
+           keepRunning) {
       struct timespec ts;
       clock_gettime(CLOCK_REALTIME, &ts);
       ts.tv_sec += 1;
       int wait_ret = pthread_cond_timedwait(
-          &fft_audio_buffers[local_producer_idx].cond,
-          &fft_audio_buffers[local_producer_idx].mutex, &ts);
+          &polyphonic_audio_buffers[local_producer_idx].cond,
+          &polyphonic_audio_buffers[local_producer_idx].mutex, &ts);
       if (wait_ret == ETIMEDOUT && !keepRunning) {
-        pthread_mutex_unlock(&fft_audio_buffers[local_producer_idx].mutex);
+        pthread_mutex_unlock(
+            &polyphonic_audio_buffers[local_producer_idx].mutex);
         goto cleanup_thread;
       }
     }
-    synth_fftMode_process(fft_audio_buffers[local_producer_idx].data,
-                          AUDIO_BUFFER_SIZE);
-    fft_audio_buffers[local_producer_idx].ready = 1;
-    pthread_cond_signal(&fft_audio_buffers[local_producer_idx].cond);
-    pthread_mutex_unlock(&fft_audio_buffers[local_producer_idx].mutex);
+    synth_polyphonicMode_process(
+        polyphonic_audio_buffers[local_producer_idx].data, AUDIO_BUFFER_SIZE);
+    polyphonic_audio_buffers[local_producer_idx].ready = 1;
+    pthread_cond_signal(&polyphonic_audio_buffers[local_producer_idx].cond);
+    pthread_mutex_unlock(&polyphonic_audio_buffers[local_producer_idx].mutex);
 
-    pthread_mutex_lock(&fft_buffer_index_mutex);
-    fft_current_buffer_index = 1 - local_producer_idx;
-    pthread_mutex_unlock(&fft_buffer_index_mutex);
+    pthread_mutex_lock(&polyphonic_buffer_index_mutex);
+    polyphonic_current_buffer_index = 1 - local_producer_idx;
+    pthread_mutex_unlock(&polyphonic_buffer_index_mutex);
   }
 
 cleanup_thread:
-  printf("synth_fftMode_thread_func stopping.\n");
-  if (fft_context.fft_cfg != NULL) {
-    kiss_fftr_free(fft_context.fft_cfg);
-    fft_context.fft_cfg = NULL;
+  printf("synth_polyphonicMode_thread_func stopping.\n");
+  if (polyphonic_context.fft_cfg != NULL) {
+    kiss_fftr_free(polyphonic_context.fft_cfg);
+    polyphonic_context.fft_cfg = NULL;
   }
   return NULL;
 }
@@ -695,9 +704,9 @@ static float midi_note_to_frequency(int noteNumber) {
   return 440.0f * powf(2.0f, (float)(noteNumber - 69) / 12.0f);
 }
 
-void synth_fft_note_on(int noteNumber, int velocity) {
+void synth_polyphonic_note_on(int noteNumber, int velocity) {
   if (velocity <= 0) {
-    synth_fft_note_off(noteNumber);
+    synth_polyphonic_note_off(noteNumber);
     return;
   }
 
@@ -808,7 +817,7 @@ void synth_fft_note_on(int noteNumber, int velocity) {
   //        voice->fundamental_frequency, voice->last_triggered_order);
 }
 
-void synth_fft_note_off(int noteNumber) {
+void synth_polyphonic_note_off(int noteNumber) {
   for (int i = 0; i < NUM_POLY_VOICES; ++i) {
     if (poly_voices[i].midi_note_number == noteNumber &&
         poly_voices[i].voice_state != ADSR_STATE_IDLE &&
@@ -852,7 +861,7 @@ static float lfo_process(LfoState *lfo) {
 }
 
 // --- ADSR Parameter Setters ---
-void synth_fft_set_volume_adsr_attack(float attack_s) {
+void synth_polyphonic_set_volume_adsr_attack(float attack_s) {
   if (attack_s < 0.0f)
     attack_s = 0.0f;
   G_VOLUME_ADSR_ATTACK_S = attack_s;
@@ -868,7 +877,7 @@ void synth_fft_set_volume_adsr_attack(float attack_s) {
   }
 }
 
-void synth_fft_set_volume_adsr_decay(float decay_s) {
+void synth_polyphonic_set_volume_adsr_decay(float decay_s) {
   if (decay_s < 0.0f)
     decay_s = 0.0f;
   G_VOLUME_ADSR_DECAY_S = decay_s;
@@ -881,7 +890,7 @@ void synth_fft_set_volume_adsr_decay(float decay_s) {
   }
 }
 
-void synth_fft_set_volume_adsr_sustain(float sustain_level) {
+void synth_polyphonic_set_volume_adsr_sustain(float sustain_level) {
   if (sustain_level < 0.0f)
     sustain_level = 0.0f;
   if (sustain_level > 1.0f)
@@ -897,7 +906,7 @@ void synth_fft_set_volume_adsr_sustain(float sustain_level) {
   }
 }
 
-void synth_fft_set_volume_adsr_release(float release_s) {
+void synth_polyphonic_set_volume_adsr_release(float release_s) {
   if (release_s < 0.0f)
     release_s = 0.0f;
   G_VOLUME_ADSR_RELEASE_S = release_s;
@@ -912,7 +921,7 @@ void synth_fft_set_volume_adsr_release(float release_s) {
 }
 
 // --- LFO Parameter Setters ---
-void synth_fft_set_vibrato_rate(float rate_hz) {
+void synth_polyphonic_set_vibrato_rate(float rate_hz) {
   if (rate_hz < 0.0f)
     rate_hz = 0.0f;
   // Potentially add a max rate limit, e.g., 20Hz or 30Hz
@@ -922,7 +931,7 @@ void synth_fft_set_vibrato_rate(float rate_hz) {
   // printf("SYNTH_FFT: Global Vibrato LFO Rate set to: %.2f Hz\n", rate_hz);
 }
 
-void synth_fft_set_vibrato_depth(float depth_semitones) {
+void synth_polyphonic_set_vibrato_depth(float depth_semitones) {
   // Depth can be positive or negative, typically small values like -2 to 2
   // semitones
   global_vibrato_lfo.depth_semitones = depth_semitones;

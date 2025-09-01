@@ -1,0 +1,2 @@
+file,line,symbol_type,decision,rationale
+# No project occurrences of "fft"/"FFT" remain after refactor, only external library calls (kissfft, etc.) which were excluded.

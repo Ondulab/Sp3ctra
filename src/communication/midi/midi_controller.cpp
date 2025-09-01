@@ -9,7 +9,7 @@
 #include "audio_rtaudio.h"
 #include "config.h"
 #include "synth_additive.h" // For synth data freeze global variables and mutex
-#include "synth_polyphonic.h" // For synth_fft_set_vibrato_rate
+#include "synth_polyphonic.h" // For synth_polyphonic_set_vibrato_rate
 #include "three_band_eq.h"
 #include <algorithm>
 #include <iostream>
@@ -33,7 +33,7 @@ MidiController *gMidiController = nullptr;
 // Numéros CC pour les niveaux d'envoi vers la réverbération par synthétiseur
 #define CC_REVERB_SEND_SYNTH_FFT                                               \
   4 // Niveau d'envoi de réverb pour synth_fft (selon demande)
-#define CC_REVERB_SEND_SYNTH_IFFT 5 // Niveau d'envoi de réverb pour synth
+#define CC_REVERB_SEND_SYNTH_ADDITIVE 5 // Niveau d'envoi de réverb pour synth
 
 // Numéros CC pour l'égaliseur (nanoKONTROL2)
 #define NANOKONTROL2_CC_EQ_LOW 16      // LF gain (General Purpose 1)
@@ -43,19 +43,20 @@ MidiController *gMidiController = nullptr;
 
 MidiController::MidiController()
     : midiIn(nullptr), isConnected(false), currentController(MIDI_NONE),
-      mix_level_synth_ifft(1.0f), // Default IFFT level to 1.0f (100%) for
-                                  // audibility when no MIDI
-      mix_level_synth_fft(0.5f),  // Default FFT level to 0.5f for audibility
-      reverb_send_synth_ifft(0.7f),
-      reverb_send_synth_fft(0.0f), // Initialize all levels
-      lfo_vibrato_speed(0.5f),     // Default LFO vibrato speed (normalized 0-1)
+      mix_level_synth_additive(1.0f), // Default Additive level to 1.0f (100%)
+                                      // for audibility when no MIDI
+      mix_level_synth_polyphonic(
+          0.5f), // Default polyphonic level to 0.5f for audibility
+      reverb_send_synth_additive(0.7f),
+      reverb_send_synth_polyphonic(0.0f), // Initialize all levels
+      lfo_vibrato_speed(0.5f), // Default LFO vibrato speed (normalized 0-1)
       // ADSR values now in seconds (20ms to 2s). Default to mid-range (1.01s)
-      envelope_fft_attack(0.02f +
-                          0.5f * 1.98f), // Default FFT envelope attack (1.01s)
-      envelope_fft_decay(0.02f +
-                         0.5f * 1.98f), // Default FFT envelope decay (1.01s)
-      envelope_fft_release(
-          0.02f + 0.5f * 1.98f) { // Default FFT envelope release (1.01s)
+      envelope_polyphonic_attack(
+          0.02f + 0.5f * 1.98f), // Default polyphonic envelope attack (1.01s)
+      envelope_polyphonic_decay(
+          0.02f + 0.5f * 1.98f), // Default polyphonic envelope decay (1.01s)
+      envelope_polyphonic_release(
+          0.02f + 0.5f * 1.98f) { // Default polyphonic envelope release (1.01s)
 
   // Initialize with empty callback
   volumeChangeCallback = [](float /*volume*/) {};
@@ -396,24 +397,24 @@ void MidiController::processMidiMessage(double timeStamp,
       }
       break;
 
-    // Volume synthèse IFFT (CC 21)
-    case MIDI_CC_IFFT_VOLUME:
-      mix_level_synth_ifft = normalizedValue;
-      std::cout << "\033[1;37mIFFT SYNTH VOLUME: "
+    // Volume synthèse Additive (CC 21)
+    case MIDI_CC_ADDITIVE_VOLUME:
+      mix_level_synth_additive = normalizedValue;
+      std::cout << "\033[1;37mADDITIVE SYNTH VOLUME: "
                 << (int)(normalizedValue * 100) << "%\033[0m" << std::endl;
       break;
 
-    // Volume synthèse FFT (CC 22)
+    // Volume synthèse polyphonique (CC 22)
     case MIDI_CC_FFT_VOLUME:
-      mix_level_synth_fft = normalizedValue;
-      std::cout << "\033[1;37mFFT SYNTH VOLUME: "
+      mix_level_synth_polyphonic = normalizedValue;
+      std::cout << "\033[1;37mPOLYPHONIC SYNTH VOLUME: "
                 << (int)(normalizedValue * 100) << "%\033[0m" << std::endl;
       break;
 
-    // Wet/Dry réverbération FFT (CC 23)
+    // Wet/Dry réverbération polyphonique (CC 23)
     case MIDI_CC_REVERB_WET_DRY_FFT:
-      reverb_send_synth_fft = normalizedValue;
-      std::cout << "\033[1;36mFFT REVERB WET/DRY: "
+      reverb_send_synth_polyphonic = normalizedValue;
+      std::cout << "\033[1;36mPOLYPHONIC REVERB WET/DRY: "
                 << (int)(normalizedValue * 100) << "%\033[0m" << std::endl;
       if (gAudioSystem && normalizedValue > 0.0f) {
         if (!gAudioSystem->isReverbEnabled()) {
@@ -422,10 +423,10 @@ void MidiController::processMidiMessage(double timeStamp,
       }
       break;
 
-    // Wet/Dry réverbération IFFT (CC 24)
-    case MIDI_CC_REVERB_WET_DRY_IFFT:
-      reverb_send_synth_ifft = normalizedValue;
-      std::cout << "\033[1;36mIFFT REVERB WET/DRY: "
+    // Wet/Dry réverbération Additive (CC 24)
+    case MIDI_CC_REVERB_WET_DRY_ADDITIVE:
+      reverb_send_synth_additive = normalizedValue;
+      std::cout << "\033[1;36mADDITIVE REVERB WET/DRY: "
                 << (int)(normalizedValue * 100) << "%\033[0m" << std::endl;
       if (gAudioSystem && normalizedValue > 0.0f) {
         if (!gAudioSystem->isReverbEnabled()) {
@@ -440,39 +441,42 @@ void MidiController::processMidiMessage(double timeStamp,
       // Hz to 10 Hz) The actual scaling factor (9.9f here) can be adjusted
       // based on desired max LFO speed. Minimum LFO speed is 0.1 Hz.
       lfo_vibrato_speed = 0.1f + normalizedValue * 9.9f;
-      synth_fft_set_vibrato_rate(
+      synth_polyphonic_set_vibrato_rate(
           lfo_vibrato_speed); // Call the function to update LFO rate
       std::cout << "\033[1;35mVIBRATO LFO SPEED: " << lfo_vibrato_speed
                 << " Hz\033[0m" << std::endl;
       break;
 
-    // Attack enveloppe FFT (CC 26)
+    // Attack enveloppe polyphonique (CC 26)
     case MIDI_CC_ENVELOPE_FFT_ATTACK:
       // Scale normalizedValue (0.0-1.0) to 0.02s-2.0s
-      envelope_fft_attack = 0.02f + normalizedValue * 1.98f;
-      synth_fft_set_volume_adsr_attack(envelope_fft_attack); // Apply to synth
-      std::cout << "\033[1;33mFFT ENV ATTACK: "
-                << (int)(envelope_fft_attack * 1000) << " ms\033[0m"
+      envelope_polyphonic_attack = 0.02f + normalizedValue * 1.98f;
+      synth_polyphonic_set_volume_adsr_attack(
+          envelope_polyphonic_attack); // Apply to synth
+      std::cout << "\033[1;33mPOLYPHONIC ENV ATTACK: "
+                << (int)(envelope_polyphonic_attack * 1000) << " ms\033[0m"
                 << std::endl;
       break;
 
-    // Decay enveloppe FFT (CC 27)
+    // Decay enveloppe polyphonique (CC 27)
     case MIDI_CC_ENVELOPE_FFT_DECAY:
       // Scale normalizedValue (0.0-1.0) to 0.02s-2.0s
-      envelope_fft_decay = 0.02f + normalizedValue * 1.98f;
-      synth_fft_set_volume_adsr_decay(envelope_fft_decay); // Apply to synth
-      std::cout << "\033[1;33mFFT ENV DECAY: "
-                << (int)(envelope_fft_decay * 1000) << " ms\033[0m"
+      envelope_polyphonic_decay = 0.02f + normalizedValue * 1.98f;
+      synth_polyphonic_set_volume_adsr_decay(
+          envelope_polyphonic_decay); // Apply to synth
+      std::cout << "\033[1;33mPOLYPHONIC ENV DECAY: "
+                << (int)(envelope_polyphonic_decay * 1000) << " ms\033[0m"
                 << std::endl;
       break;
 
-    // Release enveloppe FFT (CC 28)
+    // Release enveloppe polyphonique (CC 28)
     case MIDI_CC_ENVELOPE_FFT_RELEASE:
       // Scale normalizedValue (0.0-1.0) to 0.02s-2.0s
-      envelope_fft_release = 0.02f + normalizedValue * 1.98f;
-      synth_fft_set_volume_adsr_release(envelope_fft_release); // Apply to synth
-      std::cout << "\033[1;33mFFT ENV RELEASE: "
-                << (int)(envelope_fft_release * 1000) << " ms\033[0m"
+      envelope_polyphonic_release = 0.02f + normalizedValue * 1.98f;
+      synth_polyphonic_set_volume_adsr_release(
+          envelope_polyphonic_release); // Apply to synth
+      std::cout << "\033[1;33mPOLYPHONIC ENV RELEASE: "
+                << (int)(envelope_polyphonic_release * 1000) << " ms\033[0m"
                 << std::endl;
       break;
 
@@ -507,9 +511,9 @@ void MidiController::processMidiMessage(double timeStamp,
     // re-assigned) nanoKONTROL2 SLIDER/KNOB Control 1 Breath Control (coarse)
     // -> CC 2
     case 2: // Kept for backward compatibility or other controllers
-      // This might conflict with MIDI_CC_IFFT_VOLUME if not careful
-      // mix_level_synth_ifft = normalizedValue;
-      // std::cout << "\033[1;37m(Legacy CC2) MIX IFFT: " <<
+      // This might conflict with MIDI_CC_ADDITIVE_VOLUME if not careful
+      // mix_level_synth_additive = normalizedValue;
+      // std::cout << "\033[1;37m(Legacy CC2) MIX ADDITIVE: " <<
       // (int)(normalizedValue * 100)
       //           << "%\033[0m" << std::endl;
       break;
@@ -523,11 +527,12 @@ void MidiController::processMidiMessage(double timeStamp,
       //           << "%\033[0m" << std::endl;
       break;
 
-    // Contrôleur pour le niveau d'envoi de réverb pour synth FFT (Legacy CC 4)
+    // Contrôleur pour le niveau d'envoi de réverb pour synth polyphonique
+    // (Legacy CC 4)
     case CC_REVERB_SEND_SYNTH_FFT: // Kept for backward compatibility
       // This might conflict with MIDI_CC_REVERB_WET_DRY_FFT
-      // reverb_send_synth_fft = normalizedValue;
-      // std::cout << "\033[1;36m(Legacy CC4) REVERB SEND FFT: " <<
+      // reverb_send_synth_polyphonic = normalizedValue;
+      // std::cout << "\033[1;36m(Legacy CC4) REVERB SEND POLYPHONIC: " <<
       // (int)(normalizedValue*100) << "%\033[0m" << std::endl; if (gAudioSystem
       // && normalizedValue > 0.0f) {
       //     if (!gAudioSystem->isReverbEnabled()) {
@@ -536,11 +541,12 @@ void MidiController::processMidiMessage(double timeStamp,
       // }
       break;
 
-    // Contrôleur pour le niveau d'envoi de réverb pour synth IFFT (Legacy CC 5)
-    case CC_REVERB_SEND_SYNTH_IFFT: // Kept for backward compatibility
-      // This might conflict with MIDI_CC_REVERB_WET_DRY_IFFT
-      // reverb_send_synth_ifft = normalizedValue;
-      // std::cout << "\033[1;36m(Legacy CC5) REVERB SEND IFFT: " <<
+    // Contrôleur pour le niveau d'envoi de réverb pour synth Additive (Legacy
+    // CC 5)
+    case CC_REVERB_SEND_SYNTH_ADDITIVE: // Kept for backward compatibility
+      // This might conflict with MIDI_CC_REVERB_WET_DRY_ADDITIVE
+      // reverb_send_synth_additive = normalizedValue;
+      // std::cout << "\033[1;36m(Legacy CC5) REVERB SEND ADDITIVE: " <<
       // (int)(normalizedValue*100) << "%\033[0m" << std::endl; if (gAudioSystem
       // && normalizedValue > 0.0f) {
       //     if (!gAudioSystem->isReverbEnabled()) {
@@ -596,34 +602,36 @@ float MidiController::convertCCToVolume(unsigned char value) {
 }
 
 // Accessors for mix levels
-float MidiController::getMixLevelSynthIfft() const {
-  return mix_level_synth_ifft;
+float MidiController::getMixLevelSynthAdditive() const {
+  return mix_level_synth_additive;
 }
 
-float MidiController::getMixLevelSynthFft() const {
-  return mix_level_synth_fft;
+float MidiController::getMixLevelSynthPolyphonic() const {
+  return mix_level_synth_polyphonic;
 }
 
 // Accessors for reverb send levels
-float MidiController::getReverbSendSynthIfft() const {
-  return reverb_send_synth_ifft;
+float MidiController::getReverbSendSynthAdditive() const {
+  return reverb_send_synth_additive;
 }
 
-float MidiController::getReverbSendSynthFft() const {
-  return reverb_send_synth_fft;
+float MidiController::getReverbSendSynthPolyphonic() const {
+  return reverb_send_synth_polyphonic;
 }
 
 // Accessors for new MIDI controls
 float MidiController::getLfoVibratoSpeed() const { return lfo_vibrato_speed; }
 
-float MidiController::getEnvelopeFftAttack() const {
-  return envelope_fft_attack;
+float MidiController::getEnvelopePolyphonicAttack() const {
+  return envelope_polyphonic_attack;
 }
 
-float MidiController::getEnvelopeFftDecay() const { return envelope_fft_decay; }
+float MidiController::getEnvelopePolyphonicDecay() const {
+  return envelope_polyphonic_decay;
+}
 
-float MidiController::getEnvelopeFftRelease() const {
-  return envelope_fft_release;
+float MidiController::getEnvelopePolyphonicRelease() const {
+  return envelope_polyphonic_release;
 }
 
 // C API functions for compatibility with existing code
