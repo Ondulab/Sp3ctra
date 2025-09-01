@@ -16,8 +16,6 @@
 /* Private includes ----------------------------------------------------------*/
 
 /* Exported types ------------------------------------------------------------*/
-typedef enum { SAW_WAVE, SIN_WAVE, SQR_WAVE } waveformType;
-
 typedef enum {
   MAJOR,
   MINOR,
@@ -28,7 +26,6 @@ struct waveParams {
   uint32_t startFrequency;
   harmonizationType harmonization;
   uint32_t harmonizationLevel;
-  waveformType waveform;
   uint32_t waveformOrder;
 };
 
