@@ -1,5 +1,5 @@
 /*
- * synth_fft.h
+ * synth_polyphonic.h
  *
  *  Created on: 16 May 2025
  *      Author: Cline
@@ -114,19 +114,20 @@ typedef struct {
 
 /* Exported variables --------------------------------------------------------*/
 extern unsigned long long
-    g_current_trigger_order;                    // Global trigger order counter
-extern FftAudioDataBuffer fft_audio_buffers[2]; // Double buffer for FFT synth
-extern volatile int
-    fft_current_buffer_index; // Index of the buffer to be filled by producer
+    g_current_trigger_order; // Global trigger order counter
+extern FftAudioDataBuffer
+    polyphonic_audio_buffers[2]; // Double buffer for polyphonic synth
+extern volatile int polyphonic_current_buffer_index; // Index of the buffer to
+                                                     // be filled by producer
 extern pthread_mutex_t
-    fft_buffer_index_mutex; // Mutex for fft_current_buffer_index
+    polyphonic_buffer_index_mutex; // Mutex for polyphonic_current_buffer_index
 
-/* Variables pour la moyenne glissante et la FFT */
+/* Variables pour la moyenne glissante et la synthèse polyphonique */
 extern GrayscaleLine image_line_history[MOVING_AVERAGE_WINDOW_SIZE];
 extern int history_write_index;
 extern int history_fill_count;
 extern pthread_mutex_t image_history_mutex;
-extern FftContext fft_context;
+extern FftContext polyphonic_context;
 
 // Polyphony related globals
 extern SynthVoice poly_voices[NUM_POLY_VOICES];
@@ -150,25 +151,27 @@ extern LfoState global_vibrato_lfo; // Global LFO for vibrato
 extern "C" {
 #endif
 
-void synth_fftMode_init(void);
-void synth_fftMode_process(float *audio_buffer, unsigned int buffer_size);
-void *
-synth_fftMode_thread_func(void *arg); // Renamed to avoid conflict if
-                                      // synth_fftMode_thread is used elsewhere
+void synth_polyphonicMode_init(void);
+void synth_polyphonicMode_process(float *audio_buffer,
+                                  unsigned int buffer_size);
+void *synth_polyphonicMode_thread_func(
+    void *arg); // Renamed to avoid conflict if
+                // synth_polyphonicMode_thread is used elsewhere
 
-// MIDI Note handling functions for synth_fft
-void synth_fft_note_on(int noteNumber, int velocity);
-void synth_fft_note_off(int noteNumber);
+// MIDI Note handling functions for synth_polyphonic
+void synth_polyphonic_note_on(int noteNumber, int velocity);
+void synth_polyphonic_note_off(int noteNumber);
 
-// Functions to set ADSR parameters for synth_fft volume envelope
-void synth_fft_set_volume_adsr_attack(float attack_s);
-void synth_fft_set_volume_adsr_decay(float decay_s);
-void synth_fft_set_volume_adsr_sustain(float sustain_level); // 0.0 to 1.0
-void synth_fft_set_volume_adsr_release(float release_s);
+// Functions to set ADSR parameters for synth_polyphonic volume envelope
+void synth_polyphonic_set_volume_adsr_attack(float attack_s);
+void synth_polyphonic_set_volume_adsr_decay(float decay_s);
+void synth_polyphonic_set_volume_adsr_sustain(
+    float sustain_level); // 0.0 to 1.0
+void synth_polyphonic_set_volume_adsr_release(float release_s);
 
 // Functions to set LFO parameters
-void synth_fft_set_vibrato_rate(float rate_hz);
-void synth_fft_set_vibrato_depth(float depth_semitones);
+void synth_polyphonic_set_vibrato_rate(float rate_hz);
+void synth_polyphonic_set_vibrato_depth(float depth_semitones);
 
 #ifdef __cplusplus
 }

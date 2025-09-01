@@ -22,10 +22,10 @@ typedef enum {
 } MidiControllerType;
 
 // MIDI CC definitions for new controls
-#define MIDI_CC_IFFT_VOLUME 21
+#define MIDI_CC_ADDITIVE_VOLUME 21
 #define MIDI_CC_FFT_VOLUME 22
 #define MIDI_CC_REVERB_WET_DRY_FFT 23
-#define MIDI_CC_REVERB_WET_DRY_IFFT 24
+#define MIDI_CC_REVERB_WET_DRY_ADDITIVE 24
 #define MIDI_CC_LFO_VIBRATO_SPEED 25
 #define MIDI_CC_ENVELOPE_FFT_ATTACK 26
 #define MIDI_CC_ENVELOPE_FFT_DECAY 27
@@ -67,18 +67,18 @@ private:
 
 public:
   // Variables to store mix levels for the two synths
-  float mix_level_synth_ifft;
-  float mix_level_synth_fft;
+  float mix_level_synth_additive;
+  float mix_level_synth_polyphonic;
 
   // Variables to store reverb send levels for each synth
-  float reverb_send_synth_ifft;
-  float reverb_send_synth_fft;
+  float reverb_send_synth_additive;
+  float reverb_send_synth_polyphonic;
 
   // Variables for new MIDI controls
   float lfo_vibrato_speed;
-  float envelope_fft_attack;
-  float envelope_fft_decay;
-  float envelope_fft_release;
+  float envelope_polyphonic_attack;
+  float envelope_polyphonic_decay;
+  float envelope_polyphonic_release;
 
   MidiController();
   ~MidiController();
@@ -112,18 +112,18 @@ public:
   std::string getCurrentControllerName();
 
   // Accessors for mix levels
-  float getMixLevelSynthIfft() const;
-  float getMixLevelSynthFft() const;
+  float getMixLevelSynthAdditive() const;
+  float getMixLevelSynthPolyphonic() const;
 
   // Accessors for reverb send levels
-  float getReverbSendSynthIfft() const;
-  float getReverbSendSynthFft() const;
+  float getReverbSendSynthAdditive() const;
+  float getReverbSendSynthPolyphonic() const;
 
   // Accessors for new MIDI controls
   float getLfoVibratoSpeed() const;
-  float getEnvelopeFftAttack() const;
-  float getEnvelopeFftDecay() const;
-  float getEnvelopeFftRelease() const;
+  float getEnvelopePolyphonicAttack() const;
+  float getEnvelopePolyphonicDecay() const;
+  float getEnvelopePolyphonicRelease() const;
 };
 
 // Global instance for C API compatibility

@@ -2,8 +2,8 @@
 
 #include "audio_rtaudio.h"
 #include "audio_c_api.h"
-#include "midi_controller.h"  // For gMidiController
-#include "synth_polyphonic.h" // For fft_audio_buffers and related variables
+#include "midi_controller.h" // For gMidiController
+#include "synth_polyphonic.h" // For polyphonic_audio_buffers and related variables
 #include <cstring>
 #include <iostream>
 #include <rtaudio/RtAudio.h> // Explicitly include RtAudio.h
@@ -73,12 +73,12 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   // Variables statiques pour maintenir l'état entre les appels
   static unsigned int readOffset = 0;
   static int localReadIndex = 0;
-  static unsigned int fft_readOffset = 0;
-  static int fft_localReadIndex = 0;
+  static unsigned int polyphonic_readOffset = 0;
+  static int polyphonic_localReadIndex = 0;
 
   // Cache MIDI levels to avoid repeated function calls
-  static float cached_level_ifft = 1.0f;
-  static float cached_level_fft = 0.5f;
+  static float cached_level_additive = 1.0f;
+  static float cached_level_polyphonic = 0.5f;
   static float cached_volume = 1.0f;
   static int cache_counter = 0;
 
@@ -88,8 +88,8 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     cache_counter = 0;
     cached_volume = this->masterVolume;
     if (gMidiController && gMidiController->isAnyControllerConnected()) {
-      cached_level_ifft = gMidiController->getMixLevelSynthIfft();
-      cached_level_fft = gMidiController->getMixLevelSynthFft();
+      cached_level_additive = gMidiController->getMixLevelSynthAdditive();
+      cached_level_polyphonic = gMidiController->getMixLevelSynthPolyphonic();
     }
   }
 
@@ -103,46 +103,49 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         (framesToRender < framesAvailable) ? framesToRender : framesAvailable;
 
     // Get source pointers directly - avoid memcpy when possible
-    float *source_ifft_left = nullptr;
-    float *source_ifft_right = nullptr;
+    float *source_additive_left = nullptr;
+    float *source_additive_right = nullptr;
     float *source_fft = nullptr;
 
     // In stereo mode, use separate left and right channels
     // In mono mode, use right channel for both
     if (IS_STEREO_MODE()) {
       if (buffers_L[localReadIndex].ready == 1) {
-        source_ifft_left = &buffers_L[localReadIndex].data[readOffset];
+        source_additive_left = &buffers_L[localReadIndex].data[readOffset];
       }
       if (buffers_R[localReadIndex].ready == 1) {
-        source_ifft_right = &buffers_R[localReadIndex].data[readOffset];
+        source_additive_right = &buffers_R[localReadIndex].data[readOffset];
       }
     } else {
       // Mono mode: use right buffer for both channels
       if (buffers_R[localReadIndex].ready == 1) {
-        source_ifft_left = &buffers_R[localReadIndex].data[readOffset];
-        source_ifft_right = &buffers_R[localReadIndex].data[readOffset];
+        source_additive_left = &buffers_R[localReadIndex].data[readOffset];
+        source_additive_right = &buffers_R[localReadIndex].data[readOffset];
       }
     }
 
-    if (fft_audio_buffers[fft_localReadIndex].ready == 1) {
-      unsigned int fft_framesAvailable = AUDIO_BUFFER_SIZE - fft_readOffset;
-      if (fft_framesAvailable >= chunk) {
-        source_fft =
-            &fft_audio_buffers[fft_localReadIndex].data[fft_readOffset];
+    if (polyphonic_audio_buffers[polyphonic_localReadIndex].ready == 1) {
+      unsigned int polyphonic_framesAvailable =
+          AUDIO_BUFFER_SIZE - polyphonic_readOffset;
+      if (polyphonic_framesAvailable >= chunk) {
+        source_fft = &polyphonic_audio_buffers[polyphonic_localReadIndex]
+                          .data[polyphonic_readOffset];
       }
     }
 
     // Get reverb send levels (cached less frequently for performance)
-    static float cached_reverb_send_ifft = 0.7f;
-    static float cached_reverb_send_fft = 0.0f;
+    static float cached_reverb_send_additive = 0.7f;
+    static float cached_reverb_send_polyphonic = 0.0f;
     static int reverb_cache_counter = 0;
 
     // Update reverb cache every 128 calls (~1.33ms at 96kHz)
     if (++reverb_cache_counter >= 128) {
       reverb_cache_counter = 0;
       if (gMidiController && gMidiController->isAnyControllerConnected()) {
-        cached_reverb_send_ifft = gMidiController->getReverbSendSynthIfft();
-        cached_reverb_send_fft = gMidiController->getReverbSendSynthFft();
+        cached_reverb_send_additive =
+            gMidiController->getReverbSendSynthAdditive();
+        cached_reverb_send_polyphonic =
+            gMidiController->getReverbSendSynthPolyphonic();
       }
     }
 
@@ -151,42 +154,43 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       float dry_sample_left = 0.0f;
       float dry_sample_right = 0.0f;
 
-      // Add IFFT contribution - separate left and right channels
-      if (source_ifft_left) {
-        dry_sample_left += source_ifft_left[i] * cached_level_ifft;
+      // Add Additive synthesis contribution - separate left and right channels
+      if (source_additive_left) {
+        dry_sample_left += source_additive_left[i] * cached_level_additive;
       }
-      if (source_ifft_right) {
-        dry_sample_right += source_ifft_right[i] * cached_level_ifft;
+      if (source_additive_right) {
+        dry_sample_right += source_additive_right[i] * cached_level_additive;
       }
 
-      // Add FFT contribution (same for both channels)
+      // Add polyphonic contribution (same for both channels)
       if (source_fft) {
-        dry_sample_left += source_fft[i] * cached_level_fft;
-        dry_sample_right += source_fft[i] * cached_level_fft;
+        dry_sample_left += source_fft[i] * cached_level_polyphonic;
+        dry_sample_right += source_fft[i] * cached_level_polyphonic;
       }
 
       // Direct reverb processing in callback - ULTRA OPTIMIZED
       float reverb_left = 0.0f, reverb_right = 0.0f;
 
 #if ENABLE_REVERB
-      if (reverbEnabled &&
-          (cached_reverb_send_ifft > 0.01f || cached_reverb_send_fft > 0.01f)) {
+      if (reverbEnabled && (cached_reverb_send_additive > 0.01f ||
+                            cached_reverb_send_polyphonic > 0.01f)) {
         float reverb_input_left = 0.0f;
         float reverb_input_right = 0.0f;
 
-        if (source_ifft_left && cached_reverb_send_ifft > 0.01f) {
-          reverb_input_left +=
-              source_ifft_left[i] * cached_level_ifft * cached_reverb_send_ifft;
+        if (source_additive_left && cached_reverb_send_additive > 0.01f) {
+          reverb_input_left += source_additive_left[i] * cached_level_additive *
+                               cached_reverb_send_additive;
         }
-        if (source_ifft_right && cached_reverb_send_ifft > 0.01f) {
-          reverb_input_right += source_ifft_right[i] * cached_level_ifft *
-                                cached_reverb_send_ifft;
+        if (source_additive_right && cached_reverb_send_additive > 0.01f) {
+          reverb_input_right += source_additive_right[i] *
+                                cached_level_additive *
+                                cached_reverb_send_additive;
         }
-        if (source_fft && cached_reverb_send_fft > 0.01f) {
-          float fft_reverb =
-              source_fft[i] * cached_level_fft * cached_reverb_send_fft;
-          reverb_input_left += fft_reverb;
-          reverb_input_right += fft_reverb;
+        if (source_fft && cached_reverb_send_polyphonic > 0.01f) {
+          float polyphonic_reverb = source_fft[i] * cached_level_polyphonic *
+                                    cached_reverb_send_polyphonic;
+          reverb_input_left += polyphonic_reverb;
+          reverb_input_right += polyphonic_reverb;
         }
 
         // Single-sample reverb processing (optimized) - use average of
@@ -219,10 +223,11 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     outLeft += chunk;
     outRight += chunk;
     readOffset += chunk;
-    fft_readOffset += chunk;
+    polyphonic_readOffset += chunk;
     framesToRender -= chunk;
 
-    // Handle buffer transitions - IFFT (both left and right channels)
+    // Handle buffer transitions - Additive synthesis (both left and right
+    // channels)
     if (readOffset >= AUDIO_BUFFER_SIZE) {
       // Signal completion for both left and right buffers
       if (IS_STEREO_MODE()) {
@@ -251,16 +256,19 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       readOffset = 0;
     }
 
-    // Handle buffer transitions - FFT
-    if (fft_readOffset >= AUDIO_BUFFER_SIZE) {
-      if (fft_audio_buffers[fft_localReadIndex].ready == 1) {
-        pthread_mutex_lock(&fft_audio_buffers[fft_localReadIndex].mutex);
-        fft_audio_buffers[fft_localReadIndex].ready = 0;
-        pthread_cond_signal(&fft_audio_buffers[fft_localReadIndex].cond);
-        pthread_mutex_unlock(&fft_audio_buffers[fft_localReadIndex].mutex);
+    // Handle buffer transitions - Polyphonic
+    if (polyphonic_readOffset >= AUDIO_BUFFER_SIZE) {
+      if (polyphonic_audio_buffers[polyphonic_localReadIndex].ready == 1) {
+        pthread_mutex_lock(
+            &polyphonic_audio_buffers[polyphonic_localReadIndex].mutex);
+        polyphonic_audio_buffers[polyphonic_localReadIndex].ready = 0;
+        pthread_cond_signal(
+            &polyphonic_audio_buffers[polyphonic_localReadIndex].cond);
+        pthread_mutex_unlock(
+            &polyphonic_audio_buffers[polyphonic_localReadIndex].mutex);
       }
-      fft_localReadIndex = (fft_localReadIndex == 0) ? 1 : 0;
-      fft_readOffset = 0;
+      polyphonic_localReadIndex = (polyphonic_localReadIndex == 0) ? 1 : 0;
+      polyphonic_readOffset = 0;
     }
   }
 

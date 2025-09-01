@@ -157,9 +157,6 @@ int main(int argc, char **argv) {
     } else if (strcmp(argv[i], "--cli") == 0) {
       printf(
           "Running in CLI mode (no GUI window unless --sfml-window is used)\n");
-#ifndef CLI_MODE
-#define CLI_MODE
-#endif
     } else if (strcmp(argv[i], "--sfml-window") == 0) {
       use_sfml_window = 1;
       printf("SFML window enabled (visual display will be shown)\n");
@@ -221,18 +218,7 @@ int main(int argc, char **argv) {
   // Tout ce bloc ne s'exécute que si SFML est activé
   sfVideoMode mode = {WINDOWS_WIDTH, WINDOWS_HEIGHT, 32};
 
-#ifndef CLI_MODE
-  // Mode GUI normal, toujours créer la fenêtre
-  window =
-      sfRenderWindow_create(mode, "CSFML Viewer", sfResize | sfClose, NULL);
-  if (!window) {
-    perror("Error creating CSFML window");
-    close(dmxCtx->fd);
-    free(dmxCtx);
-    return EXIT_FAILURE;
-  }
-#else
-  // Mode CLI, mais avec option de fenêtre SFML si demandée
+  // En mode CLI, créer la fenêtre SFML uniquement si l'option est activée
   if (use_sfml_window) {
     window = sfRenderWindow_create(mode, "Sp3ctra SFML Viewer",
                                    sfResize | sfClose, NULL);
@@ -243,7 +229,6 @@ int main(int argc, char **argv) {
       return EXIT_FAILURE;
     }
   }
-#endif // CLI_MODE
 #endif // NO_SFML
 
   /* Initialize UDP and Audio */
@@ -282,20 +267,20 @@ int main(int argc, char **argv) {
   audio_Init();
 
   // Determine synthesis modes based on configuration
-  int enable_fft_synth = 1;
-  int enable_ifft_synth = 1;
+  int enable_polyphonic_synth = 1;
+  int enable_additive_synth = 1;
   int enable_midi = 1;
   int midi_connected = 0;
 
   // Check manual disable flags (highest priority)
-#if FORCE_DISABLE_FFT
-  enable_fft_synth = 0;
-  printf("FFT synthesis FORCE DISABLED by configuration\n");
+#if FORCE_DISABLE_POLYPHONIC
+  enable_polyphonic_synth = 0;
+  printf("Polyphonic synthesis FORCE DISABLED by configuration\n");
 #endif
 
-#if FORCE_DISABLE_IFFT
-  enable_ifft_synth = 0;
-  printf("IFFT synthesis FORCE DISABLED by configuration\n");
+#if FORCE_DISABLE_ADDITIVE
+  enable_additive_synth = 0;
+  printf("ADDITIVE synthesis FORCE DISABLED by configuration\n");
 #endif
 
 #if !ENABLE_MIDI_POLLING
@@ -313,27 +298,30 @@ int main(int argc, char **argv) {
     if (midi_connected) {
       printf("MIDI: Controller connected\n");
       // Setup note callbacks if MIDI connected successfully
-      midi_set_note_on_callback(synth_fft_note_on);
-      midi_set_note_off_callback(synth_fft_note_off);
-      printf(
-          "MIDI: Note On/Off callbacks for synth_fft registered via C API.\n");
+      midi_set_note_on_callback(synth_polyphonic_note_on);
+      midi_set_note_off_callback(synth_polyphonic_note_off);
+      printf("MIDI: Note On/Off callbacks for synth_polyphonic registered via "
+             "C API.\n");
     } else {
       printf("MIDI: No controller found\n");
     }
   }
 
-  // Check automatic FFT disable based on MIDI presence
-#if AUTO_DISABLE_FFT_WITHOUT_MIDI
-  if (!midi_connected && enable_fft_synth) {
-    enable_fft_synth = 0;
-    printf("FFT synthesis AUTO-DISABLED - no MIDI controller detected\n");
+  // Check automatic polyphonic disable based on MIDI presence
+#if AUTO_DISABLE_POLYPHONIC_WITHOUT_MIDI
+  if (!midi_connected && enable_polyphonic_synth) {
+    enable_polyphonic_synth = 0;
+    printf(
+        "Polyphonic synthesis AUTO-DISABLED - no MIDI controller detected\n");
   }
 #endif
 
   // Display final synthesis configuration
   printf("========== SYNTHESIS CONFIGURATION ==========\n");
-  printf("IFFT synthesis: %s\n", enable_ifft_synth ? "ENABLED" : "DISABLED");
-  printf("FFT synthesis:  %s\n", enable_fft_synth ? "ENABLED" : "DISABLED");
+  printf("ADDITIVE synthesis: %s\n",
+         enable_additive_synth ? "ENABLED" : "DISABLED");
+  printf("POLYPHONIC synthesis:  %s\n",
+         enable_polyphonic_synth ? "ENABLED" : "DISABLED");
   printf("MIDI polling:   %s\n", enable_midi ? "ENABLED" : "DISABLED");
   if (enable_midi) {
     printf("MIDI connected: %s\n", midi_connected ? "YES" : "NO");
@@ -341,7 +329,7 @@ int main(int argc, char **argv) {
   printf("============================================\n");
 
   synth_IfftInit();
-  synth_fftMode_init(); // Initialize the new FFT synth mode
+  synth_polyphonicMode_init(); // Initialize the polyphonic synth mode
   display_Init(window);
   // visual_freeze_init(); // Removed: Old visual-only freeze
   synth_data_freeze_init();         // Initialize synth data freeze feature
@@ -420,17 +408,8 @@ int main(int argc, char **argv) {
   sfSprite *foregroundSprite = NULL;
 
 #ifndef NO_SFML
-// Ce bloc ne s'exécute que si SFML est activé
-#ifndef CLI_MODE
-  // Mode GUI normal, toujours créer les textures
-  backgroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
-  foregroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
-  backgroundSprite = sfSprite_create();
-  foregroundSprite = sfSprite_create();
-  sfSprite_setTexture(backgroundSprite, backgroundTexture, sfTrue);
-  sfSprite_setTexture(foregroundSprite, foregroundTexture, sfTrue);
-#else
-  // Mode CLI, mais avec option de fenêtre SFML si demandée
+  // Ce bloc ne s'exécute que si SFML est activé
+  // En mode CLI, créer les textures uniquement si la fenêtre SFML est demandée
   if (use_sfml_window) {
     backgroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
     foregroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
@@ -439,7 +418,6 @@ int main(int argc, char **argv) {
     sfSprite_setTexture(backgroundSprite, backgroundTexture, sfTrue);
     sfSprite_setTexture(foregroundSprite, foregroundTexture, sfTrue);
   }
-#endif // CLI_MODE
 #endif // NO_SFML
 
   /* Create threads for UDP, Audio, and DMX (pas de thread d'affichage) */
@@ -483,12 +461,13 @@ int main(int argc, char **argv) {
   param.sched_priority = 50; // Priorité plus modérée pour le Jetson Nano
   pthread_setschedparam(audioThreadId, SCHED_RR, &param);
 
-  // Create and start the FFT synth thread conditionally
-  int fft_thread_created = 0;
-  if (enable_fft_synth) {
-    if (pthread_create(&fftSynthThreadId, NULL, synth_fftMode_thread_func,
+  // Create and start the polyphonic synth thread conditionally
+  int polyphonic_thread_created = 0;
+  if (enable_polyphonic_synth) {
+    if (pthread_create(&fftSynthThreadId, NULL,
+                       synth_polyphonicMode_thread_func,
                        (void *)&context) != 0) {
-      perror("Error creating FFT synth thread");
+      perror("Error creating polyphonic synth thread");
       // Consider cleanup for other threads if this fails mid-startup
 #ifndef NO_SFML
       if (window)
@@ -496,12 +475,13 @@ int main(int argc, char **argv) {
 #endif
       return EXIT_FAILURE;
     }
-    fft_thread_created = 1;
-    printf("FFT synthesis thread started successfully\n");
+    polyphonic_thread_created = 1;
+    printf("Polyphonic synthesis thread started successfully\n");
     // Optionally set scheduling parameters for fftSynthThreadId as well if
     // needed
   } else {
-    printf("FFT synthesis thread NOT created (disabled by configuration)\n");
+    printf("Polyphonic synthesis thread NOT created (disabled by "
+           "configuration)\n");
   }
 
   /* Main loop (gestion des événements et rendu) */
@@ -517,8 +497,7 @@ int main(int argc, char **argv) {
 #endif
   int running = 1;
 
-#ifdef CLI_MODE
-  /* En mode CLI, gérer les signaux pour l'arrêt propre (CTRL+C) */
+  /* Boucle principale pour le mode CLI */
   printf("========================================================\n");
   printf("Application running in CLI mode.\n");
   if (use_sfml_window) {
@@ -628,89 +607,6 @@ int main(int argc, char **argv) {
     /* Petite pause pour limiter la charge CPU */
     usleep(100);
   }
-#else
-  /* Boucle principale avec affichage graphique */
-  // uint8_t local_main_R,G,B sont déjà déclarés plus haut si CLI_MODE est
-  // défini. S'il n'est pas défini, il faut les déclarer ici. Pour simplifier,
-  // on les sort de la condition #ifdef. Déjà fait en dehors de la boucle
-  // CLI_MODE.
-
-  while (sfRenderWindow_isOpen(
-      window)) { // Cette boucle ne s'exécute que si window est valide (donc
-                 // SFML est utilisé)
-    process_this_frame_main_loop = 0;
-#ifndef NO_SFML
-    sfEvent event;
-    /* Gestion des événements dans le thread principal */
-    while (sfRenderWindow_pollEvent(window, &event)) {
-      if (event.type == sfEvtClosed) {
-        sfRenderWindow_close(window);
-        context.running = 0;
-        dmxCtx->running = 0;
-      }
-    }
-#endif // NO_SFML
-
-    /* Vérifier si le double buffer contient de nouvelles données */
-    pthread_mutex_lock(&db.mutex);
-    if (db.dataReady) {
-      memcpy(local_main_R, db.processingBuffer_R, CIS_MAX_PIXELS_NB);
-      memcpy(local_main_G, db.processingBuffer_G, CIS_MAX_PIXELS_NB);
-      memcpy(local_main_B, db.processingBuffer_B, CIS_MAX_PIXELS_NB);
-      db.dataReady = 0;
-      process_this_frame_main_loop = 1;
-    }
-    pthread_mutex_unlock(&db.mutex);
-
-    if (process_this_frame_main_loop) {
-      /* Rendu de la nouvelle ligne à partir du buffer */
-      pthread_mutex_lock(&g_displayable_synth_mutex);
-      printImageRGB(window, g_displayable_synth_R, g_displayable_synth_G,
-                    g_displayable_synth_B,
-                    backgroundTexture, // Utilise les données de synth.c
-                    foregroundTexture);
-      pthread_mutex_unlock(&g_displayable_synth_mutex);
-
-      /* Calcul de la couleur moyenne et mise à jour du contexte DMX */
-      // DMX utilise les données copiées local_main_R,G,B (qui sont les données
-      // live de db.processingBuffer)
-      DMXSpot zoneSpots[DMX_NUM_SPOTS];
-      computeAverageColorPerZone(local_main_R, local_main_G, local_main_B,
-                                 CIS_MAX_PIXELS_NB, zoneSpots);
-
-      pthread_mutex_lock(&dmxCtx->mutex);
-      memcpy(dmxCtx->spots, zoneSpots, sizeof(zoneSpots));
-      dmxCtx->colorUpdated = 1;
-      pthread_cond_signal(&dmxCtx->cond);
-      pthread_mutex_unlock(&dmxCtx->mutex);
-
-#ifdef PRINT_FPS
-      frameCount++; // Compter chaque image affichée
-#endif
-    }
-
-#ifdef PRINT_FPS
-    float elapsedTime = 0.0f;
-#ifndef NO_SFML
-    if (clock) { // Vérifier si clock a été initialisé
-      elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
-      if (elapsedTime >= 1.0f) {
-        float fps = frameCount / elapsedTime;
-        (void)fps; // Mark fps as used to silence warning if printf is commented
-        // printf("Refresh rate: %.2f FPS\n", fps); // Supprimé ou commenté
-        sfClock_restart(clock);
-        frameCount = 0; // Réinitialiser frameCount ici
-      }
-    }
-#else
-    (void)elapsedTime; // Supprimer l'avertissement unused
-#endif // NO_SFML
-#endif // PRINT_FPS
-
-    /* Petite pause pour limiter la charge CPU */
-    usleep(100);
-  }
-#endif
 
 #ifndef NO_SFML
   if (clock) {
@@ -727,10 +623,10 @@ int main(int argc, char **argv) {
   pthread_join(udpThreadId, NULL);
   pthread_join(audioThreadId, NULL);
 
-  // Join the FFT synth thread only if it was created
-  if (fft_thread_created) {
+  // Join the polyphonic synth thread only if it was created
+  if (polyphonic_thread_created) {
     pthread_join(fftSynthThreadId, NULL);
-    printf("FFT synthesis thread terminated\n");
+    printf("Polyphonic synthesis thread terminated\n");
   }
 
 #ifdef USE_DMX
@@ -759,22 +655,8 @@ int main(int argc, char **argv) {
 
   /* Nettoyage des ressources graphiques */
 #ifndef NO_SFML
-// Ce bloc ne s'exécute que si SFML est activé
-#ifndef CLI_MODE
-                   // Mode GUI normal, toujours nettoyer
-  if (backgroundTexture)
-    sfTexture_destroy(backgroundTexture);
-  if (foregroundTexture)
-    sfTexture_destroy(foregroundTexture);
-  if (backgroundSprite)
-    sfSprite_destroy(backgroundSprite);
-  if (foregroundSprite)
-    sfSprite_destroy(foregroundSprite);
-  if (window)
-    sfRenderWindow_destroy(window);
-#else
-                   // Mode CLI, nettoyer seulement si la fenêtre SFML était
-                   // utilisée
+  // Ce bloc ne s'exécute que si SFML est activé
+  // En mode CLI, nettoyer seulement si la fenêtre SFML était utilisée
   if (use_sfml_window &&
       window) { // window ne sera non-NULL que si use_sfml_window était vrai ET
                 // la création a réussi
@@ -788,7 +670,6 @@ int main(int argc, char **argv) {
       sfSprite_destroy(foregroundSprite);
     sfRenderWindow_destroy(window); // window est garanti non-NULL ici
   }
-#endif // CLI_MODE
 #endif // NO_SFML
 
   return 0;
