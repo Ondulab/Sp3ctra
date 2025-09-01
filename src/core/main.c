@@ -129,37 +129,30 @@ int main(int argc, char **argv) {
       printf("Usage: %s [OPTIONS]\n\n", argv[0]);
       printf("OPTIONS:\n");
       printf("  --help, -h               Show this help message\n");
-      printf("  --cli                    Run in CLI mode (no GUI)\n");
-      printf("  --sfml-window            Enable SFML visual window (CLI mode "
-             "only)\n");
-      printf(
-          "  --list-audio-devices     List available audio devices and exit\n");
+      printf("  --display                Enable visual scanner display\n");
+      printf("  --list-audio-devices     List available audio devices and exit\n");
       printf("  --audio-device=<ID>      Use specific audio device ID\n");
       printf("  --no-dmx                 Disable DMX lighting output\n");
-      printf(
-          "  --dmx-port=<PORT>        Specify DMX serial port (default: %s)\n",
-          DMX_PORT);
+      printf("  --dmx-port=<PORT>        Specify DMX serial port (default: %s)\n",
+             DMX_PORT);
       printf("  --silent-dmx             Suppress DMX error messages\n");
+      printf("  --test-tone              Enable test tone mode (440Hz)\n");
       printf("\nExamples:\n");
-      printf("  %s --cli --audio-device=3           # Use audio device 3 in "
-             "CLI mode\n",
+      printf("  %s --audio-device=3                 # Use audio device 3\n",
              argv[0]);
       printf("  %s --list-audio-devices             # List all audio devices\n",
              argv[0]);
-      printf("  %s --cli --no-dmx                   # Run without DMX\n",
+      printf("  %s --no-dmx                         # Run without DMX\n",
              argv[0]);
-      printf(
-          "  %s --sfml-window --audio-device=1   # CLI with visual display\n",
-          argv[0]);
+      printf("  %s --display --audio-device=1       # Run with visual display\n",
+             argv[0]);
       printf("\nFor Pi Module 5 optimization, use: "
              "./launch_cisynth_optimized.sh\n");
       return EXIT_SUCCESS;
-    } else if (strcmp(argv[i], "--cli") == 0) {
-      printf(
-          "Running in CLI mode (no GUI window unless --sfml-window is used)\n");
-    } else if (strcmp(argv[i], "--sfml-window") == 0) {
+    // Option --cli supprimée car redondante (mode CLI est le mode par défaut)
+    } else if (strcmp(argv[i], "--sfml-window") == 0 || strcmp(argv[i], "--show-display") == 0 || strcmp(argv[i], "--display") == 0) {
       use_sfml_window = 1;
-      printf("SFML window enabled (visual display will be shown)\n");
+      printf("Visual scanner display enabled\n");
     } else if (strcmp(argv[i], "--no-dmx") == 0) {
       use_dmx = 0;
       printf("DMX disabled\n");
@@ -218,7 +211,7 @@ int main(int argc, char **argv) {
   // Tout ce bloc ne s'exécute que si SFML est activé
   sfVideoMode mode = {WINDOWS_WIDTH, WINDOWS_HEIGHT, 32};
 
-  // En mode CLI, créer la fenêtre SFML uniquement si l'option est activée
+  // Créer la fenêtre SFML uniquement si l'option est activée
   if (use_sfml_window) {
     window = sfRenderWindow_create(mode, "Sp3ctra SFML Viewer",
                                    sfResize | sfClose, NULL);
@@ -273,14 +266,14 @@ int main(int argc, char **argv) {
   int midi_connected = 0;
 
   // Check manual disable flags (highest priority)
-#if FORCE_DISABLE_POLYPHONIC
+#ifdef DISABLE_POLYPHONIC
   enable_polyphonic_synth = 0;
-  printf("Polyphonic synthesis FORCE DISABLED by configuration\n");
+  printf("Polyphonic synthesis DISABLED by configuration\n");
 #endif
 
-#if FORCE_DISABLE_ADDITIVE
+#ifdef DISABLE_ADDITIVE
   enable_additive_synth = 0;
-  printf("ADDITIVE synthesis FORCE DISABLED by configuration\n");
+  printf("ADDITIVE synthesis DISABLED by configuration\n");
 #endif
 
 #if !ENABLE_MIDI_POLLING
@@ -409,7 +402,7 @@ int main(int argc, char **argv) {
 
 #ifndef NO_SFML
   // Ce bloc ne s'exécute que si SFML est activé
-  // En mode CLI, créer les textures uniquement si la fenêtre SFML est demandée
+  // Créer les textures uniquement si la fenêtre SFML est demandée
   if (use_sfml_window) {
     backgroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
     foregroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
@@ -497,19 +490,19 @@ int main(int argc, char **argv) {
 #endif
   int running = 1;
 
-  /* Boucle principale pour le mode CLI */
+  /* Boucle principale */
   printf("========================================================\n");
-  printf("Application running in CLI mode.\n");
+  printf("Application running.\n");
   if (use_sfml_window) {
-    printf("SFML window enabled for visual display.\n");
+    printf("Visual scanner display enabled.\n");
   } else {
-    printf("No visual display (use --sfml-window to enable).\n");
+    printf("No visual display (use --display to enable).\n");
   }
   printf("Press Ctrl+C to stop the application.\n");
   printf("========================================================\n");
   fflush(stdout); // S'assurer que tout est affiché immédiatement
 
-  /* Boucle principale pour le mode CLI */
+  /* Boucle principale */
   uint8_t local_main_R[CIS_MAX_PIXELS_NB]; // Buffers locaux pour DMX
   uint8_t local_main_G[CIS_MAX_PIXELS_NB];
   uint8_t local_main_B[CIS_MAX_PIXELS_NB];
@@ -656,7 +649,7 @@ int main(int argc, char **argv) {
   /* Nettoyage des ressources graphiques */
 #ifndef NO_SFML
   // Ce bloc ne s'exécute que si SFML est activé
-  // En mode CLI, nettoyer seulement si la fenêtre SFML était utilisée
+  // Nettoyer seulement si la fenêtre SFML était utilisée
   if (use_sfml_window &&
       window) { // window ne sera non-NULL que si use_sfml_window était vrai ET
                 // la création a réussi
