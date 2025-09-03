@@ -4,12 +4,13 @@
 # Compiler settings
 CC = gcc
 CXX = g++
-CFLAGS = -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DPRINT_FPS -Wno-deprecated-declarations
-CXXFLAGS = -std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DPRINT_FPS -Wno-unused-but-set-variable -Wno-deprecated-declarations
+CFLAGS = -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DENABLE_IMAGE_DEBUG -Wno-deprecated-declarations
+CXXFLAGS = -std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -Wno-unused-but-set-variable -Wno-deprecated-declarations
 
 # Include directories for modular architecture
 INCLUDES = -I/opt/homebrew/include \
            -Isrc/core \
+           -Isrc/config \
            -Isrc/audio/rtaudio \
            -Isrc/audio/buffers \
            -Isrc/audio/effects \
@@ -49,7 +50,7 @@ COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/dmx/dmx.c
 DISPLAY_SOURCES = src/display/display.c
 THREADING_SOURCES = src/threading/multithreading.c
-UTILS_SOURCES = src/utils/shared.c src/utils/error.c
+UTILS_SOURCES = src/utils/shared.c src/utils/error.c src/utils/image_debug.c
 
 # All sources
 ALL_SOURCES = $(CORE_SOURCES) $(AUDIO_RTAUDIO_SOURCES) $(AUDIO_BUFFERS_SOURCES) \

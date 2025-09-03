@@ -137,6 +137,7 @@ int main(int argc, char **argv) {
              DMX_PORT);
       printf("  --silent-dmx             Suppress DMX error messages\n");
       printf("  --test-tone              Enable test tone mode (440Hz)\n");
+      printf("  --debug-image            Enable image transformation debug visualization\n");
       printf("\nExamples:\n");
       printf("  %s --audio-device=3                 # Use audio device 3\n",
              argv[0]);
@@ -172,6 +173,9 @@ int main(int argc, char **argv) {
       printf("🎵 Test tone mode enabled (440Hz)\n");
       // Enable minimal callback mode for testing
       setMinimalCallbackMode(1);
+    } else if (strcmp(argv[i], "--debug-image") == 0) {
+      printf("🔧 Image transformation debug enabled\n");
+      // This will be handled by compile-time flags in config_debug.h
     } else {
       printf("Unknown option: %s\n", argv[i]);
       printf("Use --help for usage information\n");

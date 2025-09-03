@@ -40,6 +40,7 @@ struct wave {
     uint32_t area_size;
     uint32_t octave_coeff;
     uint32_t octave_divider;
+    float target_volume;
     float current_volume;
     float volume_increment;
     float max_volume_increment;
