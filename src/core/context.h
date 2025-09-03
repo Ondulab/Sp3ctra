@@ -69,10 +69,6 @@ typedef struct {
   float auto_volume_target;       /* Target volume computed from IMU */
   time_t auto_last_activity_time; /* Last time activity detected */
   int auto_is_active;             /* 0/1 */
-
-#if ENABLE_IMAGE_TRANSFORM
-  bool enableImageTransform;
-#endif
 } Context;
 
 #endif /* CONTEXT_H */

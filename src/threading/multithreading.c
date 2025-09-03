@@ -371,54 +371,6 @@ void *udpThread(void *arg) {
              packet.line_id, fragmentCount);
 #endif
       // Complete line received
-#if ENABLE_IMAGE_TRANSFORM
-      if (ctx->enableImageTransform) {
-        int lineSize = packet.total_fragments * packet.fragment_size;
-
-        // Apply transform to legacy buffer
-        for (int i = 0; i < lineSize; i++) {
-          // Retrieve original RGB values
-          unsigned char r = db->activeBuffer_R[i];
-          unsigned char g = db->activeBuffer_G[i];
-          unsigned char b = db->activeBuffer_B[i];
-
-          // Step 2: Calculate perceived luminance: Y = 0.299 * r + 0.587 * g +
-          // 0.114 * b
-          double luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-
-          // Step 3: Inversion and normalization:
-          // Y_inv = 255 - Y, then I = Y_inv / 255.
-          double invertedLuminance = 255.0 - luminance;
-          double intensity = invertedLuminance / 255.0;
-
-          // Step 4: Gamma correction: I_corr = intensity^(IMAGE_GAMMA)
-          double correctedIntensity = pow(intensity, IMAGE_GAMMA);
-
-          // Step 5: Modulate original RGB channels by the corrected intensity.
-          db->activeBuffer_R[i] = (uint8_t)round(r * correctedIntensity);
-          db->activeBuffer_G[i] = (uint8_t)round(g * correctedIntensity);
-          db->activeBuffer_B[i] = (uint8_t)round(b * correctedIntensity);
-        }
-
-        // Apply same transform to audio buffers if writing
-        if (audio_write_started) {
-          for (int i = 0; i < lineSize; i++) {
-            unsigned char r = audio_write_R[i];
-            unsigned char g = audio_write_G[i];
-            unsigned char b = audio_write_B[i];
-
-            double luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-            double invertedLuminance = 255.0 - luminance;
-            double intensity = invertedLuminance / 255.0;
-            double correctedIntensity = pow(intensity, IMAGE_GAMMA);
-
-            audio_write_R[i] = (uint8_t)round(r * correctedIntensity);
-            audio_write_G[i] = (uint8_t)round(g * correctedIntensity);
-            audio_write_B[i] = (uint8_t)round(b * correctedIntensity);
-          }
-        }
-      }
-#endif
 
       // Complete audio buffer write and swap
       if (audio_write_started) {
