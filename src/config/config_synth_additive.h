@@ -9,7 +9,7 @@
  * Stereo Panoramization Configuration
  **************************************************************************************/
 // Enable/disable stereo mode
-//#define STEREO_MODE
+#define STEREO_MODE
 
 // Pan law configuration
 #define STEREO_PAN_LAW_CONSTANT_POWER    1      // 1 = cos/sin law (constant power), 0 = linear law
