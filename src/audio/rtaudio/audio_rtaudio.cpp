@@ -4,6 +4,7 @@
 #include "audio_c_api.h"
 #include "midi_controller.h" // For gMidiController
 #include "synth_polyphonic.h" // For polyphonic_audio_buffers and related variables
+#include "../../config/config_debug.h"    // For debug configuration macros
 #include <cstring>
 #include <iostream>
 #include <rtaudio/RtAudio.h> // Explicitly include RtAudio.h
@@ -158,6 +159,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         dry_sample_right += source_additive_right[i] * cached_level_additive;
       }
       
+#ifdef DEBUG_AUDIO_SIGNAL
       // DEBUG: Log signal levels every 4800 samples (~100ms at 48kHz)
       static int debug_counter = 0;
       if (++debug_counter >= 4800) {
@@ -169,6 +171,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
                  source_additive_left[i], source_additive_right ? source_additive_right[i] : 0.0f);
         }
       }
+#endif
 
       // Add polyphonic contribution (same for both channels)
       if (source_fft) {
@@ -180,6 +183,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       float reverb_left = 0.0f, reverb_right = 0.0f;
 
 #if ENABLE_REVERB
+#ifdef DEBUG_AUDIO_REVERB
       // DEBUG: Log reverb condition check
       static int reverb_debug_counter = 0;
       if (++reverb_debug_counter >= 4800) {
@@ -187,6 +191,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         printf("🔍 REVERB CONDITION: ENABLE_REVERB=%d, reverbEnabled=%d, send_additive=%.3f, send_poly=%.3f\n",
                ENABLE_REVERB, reverbEnabled ? 1 : 0, cached_reverb_send_additive, cached_reverb_send_polyphonic);
       }
+#endif
       
       if (reverbEnabled && (cached_reverb_send_additive > 0.01f ||
                             cached_reverb_send_polyphonic > 0.01f)) {
@@ -387,6 +392,7 @@ void AudioSystem::processReverb(float inputL, float inputR, float &outputL,
 // ULTRA-OPTIMIZED reverb function for real-time callback
 void AudioSystem::processReverbOptimized(float inputL, float inputR,
                                          float &outputL, float &outputR) {
+#ifdef DEBUG_AUDIO_REVERB
   // DEBUG: Log reverb function calls
   static int reverb_call_counter = 0;
   if (++reverb_call_counter >= 4800) {
@@ -394,13 +400,16 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
     printf("🔍 REVERB CALLED: inputL=%.6f, inputR=%.6f, reverbEnabled=%d, reverbMix=%.3f\n",
            inputL, inputR, reverbEnabled ? 1 : 0, reverbMix);
   }
+#endif
   
   // CPU OPTIMIZATION: Skip all reverb processing if mix is zero or reverb
   // disabled
   if (!reverbEnabled || reverbMix <= 0.0f) {
     outputL = inputL;
     outputR = inputR;
+#ifdef DEBUG_AUDIO_REVERB
     printf("🔍 REVERB SKIPPED: reverbEnabled=%d, reverbMix=%.3f\n", reverbEnabled ? 1 : 0, reverbMix);
+#endif
     return;
   }
 
@@ -449,6 +458,7 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
   outputL = inputL * cached_dry_gain + outBufferL[0] * cached_wet_gain;
   outputR = inputR * cached_dry_gain + outBufferR[0] * cached_wet_gain;
   
+#ifdef DEBUG_AUDIO_REVERB
   // DEBUG: Log reverb output values
   static int reverb_output_counter = 0;
   if (++reverb_output_counter >= 4800) {
@@ -458,6 +468,7 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
     printf("🔍 FINAL REVERB: outputL=%.6f, outputR=%.6f (dry=%.6f + wet=%.6f)\n",
            outputL, outputR, inputL * cached_dry_gain, outBufferL[0] * cached_wet_gain);
   }
+#endif
 }
 
 // === MULTI-THREADED REVERB IMPLEMENTATION ===

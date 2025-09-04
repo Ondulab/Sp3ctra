@@ -4,6 +4,7 @@
  */
 
 #include "lock_free_pan.h"
+#include "../../config/config_debug.h"    // For debug configuration macros
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -53,7 +54,9 @@ void lock_free_pan_init(void) {
     /* Start with buffer B for writing */
     current_write_buffer = 1;
     
+#ifdef DEBUG_LOCK_FREE_PAN
     printf("🔧 LOCK_FREE_PAN: Initialized with %d notes, center pan\n", NUMBER_OF_NOTES);
+#endif
 }
 
 /**
@@ -61,7 +64,9 @@ void lock_free_pan_init(void) {
  */
 void lock_free_pan_cleanup(void) {
     /* No dynamic memory to free in current implementation */
+#ifdef DEBUG_LOCK_FREE_PAN
     printf("🔧 LOCK_FREE_PAN: Cleanup complete\n");
+#endif
 }
 
 /**
@@ -131,6 +136,7 @@ void lock_free_pan_update(const float* new_left_gains,
     atomic_fetch_add_explicit(&g_lock_free_pan_gains.version, 1, memory_order_relaxed);
     atomic_fetch_add_explicit(&g_lock_free_pan_gains.update_count, 1, memory_order_relaxed);
     
+#ifdef DEBUG_LOCK_FREE_PAN
     /* Debug output (limited frequency) */
     static uint32_t debug_counter = 0;
     if (++debug_counter % 100 == 0) {
@@ -139,6 +145,7 @@ void lock_free_pan_update(const float* new_left_gains,
                atomic_load(&g_lock_free_pan_gains.version),
                current_write_buffer ? 'B' : 'A');
     }
+#endif
 }
 
 /**
