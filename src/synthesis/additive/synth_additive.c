@@ -461,7 +461,7 @@ static float calculate_contrast(int32_t *imageData, size_t size) {
 }
 
 /**
- * @brief Calculate color temperature from RGB values
+ * @brief Calculate color temperature from RGB values (AGGRESSIVE VERSION)
  * @param r Red component (0-255)
  * @param g Green component (0-255)
  * @param b Blue component (0-255)
@@ -473,26 +473,31 @@ static float calculate_color_temperature(uint8_t r, uint8_t g, uint8_t b) {
   float g_norm = g / 255.0f;
   float b_norm = b / 255.0f;
   
-  // Calculate opponent color channels (simplified Lab color space approach)
-  // Red-Green opponent channel (a* in Lab)
-  float rg_opponent = r_norm - g_norm;
+  // AGGRESSIVE ALGORITHM: Direct red-blue comparison for maximum stereo effect
+  // Red/Yellow = warm (right), Blue/Cyan = cold (left)
   
-  // Yellow-Blue opponent channel (b* in Lab)
-  // Yellow = R+G, Blue = B
-  float yb_opponent = (r_norm + g_norm) * 0.5f - b_norm;
+  // Primary warm/cold axis: Red vs Blue (most important)
+  float red_blue_diff = r_norm - b_norm;
   
-  // Combine both channels with weights
-  // More weight on yellow-blue as it's the primary warm/cold indicator
-  float temperature = yb_opponent * 0.7f + rg_opponent * 0.3f;
+  // Secondary axis: Yellow (R+G) vs Cyan (G+B)  
+  float yellow_strength = (r_norm + g_norm) * 0.5f;
+  float cyan_strength = (g_norm + b_norm) * 0.5f;
+  float yellow_cyan_diff = yellow_strength - cyan_strength;
   
-  // Apply non-linear curve for better perceptual distribution
+  // Combine with heavy weight on red-blue axis
+  float temperature = red_blue_diff * 0.8f + yellow_cyan_diff * 0.2f;
+  
+  // AGGRESSIVE AMPLIFICATION: Make the effect much more pronounced
+  temperature *= 2.5f;  // Amplify the base signal
+  
+  // Apply aggressive non-linear curve to push values toward extremes
   if (temperature > 0) {
-    temperature = powf(temperature, 0.8f);  // Compress warm colors slightly
+    temperature = powf(temperature, 0.6f);  // Compress less, keep more dynamic range
   } else {
-    temperature = -powf(-temperature, 0.8f); // Compress cold colors slightly
+    temperature = -powf(-temperature, 0.6f);
   }
   
-  // Clamp to [-1, 1] range
+  // Hard clamp to [-1, 1] range
   if (temperature > 1.0f) temperature = 1.0f;
   if (temperature < -1.0f) temperature = -1.0f;
   
@@ -838,17 +843,14 @@ static void synth_process_worker_range(synth_thread_worker_t *worker) {
 
     worker->imageBuffer_q31[local_note_idx] /= PIXELS_PER_NOTE;
 
-    // Apply color inversion for mono mode
-#ifndef STEREO_MODE
-    // Mono mode: apply inversion (white background is implicit)
-    // White background mode: dark pixels = more energy
+    // Apply color inversion (dark pixels = more energy)
     worker->imageBuffer_q31[local_note_idx] =
         VOLUME_AMP_RESOLUTION - worker->imageBuffer_q31[local_note_idx];
     if (worker->imageBuffer_q31[local_note_idx] < 0)
       worker->imageBuffer_q31[local_note_idx] = 0;
     if (worker->imageBuffer_q31[local_note_idx] > VOLUME_AMP_RESOLUTION)
       worker->imageBuffer_q31[local_note_idx] = VOLUME_AMP_RESOLUTION;
-#endif
+    // The comment below is a leftover from a previous implementation and is no longer true.
     // Stereo mode: inversion already done in
     // extractWarmChannel()/extractColdChannel()
   }
@@ -1409,66 +1411,48 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
   // Apply contrast modulation and unified stereo output
   if (synth_pool_initialized && !synth_pool_shutdown) {
 #ifdef STEREO_MODE
-    // STEREO MODE: Apply complex normalization and panning
-    // Combine L/R buffers from all threads
-    float finalBuffer_L[AUDIO_BUFFER_SIZE];
-    float finalBuffer_R[AUDIO_BUFFER_SIZE];
-    memset(finalBuffer_L, 0, sizeof(finalBuffer_L));
-    memset(finalBuffer_R, 0, sizeof(finalBuffer_R));
+    // STEREO MODE: Use actual stereo buffers from threads
+    // Combine stereo buffers from all threads
+    static float stereoBuffer_L[AUDIO_BUFFER_SIZE];
+    static float stereoBuffer_R[AUDIO_BUFFER_SIZE];
     
+    // Initialize stereo buffers
+    fill_float(0, stereoBuffer_L, AUDIO_BUFFER_SIZE);
+    fill_float(0, stereoBuffer_R, AUDIO_BUFFER_SIZE);
+    
+    // Accumulate stereo buffers from all threads
     for (int i = 0; i < 3; i++) {
-      add_float(thread_pool[i].thread_additiveBuffer_L, finalBuffer_L, finalBuffer_L, AUDIO_BUFFER_SIZE);
-      add_float(thread_pool[i].thread_additiveBuffer_R, finalBuffer_R, finalBuffer_R, AUDIO_BUFFER_SIZE);
+      add_float(thread_pool[i].thread_additiveBuffer_L, stereoBuffer_L,
+                stereoBuffer_L, AUDIO_BUFFER_SIZE);
+      add_float(thread_pool[i].thread_additiveBuffer_R, stereoBuffer_R,
+                stereoBuffer_R, AUDIO_BUFFER_SIZE);
     }
     
-#ifdef __linux__
-    scale_float(finalBuffer_L, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
-    scale_float(finalBuffer_R, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
-#endif
+    // Apply same normalization as mono signal
+    mult_float(stereoBuffer_L, maxVolumeBuffer, stereoBuffer_L, AUDIO_BUFFER_SIZE);
+    mult_float(stereoBuffer_R, maxVolumeBuffer, stereoBuffer_R, AUDIO_BUFFER_SIZE);
     
-    // Optimized stereo normalization with adaptive gain control
-    float peak_L = 0.0f, peak_R = 0.0f, rms_L = 0.0f, rms_R = 0.0f;
+    // Apply final processing and contrast
     for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-      float abs_L = fabsf(finalBuffer_L[buff_idx]);
-      float abs_R = fabsf(finalBuffer_R[buff_idx]);
-      if (abs_L > peak_L) peak_L = abs_L;
-      if (abs_R > peak_R) peak_R = abs_R;
-      rms_L += finalBuffer_L[buff_idx] * finalBuffer_L[buff_idx];
-      rms_R += finalBuffer_R[buff_idx] * finalBuffer_R[buff_idx];
-    }
-    rms_L = sqrtf(rms_L / AUDIO_BUFFER_SIZE);
-    rms_R = sqrtf(rms_R / AUDIO_BUFFER_SIZE);
-    
-    float max_peak = (peak_L > peak_R) ? peak_L : peak_R;
-    float stereo_norm_factor = 1.0f;
-    if (max_peak > 0.0f) {
-      float target_level = WAVE_AMP_RESOLUTION * 0.7f;
-      stereo_norm_factor = target_level / max_peak;
-      if (stereo_norm_factor > 2.0f) stereo_norm_factor = 2.0f;
-      if (max_peak > WAVE_AMP_RESOLUTION * 0.8f) {
-        float compression_ratio = 0.5f;
-        float excess = (max_peak - WAVE_AMP_RESOLUTION * 0.8f) / WAVE_AMP_RESOLUTION;
-        stereo_norm_factor *= (1.0f - excess * compression_ratio);
-      }
-    }
-    
-    // Apply final processing and output
-    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-      float left_sample = finalBuffer_L[buff_idx] * stereo_norm_factor * contrast_factor;
-      float right_sample = finalBuffer_R[buff_idx] * stereo_norm_factor * contrast_factor;
+      float left_signal, right_signal;
       
-      audioDataLeft[buff_idx] = left_sample / (float)WAVE_AMP_RESOLUTION;
-      audioDataRight[buff_idx] = right_sample / (float)WAVE_AMP_RESOLUTION;
+      if (sumVolumeBuffer[buff_idx] != 0) {
+        left_signal = (stereoBuffer_L[buff_idx] / sumVolumeBuffer[buff_idx]) / (float)WAVE_AMP_RESOLUTION;
+        right_signal = (stereoBuffer_R[buff_idx] / sumVolumeBuffer[buff_idx]) / (float)WAVE_AMP_RESOLUTION;
+      } else {
+        left_signal = 0;
+        right_signal = 0;
+      }
+      
+      // Apply contrast factor
+      audioDataLeft[buff_idx] = left_signal * contrast_factor;
+      audioDataRight[buff_idx] = right_signal * contrast_factor;
 
+      // Apply final hard limiting
       if (audioDataLeft[buff_idx] > 1.0f) audioDataLeft[buff_idx] = 1.0f;
       if (audioDataLeft[buff_idx] < -1.0f) audioDataLeft[buff_idx] = -1.0f;
       if (audioDataRight[buff_idx] > 1.0f) audioDataRight[buff_idx] = 1.0f;
       if (audioDataRight[buff_idx] < -1.0f) audioDataRight[buff_idx] = -1.0f;
-    }
-
-    if (log_counter % (LOG_FREQUENCY * 10) == 0) {
-      printf("🎵 STEREO NORM: Peak L/R: %.3f/%.3f, RMS L/R: %.3f/%.3f, Norm: %.3f\n", peak_L, peak_R, rms_L, rms_R, stereo_norm_factor);
-      printf("🎵 STEREO: Contrast=%.2f, Sample L/R: %.4f/%.4f\n", contrast_factor, audioDataLeft[0], audioDataRight[0]);
     }
 
 #else
@@ -1568,19 +1552,15 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
       uint8_t g_avg = g_sum / pixel_count;
       uint8_t b_avg = b_sum / pixel_count;
       
-      // Calculate color temperature and convert to pan position
+      // Calculate color temperature and pan position
       float temperature = calculate_color_temperature(r_avg, g_avg, b_avg);
-      
-      // Store pan position in wave structure
       waves[note].pan_position = temperature;
-      
-      // Calculate and store L/R gains
       calculate_pan_gains(temperature, &waves[note].left_gain, &waves[note].right_gain);
       
       // Debug output for first few notes (limited frequency)
       if (log_counter % (LOG_FREQUENCY * 10) == 0 && note < 5) {
-        printf("Note %d: RGB(%d,%d,%d) -> Temp=%.2f -> L=%.2f R=%.2f\n",
-               note, r_avg, g_avg, b_avg, temperature, 
+        printf("Note %d: RGB(%d,%d,%d) -> Temp=%.2f L=%.2f R=%.2f\n",
+               note, r_avg, g_avg, b_avg, temperature,
                waves[note].left_gain, waves[note].right_gain);
       }
     } else {
