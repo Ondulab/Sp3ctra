@@ -124,11 +124,7 @@ static ImageTemporalFilter mono_filter = {0};
 /* Private function prototypes -----------------------------------------------*/
 static uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G,
                           uint8_t *buffer_B, int32_t *gray, uint32_t size);
-#ifdef STEREO_MODE
 void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRight);
-#else
-void synth_IfftMode(int32_t *imageData, float *audioData);
-#endif
 
 static float calculate_contrast(int32_t *imageData, size_t size);
 static float calculate_color_temperature(uint8_t r, uint8_t g, uint8_t b);
@@ -218,21 +214,19 @@ int32_t synth_IfftInit(void) {
 
   // initialize default parameters
   wavesGeneratorParams.commaPerSemitone = COMMA_PER_SEMITONE;
-  wavesGeneratorParams.startFrequency =
-      (uint32_t)START_FREQUENCY; // Cast to uint32_t
+  wavesGeneratorParams.startFrequency = (uint32_t)START_FREQUENCY; // Cast to uint32_t
   wavesGeneratorParams.harmonization = MAJOR;
   wavesGeneratorParams.harmonizationLevel = 100;
   wavesGeneratorParams.waveformOrder = 1;
 
-  buffer_len = init_waves(unitary_waveform, waves,
-                          &wavesGeneratorParams); // 24002070 24000C30
+  buffer_len = init_waves(unitary_waveform, waves, &wavesGeneratorParams); // 24002070 24000C30
 
   int32_t value = VOLUME_INCREMENT;
 
   if (value == 0)
     value = 0;
   if (value > 1000)
-    value = 100;
+    value = 1000;
   for (int32_t note = 0; note < NUMBER_OF_NOTES; note++) {
     waves[note].volume_increment =
         1.00 / (float)value * waves[note].max_volume_increment;
@@ -243,10 +237,9 @@ int32_t synth_IfftInit(void) {
   if (value == 0)
     value = 0;
   if (value > 1000)
-    value = 100;
+    value = 1000;
   for (int32_t note = 0; note < NUMBER_OF_NOTES; note++) {
-    waves[note].volume_decrement =
-        1.00 / (float)value * waves[note].max_volume_decrement;
+    waves[note].volume_decrement = 1.00 / (float)value * waves[note].max_volume_decrement;
   }
 
   // start with random index
@@ -679,11 +672,11 @@ typedef struct synth_thread_worker_s {
   float thread_sumVolumeBuffer[AUDIO_BUFFER_SIZE];
   float thread_maxVolumeBuffer[AUDIO_BUFFER_SIZE];
   
-#ifdef STEREO_MODE
-  // Buffers stéréo pour accumulation directe L/R
+  // Buffers stéréo pour accumulation directe L/R (toujours présents)
+  // En mode mono : L = R = signal dupliqué
+  // En mode stéréo : L et R avec panoramisation par oscillateur
   float thread_additiveBuffer_L[AUDIO_BUFFER_SIZE];
   float thread_additiveBuffer_R[AUDIO_BUFFER_SIZE];
-#endif
 
   // Buffers de travail locaux (évite VLA sur pile)
   int32_t imageBuffer_q31[NUMBER_OF_NOTES / 3 + 100]; // +100 pour sécurité
@@ -698,12 +691,10 @@ typedef struct synth_thread_worker_s {
   float precomputed_volume_increment[NUMBER_OF_NOTES / 3 + 100];
   float precomputed_volume_decrement[NUMBER_OF_NOTES / 3 + 100];
   
-#ifdef STEREO_MODE
   // Pan positions et gains pré-calculés pour chaque note
   float precomputed_pan_position[NUMBER_OF_NOTES / 3 + 100];
   float precomputed_left_gain[NUMBER_OF_NOTES / 3 + 100];
   float precomputed_right_gain[NUMBER_OF_NOTES / 3 + 100];
-#endif
 
   // Synchronisation
   pthread_mutex_t work_mutex;
@@ -748,11 +739,9 @@ static int synth_init_thread_pool(void) {
     memset(worker->thread_sumVolumeBuffer, 0, sizeof(worker->thread_sumVolumeBuffer));
     memset(worker->thread_maxVolumeBuffer, 0, sizeof(worker->thread_maxVolumeBuffer));
     
-#ifdef STEREO_MODE
-    // CRITICAL FIX: Initialize stereo buffers to zero
+    // CRITICAL FIX: Initialize stereo buffers to zero (always present)
     memset(worker->thread_additiveBuffer_L, 0, sizeof(worker->thread_additiveBuffer_L));
     memset(worker->thread_additiveBuffer_R, 0, sizeof(worker->thread_additiveBuffer_R));
-#endif
 
     // Initialize work buffers
     memset(worker->imageBuffer_q31, 0, sizeof(worker->imageBuffer_q31));
@@ -767,11 +756,9 @@ static int synth_init_thread_pool(void) {
     memset(worker->precomputed_volume_increment, 0, sizeof(worker->precomputed_volume_increment));
     memset(worker->precomputed_volume_decrement, 0, sizeof(worker->precomputed_volume_decrement));
     
-#ifdef STEREO_MODE
     memset(worker->precomputed_pan_position, 0, sizeof(worker->precomputed_pan_position));
     memset(worker->precomputed_left_gain, 0, sizeof(worker->precomputed_left_gain));
     memset(worker->precomputed_right_gain, 0, sizeof(worker->precomputed_right_gain));
-#endif
 
     // Initialisation de la synchronisation
     if (pthread_mutex_init(&worker->work_mutex, NULL) != 0) {
@@ -835,11 +822,9 @@ static void synth_process_worker_range(synth_thread_worker_t *worker) {
   fill_float(0, worker->thread_sumVolumeBuffer, AUDIO_BUFFER_SIZE);
   fill_float(0, worker->thread_maxVolumeBuffer, AUDIO_BUFFER_SIZE);
   
-#ifdef STEREO_MODE
-  // Initialize stereo buffers - CRITICAL FIX: must zero these buffers!
+  // Initialize stereo buffers - CRITICAL FIX: must zero these buffers! (always present)
   fill_float(0, worker->thread_additiveBuffer_L, AUDIO_BUFFER_SIZE);
   fill_float(0, worker->thread_additiveBuffer_R, AUDIO_BUFFER_SIZE);
-#endif
 
   // Prétraitement: calcul des moyennes et transformation en imageBuffer_q31
   for (idx = worker->start_note; idx < worker->end_note; idx++) {
@@ -952,8 +937,9 @@ static void synth_process_worker_range(synth_thread_worker_t *worker) {
       }
     }
 
+    // Always fill stereo buffers (unified approach)
 #ifdef STEREO_MODE
-    // Apply per-oscillator panning and accumulate to L/R buffers
+    // Stereo mode: Apply per-oscillator panning and accumulate to L/R buffers
     float left_gain = worker->precomputed_left_gain[local_note_idx];
     float right_gain = worker->precomputed_right_gain[local_note_idx];
     
@@ -971,6 +957,13 @@ static void synth_process_worker_range(synth_thread_worker_t *worker) {
     add_float(waveBuffer_L, worker->thread_additiveBuffer_L,
               worker->thread_additiveBuffer_L, AUDIO_BUFFER_SIZE);
     add_float(waveBuffer_R, worker->thread_additiveBuffer_R,
+              worker->thread_additiveBuffer_R, AUDIO_BUFFER_SIZE);
+#else
+    // Mono mode: Duplicate mono signal to both L/R channels (center panning)
+    // This creates a unified architecture where stereo buffers are always filled
+    add_float(worker->waveBuffer, worker->thread_additiveBuffer_L,
+              worker->thread_additiveBuffer_L, AUDIO_BUFFER_SIZE);
+    add_float(worker->waveBuffer, worker->thread_additiveBuffer_R,
               worker->thread_additiveBuffer_R, AUDIO_BUFFER_SIZE);
 #endif
 
@@ -1126,11 +1119,7 @@ void synth_shutdown_thread_pool(void) {
  * @param  audioData Buffer de sortie audio mono (mono mode)
  * @retval None
  */
-#ifdef STEREO_MODE
 void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRight) {
-#else
-void synth_IfftMode(int32_t *imageData, float *audioData) {
-#endif
 
   // Additive mode (limited logs)
   if (log_counter % LOG_FREQUENCY == 0) {
@@ -1417,135 +1406,104 @@ void synth_IfftMode(int32_t *imageData, float *audioData) {
   // Calculer le facteur de contraste basé sur l'image
   float contrast_factor = calculate_contrast(imageData, CIS_MAX_PIXELS_NB);
 
-  // Apply contrast modulation and stereo panning
-#ifdef STEREO_MODE
-  // Stereo mode: use per-oscillator panning accumulated in thread workers
+  // Apply contrast modulation and unified stereo output
   if (synth_pool_initialized && !synth_pool_shutdown) {
+#ifdef STEREO_MODE
+    // STEREO MODE: Apply complex normalization and panning
     // Combine L/R buffers from all threads
-    float finalBuffer_L[AUDIO_BUFFER_SIZE];  // Remove static to ensure fresh buffers
-    float finalBuffer_R[AUDIO_BUFFER_SIZE];  // Remove static to ensure fresh buffers
-    
-    // Initialize final stereo buffers - CRITICAL: must be zeroed!
+    float finalBuffer_L[AUDIO_BUFFER_SIZE];
+    float finalBuffer_R[AUDIO_BUFFER_SIZE];
     memset(finalBuffer_L, 0, sizeof(finalBuffer_L));
     memset(finalBuffer_R, 0, sizeof(finalBuffer_R));
     
-    // Accumulate L/R from all threads
     for (int i = 0; i < 3; i++) {
-      add_float(thread_pool[i].thread_additiveBuffer_L, finalBuffer_L,
-                finalBuffer_L, AUDIO_BUFFER_SIZE);
-      add_float(thread_pool[i].thread_additiveBuffer_R, finalBuffer_R,
-                finalBuffer_R, AUDIO_BUFFER_SIZE);
+      add_float(thread_pool[i].thread_additiveBuffer_L, finalBuffer_L, finalBuffer_L, AUDIO_BUFFER_SIZE);
+      add_float(thread_pool[i].thread_additiveBuffer_R, finalBuffer_R, finalBuffer_R, AUDIO_BUFFER_SIZE);
     }
     
-    // Apply platform-specific normalization
 #ifdef __linux__
-    // Pi/Linux: Divide by 3 for thread accumulation
     scale_float(finalBuffer_L, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
     scale_float(finalBuffer_R, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
 #endif
     
-    // Phase 5: Optimized stereo normalization with adaptive gain control
-    // Calculate peak levels for both channels to prevent clipping
-    float peak_L = 0.0f;
-    float peak_R = 0.0f;
-    float rms_L = 0.0f;
-    float rms_R = 0.0f;
-    
-    // First pass: find peaks and calculate RMS
+    // Optimized stereo normalization with adaptive gain control
+    float peak_L = 0.0f, peak_R = 0.0f, rms_L = 0.0f, rms_R = 0.0f;
     for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
       float abs_L = fabsf(finalBuffer_L[buff_idx]);
       float abs_R = fabsf(finalBuffer_R[buff_idx]);
-      
       if (abs_L > peak_L) peak_L = abs_L;
       if (abs_R > peak_R) peak_R = abs_R;
-      
       rms_L += finalBuffer_L[buff_idx] * finalBuffer_L[buff_idx];
       rms_R += finalBuffer_R[buff_idx] * finalBuffer_R[buff_idx];
     }
-    
-    // Calculate RMS values
     rms_L = sqrtf(rms_L / AUDIO_BUFFER_SIZE);
     rms_R = sqrtf(rms_R / AUDIO_BUFFER_SIZE);
     
-    // Determine the maximum peak across both channels
     float max_peak = (peak_L > peak_R) ? peak_L : peak_R;
-    
-    // Calculate adaptive normalization factor
     float stereo_norm_factor = 1.0f;
-    
     if (max_peak > 0.0f) {
-      // Target level based on RMS for better perceived loudness
-      float target_level = WAVE_AMP_RESOLUTION * 0.7f; // 70% of max for headroom
-      
-      // Calculate normalization to prevent clipping
+      float target_level = WAVE_AMP_RESOLUTION * 0.7f;
       stereo_norm_factor = target_level / max_peak;
-      
-      // Apply soft limiting if needed
-      if (stereo_norm_factor > 2.0f) {
-        // Limit gain to prevent excessive amplification of noise
-        stereo_norm_factor = 2.0f;
-      }
-      
-      // Apply compression curve for high signal levels
+      if (stereo_norm_factor > 2.0f) stereo_norm_factor = 2.0f;
       if (max_peak > WAVE_AMP_RESOLUTION * 0.8f) {
-        // Soft knee compression above 80% threshold
-        float compression_ratio = 0.5f; // 2:1 compression
+        float compression_ratio = 0.5f;
         float excess = (max_peak - WAVE_AMP_RESOLUTION * 0.8f) / WAVE_AMP_RESOLUTION;
         stereo_norm_factor *= (1.0f - excess * compression_ratio);
       }
     }
     
-    // CRITICAL FIX: Apply proper stereo normalization
-    // The issue was that we were using mono normalization logic on stereo buffers
+    // Apply final processing and output
     for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-      // Direct stereo output with proper scaling
-      // The stereo buffers already contain the properly panned and accumulated audio
       float left_sample = finalBuffer_L[buff_idx] * stereo_norm_factor * contrast_factor;
       float right_sample = finalBuffer_R[buff_idx] * stereo_norm_factor * contrast_factor;
       
-      // Apply final scaling to audio range [-1.0, 1.0]
       audioDataLeft[buff_idx] = left_sample / (float)WAVE_AMP_RESOLUTION;
       audioDataRight[buff_idx] = right_sample / (float)WAVE_AMP_RESOLUTION;
-      
-      // Apply final hard limiting to prevent any possible clipping
+
       if (audioDataLeft[buff_idx] > 1.0f) audioDataLeft[buff_idx] = 1.0f;
       if (audioDataLeft[buff_idx] < -1.0f) audioDataLeft[buff_idx] = -1.0f;
       if (audioDataRight[buff_idx] > 1.0f) audioDataRight[buff_idx] = 1.0f;
       if (audioDataRight[buff_idx] < -1.0f) audioDataRight[buff_idx] = -1.0f;
     }
-    
-    // Debug output for stereo normalization (limited frequency)
+
     if (log_counter % (LOG_FREQUENCY * 10) == 0) {
-      printf("🎵 STEREO NORM: Peak L/R: %.3f/%.3f, RMS L/R: %.3f/%.3f, Norm: %.3f\n",
-             peak_L, peak_R, rms_L, rms_R, stereo_norm_factor);
+      printf("🎵 STEREO NORM: Peak L/R: %.3f/%.3f, RMS L/R: %.3f/%.3f, Norm: %.3f\n", peak_L, peak_R, rms_L, rms_R, stereo_norm_factor);
+      printf("🎵 STEREO: Contrast=%.2f, Sample L/R: %.4f/%.4f\n", contrast_factor, audioDataLeft[0], audioDataRight[0]);
     }
+
+#else
+    // MONO MODE: Use original simple processing and duplicate output
+    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+      float mono_sample = tmp_audioData[buff_idx] * contrast_factor;
+      
+      // Duplicate mono sample to both channels
+      audioDataLeft[buff_idx] = mono_sample;
+      audioDataRight[buff_idx] = mono_sample;
+
+      // Apply final hard limiting
+      if (audioDataLeft[buff_idx] > 1.0f) audioDataLeft[buff_idx] = 1.0f;
+      if (audioDataLeft[buff_idx] < -1.0f) audioDataLeft[buff_idx] = -1.0f;
+      if (audioDataRight[buff_idx] > 1.0f) audioDataRight[buff_idx] = 1.0f;
+      if (audioDataRight[buff_idx] < -1.0f) audioDataRight[buff_idx] = -1.0f;
+    }
+#endif
   } else {
-    // Fallback: simple stereo from mono with center panning
+    // Fallback mode
+    // Fallback: simple processing from mono data
+#ifdef STEREO_MODE
     for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
       float mono_sample = tmp_audioData[buff_idx] * contrast_factor;
       audioDataLeft[buff_idx] = mono_sample * 0.707f;  // Center pan
       audioDataRight[buff_idx] = mono_sample * 0.707f; // Center pan
     }
-  }
-  
-  // Debug output (limited frequency)
-  if (log_counter % (LOG_FREQUENCY * 10) == 0) {
-    printf("🎵 STEREO: Contrast=%.2f, Sample L/R: %.4f/%.4f\n",
-           contrast_factor, audioDataLeft[0], audioDataRight[0]);
-  }
 #else
-  // Mono mode: single output channel
-  float min_level = 0.0f, max_level = 0.0f;
-  for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-    audioData[buff_idx] = tmp_audioData[buff_idx] * contrast_factor;
-
-    // Track min/max for debug
-    if (buff_idx == 0 || audioData[buff_idx] < min_level)
-      min_level = audioData[buff_idx];
-    if (buff_idx == 0 || audioData[buff_idx] > max_level)
-      max_level = audioData[buff_idx];
-  }
+    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+      float mono_sample = tmp_audioData[buff_idx] * contrast_factor;
+      audioDataLeft[buff_idx] = mono_sample;
+      audioDataRight[buff_idx] = mono_sample;
+    }
 #endif
+  }
 
 
   // Incrémenter le compteur global pour la limitation des logs
@@ -1717,16 +1675,10 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // --- End Synth Data Freeze/Fade Logic ---
 
   // Lancer la synthèse avec les données potentiellement gelées/fondues
-#ifdef STEREO_MODE
-  // Stereo mode: pass both left and right buffers
+  // Unified mode: always pass both left and right buffers
   synth_IfftMode(processed_grayScale,
                  buffers_L[index].data,
                  buffers_R[index].data);
-#else
-  // Mono mode: use only right buffer (or could mix to both)
-  synth_IfftMode(processed_grayScale,
-                 buffers_R[index].data);
-#endif
 
   // Mettre à jour les buffers d'affichage globaux avec les données couleur
   // originales
@@ -1758,9 +1710,15 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
          buffers_R[index].data[1], buffers_R[index].data[2]);
 #endif
 
-  // Marquer le buffer comme prêt
+  // Marquer les buffers comme prêts
+  pthread_mutex_lock(&buffers_L[index].mutex);
+  buffers_L[index].ready = 1;
+  pthread_cond_signal(&buffers_L[index].cond);
+  pthread_mutex_unlock(&buffers_L[index].mutex);
+
   pthread_mutex_lock(&buffers_R[index].mutex);
   buffers_R[index].ready = 1;
+  pthread_cond_signal(&buffers_R[index].cond);
   pthread_mutex_unlock(&buffers_R[index].mutex);
 
   // Changer l'indice pour que le callback lise le buffer rempli et que le
