@@ -15,13 +15,13 @@ echo "Run scripts/deploy_raspberry/install_dependencies_raspberry.sh first if ne
 # Clean previous build files then compile the project in release mode
 make clean
 
-# Build with Raspberry Pi specific settings
+# Build with Raspberry Pi specific settings (no display/SFML)
 make CC=gcc \
      CXX=g++ \
-     CFLAGS="-O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DENABLE_IMAGE_DEBUG -Wno-deprecated-declarations -march=native -mtune=native" \
-     CXXFLAGS="-std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -Wno-unused-but-set-variable -Wno-deprecated-declarations -march=native -mtune=native" \
+     CFLAGS="-O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DENABLE_IMAGE_DEBUG -DNO_SFML -D__LINUX__ -Wno-deprecated-declarations -march=native -mtune=native" \
+     CXXFLAGS="-std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DNO_SFML -D__LINUX__ -Wno-unused-but-set-variable -Wno-deprecated-declarations -march=native -mtune=native" \
      INCLUDES="-I/usr/include -I/usr/local/include -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects -Isrc/audio/pan -Isrc/synthesis/additive -Isrc/synthesis/polyphonic -Isrc/synthesis/polyphonic/kissfft -Isrc/communication/network -Isrc/communication/midi -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils" \
-     LIBS="-L/usr/lib -L/usr/local/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi -lsfml-graphics -lsfml-window -lsfml-system -lcsfml-graphics -lcsfml-window -lcsfml-system -lasound -lpthread -lm"
+     LIBS="-L/usr/lib -L/usr/local/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi -lasound -lpthread -lm"
 
 echo "Release build completed successfully!"
 echo "Executable is located at build/Sp3ctra"
