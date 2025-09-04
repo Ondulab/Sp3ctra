@@ -107,21 +107,12 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     float *source_additive_right = nullptr;
     float *source_fft = nullptr;
 
-    // In stereo mode, use separate left and right channels
-    // In mono mode, use right channel for both
-    if (IS_STEREO_MODE()) {
-      if (buffers_L[localReadIndex].ready == 1) {
-        source_additive_left = &buffers_L[localReadIndex].data[readOffset];
-      }
-      if (buffers_R[localReadIndex].ready == 1) {
-        source_additive_right = &buffers_R[localReadIndex].data[readOffset];
-      }
-    } else {
-      // Mono mode: use right buffer for both channels
-      if (buffers_R[localReadIndex].ready == 1) {
-        source_additive_left = &buffers_R[localReadIndex].data[readOffset];
-        source_additive_right = &buffers_R[localReadIndex].data[readOffset];
-      }
+    // Always use stereo mode with both left and right channels
+    if (buffers_L[localReadIndex].ready == 1) {
+      source_additive_left = &buffers_L[localReadIndex].data[readOffset];
+    }
+    if (buffers_R[localReadIndex].ready == 1) {
+      source_additive_right = &buffers_R[localReadIndex].data[readOffset];
     }
 
     if (polyphonic_audio_buffers[polyphonic_localReadIndex].ready == 1) {
@@ -226,31 +217,20 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     polyphonic_readOffset += chunk;
     framesToRender -= chunk;
 
-    // Handle buffer transitions - Additive synthesis (both left and right
-    // channels)
+    // Handle buffer transitions - Additive synthesis (both left and right channels)
     if (readOffset >= AUDIO_BUFFER_SIZE) {
       // Signal completion for both left and right buffers
-      if (IS_STEREO_MODE()) {
-        if (buffers_L[localReadIndex].ready == 1) {
-          pthread_mutex_lock(&buffers_L[localReadIndex].mutex);
-          buffers_L[localReadIndex].ready = 0;
-          pthread_cond_signal(&buffers_L[localReadIndex].cond);
-          pthread_mutex_unlock(&buffers_L[localReadIndex].mutex);
-        }
-        if (buffers_R[localReadIndex].ready == 1) {
-          pthread_mutex_lock(&buffers_R[localReadIndex].mutex);
-          buffers_R[localReadIndex].ready = 0;
-          pthread_cond_signal(&buffers_R[localReadIndex].cond);
-          pthread_mutex_unlock(&buffers_R[localReadIndex].mutex);
-        }
-      } else {
-        // Mono mode: only signal right buffer
-        if (buffers_R[localReadIndex].ready == 1) {
-          pthread_mutex_lock(&buffers_R[localReadIndex].mutex);
-          buffers_R[localReadIndex].ready = 0;
-          pthread_cond_signal(&buffers_R[localReadIndex].cond);
-          pthread_mutex_unlock(&buffers_R[localReadIndex].mutex);
-        }
+      if (buffers_L[localReadIndex].ready == 1) {
+        pthread_mutex_lock(&buffers_L[localReadIndex].mutex);
+        buffers_L[localReadIndex].ready = 0;
+        pthread_cond_signal(&buffers_L[localReadIndex].cond);
+        pthread_mutex_unlock(&buffers_L[localReadIndex].mutex);
+      }
+      if (buffers_R[localReadIndex].ready == 1) {
+        pthread_mutex_lock(&buffers_R[localReadIndex].mutex);
+        buffers_R[localReadIndex].ready = 0;
+        pthread_cond_signal(&buffers_R[localReadIndex].cond);
+        pthread_mutex_unlock(&buffers_R[localReadIndex].mutex);
       }
       localReadIndex = (localReadIndex == 0) ? 1 : 0;
       readOffset = 0;

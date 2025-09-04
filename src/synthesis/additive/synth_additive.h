@@ -8,7 +8,7 @@
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __SYNTH_ADDITIVE_H
 #define __SYNTH_ADDITIVE_H
-
+            
 /* Includes ------------------------------------------------------------------*/
 #include "config.h" // For CIS_MAX_PIXELS_NB
 #include "stdint.h"
@@ -50,21 +50,7 @@ int32_t synth_IfftInit(void);
 void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
                         uint8_t *buffer_B);
 
-/* New functions for stereo mode - perceptual color science channel extraction
- */
-uint32_t extractWarmChannel(uint8_t *buffer_R, uint8_t *buffer_G,
-                            uint8_t *buffer_B, int32_t *warm_output,
-                            uint32_t size);
-uint32_t extractColdChannel(uint8_t *buffer_R, uint8_t *buffer_G,
-                            uint8_t *buffer_B, int32_t *cold_output,
-                            uint32_t size);
-
-/* Stereo synthesis functions */
-void synth_AudioProcessStereo(uint8_t *buffer_R, uint8_t *buffer_G,
-                              uint8_t *buffer_B);
-
-/* Thread-safe synthesis function for stereo mode */
-void synth_IfftMode_Stateless(int32_t *imageData, float *audioData);
+/* Stereo mode is now handled within synth_AudioProcess using per-oscillator panning */
 
 /* Private defines -----------------------------------------------------------*/
 

@@ -487,12 +487,7 @@ void *audioProcessingThread(void *arg) {
 
     // Call synthesis routine directly with stable image data
     // This will NEVER block, even if scanner disconnects!
-    // Choose between mono and stereo synthesis based on configuration
-    if (IS_STEREO_MODE()) {
-      synth_AudioProcessStereo(audio_read_R, audio_read_G, audio_read_B);
-    } else {
-      synth_AudioProcess(audio_read_R, audio_read_G, audio_read_B);
-    }
+    synth_AudioProcess(audio_read_R, audio_read_G, audio_read_B);
 
     /* Auto-volume periodic update (lightweight). Runs in audioProcessingThread
        (non-RT) to avoid doing work in the RtAudio callback. */

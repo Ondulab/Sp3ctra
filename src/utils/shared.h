@@ -47,6 +47,11 @@ struct wave {
     float volume_decrement;
     float max_volume_decrement;
     float frequency;
+    
+    // Stereo panoramization fields
+    float pan_position;      // Pan position: -1.0 (left) to +1.0 (right)
+    float left_gain;         // Left channel gain (0.0 to 1.0)
+    float right_gain;        // Right channel gain (0.0 to 1.0)
 };
 
 struct params {
