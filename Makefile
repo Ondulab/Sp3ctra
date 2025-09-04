@@ -14,6 +14,7 @@ INCLUDES = -I/opt/homebrew/include \
            -Isrc/audio/rtaudio \
            -Isrc/audio/buffers \
            -Isrc/audio/effects \
+           -Isrc/audio/pan \
            -Isrc/synthesis/additive \
            -Isrc/synthesis/polyphonic \
            -Isrc/synthesis/polyphonic/kissfft \
@@ -39,6 +40,7 @@ TARGET = $(BUILD_DIR)/Sp3ctra
 CORE_SOURCES = src/core/main.c
 AUDIO_RTAUDIO_SOURCES = src/audio/rtaudio/audio_c_interface.cpp src/audio/rtaudio/audio_rtaudio.cpp
 AUDIO_BUFFERS_SOURCES = src/audio/buffers/audio_image_buffers.c
+AUDIO_PAN_SOURCES = src/audio/pan/lock_free_pan.c
 AUDIO_EFFECTS_SOURCES = src/audio/effects/auto_volume.c src/audio/effects/pareq.cpp \
                         src/audio/effects/three_band_eq.cpp src/audio/effects/ZitaRev1.cpp
 SYNTHESIS_ADDITIVE_SOURCES = src/synthesis/additive/synth_additive.c src/synthesis/additive/wave_generation.c
@@ -54,7 +56,7 @@ UTILS_SOURCES = src/utils/shared.c src/utils/error.c src/utils/image_debug.c
 
 # All sources
 ALL_SOURCES = $(CORE_SOURCES) $(AUDIO_RTAUDIO_SOURCES) $(AUDIO_BUFFERS_SOURCES) \
-              $(AUDIO_EFFECTS_SOURCES) $(SYNTHESIS_ADDITIVE_SOURCES) \
+              $(AUDIO_PAN_SOURCES) $(AUDIO_EFFECTS_SOURCES) $(SYNTHESIS_ADDITIVE_SOURCES) \
               $(SYNTHESIS_POLYPHONIC_SOURCES) $(COMMUNICATION_SOURCES) \
               $(DISPLAY_SOURCES) $(THREADING_SOURCES) $(UTILS_SOURCES)
 
@@ -70,6 +72,7 @@ $(OBJ_DIR):
 	@mkdir -p $(OBJ_DIR)/core
 	@mkdir -p $(OBJ_DIR)/audio/rtaudio
 	@mkdir -p $(OBJ_DIR)/audio/buffers
+	@mkdir -p $(OBJ_DIR)/audio/pan
 	@mkdir -p $(OBJ_DIR)/audio/effects
 	@mkdir -p $(OBJ_DIR)/synthesis/additive
 	@mkdir -p $(OBJ_DIR)/synthesis/polyphonic/kissfft
