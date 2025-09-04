@@ -8,6 +8,7 @@
 #include "midi_controller.h"
 #include "audio_rtaudio.h"
 #include "config.h"
+#include "../../config/config_audio.h" // For DEFAULT_REVERB_SEND_* defines
 #include "synth_additive.h" // For synth data freeze global variables and mutex
 #include "synth_polyphonic.h" // For synth_polyphonic_set_vibrato_rate
 #include "three_band_eq.h"
@@ -47,8 +48,8 @@ MidiController::MidiController()
                                       // for audibility when no MIDI
       mix_level_synth_polyphonic(
           0.5f), // Default polyphonic level to 0.5f for audibility
-      reverb_send_synth_additive(0.7f),
-      reverb_send_synth_polyphonic(0.0f), // Initialize all levels
+      reverb_send_synth_additive(DEFAULT_REVERB_SEND_ADDITIVE),
+      reverb_send_synth_polyphonic(DEFAULT_REVERB_SEND_POLYPHONIC), // Initialize all levels
       lfo_vibrato_speed(0.5f), // Default LFO vibrato speed (normalized 0-1)
       // ADSR values now in seconds (20ms to 2s). Default to mid-range (1.01s)
       envelope_polyphonic_attack(

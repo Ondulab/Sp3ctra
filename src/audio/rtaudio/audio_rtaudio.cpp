@@ -125,8 +125,8 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     }
 
     // Get reverb send levels (cached less frequently for performance)
-    static float cached_reverb_send_additive = 0.7f;
-    static float cached_reverb_send_polyphonic = 0.0f;
+    static float cached_reverb_send_additive = DEFAULT_REVERB_SEND_ADDITIVE;
+    static float cached_reverb_send_polyphonic = DEFAULT_REVERB_SEND_POLYPHONIC;
     static int reverb_cache_counter = 0;
 
     // Update reverb cache every 128 calls (~1.33ms at 96kHz)
@@ -137,6 +137,11 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
             gMidiController->getReverbSendSynthAdditive();
         cached_reverb_send_polyphonic =
             gMidiController->getReverbSendSynthPolyphonic();
+      }
+      // If no MIDI controller connected, use config defaults
+      else {
+        cached_reverb_send_additive = DEFAULT_REVERB_SEND_ADDITIVE;
+        cached_reverb_send_polyphonic = DEFAULT_REVERB_SEND_POLYPHONIC;
       }
     }
 
@@ -152,6 +157,18 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       if (source_additive_right) {
         dry_sample_right += source_additive_right[i] * cached_level_additive;
       }
+      
+      // DEBUG: Log signal levels every 4800 samples (~100ms at 48kHz)
+      static int debug_counter = 0;
+      if (++debug_counter >= 4800) {
+        debug_counter = 0;
+        printf("🔍 SIGNAL DEBUG: dry_L=%.6f, dry_R=%.6f, additive_level=%.3f, reverb_send=%.3f\n",
+               dry_sample_left, dry_sample_right, cached_level_additive, cached_reverb_send_additive);
+        if (source_additive_left) {
+          printf("🔍 SOURCE DEBUG: additive_L=%.6f, additive_R=%.6f\n",
+                 source_additive_left[i], source_additive_right ? source_additive_right[i] : 0.0f);
+        }
+      }
 
       // Add polyphonic contribution (same for both channels)
       if (source_fft) {
@@ -163,6 +180,14 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       float reverb_left = 0.0f, reverb_right = 0.0f;
 
 #if ENABLE_REVERB
+      // DEBUG: Log reverb condition check
+      static int reverb_debug_counter = 0;
+      if (++reverb_debug_counter >= 4800) {
+        reverb_debug_counter = 0;
+        printf("🔍 REVERB CONDITION: ENABLE_REVERB=%d, reverbEnabled=%d, send_additive=%.3f, send_poly=%.3f\n",
+               ENABLE_REVERB, reverbEnabled ? 1 : 0, cached_reverb_send_additive, cached_reverb_send_polyphonic);
+      }
+      
       if (reverbEnabled && (cached_reverb_send_additive > 0.01f ||
                             cached_reverb_send_polyphonic > 0.01f)) {
         float reverb_input_left = 0.0f;
@@ -362,49 +387,45 @@ void AudioSystem::processReverb(float inputL, float inputR, float &outputL,
 // ULTRA-OPTIMIZED reverb function for real-time callback
 void AudioSystem::processReverbOptimized(float inputL, float inputR,
                                          float &outputL, float &outputR) {
+  // DEBUG: Log reverb function calls
+  static int reverb_call_counter = 0;
+  if (++reverb_call_counter >= 4800) {
+    reverb_call_counter = 0;
+    printf("🔍 REVERB CALLED: inputL=%.6f, inputR=%.6f, reverbEnabled=%d, reverbMix=%.3f\n",
+           inputL, inputR, reverbEnabled ? 1 : 0, reverbMix);
+  }
+  
   // CPU OPTIMIZATION: Skip all reverb processing if mix is zero or reverb
   // disabled
   if (!reverbEnabled || reverbMix <= 0.0f) {
     outputL = inputL;
     outputR = inputR;
+    printf("🔍 REVERB SKIPPED: reverbEnabled=%d, reverbMix=%.3f\n", reverbEnabled ? 1 : 0, reverbMix);
     return;
   }
 
   // Cache statique pour éviter les calculs répétitifs
-  static float cached_wet_gain = 0.0f; // Commence à 0 pour fade-in
-  static float cached_dry_gain = 1.0f; // Compense pour avoir 100% du signal
+  static float cached_wet_gain = reverbMix; // Initialiser directement avec la valeur de reverb
+  static float cached_dry_gain = 1.0f - reverbMix; // Compense pour avoir 100% du signal
   static int param_update_counter = 0;
+  static bool reverb_initialized = false;
 
-  // Gestion du fade-in pour éviter les clics/pops au démarrage
-  static bool fade_in_complete = false;
-  static int fade_in_counter = 0;
-  static const int FADE_IN_DURATION = 4800; // ~50ms à 96kHz
-
-  // Initialiser les paramètres de réverb avant tout traitement
-  if (!fade_in_complete) {
-    if (fade_in_counter == 0) {
-      // Effacer explicitement les buffers internes pour éviter les craquements
-      zitaRev.clear();
-      // Initialiser les paramètres de base
-      zitaRev.set_roomsize(reverbRoomSize);
-      zitaRev.set_damping(reverbDamping);
-      zitaRev.set_width(reverbWidth);
-    }
-
-    // Fade-in progressif
-    if (++fade_in_counter >= FADE_IN_DURATION) {
-      fade_in_complete = true;
-      cached_wet_gain = reverbMix;
-      cached_dry_gain = 1.0f - reverbMix;
-    } else {
-      // Augmentation progressive du wet gain
-      float fade_ratio = (float)fade_in_counter / FADE_IN_DURATION;
-      cached_wet_gain = reverbMix * fade_ratio;
-      cached_dry_gain = 1.0f - cached_wet_gain; // Toujours 100% du signal
-    }
+  // Initialiser la reverb une seule fois au démarrage
+  if (!reverb_initialized) {
+    // Effacer explicitement les buffers internes pour éviter les craquements
+    zitaRev.clear();
+    // Initialiser les paramètres de base
+    zitaRev.set_roomsize(reverbRoomSize);
+    zitaRev.set_damping(reverbDamping);
+    zitaRev.set_width(reverbWidth);
+    // Initialiser les gains avec les bonnes valeurs
+    cached_wet_gain = reverbMix;
+    cached_dry_gain = 1.0f - reverbMix;
+    reverb_initialized = true;
   }
-  // Mise à jour régulière des paramètres une fois le fade-in terminé
-  else if (++param_update_counter >= 256) {
+  
+  // Mise à jour régulière des paramètres
+  if (++param_update_counter >= 256) {
     param_update_counter = 0;
     cached_wet_gain = reverbMix;
     cached_dry_gain = 1.0f - reverbMix;
@@ -427,6 +448,16 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
   // Mix optimisé avec gains en cache
   outputL = inputL * cached_dry_gain + outBufferL[0] * cached_wet_gain;
   outputR = inputR * cached_dry_gain + outBufferR[0] * cached_wet_gain;
+  
+  // DEBUG: Log reverb output values
+  static int reverb_output_counter = 0;
+  if (++reverb_output_counter >= 4800) {
+    reverb_output_counter = 0;
+    printf("🔍 REVERB OUTPUT: zita_outL=%.6f, zita_outR=%.6f, wet_gain=%.3f, dry_gain=%.3f\n",
+           outBufferL[0], outBufferR[0], cached_wet_gain, cached_dry_gain);
+    printf("🔍 FINAL REVERB: outputL=%.6f, outputR=%.6f (dry=%.6f + wet=%.6f)\n",
+           outputL, outputR, inputL * cached_dry_gain, outBufferL[0] * cached_wet_gain);
+  }
 }
 
 // === MULTI-THREADED REVERB IMPLEMENTATION ===
