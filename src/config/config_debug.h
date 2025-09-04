@@ -16,6 +16,13 @@
 // #define DEBUG_AUDIO_INTERFACE    // Enable audio interface debug logging
 
 /**************************************************************************************
+ * Audio Debug Configuration
+ **************************************************************************************/
+// #define DEBUG_AUDIO_SIGNAL       // Enable signal debug logging (dry_L, dry_R, levels)
+// #define DEBUG_AUDIO_REVERB       // Enable reverb debug logging (conditions, calls, output)
+// #define DEBUG_LOCK_FREE_PAN      // Enable lock-free pan system debug logging
+
+/**************************************************************************************
  * Image Processing Debug Configuration
  **************************************************************************************/
 // #define ENABLE_IMAGE_DEBUG            // Master switch for image debug system
