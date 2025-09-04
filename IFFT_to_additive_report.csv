@@ -1,2 +1,0 @@
-file,line,symbol_type,decision,rationale
-# No project occurrences of "ifft"/"IFFT" remain after refactor, only external library calls (numpy.fft.ifft, etc.) which were excluded.
