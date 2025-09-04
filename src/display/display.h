@@ -29,11 +29,44 @@ typedef struct sfColor sfColor;   // Added
 // Add other SFML types if they appear in prototypes and NO_SFML is possible
 #endif // NO_SFML
 
+#ifndef NO_SFML
+// Function declarations when SFML is available
 int display_Init(sfRenderWindow *window);
 void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
                    uint8_t *buffer_B, sfTexture *background_texture,
                    sfTexture *foreground_texture);
 void printRawData(sfRenderWindow *window, uint32_t *image_buff,
                   sfTexture *background_texture, sfTexture *foreground_texture);
+#else
+// Stub implementations when SFML is disabled (NO_SFML defined)
+static inline int display_Init(sfRenderWindow *window) {
+    (void)window; // Suppress unused parameter warning
+    printf("Display system disabled (NO_SFML)\n");
+    return 0;
+}
+
+static inline void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
+                                 uint8_t *buffer_B, sfTexture *background_texture,
+                                 sfTexture *foreground_texture) {
+    // Suppress unused parameter warnings
+    (void)window;
+    (void)buffer_R;
+    (void)buffer_G;
+    (void)buffer_B;
+    (void)background_texture;
+    (void)foreground_texture;
+    // Do nothing - display is disabled
+}
+
+static inline void printRawData(sfRenderWindow *window, uint32_t *image_buff,
+                                sfTexture *background_texture, sfTexture *foreground_texture) {
+    // Suppress unused parameter warnings
+    (void)window;
+    (void)image_buff;
+    (void)background_texture;
+    (void)foreground_texture;
+    // Do nothing - display is disabled
+}
+#endif // NO_SFML
 
 #endif /* Display_h */
