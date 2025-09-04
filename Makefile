@@ -50,9 +50,15 @@ SYNTHESIS_POLYPHONIC_SOURCES = src/synthesis/polyphonic/synth_polyphonic.c \
 COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/midi/midi_controller.cpp \
                         src/communication/dmx/dmx.c
-DISPLAY_SOURCES = src/display/display.c
 THREADING_SOURCES = src/threading/multithreading.c
 UTILS_SOURCES = src/utils/shared.c src/utils/error.c src/utils/image_debug.c
+
+# Conditional display sources (only include if NO_SFML is not defined)
+ifeq ($(findstring -DNO_SFML,$(CFLAGS)),)
+DISPLAY_SOURCES = src/display/display.c
+else
+DISPLAY_SOURCES =
+endif
 
 # All sources
 ALL_SOURCES = $(CORE_SOURCES) $(AUDIO_RTAUDIO_SOURCES) $(AUDIO_BUFFERS_SOURCES) \
