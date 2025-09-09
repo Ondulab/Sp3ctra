@@ -116,6 +116,9 @@ build_*/
 build_nogui/
 *.build/
 
+# Exception: Allow scripts/build directory
+!scripts/build/
+
 # Object and intermediate files
 *.o
 *.obj
