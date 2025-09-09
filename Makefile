@@ -25,9 +25,10 @@ INCLUDES = -I/opt/homebrew/include \
            -Isrc/threading \
            -Isrc/utils
 
-# Libraries
+# Libraries - Support both standard and versioned SFML paths
+SFML_PATH := $(shell if [ -d "/opt/homebrew/opt/sfml@2/lib" ]; then echo "/opt/homebrew/opt/sfml@2/lib"; else echo "/opt/homebrew/lib"; fi)
 LIBS = -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa \
-       -L/opt/homebrew/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi \
+       -L/opt/homebrew/lib -L$(SFML_PATH) -lfftw3 -lsndfile -lrtaudio -lrtmidi \
        -lsfml-graphics -lsfml-window -lsfml-system \
        -lcsfml-graphics -lcsfml-window -lcsfml-system
 
@@ -120,17 +121,53 @@ debug:
 	@echo "Objects: $(OBJECTS)"
 	@echo "Includes: $(INCLUDES)"
 
+# Build without SFML (headless mode)
+no-sfml:
+	$(MAKE) CFLAGS="$(CFLAGS) -DNO_SFML" CXXFLAGS="$(CXXFLAGS) -DNO_SFML" \
+	        LIBS="-framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa -L/opt/homebrew/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi"
+
+# Diagnostic target for SFML issues
+sfml-check:
+	@echo "=== SFML Diagnostic ==="
+	@echo "Checking SFML installation..."
+	@if command -v brew >/dev/null 2>&1; then \
+		echo "Homebrew found"; \
+		if brew list sfml@2 >/dev/null 2>&1; then \
+			echo "✓ SFML@2 is installed"; \
+			echo "SFML path: $$(brew --prefix sfml@2)"; \
+			echo "Library files:"; \
+			ls -la "$$(brew --prefix sfml@2)/lib/" | grep libsfml; \
+		else \
+			echo "✗ SFML@2 not found. Install with: brew install sfml@2"; \
+		fi; \
+	else \
+		echo "✗ Homebrew not found"; \
+	fi
+	@echo "Current SFML_PATH: $(SFML_PATH)"
+	@echo ""
+	@echo "If SFML linking fails, try:"
+	@echo "  make no-sfml    # Build without graphics interface"
+	@echo "  brew install sfml@2  # Install SFML if missing"
+
 # Help target
 help:
 	@echo "Sp3ctra Makefile - Modular Architecture"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  all       - Build the application (default)"
-	@echo "  clean     - Remove object files and executable"
-	@echo "  distclean - Remove entire build directory"
-	@echo "  install   - Install the application"
-	@echo "  debug     - Show build configuration"
-	@echo "  help      - Show this help message"
+	@echo "  all         - Build the application (default)"
+	@echo "  no-sfml     - Build without SFML (headless mode)"
+	@echo "  clean       - Remove object files and executable"
+	@echo "  distclean   - Remove entire build directory"
+	@echo "  install     - Install the application"
+	@echo "  debug       - Show build configuration"
+	@echo "  sfml-check  - Diagnose SFML installation issues"
+	@echo "  help        - Show this help message"
+	@echo ""
+	@echo "Troubleshooting:"
+	@echo "  If build fails with 'library sfml-graphics not found':"
+	@echo "    1. Run 'make sfml-check' to diagnose the issue"
+	@echo "    2. Try 'make no-sfml' for headless operation"
+	@echo "    3. Install SFML with 'brew install sfml@2'"
 	@echo ""
 	@echo "Modular structure:"
 	@echo "  src/core/           - Application core (main, config, context)"
