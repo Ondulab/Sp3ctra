@@ -4,7 +4,7 @@
 # Compiler settings
 CC = gcc
 CXX = g++
-CFLAGS = -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DENABLE_IMAGE_DEBUG -Wno-deprecated-declarations
+CFLAGS = -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -Wno-deprecated-declarations
 CXXFLAGS = -std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -Wno-unused-but-set-variable -Wno-deprecated-declarations
 
 # Include directories for modular architecture
