@@ -22,16 +22,23 @@
  **************************************************************************************/
 
 static int debug_initialized = 0;
+static int debug_image_runtime_enabled = 0; // Runtime control for image debug
+#ifdef DEBUG_IMAGE_FRAME_COUNTER
 static int frame_counter = 0;
+#endif
 static char output_dir[256];
 
 // Color palettes for visualization
+#ifdef DEBUG_IMAGE_STEREO_CHANNELS
 static const uint8_t warm_palette[3] = {255, 100, 50};  // Orange-red for warm channel
 static const uint8_t cold_palette[3] = {50, 150, 255}; // Blue for cold channel
+#endif
+#ifdef DEBUG_IMAGE_SHOW_HISTOGRAMS
 static const uint8_t gray_palette[3] = {128, 128, 128}; // Gray for mono
+#endif
 
 // Temporal scan buffers
-#define MAX_SCAN_HEIGHT 25000  // Maximum number of lines in scan (increased for 20k+ lines)
+#define MAX_SCAN_HEIGHT 48000  // Maximum number of lines in scan (increased for 48k lines)
 #define MAX_SCAN_TYPES 3       // "grayscale", "processed", "original"
 
 typedef struct {
@@ -43,8 +50,10 @@ typedef struct {
     int initialized;          // Is this scan initialized?
 } temporal_scan_t;
 
+#ifdef DEBUG_TEMPORAL_SCAN
 static temporal_scan_t scans[MAX_SCAN_TYPES];
 static int scans_initialized = 0;
+#endif
 
 /**************************************************************************************
  * Internal Helper Functions
@@ -55,6 +64,7 @@ static int scans_initialized = 0;
  * @param path Directory path to create
  * @retval 0 on success, -1 on error
  */
+#ifdef ENABLE_IMAGE_DEBUG
 static int create_directory(const char *path) {
     struct stat st = {0};
     if (stat(path, &st) == -1) {
@@ -65,6 +75,7 @@ static int create_directory(const char *path) {
     }
     return 0;
 }
+#endif
 
 /**
  * @brief Generate timestamp string for filenames
@@ -86,6 +97,7 @@ static void get_timestamp_string(char *buffer, size_t buffer_size) {
  * @param max_value Maximum value for normalization
  * @retval None
  */
+#if defined(DEBUG_IMAGE_SAVE_TO_FILES) || defined(DEBUG_IMAGE_STEREO_CHANNELS) || defined(DEBUG_TEMPORAL_SCAN)
 static void convert_32bit_to_8bit(int32_t *input_32, uint8_t *output_8, int size, int32_t max_value) {
     if (max_value == 0) max_value = 1; // Avoid division by zero
     
@@ -96,6 +108,7 @@ static void convert_32bit_to_8bit(int32_t *input_32, uint8_t *output_8, int size
         output_8[i] = (uint8_t)((value * 255) / max_value);
     }
 }
+#endif
 
 /**
  * @brief Apply color palette to grayscale data
@@ -105,6 +118,7 @@ static void convert_32bit_to_8bit(int32_t *input_32, uint8_t *output_8, int size
  * @param palette Color palette to apply (RGB)
  * @retval None
  */
+#ifdef DEBUG_IMAGE_SHOW_HISTOGRAMS
 static void apply_color_palette(uint8_t *grayscale_8, uint8_t *rgb_output, int size, const uint8_t *palette) {
     for (int i = 0; i < size; i++) {
         float intensity = grayscale_8[i] / 255.0f;
@@ -113,6 +127,7 @@ static void apply_color_palette(uint8_t *grayscale_8, uint8_t *rgb_output, int s
         rgb_output[i * 3 + 2] = (uint8_t)(palette[2] * intensity);
     }
 }
+#endif
 
 /**************************************************************************************
  * Public API Implementation
@@ -138,7 +153,9 @@ int image_debug_init(void) {
     image_debug_cleanup_old_files();
     
     debug_initialized = 1;
+#ifdef DEBUG_IMAGE_FRAME_COUNTER
     frame_counter = 0;
+#endif
     
     printf("🔧 IMAGE_DEBUG: Initialized, output directory: %s\n", output_dir);
     return 0;
@@ -202,18 +219,42 @@ int image_debug_save_rgb(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B
 }
 
 /**************************************************************************************
+ * Runtime Control Functions
+ **************************************************************************************/
+
+void image_debug_enable_runtime(int enable) {
+    debug_image_runtime_enabled = enable;
+    if (enable) {
+        printf("🔧 IMAGE_DEBUG: Runtime debug enabled\n");
+        // Initialize debug system if not already done
+        if (!debug_initialized) {
+            image_debug_init();
+        }
+    } else {
+        printf("🔧 IMAGE_DEBUG: Runtime debug disabled\n");
+    }
+}
+
+int image_debug_is_enabled(void) {
+    return debug_image_runtime_enabled;
+}
+
+/**************************************************************************************
  * Oscillator Volume Debug Functions
  **************************************************************************************/
 
 // Global oscillator volume scan structure
 static temporal_scan_t oscillator_volume_scan = {0};
 static int oscillator_scan_initialized = 0;
+#ifdef DEBUG_OSCILLATOR_VOLUMES
 static int oscillator_sample_counter = 0;
+#endif
 
 /**
  * @brief Initialize oscillator volume scan buffer
  * @retval 0 on success, -1 on error
  */
+#ifdef DEBUG_OSCILLATOR_VOLUMES
 static int init_oscillator_volume_scan(void) {
     if (oscillator_scan_initialized) {
         return 0;
@@ -240,10 +281,11 @@ static int init_oscillator_volume_scan(void) {
            NUMBER_OF_NOTES, OSCILLATOR_VOLUME_SCAN_SAMPLES);
     return 0;
 }
+#endif
 
 int image_debug_capture_oscillator_sample(void) {
 #ifdef DEBUG_OSCILLATOR_VOLUMES
-    if (!debug_initialized) {
+    if (!debug_initialized || !debug_image_runtime_enabled) {
         return -1;
     }
     
@@ -306,7 +348,6 @@ int image_debug_add_oscillator_volume_line(float *volumes, int count) {
     }
     
     // Add line to scan buffer using 16-bit resolution (same as oscillator volumes)
-    int line_offset = scan->current_height * scan->width * 2; // 2 bytes per pixel for 16-bit
     uint16_t *buffer_16 = (uint16_t*)scan->buffer;
     
     for (int x = 0; x < count && x < scan->width; x++) {
@@ -661,7 +702,7 @@ int image_debug_capture_mono_pipeline(uint8_t *buffer_R, uint8_t *buffer_G, uint
 }
 
 int image_debug_capture_stereo_pipeline(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
-                                       int32_t *warm_raw, int32_t *cold_raw,
+                                       int32_t *warm_raw __attribute__((unused)), int32_t *cold_raw __attribute__((unused)),
                                        int32_t *warm_processed, int32_t *cold_processed, int frame_number) {
 #ifdef ENABLE_IMAGE_DEBUG
     if (!image_debug_should_capture(frame_number)) {
@@ -743,6 +784,7 @@ int image_debug_cleanup_old_files(void) {
  * @brief Initialize temporal scan buffers
  * @retval 0 on success, -1 on error
  */
+#ifdef DEBUG_TEMPORAL_SCAN
 static int init_temporal_scans(void) {
     if (scans_initialized) {
         return 0;
@@ -786,54 +828,52 @@ static int find_scan_index(const char *scan_type) {
     }
     return -1;
 }
+#endif
 
 int image_debug_add_scan_line_rgb(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B, int width, const char *scan_type) {
+#ifdef ENABLE_IMAGE_DEBUG
 #ifdef DEBUG_TEMPORAL_SCAN
-    if (!debug_initialized || !buffer_R || !buffer_G || !buffer_B || !scan_type) {
+    if (!debug_initialized) {
         return -1;
     }
     
-    // Initialize scans if needed
+    // Initialize temporal scans if needed
     if (init_temporal_scans() != 0) {
         return -1;
     }
     
-    // Find the scan buffer
+    // Find scan by type
     int scan_idx = find_scan_index(scan_type);
     if (scan_idx < 0) {
-        printf("ERROR: Unknown scan type: %s\n", scan_type);
         return -1;
     }
     
     temporal_scan_t *scan = &scans[scan_idx];
     
-    // Check if we reached the 20000 lines threshold (primary condition)
-    if (scan->current_height >= DEBUG_TEMPORAL_SCAN_MAX_LINES) {
-        printf("🔧 TEMPORAL_SCAN: Auto-saving %s scan (%d lines - reached 20k threshold), creating new file\n", scan_type, scan->current_height);
-        image_debug_save_scan(scan_type);
-        image_debug_reset_scan(scan_type);
-    }
-    // Safety check: prevent buffer overflow if somehow we exceed max buffer size
-    else if (scan->current_height >= scan->max_height) {
-        printf("🚨 TEMPORAL_SCAN: Emergency save %s scan (%d lines - buffer full), creating new file\n", scan_type, scan->current_height);
+    // Check if buffer is full
+    if (scan->current_height >= scan->max_height) {
+        printf("🚨 TEMPORAL_SCAN: Buffer full for %s, auto-saving\n", scan_type);
         image_debug_save_scan(scan_type);
         image_debug_reset_scan(scan_type);
     }
     
-    // Add line to scan buffer - for original, use actual RGB data
-    int line_offset = scan->current_height * scan->width * 3;
-    
+    // Add RGB line to scan buffer
     for (int x = 0; x < width && x < scan->width; x++) {
-        // Use the actual RGB values directly for original data
-        scan->buffer[line_offset + x * 3 + 0] = buffer_R[x]; // R
-        scan->buffer[line_offset + x * 3 + 1] = buffer_G[x]; // G
-        scan->buffer[line_offset + x * 3 + 2] = buffer_B[x]; // B
+        int idx = (scan->current_height * scan->width + x) * 3;
+        scan->buffer[idx + 0] = buffer_R[x];
+        scan->buffer[idx + 1] = buffer_G[x];
+        scan->buffer[idx + 2] = buffer_B[x];
     }
     
     scan->current_height++;
     scan->initialized = 1;
     
     return 0;
+#else
+    // Function exists for linking compatibility, but temporal scan functionality requires DEBUG_TEMPORAL_SCAN
+    (void)buffer_R; (void)buffer_G; (void)buffer_B; (void)width; (void)scan_type;
+    return 0; // Stub implementation - temporal scan not enabled
+#endif
 #else
     (void)buffer_R; (void)buffer_G; (void)buffer_B; (void)width; (void)scan_type;
     return 0; // Debug disabled
@@ -841,91 +881,55 @@ int image_debug_add_scan_line_rgb(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t 
 }
 
 int image_debug_add_scan_line(int32_t *buffer_data, int width, const char *scan_type) {
+#ifdef ENABLE_IMAGE_DEBUG
 #ifdef DEBUG_TEMPORAL_SCAN
-    if (!debug_initialized || !buffer_data || !scan_type) {
+    if (!debug_initialized || !buffer_data) {
         return -1;
     }
     
-    // Initialize scans if needed
+    // Initialize temporal scans if needed
     if (init_temporal_scans() != 0) {
         return -1;
     }
     
-    // Find the scan buffer
+    // Find scan by type
     int scan_idx = find_scan_index(scan_type);
     if (scan_idx < 0) {
-        printf("ERROR: Unknown scan type: %s\n", scan_type);
         return -1;
     }
     
     temporal_scan_t *scan = &scans[scan_idx];
     
-    // Check if we reached the 20000 lines threshold (primary condition)
-    if (scan->current_height >= DEBUG_TEMPORAL_SCAN_MAX_LINES) {
-        printf("🔧 TEMPORAL_SCAN: Auto-saving %s scan (%d lines - reached 20k threshold), creating new file\n", scan_type, scan->current_height);
-        image_debug_save_scan(scan_type);
-        image_debug_reset_scan(scan_type);
-    }
-    // Safety check: prevent buffer overflow if somehow we exceed max buffer size
-    else if (scan->current_height >= scan->max_height) {
-        printf("🚨 TEMPORAL_SCAN: Emergency save %s scan (%d lines - buffer full), creating new file\n", scan_type, scan->current_height);
+    // Check if buffer is full
+    if (scan->current_height >= scan->max_height) {
+        printf("🚨 TEMPORAL_SCAN: Buffer full for %s, auto-saving\n", scan_type);
         image_debug_save_scan(scan_type);
         image_debug_reset_scan(scan_type);
     }
     
-    // Convert 32-bit data to 8-bit
-    uint8_t *line_8bit = malloc(width);
-    if (!line_8bit) {
-        printf("ERROR: Failed to allocate line buffer\n");
-        return -1;
-    }
-    
-    convert_32bit_to_8bit(buffer_data, line_8bit, width, VOLUME_AMP_RESOLUTION);
-    
-    // Add line to scan buffer with different color schemes for each type
-    int line_offset = scan->current_height * scan->width * 3;
-    
-    if (strcmp(scan_type, "original") == 0) {
-        // Original: Use blue palette to represent original RGB data
-        for (int x = 0; x < width && x < scan->width; x++) {
-            uint8_t intensity = line_8bit[x];
-            float norm_intensity = intensity / 255.0f;
-            scan->buffer[line_offset + x * 3 + 0] = (uint8_t)(50 * norm_intensity);   // Low red
-            scan->buffer[line_offset + x * 3 + 1] = (uint8_t)(150 * norm_intensity);  // Medium green  
-            scan->buffer[line_offset + x * 3 + 2] = (uint8_t)(255 * norm_intensity);  // High blue
-        }
-    } else if (strcmp(scan_type, "grayscale") == 0) {
-        // Grayscale: Pure grayscale representation
-        for (int x = 0; x < width && x < scan->width; x++) {
-            uint8_t gray_value = line_8bit[x];
-            scan->buffer[line_offset + x * 3 + 0] = gray_value; // R
-            scan->buffer[line_offset + x * 3 + 1] = gray_value; // G
-            scan->buffer[line_offset + x * 3 + 2] = gray_value; // B
-        }
-    } else if (strcmp(scan_type, "processed") == 0) {
-        // Processed: Use red palette to show final processed data with all filters
-        for (int x = 0; x < width && x < scan->width; x++) {
-            uint8_t intensity = line_8bit[x];
-            float norm_intensity = intensity / 255.0f;
-            scan->buffer[line_offset + x * 3 + 0] = (uint8_t)(255 * norm_intensity);  // High red
-            scan->buffer[line_offset + x * 3 + 1] = (uint8_t)(100 * norm_intensity);  // Medium green
-            scan->buffer[line_offset + x * 3 + 2] = (uint8_t)(50 * norm_intensity);   // Low blue
-        }
-    } else {
-        // Default: grayscale for unknown types
-        for (int x = 0; x < width && x < scan->width; x++) {
-            uint8_t gray_value = line_8bit[x];
-            scan->buffer[line_offset + x * 3 + 0] = gray_value; // R
-            scan->buffer[line_offset + x * 3 + 1] = gray_value; // G
-            scan->buffer[line_offset + x * 3 + 2] = gray_value; // B
-        }
+    // Convert 32-bit data to 8-bit RGB (grayscale)
+    for (int x = 0; x < width && x < scan->width; x++) {
+        int32_t value = buffer_data[x];
+        if (value < 0) value = 0;
+        if (value > VOLUME_AMP_RESOLUTION) value = VOLUME_AMP_RESOLUTION;
+        
+        uint8_t gray_value = (uint8_t)((value * 255) / VOLUME_AMP_RESOLUTION);
+        
+        int idx = (scan->current_height * scan->width + x) * 3;
+        scan->buffer[idx + 0] = gray_value;
+        scan->buffer[idx + 1] = gray_value;
+        scan->buffer[idx + 2] = gray_value;
     }
     
     scan->current_height++;
     scan->initialized = 1;
     
-    free(line_8bit);
     return 0;
+#else
+    // Function exists for linking compatibility, but temporal scan functionality requires DEBUG_TEMPORAL_SCAN
+    (void)buffer_data; (void)width; (void)scan_type;
+    return 0; // Stub implementation - temporal scan not enabled
+#endif
 #else
     (void)buffer_data; (void)width; (void)scan_type;
     return 0; // Debug disabled
@@ -933,11 +937,13 @@ int image_debug_add_scan_line(int32_t *buffer_data, int width, const char *scan_
 }
 
 int image_debug_save_scan(const char *scan_type) {
+#ifdef ENABLE_IMAGE_DEBUG
 #ifdef DEBUG_TEMPORAL_SCAN
-    if (!debug_initialized || !scan_type || !scans_initialized) {
+    if (!debug_initialized) {
         return -1;
     }
     
+    // Find scan by type
     int scan_idx = find_scan_index(scan_type);
     if (scan_idx < 0) {
         return -1;
@@ -968,17 +974,24 @@ int image_debug_save_scan(const char *scan_type) {
         return -1;
     }
 #else
+    // Function exists for linking compatibility, but temporal scan functionality requires DEBUG_TEMPORAL_SCAN
+    (void)scan_type;
+    return 0; // Stub implementation - temporal scan not enabled
+#endif
+#else
     (void)scan_type;
     return 0; // Debug disabled
 #endif
 }
 
 int image_debug_reset_scan(const char *scan_type) {
+#ifdef ENABLE_IMAGE_DEBUG
 #ifdef DEBUG_TEMPORAL_SCAN
-    if (!scan_type || !scans_initialized) {
+    if (!scans_initialized) {
         return -1;
     }
     
+    // Find scan by type
     int scan_idx = find_scan_index(scan_type);
     if (scan_idx < 0) {
         return -1;
@@ -987,13 +1000,18 @@ int image_debug_reset_scan(const char *scan_type) {
     temporal_scan_t *scan = &scans[scan_idx];
     scan->current_height = 0;
     
-    // Clear buffer
+    // Clear buffer (fill with black)
     if (scan->buffer) {
         memset(scan->buffer, 0, scan->width * scan->max_height * 3);
     }
     
     printf("🔧 TEMPORAL_SCAN: Reset %s scan buffer\n", scan_type);
     return 0;
+#else
+    // Function exists for linking compatibility, but temporal scan functionality requires DEBUG_TEMPORAL_SCAN
+    (void)scan_type;
+    return 0; // Stub implementation - temporal scan not enabled
+#endif
 #else
     (void)scan_type;
     return 0; // Debug disabled

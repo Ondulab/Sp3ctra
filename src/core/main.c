@@ -5,6 +5,7 @@
 #include "display.h"
 #include "dmx.h"
 #include "error.h"
+#include "image_debug.h"
 #include "multithreading.h"
 #include "synth_additive.h"
 #include "synth_polyphonic.h" // Added for the new FFT synth mode
@@ -175,7 +176,8 @@ int main(int argc, char **argv) {
       setMinimalCallbackMode(1);
     } else if (strcmp(argv[i], "--debug-image") == 0) {
       printf("🔧 Image transformation debug enabled\n");
-      // This will be handled by compile-time flags in config_debug.h
+      // Enable runtime image debug
+      image_debug_enable_runtime(1);
     } else {
       printf("Unknown option: %s\n", argv[i]);
       printf("Use --help for usage information\n");

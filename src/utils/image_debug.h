@@ -182,6 +182,19 @@ int image_debug_save_oscillator_volume_scan(void);
  */
 int image_debug_reset_oscillator_volume_scan(void);
 
+/**
+ * @brief Enable or disable image debug at runtime
+ * @param enable 1 to enable, 0 to disable
+ * @retval None
+ */
+void image_debug_enable_runtime(int enable);
+
+/**
+ * @brief Check if image debug is enabled at runtime
+ * @retval 1 if enabled, 0 if disabled
+ */
+int image_debug_is_enabled(void);
+
 #ifdef __cplusplus
 }
 #endif

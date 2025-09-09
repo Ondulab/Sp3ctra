@@ -31,6 +31,7 @@
 #include "wave_generation.h"
 #include "image_debug.h"
 #include "lock_free_pan.h"
+#include "../../config/config_debug.h"
 
 /* Private includes ----------------------------------------------------------*/
 
@@ -105,18 +106,8 @@ static uint32_t log_counter = 0;
 // static volatile int32_t *full_audio_ptr; // Unused variable
 static int32_t imageRef[NUMBER_OF_NOTES] = {0};
 
-/* Temporal Image Smoothing Filter Structures */
-#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
-typedef struct {
-  float previous_values[CIS_MAX_PIXELS_NB];
-  float smoothed_values[CIS_MAX_PIXELS_NB];
-  int initialized;
-  pthread_mutex_t filter_mutex;
-} ImageTemporalFilter;
-
 // Global filter instance for mono mode only (stereo uses per-oscillator panning now)
-static ImageTemporalFilter mono_filter = {0};
-#endif
+// static ImageTemporalFilter mono_filter = {0}; // Commented out - not used in current implementation
 
 /* Variable used to get converted value */
 // ToChange__IO uint16_t uhADCxConvertedValue = 0;
@@ -124,7 +115,7 @@ static ImageTemporalFilter mono_filter = {0};
 /* Private function prototypes -----------------------------------------------*/
 static uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G,
                           uint8_t *buffer_B, int32_t *gray, uint32_t size);
-void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRight);
+void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRight, float contrast_factor);
 
 static float calculate_contrast(int32_t *imageData, size_t size);
 static float calculate_color_temperature(uint8_t r, uint8_t g, uint8_t b);
@@ -138,15 +129,6 @@ void synth_shutdown_thread_pool(void); // Non-static pour atexit()
 static void synth_process_worker_range(synth_thread_worker_t *worker);
 static void synth_precompute_wave_data(int32_t *imageData);
 void *synth_persistent_worker_thread(void *arg);
-
-// Temporal image smoothing function prototypes
-#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
-static void init_temporal_filter(ImageTemporalFilter *filter);
-static void cleanup_temporal_filter(ImageTemporalFilter *filter);
-static void apply_temporal_smoothing(int32_t *current_data,
-                                     ImageTemporalFilter *filter,
-                                     uint32_t size);
-#endif
 
 /* Private user code ---------------------------------------------------------*/
 
@@ -309,12 +291,6 @@ int32_t synth_IfftInit(void) {
 
   fill_int32(65535, (int32_t *)imageRef, NUMBER_OF_NOTES);
 
-#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
-  // Initialize temporal smoothing filter for mono mode
-  init_temporal_filter(&mono_filter);
-  printf("🔧 TEMPORAL_SMOOTHING: Filter initialized for mono mode\n");
-#endif
-
   // Initialize image debug system
   image_debug_init();
 
@@ -465,7 +441,7 @@ static float calculate_contrast(int32_t *imageData, size_t size) {
  * @param r Red component (0-255)
  * @param g Green component (0-255)
  * @param b Blue component (0-255)
- * @retval Pan position from -1.0 (cold/left) to +1.0 (warm/right)
+ * @retval Pan position from -1.0 (warm/left) to +1.0 (cold/right)
  */
 static float calculate_color_temperature(uint8_t r, uint8_t g, uint8_t b) {
   // Convert RGB to normalized values
@@ -473,19 +449,19 @@ static float calculate_color_temperature(uint8_t r, uint8_t g, uint8_t b) {
   float g_norm = g / 255.0f;
   float b_norm = b / 255.0f;
   
-  // AGGRESSIVE ALGORITHM: Direct red-blue comparison for maximum stereo effect
-  // Red/Yellow = warm (right), Blue/Cyan = cold (left)
+  // AGGRESSIVE ALGORITHM: Direct blue-red comparison for maximum stereo effect
+  // Blue/Cyan = cold (right), Red/Yellow = warm (left)
   
-  // Primary warm/cold axis: Red vs Blue (most important)
-  float red_blue_diff = r_norm - b_norm;
+  // Primary cold/warm axis: Blue vs Red (most important) - INVERTED
+  float blue_red_diff = b_norm - r_norm;
   
-  // Secondary axis: Yellow (R+G) vs Cyan (G+B)  
-  float yellow_strength = (r_norm + g_norm) * 0.5f;
+  // Secondary axis: Cyan (G+B) vs Yellow (R+G) - INVERTED
   float cyan_strength = (g_norm + b_norm) * 0.5f;
-  float yellow_cyan_diff = yellow_strength - cyan_strength;
+  float yellow_strength = (r_norm + g_norm) * 0.5f;
+  float cyan_yellow_diff = cyan_strength - yellow_strength;
   
-  // Combine with heavy weight on red-blue axis
-  float temperature = red_blue_diff * 0.8f + yellow_cyan_diff * 0.2f;
+  // Combine with heavy weight on blue-red axis
+  float temperature = blue_red_diff * 0.8f + cyan_yellow_diff * 0.2f;
   
   // AGGRESSIVE AMPLIFICATION: Make the effect much more pronounced
   temperature *= 2.5f;  // Amplify the base signal
@@ -544,124 +520,6 @@ static void calculate_pan_gains(float pan_position, float *left_gain, float *rig
   if (*right_gain > 1.0f) *right_gain = 1.0f;
   if (*right_gain < 0.0f) *right_gain = 0.0f;
 }
-
-#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
-/**
- * @brief Initialize temporal filter structure
- * @param filter Pointer to the filter structure to initialize
- * @retval None
- */
-static void init_temporal_filter(ImageTemporalFilter *filter) {
-  if (filter == NULL)
-    return;
-
-  // Initialize mutex
-  if (pthread_mutex_init(&filter->filter_mutex, NULL) != 0) {
-    printf("ERROR: Failed to initialize temporal filter mutex\n");
-    return;
-  }
-
-  // Initialize arrays to zero
-  memset(filter->previous_values, 0, sizeof(filter->previous_values));
-  memset(filter->smoothed_values, 0, sizeof(filter->smoothed_values));
-  filter->initialized = 0;
-
-  printf("🔧 TEMPORAL_FILTER: Initialized with alpha=%.3f, threshold=%.3f\n",
-         IMAGE_TEMPORAL_SMOOTHING_ALPHA, IMAGE_NOISE_GATE_THRESHOLD);
-}
-
-/**
- * @brief Cleanup temporal filter structure
- * @param filter Pointer to the filter structure to cleanup
- * @retval None
- */
-static void cleanup_temporal_filter(ImageTemporalFilter *filter) {
-  if (filter == NULL)
-    return;
-
-  pthread_mutex_destroy(&filter->filter_mutex);
-  filter->initialized = 0;
-}
-
-/**
- * @brief Apply temporal smoothing to image data to reduce sensor noise
- * artifacts
- * @param current_data Input/output buffer containing current frame data
- * @param filter Temporal filter state structure
- * @param size Number of pixels to process
- * @retval None
- */
-static void apply_temporal_smoothing(int32_t *current_data,
-                                     ImageTemporalFilter *filter,
-                                     uint32_t size) {
-  if (current_data == NULL || filter == NULL || size == 0) {
-    return;
-  }
-
-  pthread_mutex_lock(&filter->filter_mutex);
-
-  const float alpha = IMAGE_TEMPORAL_SMOOTHING_ALPHA;
-  const float noise_threshold =
-      IMAGE_NOISE_GATE_THRESHOLD * VOLUME_AMP_RESOLUTION;
-
-  // Statistics for diagnostics
-  static uint32_t call_counter = 0;
-  uint32_t smoothed_pixels = 0;
-  uint32_t significant_changes = 0;
-
-  for (uint32_t i = 0; i < size; i++) {
-    float current = (float)current_data[i];
-
-    if (!filter->initialized) {
-      // First frame: initialize with current values
-      filter->smoothed_values[i] = current;
-      filter->previous_values[i] = current;
-    } else {
-      // Calculate absolute difference from previous frame
-      float diff = fabsf(current - filter->previous_values[i]);
-
-#if IMAGE_ADAPTIVE_SMOOTHING
-      if (diff < noise_threshold) {
-        // Small variation: apply strong smoothing (likely noise)
-        filter->smoothed_values[i] =
-            alpha * filter->smoothed_values[i] + (1.0f - alpha) * current;
-        smoothed_pixels++;
-      } else {
-        // Significant variation: apply reduced smoothing to preserve
-        // responsiveness
-        float adaptive_alpha = alpha * 0.6f; // Reduce smoothing strength
-        filter->smoothed_values[i] =
-            adaptive_alpha * filter->smoothed_values[i] +
-            (1.0f - adaptive_alpha) * current;
-        significant_changes++;
-      }
-#else
-      // Fixed smoothing without adaptation
-      filter->smoothed_values[i] =
-          alpha * filter->smoothed_values[i] + (1.0f - alpha) * current;
-      smoothed_pixels++;
-#endif
-    }
-
-    // Update previous value and output
-    filter->previous_values[i] = current;
-    current_data[i] = (int32_t)filter->smoothed_values[i];
-  }
-
-  filter->initialized = 1;
-
-  // Diagnostic logging (limited frequency)
-  if (call_counter % (LOG_FREQUENCY * 5) == 0) { // Every 5 seconds
-    float smoothing_ratio = (float)smoothed_pixels / size * 100.0f;
-    float change_ratio = (float)significant_changes / size * 100.0f;
-    printf("🔧 TEMPORAL_SMOOTH: %.1f%% smoothed, %.1f%% significant changes\n",
-           smoothing_ratio, change_ratio);
-  }
-  call_counter++;
-
-  pthread_mutex_unlock(&filter->filter_mutex);
-}
-#endif // ENABLE_IMAGE_TEMPORAL_SMOOTHING
 
 /**
  * @brief  Structure pour le pool de threads persistants optimisé
@@ -1097,12 +955,6 @@ void synth_shutdown_thread_pool(void) {
     pthread_cond_destroy(&thread_pool[i].work_cond);
   }
 
-#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
-  // Cleanup temporal smoothing filter
-  cleanup_temporal_filter(&mono_filter);
-  printf("🔧 TEMPORAL_SMOOTHING: Filter cleaned up\n");
-#endif
-
 #ifdef STEREO_MODE
   // Cleanup lock-free pan gains system
   lock_free_pan_cleanup();
@@ -1121,7 +973,7 @@ void synth_shutdown_thread_pool(void) {
  * @param  audioData Buffer de sortie audio mono (mono mode)
  * @retval None
  */
-void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRight) {
+void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRight, float contrast_factor) {
 
   // Additive mode (limited logs)
   if (log_counter % LOG_FREQUENCY == 0) {
@@ -1190,26 +1042,6 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
       pthread_mutex_unlock(&thread_pool[i].work_mutex);
     }
 
-    /*// 🔍 DIAGNOSTIC: Analyser les buffers de chaque thread avant
-    accumulation if (log_counter % LOG_FREQUENCY == 0) { for (int i = 0; i <
-    3; i++) { float thread_min = thread_pool[i].thread_ifftBuffer[0]; float
-    thread_max = thread_pool[i].thread_ifftBuffer[0]; float thread_sum = 0.0f;
-
-        for (int j = 0; j < AUDIO_BUFFER_SIZE; j++) {
-          float val = thread_pool[i].thread_ifftBuffer[j];
-          if (val < thread_min)
-            thread_min = val;
-          if (val > thread_max)
-            thread_max = val;
-          thread_sum += val * val; // Pour RMS
-        }
-
-        float thread_rms = sqrtf(thread_sum / AUDIO_BUFFER_SIZE);
-        printf("🔍 THREAD %d: min=%.6f, max=%.6f, rms=%.6f\n", i, thread_min,
-               thread_max, thread_rms);
-      }
-    }*/
-
     // Phase 4: Combiner les résultats des threads avec normalisation
     for (int i = 0; i < 3; i++) {
       add_float(thread_pool[i].thread_additiveBuffer, additiveBuffer,
@@ -1238,51 +1070,6 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     // Mac : Pas de division (CoreAudio ne compense pas automatiquement)
     // Signal gardé à pleine amplitude pour volume normal
 #endif
-
-    /*// 🔍 DIAGNOSTIC: Analyser le signal APRÈS normalisation (pour
-    comparaison
-    // Mac/Pi)
-    if (log_counter % LOG_FREQUENCY == 0) {
-      float norm_min = ifftBuffer[0];
-      float norm_max = ifftBuffer[0];
-      float norm_sum = 0.0f;
-
-      for (int j = 0; j < AUDIO_BUFFER_SIZE; j++) {
-        float val = ifftBuffer[j];
-        if (val < norm_min)
-          norm_min = val;
-        if (val > norm_max)
-          norm_max = val;
-        norm_sum += val * val;
-      }
-
-      float norm_rms = sqrtf(norm_sum / AUDIO_BUFFER_SIZE);
-      printf("🔍 APRÈS NORMALISATION: min=%.6f, max=%.6f, rms=%.6f\n",
-    norm_min, norm_max, norm_rms);
-    }*/
-
-    /*// 🔍 DIAGNOSTIC: Analyser le signal après accumulation des threads
-    if (log_counter % LOG_FREQUENCY == 0) {
-      float accum_min = ifftBuffer[0];
-      float accum_max = ifftBuffer[0];
-      float accum_sum = 0.0f;
-
-      for (int j = 0; j < AUDIO_BUFFER_SIZE; j++) {
-        float val = ifftBuffer[j];
-        if (val < accum_min)
-          accum_min = val;
-        if (val > accum_max)
-          accum_max = val;
-        accum_sum += val * val;
-      }
-
-      float accum_rms = sqrtf(accum_sum / AUDIO_BUFFER_SIZE);
-      printf("🎯 ACCUMULATION: min=%.6f, max=%.6f, rms=%.6f\n", accum_min,
-             accum_max, accum_rms);
-    }*/
-
-    // ✅ Phase 5 supprimée : Les threads accèdent directement à waves[] donc
-    // les volumes sont déjà synchronisés
 
   } else {
     // === FALLBACK MODE SÉQUENTIEL (pour compatibilité/debug) ===
@@ -1405,8 +1192,7 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
 #endif
     }
 
-  // Calculer le facteur de contraste basé sur l'image
-  float contrast_factor = calculate_contrast(imageData, CIS_MAX_PIXELS_NB);
+  // Le facteur de contraste est maintenant passé en paramètre depuis synth_AudioProcess
 
   // Apply contrast modulation and unified stereo output
   if (synth_pool_initialized && !synth_pool_shutdown) {
@@ -1555,13 +1341,20 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
       // Calculate color temperature and pan position
       float temperature = calculate_color_temperature(r_avg, g_avg, b_avg);
       waves[note].pan_position = temperature;
-      calculate_pan_gains(temperature, &waves[note].left_gain, &waves[note].right_gain);
+      
+      // Use temporary variables to avoid volatile qualifier warnings
+      float temp_left_gain, temp_right_gain;
+      calculate_pan_gains(temperature, &temp_left_gain, &temp_right_gain);
+      waves[note].left_gain = temp_left_gain;
+      waves[note].right_gain = temp_right_gain;
       
       // Debug output for first few notes (limited frequency)
       if (log_counter % (LOG_FREQUENCY * 10) == 0 && note < 5) {
+#ifdef DEBUG_RGB_TEMPERATURE
         printf("Note %d: RGB(%d,%d,%d) -> Temp=%.2f L=%.2f R=%.2f\n",
                note, r_avg, g_avg, b_avg, temperature,
                waves[note].left_gain, waves[note].right_gain);
+#endif
       }
     } else {
       // Default to center if no pixels
@@ -1586,11 +1379,6 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // Atomic update of all pan gains
   lock_free_pan_update(left_gains, right_gains, pan_positions, NUMBER_OF_NOTES);
 #endif // STEREO_MODE
-
-#if ENABLE_IMAGE_TEMPORAL_SMOOTHING
-  // Apply temporal smoothing to reduce sensor noise artifacts (mono mode)
-  apply_temporal_smoothing(g_grayScale_live, &mono_filter, CIS_MAX_PIXELS_NB);
-#endif
 
 #ifdef ENABLE_IMAGE_DEBUG
   // Capture mono pipeline for debug visualization
@@ -1654,11 +1442,17 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   }
   // --- End Synth Data Freeze/Fade Logic ---
 
+  // Calculate contrast factor based on the processed grayscale image
+  // This optimization moves the contrast calculation from synth_IfftMode to here
+  // for better performance (calculated once per image instead of per audio buffer)
+  float contrast_factor = calculate_contrast(processed_grayScale, CIS_MAX_PIXELS_NB);
+
   // Lancer la synthèse avec les données potentiellement gelées/fondues
   // Unified mode: always pass both left and right buffers
   synth_IfftMode(processed_grayScale,
                  buffers_L[index].data,
-                 buffers_R[index].data);
+                 buffers_R[index].data,
+                 contrast_factor);
 
   // Mettre à jour les buffers d'affichage globaux avec les données couleur
   // originales
