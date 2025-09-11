@@ -56,4 +56,19 @@
    : (AUDIO_CACHE_UPDATE_FREQUENCY > 32) ? 32 \
                                          : AUDIO_CACHE_UPDATE_FREQUENCY)
 
+/**************************************************************************************
+ * RtAudio Format Configuration - HDMI Compatibility
+ **************************************************************************************/
+// Force RTAUDIO_SINT32 for HDMI compatibility instead of RTAUDIO_FLOAT32
+#define USE_RTAUDIO_SINT32_FOR_HDMI    1
+
+// Audio format selection based on platform
+#if USE_RTAUDIO_SINT32_FOR_HDMI
+    #define RTAUDIO_FORMAT_TYPE        RTAUDIO_SINT32
+    #define AUDIO_SAMPLE_FORMAT        "SINT32"
+#else
+    #define RTAUDIO_FORMAT_TYPE        RTAUDIO_FLOAT32  
+    #define AUDIO_SAMPLE_FORMAT        "FLOAT32"
+#endif
+
 #endif // __CONFIG_AUDIO_H__

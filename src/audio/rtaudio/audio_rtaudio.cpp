@@ -5,6 +5,7 @@
 #include "midi_controller.h" // For gMidiController
 #include "synth_polyphonic.h" // For polyphonic_audio_buffers and related variables
 #include "../../config/config_debug.h"    // For debug configuration macros
+#include "../../config/config_audio.h"    // For HDMI format configuration
 #include <cstring>
 #include <iostream>
 #include <rtaudio/RtAudio.h> // Explicitly include RtAudio.h
@@ -875,9 +876,9 @@ bool AudioSystem::initialize() {
     std::cout << "  - Channels: " << params.nChannels << std::endl;
     std::cout << "  - Sample Rate: " << sampleRate << "Hz" << std::endl;
     std::cout << "  - Buffer Size: " << bufferSize << " frames" << std::endl;
-    std::cout << "  - Format: RTAUDIO_FLOAT32" << std::endl;
+    std::cout << "  - Format: " << AUDIO_SAMPLE_FORMAT << std::endl;
 
-    audio->openStream(&params, nullptr, RTAUDIO_FLOAT32, sampleRate,
+    audio->openStream(&params, nullptr, RTAUDIO_FORMAT_TYPE, sampleRate,
                       &bufferSize, &AudioSystem::rtCallback, this, &options);
 
     // Vérifier la fréquence réellement négociée
@@ -1065,7 +1066,7 @@ bool AudioSystem::setDevice(unsigned int deviceId) {
 
   // Ouvrir le flux audio avec les options de faible latence
   try {
-    audio->openStream(&params, nullptr, RTAUDIO_FLOAT32, sampleRate,
+    audio->openStream(&params, nullptr, RTAUDIO_FORMAT_TYPE, sampleRate,
                       &bufferSize, &AudioSystem::rtCallback, this, &options);
 
     if (wasRunning) {

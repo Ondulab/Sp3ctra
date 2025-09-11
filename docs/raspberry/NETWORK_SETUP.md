@@ -82,6 +82,24 @@ sudo ./setup_network.sh --ssid "PRE_WIFI" --psk "FB5FA76AC3" --band 5g
 3. **Avec code pays personnalisé**
 ```bash
 sudo ./setup_network.sh --ssid "Mon_WiFi" --psk "password" --country US --band auto
+sudo ./Sp3ctra/scripts/raspberry/setup_network.sh --ssid "PRE_WIFI" --psk "FB5FA76AC3" --country FR --band auto
+
+# 1. Résoudre le conflit wpa_supplicant
+sudo systemctl disable wpa_supplicant.service
+sudo systemctl stop wpa_supplicant.service
+
+# 2. Nettoyer les anciennes connexions
+sudo nmcli connection delete PRE_WIFI_5GHZ 2>/dev/null || true
+
+# 3. Créer la connexion 2.4GHz
+sudo nmcli connection add type wifi ifname wlan0 con-name PRE_WIFI_2GHZ ssid PRE_WIFI
+sudo nmcli connection modify PRE_WIFI_2GHZ 802-11-wireless-security.key-mgmt wpa-psk
+sudo nmcli connection modify PRE_WIFI_2GHZ 802-11-wireless-security.psk FB5FA76AC3
+sudo nmcli connection modify PRE_WIFI_2GHZ 802-11-wireless.band bg
+sudo nmcli connection modify PRE_WIFI_2GHZ ipv4.route-metric 200
+sudo nmcli connection modify PRE_WIFI_2GHZ connection.autoconnect yes
+sudo nmcli connection up PRE_WIFI_2GHZ
+
 ```
 
 ## Vérification
