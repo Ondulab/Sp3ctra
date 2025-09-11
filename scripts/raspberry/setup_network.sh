@@ -104,24 +104,24 @@ determine_wifi_band() {
             case "${SSID}" in
                 *"5GHZ"*|*"5G"*)
                     band="a"
-                    log "Auto-detected 5GHz band for SSID: ${SSID}"
+                    log "Auto-detected 5GHz band for SSID: ${SSID}" >&2
                     ;;
                 *"2GHZ"*|*"2G"*)
                     band="bg"
-                    log "Auto-detected 2.4GHz band for SSID: ${SSID}"
+                    log "Auto-detected 2.4GHz band for SSID: ${SSID}" >&2
                     ;;
                 "PRE_WIFI_5GHZ")
                     band="a"
-                    log "Auto-detected 5GHz band for SSID: ${SSID}"
+                    log "Auto-detected 5GHz band for SSID: ${SSID}" >&2
                     ;;
                 "PRE_WIFI")
                     band="bg"
-                    log "Auto-detected 2.4GHz band for SSID: ${SSID}"
+                    log "Auto-detected 2.4GHz band for SSID: ${SSID}" >&2
                     ;;
                 *)
                     # Default to both bands for unknown SSIDs
                     band="bg"
-                    log "Using 2.4GHz band as default for SSID: ${SSID}"
+                    log "Using 2.4GHz band as default for SSID: ${SSID}" >&2
                     ;;
             esac
             ;;
