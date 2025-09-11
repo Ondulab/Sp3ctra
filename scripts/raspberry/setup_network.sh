@@ -73,6 +73,51 @@ set_country() {
     iw reg set "${COUNTRY}" || log "iw reg set ${COUNTRY} failed (non-fatal)"
 }
 
+clean_all_wifi_connections() {
+    log "Cleaning all existing WiFi connections"
+    
+    # Get all WiFi connection names
+    local wifi_connections
+    wifi_connections=$(nmcli -t -f TYPE,NAME connection show | grep '^wifi:' | cut -d: -f2 || true)
+    
+    if [[ -n "${wifi_connections}" ]]; then
+        while IFS= read -r conn_name; do
+            if [[ -n "${conn_name}" ]]; then
+                log "Deleting WiFi connection: ${conn_name}"
+                nmcli connection delete "${conn_name}" 2>/dev/null || true
+            fi
+        done <<< "${wifi_connections}"
+    else
+        log "No existing WiFi connections found"
+    fi
+}
+
+configure_networkmanager_security() {
+    log "Configuring NetworkManager security settings"
+    
+    # Create NetworkManager configuration to disable auto-creation
+    cat > /etc/NetworkManager/conf.d/99-disable-autoconnect.conf << 'EOF'
+[main]
+# Disable automatic connection creation
+no-auto-default=*
+
+[connection]
+# Disable automatic connection for new devices
+autoconnect-priority=-1
+
+[device]
+# Only manage explicitly configured devices for WiFi
+wifi.scan-rand-mac-address=no
+
+[logging]
+# Enable connection logging for security auditing
+level=INFO
+domains=WIFI,DEVICE
+EOF
+    
+    log "NetworkManager security configuration applied"
+}
+
 configure_ethernet() {
     log "Configuring Ethernet interface (${ETHERNET_IFACE})"
     
@@ -104,14 +149,14 @@ configure_wifi() {
     # Remove any existing connection with the same name
     nmcli connection delete "${WIFI_CONN}" 2>/dev/null || true
     
-    # Create new WiFi connection
+    # Create new WiFi connection with proper security syntax
     nmcli connection add \
         type wifi \
         con-name "${WIFI_CONN}" \
         ifname "${WIFI_IFACE}" \
         ssid "${SSID}" \
-        wifi-sec.key-mgmt wpa-psk \
-        wifi-sec.psk "${PSK}" \
+        802-11-wireless-security.key-mgmt wpa-psk \
+        802-11-wireless-security.psk "${PSK}" \
         802-11-wireless.band a \
         ipv4.method auto \
         ipv4.route-metric "${WIFI_METRIC}" \
@@ -139,6 +184,10 @@ activate_connections() {
     
     # Wait for WiFi to get IP configuration
     sleep 5
+    
+    # Reload NetworkManager configuration to apply security settings
+    log "Reloading NetworkManager configuration"
+    nmcli general reload || true
 }
 
 show_status() {
@@ -163,6 +212,8 @@ main() {
     
     ensure_tools
     set_country
+    clean_all_wifi_connections
+    configure_networkmanager_security
     configure_ethernet
     configure_wifi
     activate_connections

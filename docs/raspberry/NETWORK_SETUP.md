@@ -33,6 +33,22 @@ chmod +x setup_network.sh
 2. Exécuter le script avec les paramètres requis :
 ```bash
 sudo ./setup_network.sh --ssid "NOM_WIFI" --psk "MOT_DE_PASSE_WIFI"
+sudo ./Sp3ctra/scripts/raspberry/setup_network.sh --ssid "PRE_WIFI_5GHZ" --psk "F*********"
+# en cli :
+sudo nmcli connection delete PRE_WIFI_5GHZ
+sudo nmcli connection add type wifi ifname wlan0 con-name PRE_WIFI_5GHZ ssid PRE_WIFI_5GHZ
+sudo nmcli connection modify PRE_WIFI_5GHZ 802-11-wireless-security.key-mgmt wpa-psk
+sudo nmcli connection modify PRE_WIFI_5GHZ 802-11-wireless-security.psk F*********
+sudo nmcli connection modify PRE_WIFI_5GHZ 802-11-wireless.band a
+sudo nmcli connection modify PRE_WIFI_5GHZ ipv4.method auto
+sudo nmcli connection modify PRE_WIFI_5GHZ ipv4.route-metric 200
+sudo nmcli connection modify PRE_WIFI_5GHZ connection.autoconnect yes
+sudo nmcli connection up PRE_WIFI_5GHZ
+
+# pour voir les connexions :
+nmcli connection show
+# pour les supprimer :
+sudo nmcli connection delete PRE_WIFI_5GHZ
 ```
 
 Options disponibles :
