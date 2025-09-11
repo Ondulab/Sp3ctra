@@ -33,7 +33,7 @@ chmod +x setup_network.sh
 2. Exécuter le script avec les paramètres requis :
 ```bash
 sudo ./setup_network.sh --ssid "NOM_WIFI" --psk "MOT_DE_PASSE_WIFI"
-sudo ./Sp3ctra/scripts/raspberry/setup_network.sh --ssid "PRE_WIFI_5GHZ" --psk "F*********"
+sudo ./Sp3ctra/scripts/raspberry/setup_network.sh --ssid "PRE_WIFI_5GHZ" --psk "FB5FA76AC3"
 # en cli :
 sudo nmcli connection delete PRE_WIFI_5GHZ
 sudo nmcli connection add type wifi ifname wlan0 con-name PRE_WIFI_5GHZ ssid PRE_WIFI_5GHZ
@@ -49,6 +49,14 @@ sudo nmcli connection up PRE_WIFI_5GHZ
 nmcli connection show
 # pour les supprimer :
 sudo nmcli connection delete PRE_WIFI_5GHZ
+
+# utile
+ip addr show wlan0
+sudo nmcli device wifi list
+nmcli connection show PRE_WIFI_5GHZ
+sudo ip link set wlan0 up
+sudo nmcli connection up PRE_WIFI_5GHZ
+
 ```
 
 Options disponibles :

@@ -163,6 +163,20 @@ configure_wifi() {
         connection.autoconnect yes
     
     log "WiFi configured for SSID: ${SSID}"
+    
+    # Wait for NetworkManager to write configuration file
+    log "Waiting for configuration file to be written..."
+    sleep 3
+    
+    # Verify configuration file exists and has correct content
+    local config_file="/etc/NetworkManager/system-connections/${WIFI_CONN}.nmconnection"
+    if [[ -f "${config_file}" ]]; then
+        # Ensure correct permissions for NetworkManager
+        chmod 600 "${config_file}"
+        log "Configuration file verified and secured"
+    else
+        log "Warning: Configuration file not found at ${config_file}"
+    fi
 }
 
 activate_connections() {
@@ -176,14 +190,49 @@ activate_connections() {
     # Wait for Ethernet to be ready
     sleep 2
     
-    # Scan and activate WiFi
+    # Scan for available WiFi networks
+    log "Scanning for WiFi networks..."
     nmcli device wifi rescan || true
-    if ! nmcli connection up "${WIFI_CONN}" ifname "${WIFI_IFACE}"; then
-        log "Warning: Failed to activate WiFi connection. Check SSID/password."
-    fi
+    sleep 2
     
-    # Wait for WiFi to get IP configuration
-    sleep 5
+    # Attempt WiFi activation with retry logic
+    local retry_count=0
+    local max_retries=3
+    local wifi_success=false
+    
+    while [[ ${retry_count} -lt ${max_retries} && "${wifi_success}" == "false" ]]; do
+        retry_count=$((retry_count + 1))
+        log "WiFi activation attempt ${retry_count}/${max_retries}"
+        
+        if nmcli connection up "${WIFI_CONN}" ifname "${WIFI_IFACE}" 2>/dev/null; then
+            wifi_success=true
+            log "WiFi connection activated successfully"
+        else
+            if [[ ${retry_count} -lt ${max_retries} ]]; then
+                log "WiFi activation failed, retrying in 5 seconds..."
+                sleep 5
+                # Force reload configuration before retry
+                nmcli general reload || true
+                sleep 2
+            else
+                log "ERROR: Failed to activate WiFi after ${max_retries} attempts"
+                log "Check SSID availability and password correctness"
+            fi
+        fi
+    done
+    
+    # Wait for IP configuration if WiFi succeeded
+    if [[ "${wifi_success}" == "true" ]]; then
+        log "Waiting for WiFi IP configuration..."
+        sleep 5
+        
+        # Verify WiFi connectivity
+        if ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+            log "WiFi connectivity verified (ping successful)"
+        else
+            log "Warning: WiFi connected but no internet connectivity detected"
+        fi
+    fi
     
     # Reload NetworkManager configuration to apply security settings
     log "Reloading NetworkManager configuration"
