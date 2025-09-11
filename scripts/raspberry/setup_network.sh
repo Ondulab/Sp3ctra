@@ -13,7 +13,7 @@ ETHERNET_IP="192.168.100.10"
 ETHERNET_METRIC="100"
 WIFI_METRIC="200"
 ETHERNET_CONN="eth0-static"
-WIFI_CONN="wifi-managed"
+WIFI_CONN="PRE_WIFI_5GHZ"
 WIFI_IFACE="wlan0"
 ETHERNET_IFACE="eth0"
 
@@ -112,6 +112,7 @@ configure_wifi() {
         ssid "${SSID}" \
         wifi-sec.key-mgmt wpa-psk \
         wifi-sec.psk "${PSK}" \
+        802-11-wireless.band a \
         ipv4.method auto \
         ipv4.route-metric "${WIFI_METRIC}" \
         connection.autoconnect yes
@@ -127,11 +128,17 @@ activate_connections() {
         log "Warning: Failed to activate Ethernet connection (non-fatal)"
     fi
     
+    # Wait for Ethernet to be ready
+    sleep 2
+    
     # Scan and activate WiFi
     nmcli device wifi rescan || true
     if ! nmcli connection up "${WIFI_CONN}" ifname "${WIFI_IFACE}"; then
         log "Warning: Failed to activate WiFi connection. Check SSID/password."
     fi
+    
+    # Wait for WiFi to get IP configuration
+    sleep 5
 }
 
 show_status() {
