@@ -9,11 +9,12 @@ set -euo pipefail
 SSID=""
 PSK=""
 COUNTRY="FR"
+WIFI_BAND="auto"
 ETHERNET_IP="192.168.100.10"
 ETHERNET_METRIC="100"
 WIFI_METRIC="200"
 ETHERNET_CONN="eth0-static"
-WIFI_CONN="PRE_WIFI_5GHZ"
+WIFI_CONN=""
 WIFI_IFACE="wlan0"
 ETHERNET_IFACE="eth0"
 
@@ -41,8 +42,17 @@ parse_args() {
                 PSK="${2:-}"; shift 2 ;;
             --country)
                 COUNTRY="${2:-}"; shift 2 ;;
+            --band)
+                WIFI_BAND="${2:-}"; shift 2 ;;
             -h|--help)
-                echo "Usage: sudo $0 --ssid \"WIFI_NAME\" --psk \"WIFI_PASSWORD\" [--country FR]"
+                echo "Usage: sudo $0 --ssid \"WIFI_NAME\" --psk \"WIFI_PASSWORD\" [--country FR] [--band auto|2g|5g]"
+                echo ""
+                echo "Options:"
+                echo "  --ssid SSID       WiFi network name (required)"
+                echo "  --psk PASSWORD    WiFi password (required)"
+                echo "  --country CODE    Country code for WiFi regulations (default: FR)"
+                echo "  --band BAND       WiFi band: auto|2g|5g (default: auto)"
+                echo "                    auto: 2g for PRE_WIFI, 5g for PRE_WIFI_5GHZ, both for others"
                 exit 0 ;;
             *)
                 fail "Unknown argument: $1" ;;
@@ -51,6 +61,12 @@ parse_args() {
 
     [[ -n "${SSID}" ]] || fail "--ssid is required"
     [[ -n "${PSK}" ]] || fail "--psk is required"
+    
+    # Validate band parameter
+    case "${WIFI_BAND}" in
+        auto|2g|5g) ;;
+        *) fail "Invalid --band value. Use: auto, 2g, or 5g" ;;
+    esac
 }
 
 ensure_tools() {
@@ -71,6 +87,95 @@ ensure_tools() {
 set_country() {
     log "Setting regulatory domain to ${COUNTRY}"
     iw reg set "${COUNTRY}" || log "iw reg set ${COUNTRY} failed (non-fatal)"
+}
+
+determine_wifi_band() {
+    local band=""
+    
+    case "${WIFI_BAND}" in
+        "2g")
+            band="bg"
+            ;;
+        "5g")
+            band="a"
+            ;;
+        "auto")
+            # Auto-detection based on SSID patterns
+            case "${SSID}" in
+                *"5GHZ"*|*"5G"*)
+                    band="a"
+                    log "Auto-detected 5GHz band for SSID: ${SSID}"
+                    ;;
+                *"2GHZ"*|*"2G"*)
+                    band="bg"
+                    log "Auto-detected 2.4GHz band for SSID: ${SSID}"
+                    ;;
+                "PRE_WIFI_5GHZ")
+                    band="a"
+                    log "Auto-detected 5GHz band for SSID: ${SSID}"
+                    ;;
+                "PRE_WIFI")
+                    band="bg"
+                    log "Auto-detected 2.4GHz band for SSID: ${SSID}"
+                    ;;
+                *)
+                    # Default to both bands for unknown SSIDs
+                    band="bg"
+                    log "Using 2.4GHz band as default for SSID: ${SSID}"
+                    ;;
+            esac
+            ;;
+    esac
+    
+    echo "${band}"
+}
+
+determine_connection_name() {
+    local conn_name=""
+    local band_suffix=""
+    
+    # Determine band suffix based on actual band used
+    local wifi_band_setting
+    wifi_band_setting=$(determine_wifi_band)
+    
+    case "${wifi_band_setting}" in
+        "a")
+            band_suffix="_5GHZ"
+            ;;
+        "bg")
+            band_suffix="_2GHZ"
+            ;;
+    esac
+    
+    # Generate connection name
+    case "${SSID}" in
+        "PRE_WIFI_5GHZ"|"PRE_WIFI")
+            # For known SSIDs, use SSID + band suffix
+            conn_name="${SSID}${band_suffix}"
+            ;;
+        *)
+            # For other SSIDs, use SSID + band suffix
+            conn_name="${SSID}${band_suffix}"
+            ;;
+    esac
+    
+    echo "${conn_name}"
+}
+
+disable_wpa_supplicant() {
+    log "Checking for wpa_supplicant conflicts"
+    
+    # Check if wpa_supplicant is enabled
+    if systemctl is-enabled wpa_supplicant.service >/dev/null 2>&1; then
+        log "Disabling wpa_supplicant service (conflicts with NetworkManager)"
+        systemctl disable wpa_supplicant.service
+    fi
+    
+    # Check if wpa_supplicant is running
+    if systemctl is-active --quiet wpa_supplicant.service; then
+        log "Stopping wpa_supplicant service"
+        systemctl stop wpa_supplicant.service
+    fi
 }
 
 clean_all_wifi_connections() {
@@ -140,6 +245,13 @@ configure_ethernet() {
 configure_wifi() {
     log "Configuring WiFi interface (${WIFI_IFACE})"
     
+    # Determine WiFi band and connection name dynamically
+    local wifi_band_setting
+    wifi_band_setting=$(determine_wifi_band)
+    WIFI_CONN=$(determine_connection_name)
+    
+    log "Using WiFi band: ${wifi_band_setting} for connection: ${WIFI_CONN}"
+    
     # Enable WiFi radio
     nmcli radio wifi on
     
@@ -157,10 +269,16 @@ configure_wifi() {
         ssid "${SSID}" \
         802-11-wireless-security.key-mgmt wpa-psk \
         802-11-wireless-security.psk "${PSK}" \
-        802-11-wireless.band a \
+        802-11-wireless.band "${wifi_band_setting}" \
         ipv4.method auto \
         ipv4.route-metric "${WIFI_METRIC}" \
         connection.autoconnect yes
+    
+    # Configure additional WiFi security parameters for better compatibility
+    nmcli connection modify "${WIFI_CONN}" \
+        802-11-wireless-security.proto "rsn wpa" \
+        802-11-wireless-security.pairwise "tkip ccmp" \
+        802-11-wireless-security.group "tkip ccmp"
     
     log "WiFi configured for SSID: ${SSID}"
     
@@ -261,6 +379,7 @@ main() {
     
     ensure_tools
     set_country
+    disable_wpa_supplicant
     clean_all_wifi_connections
     configure_networkmanager_security
     configure_ethernet
