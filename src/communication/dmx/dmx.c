@@ -695,6 +695,7 @@ int init_Dmx(const char *port, int silent) {
     return -1;
   }
 
+  // Configuration du baud rate DMX final
 #ifdef __APPLE__
   speed_t speed = DMX_BAUD;
   if (ioctl(fd, IOSSIOSPEED, &speed) < 0) {
@@ -703,30 +704,44 @@ int init_Dmx(const char *port, int silent) {
     close(fd);
     return -1;
   }
+  if (!silent)
+    printf("DMX baud rate set to %d using IOSSIOSPEED\n", DMX_BAUD);
 #else
-  // Sur Linux, utilisation des constantes B* standard disponibles
+  // Sur Linux, configuration directe du baud rate DMX sans tcsetattr intermédiaire
+  if (!silent)
+    printf("Configuring DMX baud rate for Linux...\n");
+    
 #ifdef B250000
-  cfsetispeed(&tty, B250000); // DMX_BAUD: 250000 (idéal)
-  cfsetospeed(&tty, B250000);
+  tty.c_cflag = (tty.c_cflag & ~CBAUD) | B250000;
   if (!silent)
-    printf("DMX baud rate configuré à 250000 bps (exact)\n");
+    printf("Setting B250000 (250000 bps - DMX exact)\n");
 #elif defined B230400
-  cfsetispeed(&tty, B230400); // Proche de 250000 (~8% différence)
-  cfsetospeed(&tty, B230400);
+  tty.c_cflag = (tty.c_cflag & ~CBAUD) | B230400;
   if (!silent)
-    printf("DMX baud rate configuré à 230400 bps (proche de 250000, différence ~8%%)\n");
+    printf("Setting B230400 (230400 bps - close to DMX spec)\n");
 #else
-  cfsetispeed(&tty, B38400); // Fallback universel
-  cfsetospeed(&tty, B38400);
+  tty.c_cflag = (tty.c_cflag & ~CBAUD) | B38400;
   if (!silent)
-    printf("⚠️  DMX baud rate limité à 38400 bps - fonctionnement DMX non garanti\n");
+    printf("⚠️  Setting B38400 (38400 bps - fallback, DMX may not work)\n");
 #endif
 
-  if (tcsetattr(fd, TCSANOW, &tty) != 0) {
-    if (!silent)
-      perror("Error setting DMX baud rate");
+  // Appliquer la configuration finale
+  if (tcsetattr(fd, TCSAFLUSH, &tty) != 0) {
+    if (!silent) {
+      perror("Error setting final DMX configuration");
+      printf("tcsetattr failed with errno: %d (%s)\n", errno, strerror(errno));
+    }
     close(fd);
     return -1;
+  }
+  
+  // Vérification finale du baud rate
+  struct termios verify_tty;
+  if (tcgetattr(fd, &verify_tty) == 0) {
+    if (!silent) {
+      printf("Final verification - baud rate: %u\n", cfgetispeed(&verify_tty));
+      printf("Final c_cflag: 0x%x\n", verify_tty.c_cflag);
+    }
   }
 #endif
 
