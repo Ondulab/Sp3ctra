@@ -122,8 +122,20 @@ fi
 
 # Step 6: Create build directory if it doesn't exist
 echo -e "\n${BLUE}=== Step 6: Build Directory Setup ===${NC}"
-mkdir -p build/obj
-echo -e "${GREEN}✅ Build directory structure created${NC}"
+mkdir -p build/obj/core
+mkdir -p build/obj/audio/rtaudio
+mkdir -p build/obj/audio/buffers
+mkdir -p build/obj/audio/pan
+mkdir -p build/obj/audio/effects
+mkdir -p build/obj/synthesis/additive
+mkdir -p build/obj/synthesis/polyphonic/kissfft
+mkdir -p build/obj/communication/network
+mkdir -p build/obj/communication/midi
+mkdir -p build/obj/communication/dmx
+mkdir -p build/obj/display
+mkdir -p build/obj/threading
+mkdir -p build/obj/utils
+echo -e "${GREEN}✅ Complete build directory structure created${NC}"
 
 # Step 7: Build with enhanced error handling
 echo -e "\n${BLUE}=== Step 7: Building Sp3ctra ===${NC}"
