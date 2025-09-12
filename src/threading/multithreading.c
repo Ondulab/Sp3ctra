@@ -423,7 +423,7 @@ void *dmxSendingThread(void *arg) {
 
     // Pour chaque spot, insérer les 3 canaux (R, G, B) à partir de l'adresse
     // définie dans la nouvelle structure flexible
-    for (int i = 0; i < DMX_NUM_SPOTS; i++) {
+    for (int i = 0; i < dmxCtx->num_spots; i++) {
       int base = dmxCtx->spots[i].start_channel;
       if ((base + 2) < DMX_FRAME_SIZE) {
         frame[base + 0] = dmxCtx->spots[i].data.rgb.red;

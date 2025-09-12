@@ -397,10 +397,7 @@ double calculateStandardDeviation(const uint8_t *values, size_t start,
 void computeAverageColorPerZone(const uint8_t *buffer_R,
                                 const uint8_t *buffer_G,
                                 const uint8_t *buffer_B, size_t numPixels,
-                                DMXSpot spots[DMX_NUM_SPOTS]) {
-  
-  // Use global configuration if available, otherwise use static values
-  int num_spots = (global_num_spots > 0) ? global_num_spots : DMX_NUM_SPOTS;
+                                DMXSpot spots[], int num_spots) {
   size_t zoneSize = numPixels / num_spots;
   double overlap = DMX_ZONE_OVERLAP; // Facteur de chevauchement entre zones
   
