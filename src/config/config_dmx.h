@@ -8,7 +8,11 @@
  **************************************************************************************/
 #define USE_DMX
 
+#ifdef __APPLE__
 #define DMX_PORT                     "/dev/tty.usbserial-AD0JUL0N"
+#else
+#define DMX_PORT                     "/dev/sp3ctra-dmx"
+#endif
 #define DMX_BAUD                     (250000)
 #define DMX_CHANNELS                 (512)
 #define DMX_FRAME_SIZE               (DMX_CHANNELS + 1)
@@ -45,6 +49,6 @@
 #define DMX_UNIFORM_THRESHOLD        (8.0)                  // Seuil pour considérer une zone comme uniforme
 #define DMX_MIN_STD_DEV              (0.03)                 // Écart-type minimal pour considérer des variations significatives
 
-#define DMX_NUM_SPOTS                (18)                   // Nombre de spots DMX à gérer
+#define DMX_NUM_SPOTS                (27)                   // Nombre de spots DMX à gérer
 
 #endif // __CONFIG_DMX_H__
