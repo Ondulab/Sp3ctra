@@ -219,11 +219,35 @@ int main(int argc, char **argv) {
     close(dmxFd);
     // return EXIT_FAILURE;
   }
+  
+  // Initialize DMXContext with flexible system
   dmxCtx->fd = dmxFd;
   dmxCtx->running = 1;
   dmxCtx->colorUpdated = 0;
+  dmxCtx->spots = NULL;
+  dmxCtx->num_spots = 0;
+  dmxCtx->use_libftdi = 0;
+#ifdef __linux__
+  dmxCtx->ftdi = NULL;
+#endif
   pthread_mutex_init(&dmxCtx->mutex, NULL);
   pthread_cond_init(&dmxCtx->cond, NULL);
+
+  // Initialize flexible DMX configuration
+  if (use_dmx) {
+    printf("🔧 Initializing flexible DMX configuration...\n");
+    dmxCtx->spots = malloc(DMX_NUM_SPOTS * sizeof(DMXSpot));
+    if (dmxCtx->spots == NULL) {
+      printf("❌ Failed to allocate DMX spots array\n");
+      use_dmx = 0;
+    } else {
+      dmxCtx->num_spots = DMX_NUM_SPOTS;
+      // Generate channel mapping using flexible system
+      dmx_generate_channel_mapping(dmxCtx->spots, DMX_NUM_SPOTS, DMX_SPOT_TYPE, DMX_START_CHANNEL);
+      printf("✅ DMX flexible system initialized: %d spots, type=%d, start_channel=%d\n",
+             DMX_NUM_SPOTS, DMX_SPOT_TYPE, DMX_START_CHANNEL);
+    }
+  }
 
   /* Initialize CSFML */
   sfRenderWindow *window = NULL;
@@ -584,15 +608,15 @@ int main(int argc, char **argv) {
       /* Calcul de la couleur moyenne et mise à jour du contexte DMX */
       // DMX utilise les données copiées local_main_R,G,B (qui sont les données
       // live de db.processingBuffer)
-      DMXSpot zoneSpots[DMX_NUM_SPOTS];
-      computeAverageColorPerZone(local_main_R, local_main_G, local_main_B,
-                                 CIS_MAX_PIXELS_NB, zoneSpots);
+      if (use_dmx && dmxCtx->spots && dmxCtx->num_spots > 0) {
+        computeAverageColorPerZone(local_main_R, local_main_G, local_main_B,
+                                   CIS_MAX_PIXELS_NB, dmxCtx->spots, dmxCtx->num_spots);
 
-      pthread_mutex_lock(&dmxCtx->mutex);
-      memcpy(dmxCtx->spots, zoneSpots, sizeof(zoneSpots));
-      dmxCtx->colorUpdated = 1;
-      pthread_cond_signal(&dmxCtx->cond);
-      pthread_mutex_unlock(&dmxCtx->mutex);
+        pthread_mutex_lock(&dmxCtx->mutex);
+        dmxCtx->colorUpdated = 1;
+        pthread_cond_signal(&dmxCtx->cond);
+        pthread_mutex_unlock(&dmxCtx->mutex);
+      }
 
 #ifdef PRINT_FPS
       frameCount++; // Compter chaque trame traitée

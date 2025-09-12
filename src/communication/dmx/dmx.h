@@ -79,7 +79,7 @@ void dmx_generate_channel_mapping(DMXSpot spots[], int num_spots, DMXSpotType sp
 void computeAverageColorPerZone(const uint8_t *buffer_R,
                                 const uint8_t *buffer_G,
                                 const uint8_t *buffer_B, size_t numPixels,
-                                DMXSpot spots[DMX_NUM_SPOTS]);
+                                DMXSpot spots[], int num_spots);
 void applyColorProfile(uint8_t *red, uint8_t *green, uint8_t *blue,
                        double redFactor, double greenFactor, double blueFactor);
 int send_dmx_frame(int fd, unsigned char *frame, size_t len);

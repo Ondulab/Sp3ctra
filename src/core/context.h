@@ -42,7 +42,9 @@ typedef struct {
   int fd;
   int running;
   int colorUpdated;
-  DMXSpot spots[DMX_NUM_SPOTS];
+  // New flexible system - replace static array with dynamic pointer
+  DMXSpot *spots;          // Dynamic array of spots
+  int num_spots;           // Number of spots allocated
   pthread_mutex_t mutex;
   pthread_cond_t cond;
   // libftdi support for Linux
