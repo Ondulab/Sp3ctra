@@ -673,21 +673,11 @@ bool AudioSystem::initialize() {
             preferredDeviceId = i;
             foundSpecificPreferred = true;
             
-            // Select format based on device type
-            if (searchName.find("hdmi") != std::string::npos || 
-                searchName.find("vc4") != std::string::npos) {
-              // HDMI device - use SINT32 for compatibility
-              g_selected_audio_format = RTAUDIO_SINT32;
-              g_selected_audio_format_name = "SINT32";
-              std::cout << "🎯 HDMI DEVICE FOUND: Using device ID " << i << ": "
-                        << info.name << " with SINT32 format" << std::endl;
-            } else {
-              // USB or other device - use FLOAT32 for performance
-              g_selected_audio_format = RTAUDIO_FLOAT32;
-              g_selected_audio_format_name = "FLOAT32";
-              std::cout << "🎯 DEVICE FOUND: Using device ID " << i << ": "
-                        << info.name << " with FLOAT32 format" << std::endl;
-            }
+            // Always use FLOAT32 for optimal performance (HDMI not supported)
+            g_selected_audio_format = RTAUDIO_FLOAT32;
+            g_selected_audio_format_name = "FLOAT32";
+            std::cout << "🎯 DEVICE FOUND: Using device ID " << i << ": "
+                      << info.name << " with FLOAT32 format" << std::endl;
             break;
           }
         }
@@ -700,23 +690,31 @@ bool AudioSystem::initialize() {
     if (!foundSpecificPreferred) {
       std::cerr << "❌ ERROR: Device name '" << g_requested_audio_device_name 
                 << "' not found!" << std::endl;
-      std::cerr << "Available devices: ";
+      std::cerr << "Available USB/compatible devices: ";
       for (unsigned int i = 0; i < deviceCount; i++) {
         try {
           RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
           if (info.outputChannels > 0 && !info.name.empty()) {
-            std::cerr << "'" << info.name << "' ";
+            // Only show devices that are likely to work (USB, Default)
+            std::string deviceName(info.name);
+            if (deviceName.find("USB") != std::string::npos || 
+                deviceName.find("default") != std::string::npos ||
+                deviceName.find("Bravo") != std::string::npos ||
+                deviceName.find("SPDIF") != std::string::npos) {
+              std::cerr << "'" << info.name << "' ";
+            }
           }
         } catch (const std::exception &error) {
           // Skip problematic devices
         }
       }
       std::cerr << std::endl;
+      std::cerr << "Note: HDMI devices (vc4-hdmi) are not supported by RtAudio on Raspberry Pi" << std::endl;
       return false;
     }
   } else {
-    // No specific device name requested - use smart auto-detection
-    std::cout << "🔧 Smart device selection with format optimization..." << std::endl;
+    // No specific device name requested - use smart auto-detection for USB only
+    std::cout << "🔧 Smart USB device selection with FLOAT32 optimization..." << std::endl;
     
     // Priority 1: USB Audio devices (best performance with FLOAT32)
     for (unsigned int i = 0; i < deviceCount; i++) {
@@ -724,7 +722,7 @@ bool AudioSystem::initialize() {
         RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
         if (info.outputChannels > 0) {
           std::string deviceName(info.name);
-          // Check for USB audio devices
+          // Check for USB audio devices only
           if (deviceName.find("USB Audio") != std::string::npos ||
               deviceName.find("Bravo") != std::string::npos ||
               deviceName.find("SPDIF") != std::string::npos) {
@@ -745,7 +743,7 @@ bool AudioSystem::initialize() {
       }
     }
     
-    // Priority 2: Use default device (was working before) with FLOAT32
+    // Priority 2: Use default device (fallback) with FLOAT32
     if (!foundSpecificPreferred) {
       std::cout << "🔄 FALLBACK: Using default device with FLOAT32" << std::endl;
       g_selected_audio_format = RTAUDIO_FLOAT32;

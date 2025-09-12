@@ -57,15 +57,12 @@
                                          : AUDIO_CACHE_UPDATE_FREQUENCY)
 
 /**************************************************************************************
- * RtAudio Format Configuration - Smart Device-Based Selection  
+ * RtAudio Format Configuration - Optimized FLOAT32 Pipeline
  **************************************************************************************/
-// Default to FLOAT32 for optimal performance, but allow override in audio_rtaudio.cpp
-// based on device capabilities and type (USB, HDMI, etc.)
+// Use RTAUDIO_FLOAT32 exclusively for optimal real-time performance
+// FLOAT32 is natively compatible with internal synthesis calculations
+// Provides best latency and performance on all supported devices (USB, Default)
 #define RTAUDIO_FORMAT_TYPE        RTAUDIO_FLOAT32  
 #define AUDIO_SAMPLE_FORMAT        "FLOAT32"
-
-// Fallback formats for device compatibility
-#define RTAUDIO_FORMAT_TYPE_HDMI   RTAUDIO_SINT32
-#define AUDIO_SAMPLE_FORMAT_HDMI   "SINT32"
 
 #endif // __CONFIG_AUDIO_H__
