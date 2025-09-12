@@ -44,8 +44,8 @@ else
                -Isrc/synthesis/polyphonic/kissfft -Isrc/communication/network -Isrc/communication/midi \
                -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
     
-    # Linux Libraries
-    LIBS = -L/usr/lib -L/usr/local/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi -lasound -lpthread -lm
+    # Linux Libraries (including libftdi1 for DMX support)
+    LIBS = -L/usr/lib -L/usr/local/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi -lftdi1 -lasound -lpthread -lm
 endif
 
 # Build directories
@@ -144,7 +144,7 @@ ifeq ($(UNAME_S),Darwin)
 	        LIBS="-framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa -L/opt/homebrew/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi"
 else
 	$(MAKE) CFLAGS="$(BASE_CFLAGS) -DNO_SFML -D__LINUX__" CXXFLAGS="$(BASE_CXXFLAGS) -DNO_SFML -D__LINUX__" \
-	        LIBS="-L/usr/lib -L/usr/local/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi -lasound -lpthread -lm"
+	        LIBS="-L/usr/lib -L/usr/local/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi -lftdi1 -lasound -lpthread -lm"
 endif
 
 # Diagnostic target for SFML issues

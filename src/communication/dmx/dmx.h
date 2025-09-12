@@ -7,6 +7,10 @@
 #include <stddef.h>  // for size_t
 #include <stdint.h>  // for uint8_t
 
+#ifdef __linux__
+#include <ftdi.h>
+#endif
+
 // Structure pour représenter un blob (groupe de pixels similaires)
 typedef struct {
   uint16_t startIdx;        // Index de début du blob dans la zone
@@ -28,6 +32,17 @@ typedef struct {
 
 extern const uint8_t spotChannels[DMX_NUM_SPOTS];
 extern volatile sig_atomic_t keepRunning;
+
+// DMX context management - either traditional fd or libftdi context
+typedef struct {
+    int use_libftdi;    // 0 = traditional fd, 1 = libftdi
+    int fd;             // Traditional file descriptor (Mac/Linux fallback)
+#ifdef __linux__
+    struct ftdi_context *ftdi; // libftdi context (Linux primary)
+#endif
+} DMXContext;
+
+extern DMXContext dmx_ctx;
 
 // Function prototypes
 void intHandler(int dummy);
@@ -54,9 +69,22 @@ int send_dmx_frame(int fd, unsigned char *frame, size_t len);
 int init_Dmx(const char *port, int silent);
 
 #ifdef __linux__
-// Linux-specific baud rate configuration functions
+// Linux-specific baud rate configuration functions  
 int set_custom_baudrate_termios2(int fd, int baud, int silent);
 int set_custom_baudrate_ftdi(int fd, int baud, int silent);
+
+// libftdi-specific functions
+int init_dmx_linux_libftdi(int silent);
+int send_dmx_break_libftdi(struct ftdi_context *ftdi);
+int send_dmx_frame_libftdi(struct ftdi_context *ftdi, unsigned char *frame, size_t len);
+void cleanup_dmx_libftdi(void);
+#endif
+
+// Platform-specific initialization functions
+#ifdef __APPLE__
+int init_dmx_macos(const char *port, int silent);
+#else
+int init_dmx_linux_standard(const char *port, int silent);
 #endif
 
 #endif // DMX_H
