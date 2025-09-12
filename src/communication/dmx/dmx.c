@@ -69,6 +69,7 @@
 
 #include "config.h"
 #include "dmx.h"
+#include "context.h"
 #include <math.h>
 
 // Fonction pour déterminer si un pixel est significatif
