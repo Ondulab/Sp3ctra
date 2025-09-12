@@ -791,8 +791,8 @@ bool AudioSystem::initialize() {
   options.streamName = "Sp3ctra_Standard";
 #endif
 
-  // High priority for audio thread on Pi Module 5
-  options.priority = 90; // Real-time priority for audio processing
+  // High priority for audio thread on Pi Module 5 - reduced for better compatibility
+  options.priority = 70; // Real-time priority optimized for Pi permissions
 
   // DIAGNOSTIC: Vérifier les capacités du périphérique avant ouverture
   std::cout << "\n=== DIAGNOSTIC PÉRIPHÉRIQUE AUDIO ===" << std::endl;
