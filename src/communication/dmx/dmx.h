@@ -19,18 +19,42 @@ typedef struct {
   double significance;      // Significativité moyenne du blob
 } Blob;
 
+// Structure pour spots RGB (3 canaux)
 typedef struct {
-  // uint8_t channel;  // Start
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+} DMXSpotRGB;
+
+// Structure pour spots RGBW (4 canaux) - pour extension future
+typedef struct {
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+    uint8_t white;
+} DMXSpotRGBW;
+
+// Union pour supporter différents types de spots (extensible)
+typedef union {
+    DMXSpotRGB rgb;
+    DMXSpotRGBW rgbw;  // Pour plus tard
+} DMXSpotData;
+
+// Structure principale du spot avec type et canal de départ
+typedef struct {
+    DMXSpotType type;
+    uint8_t start_channel;  // Canal DMX de départ pour ce spot
+    DMXSpotData data;
+} DMXSpot;
+
+// Structure de compatibilité avec l'ancien système (deprecated)
+typedef struct {
   uint8_t red;
   uint8_t green;
   uint8_t blue;
-  // uint8_t dimmer;
   uint8_t white;
-  // uint8_t mode;
-  // uint8_t strobo;
-} DMXSpot;
+} DMXSpotLegacy;
 
-extern const uint8_t spotChannels[DMX_NUM_SPOTS];
 extern volatile sig_atomic_t keepRunning;
 
 // Function prototypes
@@ -46,6 +70,10 @@ void growBlob(const uint8_t *buffer_R, const uint8_t *buffer_G,
 int detectBlobs(const uint8_t *buffer_R, const uint8_t *buffer_G,
                 const uint8_t *buffer_B, size_t start, size_t end, Blob *blobs,
                 double *pixelSignificance);
+
+// Nouvelles fonctions d'initialisation flexible
+int dmx_init_configuration(int num_spots, DMXSpotType spot_type, int start_channel);
+void dmx_generate_channel_mapping(DMXSpot spots[], int num_spots, DMXSpotType spot_type, int start_channel);
 
 // Fonctions de traitement DMX
 void computeAverageColorPerZone(const uint8_t *buffer_R,

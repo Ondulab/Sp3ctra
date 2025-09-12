@@ -49,6 +49,20 @@
 #define DMX_UNIFORM_THRESHOLD        (8.0)                  // Seuil pour considérer une zone comme uniforme
 #define DMX_MIN_STD_DEV              (0.03)                 // Écart-type minimal pour considérer des variations significatives
 
-#define DMX_NUM_SPOTS                (27)                   // Nombre de spots DMX à gérer
+/**************************************************************************************
+ * DMX Flexible Configuration
+ **************************************************************************************/
+// Types de projecteurs supportés
+typedef enum {
+    DMX_SPOT_RGB = 3,    // RGB (3 canaux)
+    // DMX_SPOT_RGBW = 4, // Pour plus tard
+    // DMX_SPOT_RGBWA = 5 // Pour plus tard
+} DMXSpotType;
+
+// Configuration flexible - changer ces valeurs selon les besoins
+#define DMX_SPOT_TYPE           DMX_SPOT_RGB
+#define DMX_CHANNELS_PER_SPOT   ((int)DMX_SPOT_TYPE)
+#define DMX_NUM_SPOTS           (27)                        // Test avec 18 spots
+#define DMX_START_CHANNEL       (1)                         // Canal de départ
 
 #endif // __CONFIG_DMX_H__
