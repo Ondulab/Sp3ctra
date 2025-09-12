@@ -422,13 +422,13 @@ void *dmxSendingThread(void *arg) {
     frame[0] = 0;
 
     // Pour chaque spot, insérer les 3 canaux (R, G, B) à partir de l'adresse
-    // définie
+    // définie dans la nouvelle structure flexible
     for (int i = 0; i < DMX_NUM_SPOTS; i++) {
-      int base = spotChannels[i];
+      int base = dmxCtx->spots[i].start_channel;
       if ((base + 2) < DMX_FRAME_SIZE) {
-        frame[base + 0] = dmxCtx->spots[i].red;
-        frame[base + 1] = dmxCtx->spots[i].green;
-        frame[base + 2] = dmxCtx->spots[i].blue;
+        frame[base + 0] = dmxCtx->spots[i].data.rgb.red;
+        frame[base + 1] = dmxCtx->spots[i].data.rgb.green;
+        frame[base + 2] = dmxCtx->spots[i].data.rgb.blue;
       } else {
         fprintf(stderr, "DMX address out of bounds for spot %d\n", i);
       }

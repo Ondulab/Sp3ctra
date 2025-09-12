@@ -259,12 +259,9 @@ double threshold_response(double x, double threshold, double curve) {
   }
 }
 
-// DMX addresses for each spot (3 channels per spot)
-// Configuration pour Stairville Show Bar Tri LED 18x3W RGB
-// Adresse de départ: 1, mode 54 canaux pour contrôle individuel des 18 LEDs
-// Canaux 1-3 : RGB pour LED 1, canaux 4-6 : RGB pour LED 2, etc.
-const uint8_t spotChannels[DMX_NUM_SPOTS] = {
-    1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 37, 40, 43, 46, 49, 52};
+// Note: The old static spotChannels[] array has been removed
+// Channel mapping is now generated dynamically by dmx_generate_channel_mapping()
+// based on the flexible configuration (number of spots, channels per spot, start channel)
 
 volatile sig_atomic_t keepRunning = 1;
 int fd;
@@ -272,9 +269,88 @@ int fd;
 // DMX context global - manages either traditional fd or libftdi
 DMXContext dmx_ctx = {0};
 
+// Global DMX spots array - initialized dynamically
+static DMXSpot *global_dmx_spots = NULL;
+static int global_num_spots = 0;
+
 // Cette fonction est maintenant déclarée externe pour éviter la duplication
 // avec le gestionnaire principal dans main.c
 extern void signalHandler(int signal);
+
+// Initialize flexible DMX configuration
+int dmx_init_configuration(int num_spots, DMXSpotType spot_type, int start_channel) {
+    // Validate parameters
+    if (num_spots <= 0 || num_spots > 512) {
+        printf("❌ Invalid number of spots: %d (must be 1-512)\n", num_spots);
+        return -1;
+    }
+    
+    if (spot_type != DMX_SPOT_RGB) {
+        printf("❌ Unsupported spot type: %d (only DMX_SPOT_RGB supported)\n", spot_type);
+        return -1;
+    }
+    
+    if (start_channel < 1 || start_channel > 512) {
+        printf("❌ Invalid start channel: %d (must be 1-512)\n", start_channel);
+        return -1;
+    }
+    
+    // Check if total channels fit in DMX universe
+    int total_channels = num_spots * (int)spot_type;
+    if (start_channel + total_channels - 1 > 512) {
+        printf("❌ Configuration exceeds DMX universe: start=%d, spots=%d, channels_per_spot=%d, total=%d\n",
+               start_channel, num_spots, (int)spot_type, start_channel + total_channels - 1);
+        return -1;
+    }
+    
+    // Free previous allocation if any
+    if (global_dmx_spots != NULL) {
+        free(global_dmx_spots);
+        global_dmx_spots = NULL;
+    }
+    
+    // Allocate memory for spots
+    global_dmx_spots = malloc(num_spots * sizeof(DMXSpot));
+    if (global_dmx_spots == NULL) {
+        printf("❌ Failed to allocate memory for %d DMX spots\n", num_spots);
+        return -1;
+    }
+    
+    // Store global configuration
+    global_num_spots = num_spots;
+    
+    // Generate channel mapping
+    dmx_generate_channel_mapping(global_dmx_spots, num_spots, spot_type, start_channel);
+    
+    printf("✅ DMX configuration initialized: %d spots, type=%d, start_channel=%d, total_channels=%d\n",
+           num_spots, (int)spot_type, start_channel, total_channels);
+    
+    return 0;
+}
+
+// Generate channel mapping for spots
+void dmx_generate_channel_mapping(DMXSpot spots[], int num_spots, DMXSpotType spot_type, int start_channel) {
+    for (int i = 0; i < num_spots; i++) {
+        spots[i].type = spot_type;
+        spots[i].start_channel = start_channel + (i * (int)spot_type);
+        
+        // Initialize spot data based on type
+        switch (spot_type) {
+            case DMX_SPOT_RGB:
+                spots[i].data.rgb.red = 0;
+                spots[i].data.rgb.green = 0;
+                spots[i].data.rgb.blue = 0;
+                break;
+            // Future extensions for other types
+            default:
+                printf("⚠️  Unsupported spot type in channel mapping: %d\n", (int)spot_type);
+                break;
+        }
+    }
+    
+    printf("🔧 Generated channel mapping: spot[0] starts at channel %d, spot[%d] starts at channel %d\n",
+           spots[0].start_channel, num_spots-1, spots[num_spots-1].start_channel);
+}
 
 void intHandler(int dummy) {
   (void)dummy;
@@ -322,8 +398,13 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
                                 const uint8_t *buffer_G,
                                 const uint8_t *buffer_B, size_t numPixels,
                                 DMXSpot spots[DMX_NUM_SPOTS]) {
-  size_t zoneSize = numPixels / DMX_NUM_SPOTS;
+  
+  // Use global configuration if available, otherwise use static values
+  int num_spots = (global_num_spots > 0) ? global_num_spots : DMX_NUM_SPOTS;
+  size_t zoneSize = numPixels / num_spots;
   double overlap = DMX_ZONE_OVERLAP; // Facteur de chevauchement entre zones
+  
+  // Static arrays sized for maximum spots for backward compatibility
   static int initialized[DMX_NUM_SPOTS] = {0};
   static double smoothR[DMX_NUM_SPOTS] = {0.0};
   static double smoothG[DMX_NUM_SPOTS] = {0.0};
@@ -344,7 +425,7 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
   SpotColor finalColors[DMX_NUM_SPOTS] = {0};
 
   // PHASE 1: Détection des blobs et calcul des couleurs par zone
-  for (size_t i = 0; i < DMX_NUM_SPOTS; i++) {
+  for (size_t i = 0; i < num_spots; i++) {
     // Calcul des limites de la zone avec chevauchement
     size_t zoneCenter = i * zoneSize + zoneSize / 2;
     size_t extendedZoneSize = (size_t)(zoneSize * (1.0 + overlap));
@@ -477,7 +558,7 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
   }
 
   // PHASE 2: Application des transitions douces entre zones
-  for (size_t i = 0; i < DMX_NUM_SPOTS; i++) {
+  for (size_t i = 0; i < num_spots; i++) {
     // Initialiser avec la couleur de la zone elle-même
     finalColors[i] = zoneColors[i];
 
@@ -492,7 +573,7 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
     double totalWeight = 0;
 
     // Pour chaque zone, calculer l'influence de toutes les autres
-    for (size_t j = 0; j < DMX_NUM_SPOTS; j++) {
+    for (size_t j = 0; j < num_spots; j++) {
       // Distance entre les centres des zones i et j
       double distance = fabs((double)(i - j) * zoneSize);
 
@@ -542,14 +623,14 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
       smoothW[i] = alpha * smoothW[i] + (1.0 - alpha) * finalColors[i].white;
     }
 
-    // Conversion en uint8_t pour les spots
-    spots[i].red = (uint8_t)smoothR[i];
-    spots[i].green = (uint8_t)smoothG[i];
-    spots[i].blue = (uint8_t)smoothB[i];
-    spots[i].white = (uint8_t)smoothW[i];
+    // Conversion en uint8_t pour les spots avec nouvelle structure union
+    spots[i].data.rgb.red = (uint8_t)smoothR[i];
+    spots[i].data.rgb.green = (uint8_t)smoothG[i];
+    spots[i].data.rgb.blue = (uint8_t)smoothB[i];
+    // Note: RGB spots don't have white channel, so we skip spots[i].white
 
     // Application de la correction du profil couleur sur RGB
-    applyColorProfile(&spots[i].red, &spots[i].green, &spots[i].blue, redFactor,
+    applyColorProfile(&spots[i].data.rgb.red, &spots[i].data.rgb.green, &spots[i].data.rgb.blue, redFactor,
                       greenFactor, blueFactor);
   }
 }
