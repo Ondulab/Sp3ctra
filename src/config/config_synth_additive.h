@@ -120,8 +120,7 @@ typedef enum {
 #define IMU_ACTIVE_THRESHOLD_X       (0.01f)                /* Threshold on accel X to consider active (sensor units) */
 #define IMU_FILTER_ALPHA_X           (0.25f)                /* Exponential smoothing alpha for acc X (0..1) */
 #define IMU_INACTIVITY_TIMEOUT_S     (5)                    /* Seconds of no activity before dimming */
-#define AUTO_VOLUME_INACTIVE_LEVEL   (0.1f)                /* Target volume when inactive (0.0..1.0) */
-#define AUTO_VOLUME_ACTIVE_LEVEL     (1.0f)                 /* Target volume when active (0.0..1.0) */
+ #define AUTO_VOLUME_ACTIVE_LEVEL     (1.0f)                 /* Target volume when active (0.0..1.0) */
 #define AUTO_VOLUME_FADE_MS          (600)                  /* Fade duration in milliseconds */
 #define AUTO_VOLUME_POLL_MS          (10)                   /* How often auto-volume updates (ms) */
 #define AUTO_VOLUME_DISABLE_WITH_MIDI 1                     /* If 1, disable auto-dim when MIDI controller connected */
