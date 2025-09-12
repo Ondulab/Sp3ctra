@@ -53,4 +53,10 @@ void applyColorProfile(uint8_t *red, uint8_t *green, uint8_t *blue,
 int send_dmx_frame(int fd, unsigned char *frame, size_t len);
 int init_Dmx(const char *port, int silent);
 
+#ifdef __linux__
+// Linux-specific baud rate configuration functions
+int set_custom_baudrate_termios2(int fd, int baud, int silent);
+int set_custom_baudrate_ftdi(int fd, int baud, int silent);
+#endif
+
 #endif // DMX_H
