@@ -13,7 +13,7 @@
 #else
 #define DMX_PORT                     "/dev/sp3ctra-dmx"
 #endif
-#define DMX_BAUD                     (115200)
+#define DMX_BAUD                     (250000)
 #define DMX_CHANNELS                 (512)
 #define DMX_FRAME_SIZE               (DMX_CHANNELS + 1)
 
