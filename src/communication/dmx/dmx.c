@@ -1,6 +1,10 @@
 #ifdef __APPLE__
 #include <IOKit/serial/ioss.h>
 #endif
+#ifdef __linux__
+#include <asm/termbits.h>
+#include <linux/serial.h>
+#endif
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
@@ -546,6 +550,35 @@ void applyColorProfile(uint8_t *red, uint8_t *green, uint8_t *blue,
   *blue = (uint8_t)newBlue;
 }
 
+#ifdef __linux__
+// Function to set custom baud rate on Linux using termios2
+int set_custom_baud_rate_linux(int fd, int baud_rate, int silent) {
+  struct termios2 tio;
+  
+  if (ioctl(fd, TCGETS2, &tio) != 0) {
+    if (!silent)
+      perror("Error getting termios2");
+    return -1;
+  }
+
+  tio.c_cflag &= ~CBAUD;
+  tio.c_cflag |= BOTHER;
+  tio.c_ispeed = baud_rate;
+  tio.c_ospeed = baud_rate;
+
+  if (ioctl(fd, TCSETS2, &tio) != 0) {
+    if (!silent)
+      perror("Error setting custom baud rate with termios2");
+    return -1;
+  }
+
+  if (!silent)
+    printf("Custom baud rate %d set successfully using termios2!\n", baud_rate);
+  
+  return 0;
+}
+#endif
+
 int send_dmx_frame(int fd, unsigned char *frame, size_t len) {
   // Set break condition (100 µs) then clear and wait for 12 µs (Mark After
   // Break)
@@ -700,31 +733,41 @@ int init_Dmx(const char *port, int silent) {
     return -1;
   }
 #else
-  // Sur Linux, on utilise les constantes B* standard
-  // Vérifier quel baudrate est disponible, car B250000 n'est pas standard
-  // partout
+  // Sur Linux, essayer d'abord termios2 pour baud rate personnalisé exact
+  if (set_custom_baud_rate_linux(fd, DMX_BAUD, 1) == 0) {
+    // Succès avec termios2 - baud rate exact 250000
+    if (!silent)
+      printf("DMX baud rate %d configuré avec précision via termios2\n", DMX_BAUD);
+  } else {
+    // Fallback aux constantes B* standard si termios2 échoue
+    if (!silent)
+      printf("termios2 non disponible, utilisation des constantes B* standard\n");
+      
 #ifdef B250000
-  cfsetispeed(&tty, B250000); // DMX_BAUD: 250000
-  cfsetospeed(&tty, B250000);
+    cfsetispeed(&tty, B250000); // DMX_BAUD: 250000
+    cfsetospeed(&tty, B250000);
+    if (!silent)
+      printf("Utilisation de B250000 (baud rate standard)\n");
 #elif defined B230400
-  // Utiliser le baudrate le plus proche
-  cfsetispeed(&tty, B230400);
-  cfsetospeed(&tty, B230400);
-  if (!silent)
-    printf("B250000 non disponible, utilisation de B230400\n");
+    // Utiliser le baudrate le plus proche
+    cfsetispeed(&tty, B230400);
+    cfsetospeed(&tty, B230400);
+    if (!silent)
+      printf("B250000 non disponible, utilisation de B230400\n");
 #else
-  // Fallback à 38400 qui est toujours disponible
-  cfsetispeed(&tty, B38400);
-  cfsetospeed(&tty, B38400);
-  if (!silent)
-    printf("Baudrates élevés non disponibles, utilisation de B38400\n");
+    // Fallback à 38400 qui est toujours disponible
+    cfsetispeed(&tty, B38400);
+    cfsetospeed(&tty, B38400);
+    if (!silent)
+      printf("Baudrates élevés non disponibles, utilisation de B38400\n");
 #endif
 
-  if (tcsetattr(fd, TCSANOW, &tty) != 0) {
-    if (!silent)
-      perror("Error setting DMX baud rate");
-    close(fd);
-    return -1;
+    if (tcsetattr(fd, TCSANOW, &tty) != 0) {
+      if (!silent)
+        perror("Error setting DMX baud rate");
+      close(fd);
+      return -1;
+    }
   }
 #endif
 

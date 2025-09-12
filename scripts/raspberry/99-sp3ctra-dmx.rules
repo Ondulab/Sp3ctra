@@ -1,0 +1,5 @@
+# Règle udev pour l'adaptateur DMX Sp3ctra
+# Adaptateur FT232 USB-Serial pour contrôle DMX
+# Vendor ID: 0403 (FTDI), Product ID: 6001 (FT232 Serial UART)
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", SYMLINK+="sp3ctra-dmx", GROUP="dialout", MODE="0664", TAG+="uaccess"
