@@ -11,6 +11,10 @@
 #include <rtaudio/RtAudio.h> // Explicitly include RtAudio.h
 #include <stdexcept>         // For std::exception
 
+// Global format selection variables for dynamic audio format
+static RtAudioFormat g_selected_audio_format = RTAUDIO_FLOAT32;
+static const char* g_selected_audio_format_name = "FLOAT32";
+
 // Variables globales pour compatibilité avec l'ancien code
 AudioDataBuffers buffers_L[2];
 AudioDataBuffers buffers_R[2];
@@ -649,56 +653,69 @@ bool AudioSystem::initialize() {
   bool foundSpecificPreferred = false;
   bool foundRequestedDevice = false;
 
-  // FORCE HARDWARE DIRECT ACCESS - Avoid virtual/software devices
-  std::cout << "🔧 Forcing direct hardware access, avoiding virtual devices..." << std::endl;
+  // SMART DEVICE SELECTION - Priority: USB → HDMI → Default
+  std::cout << "🔧 Smart device selection with format optimization..." << std::endl;
   
-  // First priority: Try to find hardware devices (avoid 'default' and high channel counts)
-  for (unsigned int i = 1; i < deviceCount; i++) { // Start from 1 to skip 'default'
+  // Priority 1: USB Audio devices (best performance with FLOAT32)
+  for (unsigned int i = 0; i < deviceCount; i++) {
     try {
       RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
-      if (info.outputChannels > 0 && info.outputChannels <= 8) { // Hardware devices typically have <= 8 channels
+      if (info.outputChannels > 0) {
         std::string deviceName(info.name);
-        
-        // Skip if it's clearly a virtual device
-        if (deviceName.find("default") != std::string::npos ||
-            deviceName.find("pulse") != std::string::npos ||
-            info.outputChannels > 16) {
-          continue;
+        // Check for USB audio devices
+        if (deviceName.find("USB Audio") != std::string::npos ||
+            deviceName.find("Bravo") != std::string::npos ||
+            deviceName.find("DAC") != std::string::npos) {
+          // Verify this device supports FLOAT32
+          if (info.nativeFormats & RTAUDIO_FLOAT32) {
+            preferredDeviceId = i;
+            foundSpecificPreferred = true;
+            g_selected_audio_format = RTAUDIO_FLOAT32;
+            g_selected_audio_format_name = "FLOAT32";
+            std::cout << "🎯 USB AUDIO: Using device ID " << i << ": "
+                      << deviceName << " with FLOAT32 format" << std::endl;
+            break;
+          }
         }
-        
-        preferredDeviceId = i;
-        foundSpecificPreferred = true;
-        std::cout << "🎯 FORCED HARDWARE: Using device ID " << i << ": "
-                  << deviceName << " (" << info.outputChannels << " channels)" << std::endl;
-        break;
       }
     } catch (const std::exception &error) {
-      // This device has issues, but that's expected for some hardware devices
-      std::cout << "⚠️  Device ID " << i << " has access issues (normal for some hardware)" << std::endl;
+      // Skip problematic devices during USB detection
     }
   }
   
-  // Second priority: Look for specific BossDAC names
+  // Priority 2: HDMI devices (compatibility with SINT32)
   if (!foundSpecificPreferred) {
     for (unsigned int i = 0; i < deviceCount; i++) {
       try {
         RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
         if (info.outputChannels > 0) {
           std::string deviceName(info.name);
-          if (deviceName.find("BossDAC") != std::string::npos ||
-              deviceName.find("pcm512x") != std::string::npos ||
+          if (deviceName.find("HDMI") != std::string::npos ||
+              deviceName.find("hdmi") != std::string::npos ||
               deviceName.find("bcm2835") != std::string::npos) {
-            preferredDeviceId = i;
-            foundSpecificPreferred = true;
-            std::cout << "🎯 FOUND HARDWARE: Using device ID " << i << ": "
-                      << deviceName << std::endl;
-            break;
+            // HDMI devices work better with SINT32
+            if (info.nativeFormats & RTAUDIO_SINT32) {
+              preferredDeviceId = i;
+              foundSpecificPreferred = true;
+              g_selected_audio_format = RTAUDIO_SINT32;
+              g_selected_audio_format_name = "SINT32";
+              std::cout << "🎯 HDMI AUDIO: Using device ID " << i << ": "
+                        << deviceName << " with SINT32 format" << std::endl;
+              break;
+            }
           }
         }
       } catch (const std::exception &error) {
-        // Skip problematic devices during BossDAC detection
+        // Skip problematic devices during HDMI detection
       }
     }
+  }
+  
+  // Priority 3: Use default device (was working before) with FLOAT32
+  if (!foundSpecificPreferred) {
+    std::cout << "🔄 FALLBACK: Using default device with FLOAT32" << std::endl;
+    g_selected_audio_format = RTAUDIO_FLOAT32;
+    g_selected_audio_format_name = "FLOAT32";
   }
 
   // First, check if a specific device was requested
@@ -907,9 +924,9 @@ bool AudioSystem::initialize() {
     std::cout << "  - Channels: " << params.nChannels << std::endl;
     std::cout << "  - Sample Rate: " << sampleRate << "Hz" << std::endl;
     std::cout << "  - Buffer Size: " << bufferSize << " frames" << std::endl;
-    std::cout << "  - Format: " << AUDIO_SAMPLE_FORMAT << std::endl;
+    std::cout << "  - Format: " << g_selected_audio_format_name << std::endl;
 
-    audio->openStream(&params, nullptr, RTAUDIO_FORMAT_TYPE, sampleRate,
+    audio->openStream(&params, nullptr, g_selected_audio_format, sampleRate,
                       &bufferSize, &AudioSystem::rtCallback, this, &options);
 
     // Vérifier la fréquence réellement négociée
