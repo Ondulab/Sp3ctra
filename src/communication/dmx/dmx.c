@@ -695,7 +695,7 @@ int init_Dmx(const char *port, int silent) {
     return -1;
   }
 
-  // Configuration du baud rate DMX final
+  // Configuration du baud rate DMX final - approche simplifiée
 #ifdef __APPLE__
   speed_t speed = DMX_BAUD;
   if (ioctl(fd, IOSSIOSPEED, &speed) < 0) {
@@ -707,40 +707,60 @@ int init_Dmx(const char *port, int silent) {
   if (!silent)
     printf("DMX baud rate set to %d using IOSSIOSPEED\n", DMX_BAUD);
 #else
-  // Sur Linux, configuration directe du baud rate DMX sans tcsetattr intermédiaire
+  // Sur Linux, utiliser la méthode la plus simple qui fonctionne
   if (!silent)
-    printf("Configuring DMX baud rate for Linux...\n");
+    printf("Setting DMX baud rate using cfsetspeed approach...\n");
     
-#ifdef B250000
-  tty.c_cflag = (tty.c_cflag & ~CBAUD) | B250000;
-  if (!silent)
-    printf("Setting B250000 (250000 bps - DMX exact)\n");
-#elif defined B230400
-  tty.c_cflag = (tty.c_cflag & ~CBAUD) | B230400;
-  if (!silent)
-    printf("Setting B230400 (230400 bps - close to DMX spec)\n");
-#else
-  tty.c_cflag = (tty.c_cflag & ~CBAUD) | B38400;
-  if (!silent)
-    printf("⚠️  Setting B38400 (38400 bps - fallback, DMX may not work)\n");
+  // Tester des baud rates dans l'ordre de compatibilité
+  speed_t target_speed = B38400;
+  const char* speed_name = "B38400 (38400 bps)";
+  
+#ifdef B230400
+  target_speed = B230400;
+  speed_name = "B230400 (230400 bps - validated with stty)";
 #endif
 
-  // Appliquer la configuration finale
+  if (cfsetispeed(&tty, target_speed) != 0) {
+    if (!silent)
+      perror("Error setting input speed");
+    close(fd);
+    return -1;
+  }
+  
+  if (cfsetospeed(&tty, target_speed) != 0) {
+    if (!silent)
+      perror("Error setting output speed");
+    close(fd);
+    return -1;
+  }
+  
+  if (!silent)
+    printf("DMX baud rate configured: %s\n", speed_name);
+
+  // Appliquer la configuration
   if (tcsetattr(fd, TCSAFLUSH, &tty) != 0) {
     if (!silent) {
-      perror("Error setting final DMX configuration");
+      perror("Error applying DMX configuration");
       printf("tcsetattr failed with errno: %d (%s)\n", errno, strerror(errno));
     }
     close(fd);
     return -1;
   }
   
-  // Vérification finale du baud rate
+  // Vérification finale obligatoire
   struct termios verify_tty;
   if (tcgetattr(fd, &verify_tty) == 0) {
+    speed_t final_speed = cfgetispeed(&verify_tty);
     if (!silent) {
-      printf("Final verification - baud rate: %u\n", cfgetispeed(&verify_tty));
-      printf("Final c_cflag: 0x%x\n", verify_tty.c_cflag);
+      printf("✅ Final verification - actual baud rate: %u\n", final_speed);
+      printf("✅ Final c_cflag: 0x%x\n", verify_tty.c_cflag);
+      
+      // Vérifier si la configuration a réellement été appliquée
+      if (final_speed == target_speed) {
+        printf("🎉 DMX baud rate successfully applied!\n");
+      } else {
+        printf("⚠️  DMX baud rate mismatch: wanted %u, got %u\n", target_speed, final_speed);
+      }
     }
   }
 #endif
