@@ -6,6 +6,7 @@
 #include "synth_polyphonic.h" // For polyphonic_audio_buffers and related variables
 #include "../../config/config_debug.h"    // For debug configuration macros
 #include "../../config/config_audio.h"    // For HDMI format configuration
+#include <algorithm>         // For std::transform
 #include <cstring>
 #include <iostream>
 #include <rtaudio/RtAudio.h> // Explicitly include RtAudio.h
@@ -23,10 +24,10 @@ pthread_mutex_t buffer_index_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 AudioSystem *gAudioSystem = nullptr;
 
-// Global variable to store requested audio device ID before AudioSystem is
-// created
+// Global variables to store requested audio device before AudioSystem is created
 extern "C" {
 int g_requested_audio_device_id = -1;
+char* g_requested_audio_device_name = NULL;
 }
 
 // Minimal audio callback control
@@ -653,69 +654,103 @@ bool AudioSystem::initialize() {
   bool foundSpecificPreferred = false;
   bool foundRequestedDevice = false;
 
-  // SMART DEVICE SELECTION - Priority: USB → HDMI → Default
-  std::cout << "🔧 Smart device selection with format optimization..." << std::endl;
-  
-  // Priority 1: USB Audio devices (best performance with FLOAT32)
-  for (unsigned int i = 0; i < deviceCount; i++) {
-    try {
-      RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
-      if (info.outputChannels > 0) {
-        std::string deviceName(info.name);
-        // Check for USB audio devices
-        if (deviceName.find("USB Audio") != std::string::npos ||
-            deviceName.find("Bravo") != std::string::npos ||
-            deviceName.find("DAC") != std::string::npos) {
-          // Verify this device supports FLOAT32
-          if (info.nativeFormats & RTAUDIO_FLOAT32) {
-            preferredDeviceId = i;
-            foundSpecificPreferred = true;
-            g_selected_audio_format = RTAUDIO_FLOAT32;
-            g_selected_audio_format_name = "FLOAT32";
-            std::cout << "🎯 USB AUDIO: Using device ID " << i << ": "
-                      << deviceName << " with FLOAT32 format" << std::endl;
-            break;
-          }
-        }
-      }
-    } catch (const std::exception &error) {
-      // Skip problematic devices during USB detection
-    }
-  }
-  
-  // Priority 2: HDMI devices (compatibility with SINT32)
-  if (!foundSpecificPreferred) {
+  // Check if a specific device name was requested first
+  if (g_requested_audio_device_name != NULL) {
+    std::cout << "🔍 Searching for device name: '" << g_requested_audio_device_name << "'" << std::endl;
+    
     for (unsigned int i = 0; i < deviceCount; i++) {
       try {
         RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
         if (info.outputChannels > 0) {
           std::string deviceName(info.name);
-          if (deviceName.find("HDMI") != std::string::npos ||
-              deviceName.find("hdmi") != std::string::npos ||
-              deviceName.find("bcm2835") != std::string::npos) {
-            // HDMI devices work better with SINT32
-            if (info.nativeFormats & RTAUDIO_SINT32) {
-              preferredDeviceId = i;
-              foundSpecificPreferred = true;
+          
+          // Search for substring match (case-insensitive)
+          std::string searchName = g_requested_audio_device_name;
+          std::transform(deviceName.begin(), deviceName.end(), deviceName.begin(), ::tolower);
+          std::transform(searchName.begin(), searchName.end(), searchName.begin(), ::tolower);
+          
+          if (deviceName.find(searchName) != std::string::npos) {
+            preferredDeviceId = i;
+            foundSpecificPreferred = true;
+            
+            // Select format based on device type
+            if (searchName.find("hdmi") != std::string::npos || 
+                searchName.find("vc4") != std::string::npos) {
+              // HDMI device - use SINT32 for compatibility
               g_selected_audio_format = RTAUDIO_SINT32;
               g_selected_audio_format_name = "SINT32";
-              std::cout << "🎯 HDMI AUDIO: Using device ID " << i << ": "
-                        << deviceName << " with SINT32 format" << std::endl;
+              std::cout << "🎯 HDMI DEVICE FOUND: Using device ID " << i << ": "
+                        << info.name << " with SINT32 format" << std::endl;
+            } else {
+              // USB or other device - use FLOAT32 for performance
+              g_selected_audio_format = RTAUDIO_FLOAT32;
+              g_selected_audio_format_name = "FLOAT32";
+              std::cout << "🎯 DEVICE FOUND: Using device ID " << i << ": "
+                        << info.name << " with FLOAT32 format" << std::endl;
+            }
+            break;
+          }
+        }
+      } catch (const std::exception &error) {
+        // Skip problematic devices during name search
+        std::cout << "⚠️  Device ID " << i << " has access issues (skipping)" << std::endl;
+      }
+    }
+    
+    if (!foundSpecificPreferred) {
+      std::cerr << "❌ ERROR: Device name '" << g_requested_audio_device_name 
+                << "' not found!" << std::endl;
+      std::cerr << "Available devices: ";
+      for (unsigned int i = 0; i < deviceCount; i++) {
+        try {
+          RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
+          if (info.outputChannels > 0 && !info.name.empty()) {
+            std::cerr << "'" << info.name << "' ";
+          }
+        } catch (const std::exception &error) {
+          // Skip problematic devices
+        }
+      }
+      std::cerr << std::endl;
+      return false;
+    }
+  } else {
+    // No specific device name requested - use smart auto-detection
+    std::cout << "🔧 Smart device selection with format optimization..." << std::endl;
+    
+    // Priority 1: USB Audio devices (best performance with FLOAT32)
+    for (unsigned int i = 0; i < deviceCount; i++) {
+      try {
+        RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
+        if (info.outputChannels > 0) {
+          std::string deviceName(info.name);
+          // Check for USB audio devices
+          if (deviceName.find("USB Audio") != std::string::npos ||
+              deviceName.find("Bravo") != std::string::npos ||
+              deviceName.find("SPDIF") != std::string::npos) {
+            // Verify this device supports FLOAT32
+            if (info.nativeFormats & RTAUDIO_FLOAT32) {
+              preferredDeviceId = i;
+              foundSpecificPreferred = true;
+              g_selected_audio_format = RTAUDIO_FLOAT32;
+              g_selected_audio_format_name = "FLOAT32";
+              std::cout << "🎯 USB AUDIO: Using device ID " << i << ": "
+                        << deviceName << " with FLOAT32 format" << std::endl;
               break;
             }
           }
         }
       } catch (const std::exception &error) {
-        // Skip problematic devices during HDMI detection
+        // Skip problematic devices during USB detection
       }
     }
-  }
-  
-  // Priority 3: Use default device (was working before) with FLOAT32
-  if (!foundSpecificPreferred) {
-    std::cout << "🔄 FALLBACK: Using default device with FLOAT32" << std::endl;
-    g_selected_audio_format = RTAUDIO_FLOAT32;
-    g_selected_audio_format_name = "FLOAT32";
+    
+    // Priority 2: Use default device (was working before) with FLOAT32
+    if (!foundSpecificPreferred) {
+      std::cout << "🔄 FALLBACK: Using default device with FLOAT32" << std::endl;
+      g_selected_audio_format = RTAUDIO_FLOAT32;
+      g_selected_audio_format_name = "FLOAT32";
+    }
   }
 
   // First, check if a specific device was requested
@@ -1402,6 +1437,15 @@ void setRequestedAudioDevice(int deviceId) {
     // Store the device ID for when audio system gets created
     g_requested_audio_device_id = deviceId;
   }
+}
+
+void setRequestedAudioDeviceName(const char* deviceName) {
+  // Store the device name for when audio system gets created
+  if (g_requested_audio_device_name) {
+    free(g_requested_audio_device_name);
+  }
+  g_requested_audio_device_name = strdup(deviceName);
+  printf("Audio device name '%s' requested for initialization\n", deviceName);
 }
 
 // Control minimal callback mode for debugging audio dropouts
