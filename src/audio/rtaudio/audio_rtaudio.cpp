@@ -654,100 +654,91 @@ bool AudioSystem::initialize() {
   bool foundSpecificPreferred = false;
   bool foundRequestedDevice = false;
 
-  // Check if a specific device name was requested first
+  // Enhanced USB device enumeration - try to access all USB devices more carefully
+  std::cout << "🔧 Enhanced USB device enumeration with error recovery..." << std::endl;
+  
+  // Step 1: Build list of potentially accessible devices
+  std::vector<std::pair<unsigned int, std::string>> accessibleDevices;
+  
+  for (unsigned int i = 0; i < deviceCount; i++) {
+    try {
+      RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
+      if (info.outputChannels > 0 && !info.name.empty()) {
+        // Store all devices that can be queried, even if they show errors later
+        accessibleDevices.push_back(std::make_pair(i, info.name));
+        std::cout << "📋 Detected device ID " << i << ": " << info.name 
+                  << " [" << info.outputChannels << " channels]" << std::endl;
+      }
+    } catch (const std::exception &error) {
+      // Even if getDeviceInfo fails, the device might still be usable via ALSA
+      std::cout << "⚠️  Device ID " << i << ": Info query failed (" << error.what() 
+                << ") - may still be accessible via ALSA" << std::endl;
+    }
+  }
+  
+  std::cout << "\n🎵 Total accessible audio devices found: " << accessibleDevices.size() << std::endl;
+  
+  // Step 2: Handle specific device name requests
   if (g_requested_audio_device_name != NULL) {
-    std::cout << "🔍 Searching for device name: '" << g_requested_audio_device_name << "'" << std::endl;
+    std::cout << "🔍 Searching for requested device: '" << g_requested_audio_device_name << "'" << std::endl;
     
-    for (unsigned int i = 0; i < deviceCount; i++) {
-      try {
-        RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
-        if (info.outputChannels > 0) {
-          std::string deviceName(info.name);
-          
-          // Search for substring match (case-insensitive)
-          std::string searchName = g_requested_audio_device_name;
-          std::transform(deviceName.begin(), deviceName.end(), deviceName.begin(), ::tolower);
-          std::transform(searchName.begin(), searchName.end(), searchName.begin(), ::tolower);
-          
-          if (deviceName.find(searchName) != std::string::npos) {
-            preferredDeviceId = i;
-            foundSpecificPreferred = true;
-            
-            // Always use FLOAT32 for optimal performance (HDMI not supported)
-            g_selected_audio_format = RTAUDIO_FLOAT32;
-            g_selected_audio_format_name = "FLOAT32";
-            std::cout << "🎯 DEVICE FOUND: Using device ID " << i << ": "
-                      << info.name << " with FLOAT32 format" << std::endl;
-            break;
-          }
-        }
-      } catch (const std::exception &error) {
-        // Skip problematic devices during name search
-        std::cout << "⚠️  Device ID " << i << " has access issues (skipping)" << std::endl;
+    for (const auto& devicePair : accessibleDevices) {
+      std::string deviceName = devicePair.second;
+      std::string searchName = g_requested_audio_device_name;
+      
+      // Case-insensitive search
+      std::transform(deviceName.begin(), deviceName.end(), deviceName.begin(), ::tolower);
+      std::transform(searchName.begin(), searchName.end(), searchName.begin(), ::tolower);
+      
+      if (deviceName.find(searchName) != std::string::npos) {
+        preferredDeviceId = devicePair.first;
+        foundSpecificPreferred = true;
+        g_selected_audio_format = RTAUDIO_FLOAT32;
+        g_selected_audio_format_name = "FLOAT32";
+        std::cout << "🎯 FOUND: Using device ID " << devicePair.first << ": "
+                  << devicePair.second << " with FLOAT32" << std::endl;
+        break;
       }
     }
     
     if (!foundSpecificPreferred) {
-      std::cerr << "❌ ERROR: Device name '" << g_requested_audio_device_name 
-                << "' not found!" << std::endl;
-      std::cerr << "Available USB/compatible devices: ";
-      for (unsigned int i = 0; i < deviceCount; i++) {
-        try {
-          RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
-          if (info.outputChannels > 0 && !info.name.empty()) {
-            // Only show devices that are likely to work (USB, Default)
-            std::string deviceName(info.name);
-            if (deviceName.find("USB") != std::string::npos || 
-                deviceName.find("default") != std::string::npos ||
-                deviceName.find("Bravo") != std::string::npos ||
-                deviceName.find("SPDIF") != std::string::npos) {
-              std::cerr << "'" << info.name << "' ";
-            }
-          }
-        } catch (const std::exception &error) {
-          // Skip problematic devices
-        }
+      std::cerr << "❌ Device '" << g_requested_audio_device_name << "' not found!" << std::endl;
+      std::cerr << "Available devices: ";
+      for (const auto& devicePair : accessibleDevices) {
+        std::cerr << "'" << devicePair.second << "' ";
       }
       std::cerr << std::endl;
-      std::cerr << "Note: HDMI devices (vc4-hdmi) are not supported by RtAudio on Raspberry Pi" << std::endl;
       return false;
     }
   } else {
-    // No specific device name requested - use smart auto-detection for USB only
-    std::cout << "🔧 Smart USB device selection with FLOAT32 optimization..." << std::endl;
+    // Step 3: Smart device selection (prefer USB, then default)
+    std::cout << "🤖 Smart device auto-selection..." << std::endl;
     
-    // Priority 1: USB Audio devices (best performance with FLOAT32)
-    for (unsigned int i = 0; i < deviceCount; i++) {
-      try {
-        RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
-        if (info.outputChannels > 0) {
-          std::string deviceName(info.name);
-          // Check for USB audio devices only
-          if (deviceName.find("USB Audio") != std::string::npos ||
-              deviceName.find("Bravo") != std::string::npos ||
-              deviceName.find("SPDIF") != std::string::npos) {
-            // Verify this device supports FLOAT32
-            if (info.nativeFormats & RTAUDIO_FLOAT32) {
-              preferredDeviceId = i;
-              foundSpecificPreferred = true;
-              g_selected_audio_format = RTAUDIO_FLOAT32;
-              g_selected_audio_format_name = "FLOAT32";
-              std::cout << "🎯 USB AUDIO: Using device ID " << i << ": "
-                        << deviceName << " with FLOAT32 format" << std::endl;
-              break;
-            }
-          }
-        }
-      } catch (const std::exception &error) {
-        // Skip problematic devices during USB detection
+    // Priority 1: Any USB Audio device
+    for (const auto& devicePair : accessibleDevices) {
+      std::string deviceName = devicePair.second;
+      if (deviceName.find("USB") != std::string::npos ||
+          deviceName.find("SPDIF") != std::string::npos ||
+          deviceName.find("Bravo") != std::string::npos ||
+          deviceName.find("Audio Adapter") != std::string::npos) {
+        preferredDeviceId = devicePair.first;
+        foundSpecificPreferred = true;
+        g_selected_audio_format = RTAUDIO_FLOAT32;
+        g_selected_audio_format_name = "FLOAT32";
+        std::cout << "🎯 USB PREFERRED: Device ID " << devicePair.first << ": "
+                  << deviceName << std::endl;
+        break;
       }
     }
     
-    // Priority 2: Use default device (fallback) with FLOAT32
-    if (!foundSpecificPreferred) {
-      std::cout << "🔄 FALLBACK: Using default device with FLOAT32" << std::endl;
+    // Priority 2: Default device
+    if (!foundSpecificPreferred && !accessibleDevices.empty()) {
+      // Use the first accessible device as fallback
+      preferredDeviceId = accessibleDevices[0].first;
       g_selected_audio_format = RTAUDIO_FLOAT32;
       g_selected_audio_format_name = "FLOAT32";
+      std::cout << "🔄 FALLBACK: Using first accessible device ID " << preferredDeviceId 
+                << ": " << accessibleDevices[0].second << std::endl;
     }
   }
 
