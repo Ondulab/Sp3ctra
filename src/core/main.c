@@ -122,6 +122,7 @@ int main(int argc, char **argv) {
   const char *dmx_port = DMX_PORT; // Port DMX par défaut
   int list_audio_devices = 0;      // Afficher les périphériques audio
   int audio_device_id = -1;        // -1 = utiliser le périphérique par défaut
+  char *audio_device_name = NULL;  // Nom du périphérique audio recherché
   int use_sfml_window = 0; // Par défaut, pas de fenêtre SFML en mode CLI
 
   for (int i = 1; i < argc; i++) {
@@ -168,8 +169,21 @@ int main(int argc, char **argv) {
       list_audio_devices = 1;
       printf("Will list audio devices\n");
     } else if (strncmp(argv[i], "--audio-device=", 15) == 0) {
-      audio_device_id = atoi(argv[i] + 15);
-      printf("Using audio device: %d\n", audio_device_id);
+      const char *device_param = argv[i] + 15;
+      
+      // Check if it's a numeric ID or device name
+      char *endptr;
+      long device_id_long = strtol(device_param, &endptr, 10);
+      
+      if (*endptr == '\0' && device_id_long >= 0) {
+        // It's a valid numeric ID
+        audio_device_id = (int)device_id_long;
+        printf("Using audio device ID: %d\n", audio_device_id);
+      } else {
+        // It's a device name (could contain spaces)
+        audio_device_name = strdup(device_param);
+        printf("Using audio device name: '%s'\n", audio_device_name);
+      }
     } else if (strcmp(argv[i], "--test-tone") == 0) {
       printf("🎵 Test tone mode enabled (440Hz)\n");
       // Enable minimal callback mode for testing
@@ -260,6 +274,10 @@ int main(int argc, char **argv) {
     setRequestedAudioDevice(audio_device_id);
     printf("Périphérique audio %d configuré pour l'initialisation.\n",
            audio_device_id);
+  } else if (audio_device_name != NULL) {
+    setRequestedAudioDeviceName(audio_device_name);
+    printf("Périphérique audio '%s' configuré pour l'initialisation.\n",
+           audio_device_name);
   }
 
   // Initialiser l'audio (RtAudio) avec le bon périphérique
