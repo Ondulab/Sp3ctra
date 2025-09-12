@@ -2,7 +2,7 @@
 #include <IOKit/serial/ioss.h>
 #endif
 #ifdef __linux__
-#include <asm/termbits.h>
+#define _GNU_SOURCE
 #include <linux/serial.h>
 #endif
 #include <errno.h>
@@ -673,9 +673,8 @@ int init_Dmx(const char *port, int silent) {
 #endif
   }
 
-  speed_t speed = 9600; // Remplacez par B115200 si nécessaire
-
 #ifdef __APPLE__
+  speed_t speed = 9600; // Variable utilisée pour macOS seulement
   // MacOS utilise IOSSIOSPEED pour définir des baudrates personnalisés
   if (ioctl(fd, IOSSIOSPEED, &speed) < 0) {
     if (!silent)
@@ -724,8 +723,8 @@ int init_Dmx(const char *port, int silent) {
     return -1;
   }
 
-  speed = DMX_BAUD;
 #ifdef __APPLE__
+  speed_t speed = DMX_BAUD;
   if (ioctl(fd, IOSSIOSPEED, &speed) < 0) {
     if (!silent)
       perror("Error setting custom baud rate");
