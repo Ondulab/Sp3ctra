@@ -1,25 +1,6 @@
 #ifdef __APPLE__
 #include <IOKit/serial/ioss.h>
 #endif
-#ifdef __linux__
-#define _GNU_SOURCE
-#include <linux/serial.h>
-// termios2 headers for custom baud rates on Linux
-#ifdef __has_include
-  #if __has_include(<asm/ioctls.h>) && __has_include(<asm/termbits.h>)
-    #include <asm/ioctls.h>
-    #include <asm/termbits.h>
-    #define HAVE_TERMIOS2 1
-  #else
-    #define HAVE_TERMIOS2 0
-  #endif
-#else
-  // Fallback for older compilers without __has_include
-  #include <asm/ioctls.h>
-  #include <asm/termbits.h>
-  #define HAVE_TERMIOS2 1
-#endif
-#endif
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
@@ -33,6 +14,58 @@
 #include <sys/time.h>
 #include <termios.h>
 #include <unistd.h>
+
+#ifdef __linux__
+#define _GNU_SOURCE
+#include <linux/serial.h>
+
+// Manual termios2 definitions to avoid header conflicts
+#ifdef __has_include
+  #if __has_include(<asm/ioctls.h>)
+    #include <asm/ioctls.h>
+    #define HAVE_TERMIOS2_IOCTLS 1
+  #else
+    #define HAVE_TERMIOS2_IOCTLS 0
+  #endif
+#else
+  #define HAVE_TERMIOS2_IOCTLS 1
+  #include <asm/ioctls.h>
+#endif
+
+// Manual definitions for termios2 to avoid struct conflicts
+#if HAVE_TERMIOS2_IOCTLS
+  #ifndef TCGETS2
+    #define TCGETS2 _IOR('T', 0x2A, struct termios2)
+    #define TCSETS2 _IOW('T', 0x2B, struct termios2)
+    #define TCSETSW2 _IOW('T', 0x2C, struct termios2)
+    #define TCSETSF2 _IOW('T', 0x2D, struct termios2)
+  #endif
+  
+  #ifndef BOTHER
+    #define BOTHER 0010000
+  #endif
+  
+  #ifndef CBAUD
+    #define CBAUD 0010017
+  #endif
+  
+  // Manual struct termios2 definition to avoid conflicts
+  struct termios2 {
+    tcflag_t c_iflag;
+    tcflag_t c_oflag; 
+    tcflag_t c_cflag;
+    tcflag_t c_lflag;
+    cc_t c_line;
+    cc_t c_cc[32];
+    speed_t c_ispeed;
+    speed_t c_ospeed;
+  };
+  
+  #define HAVE_TERMIOS2 1
+#else
+  #define HAVE_TERMIOS2 0
+#endif
+#endif
 
 #include "config.h"
 #include "dmx.h"
