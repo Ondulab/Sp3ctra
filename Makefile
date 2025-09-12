@@ -1,36 +1,52 @@
 # Makefile for Sp3ctra - Modular Architecture
 # Cross-platform audio synthesis application
 
+# OS Detection
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
+
 # Compiler settings
 CC = gcc
 CXX = g++
-CFLAGS = -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -Wno-deprecated-declarations
-CXXFLAGS = -std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -Wno-unused-but-set-variable -Wno-deprecated-declarations
 
-# Include directories for modular architecture
-INCLUDES = -I/opt/homebrew/include \
-           -Isrc/core \
-           -Isrc/config \
-           -Isrc/audio/rtaudio \
-           -Isrc/audio/buffers \
-           -Isrc/audio/effects \
-           -Isrc/audio/pan \
-           -Isrc/synthesis/additive \
-           -Isrc/synthesis/polyphonic \
-           -Isrc/synthesis/polyphonic/kissfft \
-           -Isrc/communication/network \
-           -Isrc/communication/midi \
-           -Isrc/communication/dmx \
-           -Isrc/display \
-           -Isrc/threading \
-           -Isrc/utils
+# Base compiler flags
+BASE_CFLAGS = -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -Wno-deprecated-declarations
+BASE_CXXFLAGS = -std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -Wno-unused-but-set-variable -Wno-deprecated-declarations
 
-# Libraries - Support both standard and versioned SFML paths
-SFML_PATH := $(shell if [ -d "/opt/homebrew/opt/sfml@2/lib" ]; then echo "/opt/homebrew/opt/sfml@2/lib"; else echo "/opt/homebrew/lib"; fi)
-LIBS = -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa \
-       -L/opt/homebrew/lib -L$(SFML_PATH) -lfftw3 -lsndfile -lrtaudio -lrtmidi \
-       -lsfml-graphics -lsfml-window -lsfml-system \
-       -lcsfml-graphics -lcsfml-window -lcsfml-system
+# OS-specific flags and libraries
+ifeq ($(UNAME_S),Darwin)
+    # macOS specific settings
+    CFLAGS = $(BASE_CFLAGS)
+    CXXFLAGS = $(BASE_CXXFLAGS)
+    
+    # Include directories for macOS
+    INCLUDES = -I/opt/homebrew/include \
+               -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects \
+               -Isrc/audio/pan -Isrc/synthesis/additive -Isrc/synthesis/polyphonic \
+               -Isrc/synthesis/polyphonic/kissfft -Isrc/communication/network -Isrc/communication/midi \
+               -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
+    
+    # macOS Libraries - Support both standard and versioned SFML paths
+    SFML_PATH := $(shell if [ -d "/opt/homebrew/opt/sfml@2/lib" ]; then echo "/opt/homebrew/opt/sfml@2/lib"; else echo "/opt/homebrew/lib"; fi)
+    LIBS = -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa \
+           -L/opt/homebrew/lib -L$(SFML_PATH) -lfftw3 -lsndfile -lrtaudio -lrtmidi \
+           -lsfml-graphics -lsfml-window -lsfml-system \
+           -lcsfml-graphics -lcsfml-window -lcsfml-system
+else
+    # Linux/Raspberry Pi specific settings
+    CFLAGS = $(BASE_CFLAGS) -DNO_SFML -D__LINUX__ -march=native -mtune=native
+    CXXFLAGS = $(BASE_CXXFLAGS) -DNO_SFML -D__LINUX__ -march=native -mtune=native
+    
+    # Include directories for Linux
+    INCLUDES = -I/usr/include -I/usr/local/include \
+               -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects \
+               -Isrc/audio/pan -Isrc/synthesis/additive -Isrc/synthesis/polyphonic \
+               -Isrc/synthesis/polyphonic/kissfft -Isrc/communication/network -Isrc/communication/midi \
+               -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
+    
+    # Linux Libraries
+    LIBS = -L/usr/lib -L/usr/local/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi -lasound -lpthread -lm
+endif
 
 # Build directories
 BUILD_DIR = build
@@ -121,10 +137,15 @@ debug:
 	@echo "Objects: $(OBJECTS)"
 	@echo "Includes: $(INCLUDES)"
 
-# Build without SFML (headless mode)
+# Build without SFML (headless mode) - Cross-platform
 no-sfml:
-	$(MAKE) CFLAGS="$(CFLAGS) -DNO_SFML" CXXFLAGS="$(CXXFLAGS) -DNO_SFML" \
+ifeq ($(UNAME_S),Darwin)
+	$(MAKE) CFLAGS="$(BASE_CFLAGS) -DNO_SFML" CXXFLAGS="$(BASE_CXXFLAGS) -DNO_SFML" \
 	        LIBS="-framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa -L/opt/homebrew/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi"
+else
+	$(MAKE) CFLAGS="$(BASE_CFLAGS) -DNO_SFML -D__LINUX__" CXXFLAGS="$(BASE_CXXFLAGS) -DNO_SFML -D__LINUX__" \
+	        LIBS="-L/usr/lib -L/usr/local/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi -lasound -lpthread -lm"
+endif
 
 # Diagnostic target for SFML issues
 sfml-check:
