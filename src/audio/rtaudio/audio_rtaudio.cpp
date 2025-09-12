@@ -649,24 +649,55 @@ bool AudioSystem::initialize() {
   bool foundSpecificPreferred = false;
   bool foundRequestedDevice = false;
 
-  // FORCE BOSSDAC USAGE - Auto-detect and force BossDAC selection
-  std::cout << "🔧 Auto-detecting BossDAC for forced usage..." << std::endl;
-  for (unsigned int i = 0; i < deviceCount; i++) {
+  // FORCE HARDWARE DIRECT ACCESS - Avoid virtual/software devices
+  std::cout << "🔧 Forcing direct hardware access, avoiding virtual devices..." << std::endl;
+  
+  // First priority: Try to find hardware devices (avoid 'default' and high channel counts)
+  for (unsigned int i = 1; i < deviceCount; i++) { // Start from 1 to skip 'default'
     try {
       RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
-      if (info.outputChannels > 0) {
+      if (info.outputChannels > 0 && info.outputChannels <= 8) { // Hardware devices typically have <= 8 channels
         std::string deviceName(info.name);
-        if (deviceName.find("BossDAC") != std::string::npos ||
-            deviceName.find("pcm512x") != std::string::npos) {
-          preferredDeviceId = i;
-          foundSpecificPreferred = true;
-          std::cout << "🎯 FORCED: Using BossDAC device ID " << i << ": "
-                    << deviceName << std::endl;
-          break;
+        
+        // Skip if it's clearly a virtual device
+        if (deviceName.find("default") != std::string::npos ||
+            deviceName.find("pulse") != std::string::npos ||
+            info.outputChannels > 16) {
+          continue;
         }
+        
+        preferredDeviceId = i;
+        foundSpecificPreferred = true;
+        std::cout << "🎯 FORCED HARDWARE: Using device ID " << i << ": "
+                  << deviceName << " (" << info.outputChannels << " channels)" << std::endl;
+        break;
       }
     } catch (const std::exception &error) {
-      // Skip problematic devices during BossDAC detection
+      // This device has issues, but that's expected for some hardware devices
+      std::cout << "⚠️  Device ID " << i << " has access issues (normal for some hardware)" << std::endl;
+    }
+  }
+  
+  // Second priority: Look for specific BossDAC names
+  if (!foundSpecificPreferred) {
+    for (unsigned int i = 0; i < deviceCount; i++) {
+      try {
+        RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
+        if (info.outputChannels > 0) {
+          std::string deviceName(info.name);
+          if (deviceName.find("BossDAC") != std::string::npos ||
+              deviceName.find("pcm512x") != std::string::npos ||
+              deviceName.find("bcm2835") != std::string::npos) {
+            preferredDeviceId = i;
+            foundSpecificPreferred = true;
+            std::cout << "🎯 FOUND HARDWARE: Using device ID " << i << ": "
+                      << deviceName << std::endl;
+            break;
+          }
+        }
+      } catch (const std::exception &error) {
+        // Skip problematic devices during BossDAC detection
+      }
     }
   }
 
