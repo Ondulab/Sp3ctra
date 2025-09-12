@@ -45,7 +45,15 @@ typedef struct {
   DMXSpot spots[DMX_NUM_SPOTS];
   pthread_mutex_t mutex;
   pthread_cond_t cond;
+  // libftdi support for Linux
+  int use_libftdi;    // 0 = traditional fd, 1 = libftdi
+#ifdef __linux__
+  struct ftdi_context *ftdi; // libftdi context (Linux primary)
+#endif
 } DMXContext;
+
+// Global DMX context instance
+extern DMXContext dmx_ctx;
 
 typedef struct {
   sfRenderWindow *window;

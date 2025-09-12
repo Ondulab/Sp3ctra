@@ -33,17 +33,6 @@ typedef struct {
 extern const uint8_t spotChannels[DMX_NUM_SPOTS];
 extern volatile sig_atomic_t keepRunning;
 
-// DMX context management - either traditional fd or libftdi context
-typedef struct {
-    int use_libftdi;    // 0 = traditional fd, 1 = libftdi
-    int fd;             // Traditional file descriptor (Mac/Linux fallback)
-#ifdef __linux__
-    struct ftdi_context *ftdi; // libftdi context (Linux primary)
-#endif
-} DMXContext;
-
-extern DMXContext dmx_ctx;
-
 // Function prototypes
 void intHandler(int dummy);
 
