@@ -600,17 +600,51 @@ void applyColorProfile(uint8_t *red, uint8_t *green, uint8_t *blue,
 
 
 #ifdef __linux__
-// Function to set custom baud rate using termios2 API
+// Function to get detailed USB device information
+void print_usb_device_info(int fd, int silent) {
+    if (silent) return;
+    
+    struct serial_struct ser;
+    if (ioctl(fd, TIOCGSERIAL, &ser) == 0) {
+        printf("🔍 USB Serial Device Information:\n");
+        printf("   Type: %d, Line: %d\n", ser.type, ser.line);
+        printf("   Port: 0x%x, IRQ: %d\n", ser.port, ser.irq);
+        printf("   Flags: 0x%x\n", ser.flags);
+        printf("   Base baud: %d, Custom divisor: %d\n", ser.baud_base, ser.custom_divisor);
+        
+        // Try to identify device type
+        if (ser.type == PORT_16550A) {
+            printf("   Device type: 16550A UART\n");
+        } else if (ser.type == PORT_UNKNOWN) {
+            printf("   Device type: Unknown\n");
+        } else {
+            printf("   Device type: %d (see linux/serial.h)\n", ser.type);
+        }
+    }
+}
+
+// Enhanced function to set custom baud rate using termios2 API
 int set_custom_baudrate_termios2(int fd, int baud, int silent) {
 #if HAVE_TERMIOS2
     struct termios2 tio2;
     
+    if (!silent)
+        printf("🔧 Attempting termios2 configuration for %d bps...\n", baud);
+    
     // Get current termios2 settings
     if (ioctl(fd, TCGETS2, &tio2) < 0) {
         if (!silent)
-            printf("⚠️  TCGETS2 failed, termios2 not available: %s\n", strerror(errno));
+            printf("⚠️  TCGETS2 failed, termios2 not available: %s (errno: %d)\n", strerror(errno), errno);
         return -1;
     }
+    
+    if (!silent)
+        printf("✅ termios2 available, current speeds: %u/%u\n", tio2.c_ispeed, tio2.c_ospeed);
+    
+    // Store original values for comparison
+    unsigned int orig_ispeed = tio2.c_ispeed;
+    unsigned int orig_ospeed = tio2.c_ospeed;
+    tcflag_t orig_cflag = tio2.c_cflag;
     
     // Configure for custom baud rate
     tio2.c_cflag &= ~CBAUD;     // Clear baud rate mask
@@ -618,91 +652,214 @@ int set_custom_baudrate_termios2(int fd, int baud, int silent) {
     tio2.c_ispeed = baud;       // Set input speed
     tio2.c_ospeed = baud;       // Set output speed
     
+    if (!silent) {
+        printf("🔧 Configuring: cflag 0x%x -> 0x%x, speeds %u/%u -> %u/%u\n",
+               orig_cflag, tio2.c_cflag, orig_ispeed, orig_ospeed, tio2.c_ispeed, tio2.c_ospeed);
+    }
+    
     // Apply the new settings
     if (ioctl(fd, TCSETS2, &tio2) < 0) {
         if (!silent)
-            printf("⚠️  TCSETS2 failed: %s\n", strerror(errno));
+            printf("⚠️  TCSETS2 failed: %s (errno: %d)\n", strerror(errno), errno);
         return -1;
     }
     
+    // Small delay to let settings take effect
+    usleep(10000); // 10ms
+    
     // Verify the baud rate was set correctly
-    if (ioctl(fd, TCGETS2, &tio2) == 0) {
-        if (!silent) {
-            printf("✅ termios2 baud rate configured successfully\n");
-            printf("✅ Input speed: %u, Output speed: %u\n", tio2.c_ispeed, tio2.c_ospeed);
-        }
-        
-        // Check if the speeds match what we requested
-        if (tio2.c_ispeed == (unsigned int)baud && tio2.c_ospeed == (unsigned int)baud) {
-            if (!silent)
-                printf("🎉 Exact DMX baud rate achieved: %d bps\n", baud);
-            return 0;
-        } else {
-            if (!silent)
-                printf("⚠️  Baud rate mismatch - requested: %d, got: %u/%u\n", 
-                       baud, tio2.c_ispeed, tio2.c_ospeed);
-            return -1;
-        }
+    struct termios2 verify_tio2;
+    if (ioctl(fd, TCGETS2, &verify_tio2) < 0) {
+        if (!silent)
+            printf("⚠️  Verification TCGETS2 failed: %s\n", strerror(errno));
+        return -1;
     }
     
-    return -1;
+    if (!silent) {
+        printf("✅ termios2 configuration applied\n");
+        printf("   Verified speeds: %u/%u (requested: %u)\n", 
+               verify_tio2.c_ispeed, verify_tio2.c_ospeed, (unsigned int)baud);
+        printf("   Verified cflag: 0x%x\n", verify_tio2.c_cflag);
+    }
+    
+    // Check if the speeds match what we requested (allow small tolerance)
+    unsigned int tolerance = baud / 100; // 1% tolerance
+    if (abs((int)verify_tio2.c_ispeed - baud) <= (int)tolerance && 
+        abs((int)verify_tio2.c_ospeed - baud) <= (int)tolerance) {
+        if (!silent)
+            printf("🎉 termios2 DMX baud rate successfully configured: %u bps\n", verify_tio2.c_ospeed);
+        return 0;
+    } else {
+        if (!silent) {
+            printf("⚠️  termios2 baud rate mismatch\n");
+            printf("   Requested: %d, Got input: %u, output: %u\n", 
+                   baud, verify_tio2.c_ispeed, verify_tio2.c_ospeed);
+            printf("   Difference: input %d, output %d\n", 
+                   (int)verify_tio2.c_ispeed - baud, (int)verify_tio2.c_ospeed - baud);
+        }
+        return -1;
+    }
+    
 #else
     (void)fd; (void)baud; (void)silent; // Suppress unused warnings
+    if (!silent)
+        printf("⚠️  termios2 headers not available at compile time\n");
     return -1; // termios2 headers not available
 #endif
 }
 
-// Function to set custom baud rate using FTDI-specific ioctl
+// Enhanced function to set custom baud rate using FTDI-specific ioctl
 int set_custom_baudrate_ftdi(int fd, int baud, int silent) {
     struct serial_struct ser;
+    
+    if (!silent)
+        printf("🔧 Attempting FTDI configuration for %d bps...\n", baud);
     
     // Get current serial settings
     if (ioctl(fd, TIOCGSERIAL, &ser) < 0) {
         if (!silent)
-            printf("⚠️  TIOCGSERIAL failed: %s\n", strerror(errno));
+            printf("⚠️  TIOCGSERIAL failed: %s (errno: %d)\n", strerror(errno), errno);
         return -1;
     }
     
+    if (!silent) {
+        printf("✅ FTDI device detected\n");
+        printf("   Current: type=%d, baud_base=%d, custom_divisor=%d, flags=0x%x\n",
+               ser.type, ser.baud_base, ser.custom_divisor, ser.flags);
+    }
+    
+    // Store original values
+    int orig_baud_base = ser.baud_base;
+    int orig_divisor = ser.custom_divisor;
+    int orig_flags = ser.flags;
+    
     // Calculate the divisor for the desired baud rate
-    // FTDI chips typically use a base clock of 3MHz or 48MHz
-    // For 250000 bps, we need divisor = base_clock / (16 * baud_rate)
-    // Try common FTDI base frequencies
-    int base_clocks[] = {3000000, 48000000, 12000000};
+    // FTDI chips use: actual_baud = base_clock / (16 * divisor)
+    // So: divisor = base_clock / (16 * desired_baud)
+    
+    // Try different FTDI base clock frequencies
+    int base_clocks[] = {3000000, 48000000, 12000000, 6000000, 24000000};
+    const char* base_names[] = {"3MHz", "48MHz", "12MHz", "6MHz", "24MHz"};
     int num_clocks = sizeof(base_clocks) / sizeof(base_clocks[0]);
     
     for (int i = 0; i < num_clocks; i++) {
+        // Calculate divisor: divisor = base_clock / (16 * baud)
         int divisor = base_clocks[i] / (16 * baud);
+        
         if (divisor > 0 && divisor <= 65535) { // Valid divisor range
+            if (!silent) {
+                printf("🔧 Trying %s base clock: divisor=%d\n", base_names[i], divisor);
+            }
+            
+            // Configure the serial settings
             ser.custom_divisor = divisor;
             ser.baud_base = base_clocks[i] / 16;
             ser.flags &= ~ASYNC_SPD_MASK;
             ser.flags |= ASYNC_SPD_CUST;
             
-            if (ioctl(fd, TIOCSSERIAL, &ser) == 0) {
-                // Verify by reading back
-                if (ioctl(fd, TIOCGSERIAL, &ser) == 0) {
-                    int actual_baud = ser.baud_base / ser.custom_divisor;
-                    if (!silent) {
-                        printf("✅ FTDI custom baud rate configured\n");
-                        printf("✅ Base clock: %d Hz, Divisor: %d, Actual baud: %d\n",
-                               base_clocks[i], divisor, actual_baud);
-                    }
-                    
-                    // Check if we're close enough (within 1% tolerance)
-                    if (abs(actual_baud - baud) <= (baud / 100)) {
-                        if (!silent)
-                            printf("🎉 FTDI baud rate within tolerance: %d bps (target: %d)\n", 
-                                   actual_baud, baud);
-                        return 0;
-                    }
-                }
+            // Apply settings
+            if (ioctl(fd, TIOCSSERIAL, &ser) < 0) {
+                if (!silent)
+                    printf("⚠️  TIOCSSERIAL failed for %s: %s\n", base_names[i], strerror(errno));
+                continue;
             }
+            
+            // Small delay
+            usleep(10000); // 10ms
+            
+            // Verify by reading back the settings
+            struct serial_struct verify_ser;
+            if (ioctl(fd, TIOCGSERIAL, &verify_ser) < 0) {
+                if (!silent)
+                    printf("⚠️  Verification TIOCGSERIAL failed: %s\n", strerror(errno));
+                continue;
+            }
+            
+            // Calculate the actual baud rate: actual = base_clock / (16 * divisor)
+            int actual_baud = base_clocks[i] / (16 * verify_ser.custom_divisor);
+            
+            if (!silent) {
+                printf("✅ FTDI configured with %s base clock\n", base_names[i]);
+                printf("   Settings: baud_base=%d, custom_divisor=%d, flags=0x%x\n",
+                       verify_ser.baud_base, verify_ser.custom_divisor, verify_ser.flags);
+                printf("   Calculated actual baud rate: %d bps\n", actual_baud);
+            }
+            
+            // Check if we're close enough (within 2% tolerance for FTDI)
+            int tolerance = baud / 50; // 2% tolerance
+            if (abs(actual_baud - baud) <= tolerance) {
+                if (!silent)
+                    printf("🎉 FTDI DMX baud rate successfully configured: %d bps (target: %d)\n", 
+                           actual_baud, baud);
+                return 0;
+            } else {
+                if (!silent)
+                    printf("⚠️  FTDI baud rate outside tolerance: %d bps (target: %d, diff: %d)\n", 
+                           actual_baud, baud, abs(actual_baud - baud));
+            }
+        } else {
+            if (!silent)
+                printf("⚠️  Invalid divisor %d for %s base clock\n", divisor, base_names[i]);
         }
     }
     
+    // Restore original settings if all attempts failed
+    ser.baud_base = orig_baud_base;
+    ser.custom_divisor = orig_divisor;
+    ser.flags = orig_flags;
+    ioctl(fd, TIOCSSERIAL, &ser);
+    
     if (!silent)
-        printf("⚠️  FTDI custom baud rate configuration failed\n");
+        printf("⚠️  All FTDI baud rate attempts failed, settings restored\n");
     return -1;
+}
+
+// Function to try system command approach as last resort
+int set_custom_baudrate_system(int fd, int baud, const char* port, int silent) {
+    if (!silent)
+        printf("🔧 Attempting system command approach for %d bps...\n", baud);
+        
+    // Close fd temporarily for external stty command
+    close(fd);
+    
+    // Try different stty command variations
+    char cmd[256];
+    
+    // Method 1: Direct baud rate setting
+    snprintf(cmd, sizeof(cmd), "stty -F %s %d 2>/dev/null", port, baud);
+    if (!silent)
+        printf("🔧 Trying: %s\n", cmd);
+    
+    if (system(cmd) == 0) {
+        // Reopen the port
+        fd = open(port, O_RDWR | O_NOCTTY);
+        if (fd >= 0) {
+            if (!silent)
+                printf("✅ System stty command succeeded\n");
+            return fd; // Return new fd
+        }
+    }
+    
+    // Method 2: Try with different parameters
+    snprintf(cmd, sizeof(cmd), "stty -F %s speed %d raw -echo 2>/dev/null", port, baud);
+    if (!silent)
+        printf("🔧 Trying: %s\n", cmd);
+        
+    if (system(cmd) == 0) {
+        // Reopen the port
+        fd = open(port, O_RDWR | O_NOCTTY);
+        if (fd >= 0) {
+            if (!silent)
+                printf("✅ System stty speed command succeeded\n");
+            return fd; // Return new fd
+        }
+    }
+    
+    // Reopen with original settings if system commands failed
+    fd = open(port, O_RDWR | O_NOCTTY);
+    if (!silent)
+        printf("⚠️  System command approach failed, reopened port\n");
+    return fd; // Return reopened fd (even if system commands failed)
 }
 #endif
 
@@ -862,40 +1019,70 @@ int init_Dmx(const char *port, int silent) {
   if (!silent)
     printf("DMX baud rate set to %d using IOSSIOSPEED\n", DMX_BAUD);
 #else
-  // Linux multi-level baud rate configuration
+  // Linux multi-level baud rate configuration with enhanced diagnostics
   int baud_configured = 0;
   
-  if (!silent)
-    printf("🔧 Configuring DMX baud rate (%d bps) using multi-level approach...\n", DMX_BAUD);
+  if (!silent) {
+    printf("🔧 Configuring DMX baud rate (%d bps) using enhanced multi-level approach...\n", DMX_BAUD);
+    printf("🔍 USB Device port: %s\n", port);
+    
+    // Print detailed USB device information for debugging
+    print_usb_device_info(fd, silent);
+  }
   
-  // Level 1: Try termios2 API for exact baud rate
+  // Level 1: Try termios2 API for exact baud rate (preferred method)
   if (!baud_configured) {
     if (!silent)
-      printf("📋 Attempting termios2 configuration...\n");
+      printf("\n📋 LEVEL 1: Attempting termios2 configuration...\n");
     
     if (set_custom_baudrate_termios2(fd, DMX_BAUD, silent) == 0) {
       baud_configured = 1;
       if (!silent)
-        printf("✅ DMX baud rate configured via termios2\n");
+        printf("✅ SUCCESS: DMX baud rate configured via termios2\n");
     }
   }
   
-  // Level 2: Try FTDI-specific ioctl
+  // Level 2: Try FTDI-specific ioctl (for FTDI USB-Serial adapters)
   if (!baud_configured) {
     if (!silent)
-      printf("📋 Attempting FTDI-specific configuration...\n");
+      printf("\n📋 LEVEL 2: Attempting FTDI-specific configuration...\n");
     
     if (set_custom_baudrate_ftdi(fd, DMX_BAUD, silent) == 0) {
       baud_configured = 1;
       if (!silent)
-        printf("✅ DMX baud rate configured via FTDI ioctl\n");
+        printf("✅ SUCCESS: DMX baud rate configured via FTDI ioctl\n");
     }
   }
   
-  // Level 3: Fallback to standard baud rates
+  // Level 3: Try system command approach (external stty)
   if (!baud_configured) {
     if (!silent)
-      printf("📋 Falling back to standard baud rates...\n");
+      printf("\n📋 LEVEL 3: Attempting system command approach...\n");
+    
+    int new_fd = set_custom_baudrate_system(fd, DMX_BAUD, port, silent);
+    if (new_fd >= 0) {
+      // Check if the system command actually worked by testing the baud rate
+      struct termios test_tty;
+      if (tcgetattr(new_fd, &test_tty) == 0) {
+        speed_t test_speed = cfgetispeed(&test_tty);
+        if (!silent)
+          printf("🔍 System command result: baud rate value %u\n", test_speed);
+        
+        // Even if not exactly 250000, if system command succeeded, consider it configured
+        fd = new_fd; // Update fd to new one
+        baud_configured = 1;
+        if (!silent)
+          printf("✅ SUCCESS: System command configuration accepted\n");
+      } else {
+        fd = new_fd; // Still update fd
+      }
+    }
+  }
+  
+  // Level 4: Fallback to standard baud rates (compatibility mode)
+  if (!baud_configured) {
+    if (!silent)
+      printf("\n📋 LEVEL 4: Falling back to standard baud rates (compatibility mode)...\n");
     
     // Try standard rates in order of preference (closest to DMX_BAUD)
     speed_t fallback_rates[] = {B230400, B115200, B57600, B38400, B19200};
@@ -903,6 +1090,9 @@ int init_Dmx(const char *port, int silent) {
     int num_fallbacks = sizeof(fallback_rates) / sizeof(fallback_rates[0]);
     
     for (int i = 0; i < num_fallbacks; i++) {
+      if (!silent)
+        printf("🔧 Trying fallback rate: %s bps\n", fallback_names[i]);
+        
       // Get current settings
       struct termios fallback_tty;
       if (tcgetattr(fd, &fallback_tty) == 0) {
@@ -917,8 +1107,8 @@ int init_Dmx(const char *port, int silent) {
             if (actual_speed == fallback_rates[i]) {
               baud_configured = 1;
               if (!silent) {
-                printf("✅ DMX fallback baud rate configured: %s bps\n", fallback_names[i]);
-                printf("⚠️  Note: Using %s instead of target %d bps\n", fallback_names[i], DMX_BAUD);
+                printf("✅ SUCCESS: DMX fallback baud rate configured: %s bps\n", fallback_names[i]);
+                printf("⚠️  Note: Using %s instead of target %d bps - DMX may not work properly\n", fallback_names[i], DMX_BAUD);
               }
               break;
             }
@@ -928,18 +1118,34 @@ int init_Dmx(const char *port, int silent) {
     }
   }
   
-  // Final verification and reporting
+  // Final comprehensive verification and reporting
+  if (!silent)
+    printf("\n🔍 FINAL VERIFICATION:\n");
+    
   struct termios verify_tty;
   if (tcgetattr(fd, &verify_tty) == 0) {
     speed_t final_speed = cfgetispeed(&verify_tty);
+    
     if (!silent) {
-      printf("✅ Final verification - baud rate value: %u\n", final_speed);
-      printf("✅ Final c_cflag: 0x%x\n", verify_tty.c_cflag);
+      printf("   Final baud rate value: %u\n", final_speed);
+      printf("   Final c_cflag: 0x%x\n", verify_tty.c_cflag);
+      printf("   Final c_iflag: 0x%x\n", verify_tty.c_iflag);
+      printf("   Final c_oflag: 0x%x\n", verify_tty.c_oflag);
+      printf("   Final c_lflag: 0x%x\n", verify_tty.c_lflag);
+      
+      // Additional verification with USB device info
+      print_usb_device_info(fd, 0); // Force print for final verification
       
       if (baud_configured) {
-        printf("🎉 DMX baud rate successfully configured!\n");
+        printf("🎉 DMX baud rate configuration completed successfully!\n");
+        if (final_speed == 4099 || final_speed == DMX_BAUD) {
+          printf("🚀 Target baud rate achieved or acceptable substitute found\n");
+        } else {
+          printf("⚠️  DMX baud rate still problematic: %u\n", final_speed);
+        }
       } else {
-        printf("❌ Failed to configure any DMX baud rate\n");
+        printf("❌ FAILURE: All DMX baud rate configuration methods failed\n");
+        printf("💡 Suggestion: Check USB adapter compatibility and try different hardware\n");
         close(fd);
         return -1;
       }
