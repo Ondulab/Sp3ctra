@@ -37,15 +37,19 @@ else
     CFLAGS = $(BASE_CFLAGS) -DNO_SFML -D__LINUX__ -march=native -mtune=native
     CXXFLAGS = $(BASE_CXXFLAGS) -DNO_SFML -D__LINUX__ -march=native -mtune=native
     
+    # Get libftdi1 flags from pkg-config
+    LIBFTDI_CFLAGS := $(shell pkg-config --cflags libftdi1 2>/dev/null)
+    LIBFTDI_LIBS := $(shell pkg-config --libs libftdi1 2>/dev/null)
+    
     # Include directories for Linux
-    INCLUDES = -I/usr/include -I/usr/local/include \
+    INCLUDES = -I/usr/include -I/usr/local/include $(LIBFTDI_CFLAGS) \
                -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects \
                -Isrc/audio/pan -Isrc/synthesis/additive -Isrc/synthesis/polyphonic \
                -Isrc/synthesis/polyphonic/kissfft -Isrc/communication/network -Isrc/communication/midi \
                -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
     
     # Linux Libraries (including libftdi1 for DMX support)
-    LIBS = -L/usr/lib -L/usr/local/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi -lftdi1 -lasound -lpthread -lm
+    LIBS = -L/usr/lib -L/usr/local/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi $(LIBFTDI_LIBS) -lasound -lpthread -lm
 endif
 
 # Build directories
