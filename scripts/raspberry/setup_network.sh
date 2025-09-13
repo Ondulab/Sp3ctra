@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# setup_network.sh - Configure network interfaces on Raspberry Pi (Debian/Bookworm)
-# - Configures static Ethernet (192.168.100.10)
-# - Sets up WiFi with provided credentials
-# - Manages routing priorities (Ethernet preferred)
+# setup_network.sh - Network configuration orchestrator for Raspberry Pi
+# - Orchestrates Ethernet and WiFi configuration using specialized scripts
+# - Maintains backward compatibility with original interface
+# - Manages routing priorities (Ethernet preferred over WiFi)
 
 set -euo pipefail
 
+# Default parameters
 SSID=""
 PSK=""
 COUNTRY="FR"
@@ -13,10 +14,15 @@ WIFI_BAND="auto"
 ETHERNET_IP="192.168.100.10"
 ETHERNET_METRIC="100"
 WIFI_METRIC="200"
-ETHERNET_CONN="eth0-static"
-WIFI_CONN=""
-WIFI_IFACE="wlan0"
 ETHERNET_IFACE="eth0"
+WIFI_IFACE="wlan0"
+
+# Execution modes
+CONFIGURE_ETHERNET=true
+CONFIGURE_WIFI=true
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 log() {
     echo "[setup_network] $*"
@@ -44,350 +50,212 @@ parse_args() {
                 COUNTRY="${2:-}"; shift 2 ;;
             --band)
                 WIFI_BAND="${2:-}"; shift 2 ;;
+            --ethernet-ip)
+                ETHERNET_IP="${2:-}"; shift 2 ;;
+            --ethernet-interface)
+                ETHERNET_IFACE="${2:-}"; shift 2 ;;
+            --wifi-interface)
+                WIFI_IFACE="${2:-}"; shift 2 ;;
+            --ethernet-metric)
+                ETHERNET_METRIC="${2:-}"; shift 2 ;;
+            --wifi-metric)
+                WIFI_METRIC="${2:-}"; shift 2 ;;
+            --ethernet-only)
+                CONFIGURE_ETHERNET=true
+                CONFIGURE_WIFI=false
+                shift ;;
+            --wifi-only)
+                CONFIGURE_ETHERNET=false
+                CONFIGURE_WIFI=true
+                shift ;;
             -h|--help)
-                echo "Usage: sudo $0 --ssid \"WIFI_NAME\" --psk \"WIFI_PASSWORD\" [--country FR] [--band auto|2g|5g]"
-                echo ""
-                echo "Options:"
-                echo "  --ssid SSID       WiFi network name (required)"
-                echo "  --psk PASSWORD    WiFi password (required)"
-                echo "  --country CODE    Country code for WiFi regulations (default: FR)"
-                echo "  --band BAND       WiFi band: auto|2g|5g (default: auto)"
-                echo "                    auto: 2g for PRE_WIFI, 5g for PRE_WIFI_5GHZ, both for others"
+                show_help
                 exit 0 ;;
             *)
                 fail "Unknown argument: $1" ;;
         esac
     done
 
-    [[ -n "${SSID}" ]] || fail "--ssid is required"
-    [[ -n "${PSK}" ]] || fail "--psk is required"
-    
-    # Validate band parameter
-    case "${WIFI_BAND}" in
-        auto|2g|5g) ;;
-        *) fail "Invalid --band value. Use: auto, 2g, or 5g" ;;
-    esac
-}
-
-ensure_tools() {
-    command -v nmcli >/dev/null 2>&1 || fail "nmcli not found (install NetworkManager)"
-    command -v iw >/dev/null 2>&1 || fail "iw not found (apt install iw)"
-    
-    systemctl is-enabled NetworkManager >/dev/null 2>&1 || {
-        log "Enabling NetworkManager service at boot"
-        systemctl enable NetworkManager
-    }
-    
-    systemctl is-active --quiet NetworkManager || {
-        log "Starting NetworkManager"
-        systemctl start NetworkManager
-    }
-}
-
-set_country() {
-    log "Setting regulatory domain to ${COUNTRY}"
-    iw reg set "${COUNTRY}" || log "iw reg set ${COUNTRY} failed (non-fatal)"
-}
-
-determine_wifi_band() {
-    local band=""
-    
-    case "${WIFI_BAND}" in
-        "2g")
-            band="bg"
-            ;;
-        "5g")
-            band="a"
-            ;;
-        "auto")
-            # Auto-detection based on SSID patterns
-            case "${SSID}" in
-                *"5GHZ"*|*"5G"*)
-                    band="a"
-                    log "Auto-detected 5GHz band for SSID: ${SSID}" >&2
-                    ;;
-                *"2GHZ"*|*"2G"*)
-                    band="bg"
-                    log "Auto-detected 2.4GHz band for SSID: ${SSID}" >&2
-                    ;;
-                "PRE_WIFI_5GHZ")
-                    band="a"
-                    log "Auto-detected 5GHz band for SSID: ${SSID}" >&2
-                    ;;
-                "PRE_WIFI")
-                    band="bg"
-                    log "Auto-detected 2.4GHz band for SSID: ${SSID}" >&2
-                    ;;
-                *)
-                    # Default to both bands for unknown SSIDs
-                    band="bg"
-                    log "Using 2.4GHz band as default for SSID: ${SSID}" >&2
-                    ;;
-            esac
-            ;;
-    esac
-    
-    echo "${band}"
-}
-
-determine_connection_name() {
-    local conn_name=""
-    local band_suffix=""
-    
-    # Determine band suffix based on actual band used
-    local wifi_band_setting
-    wifi_band_setting=$(determine_wifi_band)
-    
-    case "${wifi_band_setting}" in
-        "a")
-            band_suffix="_5GHZ"
-            ;;
-        "bg")
-            band_suffix="_2GHZ"
-            ;;
-    esac
-    
-    # Generate connection name
-    case "${SSID}" in
-        "PRE_WIFI_5GHZ"|"PRE_WIFI")
-            # For known SSIDs, use SSID + band suffix
-            conn_name="${SSID}${band_suffix}"
-            ;;
-        *)
-            # For other SSIDs, use SSID + band suffix
-            conn_name="${SSID}${band_suffix}"
-            ;;
-    esac
-    
-    echo "${conn_name}"
-}
-
-disable_wpa_supplicant() {
-    log "Checking for wpa_supplicant conflicts"
-    
-    # Check if wpa_supplicant is enabled
-    if systemctl is-enabled wpa_supplicant.service >/dev/null 2>&1; then
-        log "Disabling wpa_supplicant service (conflicts with NetworkManager)"
-        systemctl disable wpa_supplicant.service
-    fi
-    
-    # Check if wpa_supplicant is running
-    if systemctl is-active --quiet wpa_supplicant.service; then
-        log "Stopping wpa_supplicant service"
-        systemctl stop wpa_supplicant.service
+    # Validate requirements based on configuration mode
+    if [[ "${CONFIGURE_WIFI}" == "true" ]]; then
+        [[ -n "${SSID}" ]] || fail "--ssid is required for WiFi configuration"
+        [[ -n "${PSK}" ]] || fail "--psk is required for WiFi configuration"
+        
+        # Validate band parameter
+        case "${WIFI_BAND}" in
+            auto|2g|5g) ;;
+            *) fail "Invalid --band value. Use: auto, 2g, or 5g" ;;
+        esac
     fi
 }
 
-clean_all_wifi_connections() {
-    log "Cleaning all existing WiFi connections"
-    
-    # Get all WiFi connection names
-    local wifi_connections
-    wifi_connections=$(nmcli -t -f TYPE,NAME connection show | grep '^wifi:' | cut -d: -f2 || true)
-    
-    if [[ -n "${wifi_connections}" ]]; then
-        while IFS= read -r conn_name; do
-            if [[ -n "${conn_name}" ]]; then
-                log "Deleting WiFi connection: ${conn_name}"
-                nmcli connection delete "${conn_name}" 2>/dev/null || true
-            fi
-        done <<< "${wifi_connections}"
-    else
-        log "No existing WiFi connections found"
-    fi
-}
+show_help() {
+    cat << 'EOF'
+Usage: sudo setup_network.sh [OPTIONS]
 
-configure_networkmanager_security() {
-    log "Configuring NetworkManager security settings"
-    
-    # Create NetworkManager configuration to disable auto-creation
-    cat > /etc/NetworkManager/conf.d/99-disable-autoconnect.conf << 'EOF'
-[main]
-# Disable automatic connection creation
-no-auto-default=*
+Network configuration orchestrator that uses modular scripts for Ethernet and WiFi setup.
 
-[connection]
-# Disable automatic connection for new devices
-autoconnect-priority=-1
+CONFIGURATION MODES:
+  (default)             Configure both Ethernet and WiFi
+  --ethernet-only       Configure Ethernet interface only
+  --wifi-only           Configure WiFi interface only
 
-[device]
-# Only manage explicitly configured devices for WiFi
-wifi.scan-rand-mac-address=no
+WIFI OPTIONS (required when configuring WiFi):
+  --ssid SSID          WiFi network name
+  --psk PASSWORD       WiFi password
 
-[logging]
-# Enable connection logging for security auditing
-level=INFO
-domains=WIFI,DEVICE
+OPTIONAL PARAMETERS:
+  --country CODE       Country code for WiFi regulations (default: FR)
+  --band BAND          WiFi band: auto|2g|5g (default: auto)
+                       auto: 2g for PRE_WIFI, 5g for PRE_WIFI_5GHZ, default 2g for others
+
+NETWORK INTERFACE OPTIONS:
+  --ethernet-ip IP     Static IP for Ethernet (default: 192.168.100.10)
+  --ethernet-interface Ethernet interface name (default: eth0)
+  --wifi-interface     WiFi interface name (default: wlan0)
+
+ROUTING PRIORITY OPTIONS:
+  --ethernet-metric N  Ethernet routing metric (default: 100, lower = higher priority)
+  --wifi-metric N      WiFi routing metric (default: 200, lower = higher priority)
+
+EXAMPLES:
+  # Configure both Ethernet and WiFi (default behavior)
+  sudo ./setup_network.sh --ssid "MyWiFi" --psk "password123"
+
+  # Configure Ethernet only with custom IP
+  sudo ./setup_network.sh --ethernet-only --ethernet-ip 192.168.1.100
+
+  # Configure WiFi only with specific band
+  sudo ./setup_network.sh --wifi-only --ssid "MyWiFi_5G" --psk "password" --band 5g
+
+  # Full configuration with custom parameters
+  sudo ./setup_network.sh --ssid "Office_WiFi" --psk "secret" \
+       --ethernet-ip 10.0.1.50 --country US --band auto
+
+NOTES:
+  - Ethernet is prioritized over WiFi by default (lower metric = higher priority)
+  - This script orchestrates setup_ethernet.sh and setup_wifi.sh
+  - Changes persist after reboot
+  - Requires NetworkManager to be installed
 EOF
+}
+
+check_subscripts() {
+    local missing=false
     
-    log "NetworkManager security configuration applied"
+    if [[ "${CONFIGURE_ETHERNET}" == "true" ]] && [[ ! -f "${SCRIPT_DIR}/setup_ethernet.sh" ]]; then
+        log "ERROR: setup_ethernet.sh not found in ${SCRIPT_DIR}/"
+        missing=true
+    fi
+    
+    if [[ "${CONFIGURE_WIFI}" == "true" ]] && [[ ! -f "${SCRIPT_DIR}/setup_wifi.sh" ]]; then
+        log "ERROR: setup_wifi.sh not found in ${SCRIPT_DIR}/"
+        missing=true
+    fi
+    
+    if [[ "${missing}" == "true" ]]; then
+        fail "Required script files are missing. Ensure all network setup scripts are present."
+    fi
 }
 
 configure_ethernet() {
-    log "Configuring Ethernet interface (${ETHERNET_IFACE})"
+    log "=== CONFIGURING ETHERNET ==="
     
-    # Remove any existing connection with the same name
-    nmcli connection delete "${ETHERNET_CONN}" 2>/dev/null || true
+    local ethernet_args=(
+        --ip "${ETHERNET_IP}"
+        --interface "${ETHERNET_IFACE}"
+        --metric "${ETHERNET_METRIC}"
+    )
     
-    # Create new Ethernet connection with static IP
-    nmcli connection add \
-        type ethernet \
-        con-name "${ETHERNET_CONN}" \
-        ifname "${ETHERNET_IFACE}" \
-        ipv4.method manual \
-        ipv4.addresses "${ETHERNET_IP}/24" \
-        ipv4.route-metric "${ETHERNET_METRIC}" \
-        connection.autoconnect yes
+    log "Running: ${SCRIPT_DIR}/setup_ethernet.sh ${ethernet_args[*]}"
     
-    log "Ethernet configured with IP ${ETHERNET_IP}"
+    if "${SCRIPT_DIR}/setup_ethernet.sh" "${ethernet_args[@]}"; then
+        log "Ethernet configuration completed successfully"
+    else
+        fail "Ethernet configuration failed"
+    fi
 }
 
 configure_wifi() {
-    log "Configuring WiFi interface (${WIFI_IFACE})"
+    log "=== CONFIGURING WIFI ==="
     
-    # Determine WiFi band and connection name dynamically
-    local wifi_band_setting
-    wifi_band_setting=$(determine_wifi_band)
-    WIFI_CONN=$(determine_connection_name)
+    local wifi_args=(
+        --ssid "${SSID}"
+        --psk "${PSK}"
+        --country "${COUNTRY}"
+        --band "${WIFI_BAND}"
+        --interface "${WIFI_IFACE}"
+        --metric "${WIFI_METRIC}"
+    )
     
-    log "Using WiFi band: ${wifi_band_setting} for connection: ${WIFI_CONN}"
+    log "Running: ${SCRIPT_DIR}/setup_wifi.sh ${wifi_args[*]}"
     
-    # Enable WiFi radio
-    nmcli radio wifi on
-    
-    # Ensure interface is managed
-    nmcli device set "${WIFI_IFACE}" managed yes
-    
-    # Remove any existing connection with the same name
-    nmcli connection delete "${WIFI_CONN}" 2>/dev/null || true
-    
-    # Create new WiFi connection with proper security syntax
-    nmcli connection add \
-        type wifi \
-        con-name "${WIFI_CONN}" \
-        ifname "${WIFI_IFACE}" \
-        ssid "${SSID}" \
-        802-11-wireless-security.key-mgmt wpa-psk \
-        802-11-wireless-security.psk "${PSK}" \
-        802-11-wireless.band "${wifi_band_setting}" \
-        ipv4.method auto \
-        ipv4.route-metric "${WIFI_METRIC}" \
-        connection.autoconnect yes
-    
-    # Configure additional WiFi security parameters for better compatibility
-    nmcli connection modify "${WIFI_CONN}" \
-        802-11-wireless-security.proto "rsn wpa" \
-        802-11-wireless-security.pairwise "tkip ccmp" \
-        802-11-wireless-security.group "tkip ccmp"
-    
-    log "WiFi configured for SSID: ${SSID}"
-    
-    # Wait for NetworkManager to write configuration file
-    log "Waiting for configuration file to be written..."
-    sleep 3
-    
-    # Verify configuration file exists and has correct content
-    local config_file="/etc/NetworkManager/system-connections/${WIFI_CONN}.nmconnection"
-    if [[ -f "${config_file}" ]]; then
-        # Ensure correct permissions for NetworkManager
-        chmod 600 "${config_file}"
-        log "Configuration file verified and secured"
+    if "${SCRIPT_DIR}/setup_wifi.sh" "${wifi_args[@]}"; then
+        log "WiFi configuration completed successfully"
     else
-        log "Warning: Configuration file not found at ${config_file}"
+        fail "WiFi configuration failed"
     fi
 }
 
-activate_connections() {
-    log "Activating network connections"
+show_final_status() {
+    echo
+    log "=== FINAL NETWORK STATUS ==="
     
-    # Activate Ethernet
-    if ! nmcli connection up "${ETHERNET_CONN}" ifname "${ETHERNET_IFACE}"; then
-        log "Warning: Failed to activate Ethernet connection (non-fatal)"
-    fi
-    
-    # Wait for Ethernet to be ready
-    sleep 2
-    
-    # Scan for available WiFi networks
-    log "Scanning for WiFi networks..."
-    nmcli device wifi rescan || true
-    sleep 2
-    
-    # Attempt WiFi activation with retry logic
-    local retry_count=0
-    local max_retries=3
-    local wifi_success=false
-    
-    while [[ ${retry_count} -lt ${max_retries} && "${wifi_success}" == "false" ]]; do
-        retry_count=$((retry_count + 1))
-        log "WiFi activation attempt ${retry_count}/${max_retries}"
-        
-        if nmcli connection up "${WIFI_CONN}" ifname "${WIFI_IFACE}" 2>/dev/null; then
-            wifi_success=true
-            log "WiFi connection activated successfully"
-        else
-            if [[ ${retry_count} -lt ${max_retries} ]]; then
-                log "WiFi activation failed, retrying in 5 seconds..."
-                sleep 5
-                # Force reload configuration before retry
-                nmcli general reload || true
-                sleep 2
-            else
-                log "ERROR: Failed to activate WiFi after ${max_retries} attempts"
-                log "Check SSID availability and password correctness"
-            fi
-        fi
-    done
-    
-    # Wait for IP configuration if WiFi succeeded
-    if [[ "${wifi_success}" == "true" ]]; then
-        log "Waiting for WiFi IP configuration..."
-        sleep 5
-        
-        # Verify WiFi connectivity
-        if ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
-            log "WiFi connectivity verified (ping successful)"
-        else
-            log "Warning: WiFi connected but no internet connectivity detected"
-        fi
-    fi
-    
-    # Reload NetworkManager configuration to apply security settings
-    log "Reloading NetworkManager configuration"
-    nmcli general reload || true
-}
-
-show_status() {
     echo
     log "Network device status:"
     nmcli device status || true
+    
+    echo  
+    log "Active connections:"
+    nmcli connection show --active || true
     
     echo
     log "IP configuration:"
     ip addr show || true
     
     echo
-    log "Routing table:"
+    log "Routing table (priority: lower metric = higher priority):"
     ip route || true
+    
+    echo
+    log "Testing connectivity..."
+    if ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+        log "Internet connectivity: OK"
+    else
+        log "Internet connectivity: FAILED or LIMITED"
+    fi
 }
 
 main() {
-    need_root
     parse_args "$@"
+    need_root
     export SYSTEMD_PAGER=cat
     export SYSTEMD_LESS=
     
-    ensure_tools
-    set_country
-    disable_wpa_supplicant
-    clean_all_wifi_connections
-    configure_networkmanager_security
-    configure_ethernet
-    configure_wifi
-    activate_connections
-    show_status
+    log "Network configuration orchestrator starting..."
+    log "Mode: Ethernet=${CONFIGURE_ETHERNET}, WiFi=${CONFIGURE_WIFI}"
     
-    log "Network configuration completed. Changes will persist after reboot."
+    check_subscripts
+    
+    # Configure interfaces in order (Ethernet first for priority)
+    if [[ "${CONFIGURE_ETHERNET}" == "true" ]]; then
+        configure_ethernet
+        echo
+    fi
+    
+    if [[ "${CONFIGURE_WIFI}" == "true" ]]; then
+        configure_wifi
+        echo
+    fi
+    
+    # Wait for all configurations to settle
+    log "Waiting for network configuration to settle..."
+    sleep 3
+    
+    show_final_status
+    
+    log "Network configuration orchestration completed successfully."
+    log "All changes will persist after reboot."
 }
 
 main "$@"

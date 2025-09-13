@@ -15,6 +15,10 @@ sudo apt install -y libfftw3-dev libsndfile1-dev
 sudo apt install -y libasound2-dev librtaudio-dev librtmidi-dev
 sudo apt install -y libpthread-stubs0-dev
 
+# Installer les dépendances DMX libftdi (pour contrôle d'éclairage DMX-512)
+echo "Installation des bibliothèques DMX libftdi..."
+sudo apt install -y libftdi1-2 libftdi1-dev
+
 # Optionnel: SFML (si disponible)
 echo "Tentative d'installation de SFML (optionnel)..."
 if apt-cache search libsfml-dev >/dev/null 2>&1; then
