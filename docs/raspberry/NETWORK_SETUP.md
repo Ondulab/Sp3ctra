@@ -1,6 +1,33 @@
 # Configuration Réseau du Raspberry Pi
 
-Ce document décrit la procédure de configuration réseau du Raspberry Pi pour le projet Sp3ctra, utilisant le script amélioré `setup_network.sh`.
+Ce document décrit la procédure de configuration réseau du Raspberry Pi pour le projet Sp3ctra, utilisant l'architecture modulaire des scripts réseau.
+
+## Architecture Modulaire
+
+Le système de configuration réseau est désormais organisé en **trois scripts modulaires** :
+
+1. **`setup_network.sh`** - **Orchestrateur principal** (maintient la compatibilité)
+   - Configure Ethernet ET WiFi simultanément
+   - Gère les priorités de routage
+   - Interface unifiée pour la configuration complète
+
+2. **`setup_ethernet.sh`** - **Script spécialisé Ethernet**
+   - Configuration Ethernet uniquement
+   - IP statique configurable
+   - Gestion indépendante de l'interface filaire
+
+3. **`setup_wifi.sh`** - **Script spécialisé WiFi**
+   - Configuration WiFi uniquement
+   - Gestion des bandes 2.4GHz/5GHz
+   - Paramètres de sécurité optimisés
+
+### Avantages de l'architecture modulaire
+
+- ✅ **Modularité** : Configuration séparée Ethernet/WiFi selon les besoins
+- ✅ **Flexibilité** : Paramètres spécifiques à chaque type de réseau
+- ✅ **Maintenabilité** : Code plus simple à déboguer et maintenir
+- ✅ **Réutilisabilité** : Scripts utilisables indépendamment
+- ✅ **Compatibilité** : L'interface originale reste inchangée
 
 ## Prérequis
 
@@ -9,25 +36,96 @@ Ce document décrit la procédure de configuration réseau du Raspberry Pi pour 
 - Utilitaire iw installé (`sudo apt install iw`)
 - Droits root (sudo)
 
-## Configuration
+## Utilisation des Scripts
 
-Le script configure automatiquement :
+### 1. Script Principal (setup_network.sh) - Recommandé
 
-1. **Interface Ethernet (eth0)** :
-   - IP statique : 192.168.100.10
-   - Métrique de routage : 100 (prioritaire)
-   - Connexion automatique au démarrage
+**Configuration complète Ethernet + WiFi** :
+```bash
+# Configuration automatique (comportement par défaut)
+sudo ./setup_network.sh --ssid "PRE_WIFI" --psk "FB5FA76AC3"
 
-2. **Interface WiFi (wlan0)** :
-   - Configuration automatique de la bande WiFi (2.4GHz/5GHz)
-   - Gestion des conflits avec wpa_supplicant
-   - Paramètres de sécurité optimisés (WPA/WPA2 mixte)
-   - Métrique de routage : 200 (secondaire)
-   - Connexion automatique au démarrage
+# Configuration avec options personnalisées
+sudo ./setup_network.sh --ssid "Office_WiFi" --psk "secret" \
+     --ethernet-ip 10.0.1.50 --country US --band auto
+```
 
-## Fonctionnalités avancées du script
+**Modes spécialisés du script principal** :
+```bash
+# Configuration Ethernet uniquement
+sudo ./setup_network.sh --ethernet-only --ethernet-ip 192.168.1.100
 
-### Détection automatique de bande WiFi
+# Configuration WiFi uniquement
+sudo ./setup_network.sh --wifi-only --ssid "MyWiFi_5G" --psk "password" --band 5g
+```
+
+### 2. Script Ethernet (setup_ethernet.sh) - Configuration Filaire
+
+```bash
+# Configuration basique avec IP par défaut (192.168.100.10)
+sudo ./setup_ethernet.sh
+
+# Configuration avec IP personnalisée
+sudo ./setup_ethernet.sh --ip 192.168.1.50
+
+# Configuration complète personnalisée
+sudo ./setup_ethernet.sh --ip 10.0.1.100 --interface eth0 --metric 50
+```
+
+### 3. Script WiFi (setup_wifi.sh) - Configuration Sans-Fil
+
+```bash
+# Configuration WiFi basique
+sudo ./setup_wifi.sh --ssid "MonWiFi" --psk "motdepasse"
+
+# Configuration avec bande spécifique
+sudo ./setup_wifi.sh --ssid "WiFi_5G" --psk "secret" --band 5g --country US
+
+# Configuration avec interface personnalisée
+sudo ./setup_wifi.sh --ssid "Guest" --psk "pass" --interface wlan1 --metric 300
+```
+
+## Options Disponibles
+
+### Options du Script Principal (setup_network.sh)
+
+| Option | Description | Défaut |
+|--------|-------------|--------|
+| `--ssid SSID` | Nom du réseau WiFi (requis pour WiFi) | - |
+| `--psk PASSWORD` | Mot de passe WiFi (requis pour WiFi) | - |
+| `--country CODE` | Code pays pour régulations WiFi | FR |
+| `--band BAND` | Bande WiFi (auto\|2g\|5g) | auto |
+| `--ethernet-ip IP` | IP statique Ethernet | 192.168.100.10 |
+| `--ethernet-interface IFACE` | Interface Ethernet | eth0 |
+| `--wifi-interface IFACE` | Interface WiFi | wlan0 |
+| `--ethernet-metric N` | Métrique routage Ethernet | 100 |
+| `--wifi-metric N` | Métrique routage WiFi | 200 |
+| `--ethernet-only` | Configuration Ethernet uniquement | - |
+| `--wifi-only` | Configuration WiFi uniquement | - |
+
+### Options du Script Ethernet (setup_ethernet.sh)
+
+| Option | Description | Défaut |
+|--------|-------------|--------|
+| `--ip IP` | Adresse IP statique | 192.168.100.10 |
+| `--interface IFACE` | Nom de l'interface Ethernet | eth0 |
+| `--metric METRIC` | Métrique de routage | 100 |
+| `--connection-name NAME` | Nom de la connexion | eth0-static |
+
+### Options du Script WiFi (setup_wifi.sh)
+
+| Option | Description | Défaut |
+|--------|-------------|--------|
+| `--ssid SSID` | Nom du réseau WiFi (requis) | - |
+| `--psk PASSWORD` | Mot de passe WiFi (requis) | - |
+| `--country CODE` | Code pays pour régulations | FR |
+| `--band BAND` | Bande WiFi (auto\|2g\|5g) | auto |
+| `--interface IFACE` | Interface WiFi | wlan0 |
+| `--metric METRIC` | Métrique de routage | 200 |
+
+## Configuration Automatique
+
+### Détection automatique de bande WiFi (mode `--band auto`)
 - **PRE_WIFI** → 2.4GHz (bande bg)
 - **PRE_WIFI_5GHZ** → 5GHz (bande a)
 - **SSIDs avec "5GHZ" ou "5G"** → 5GHz automatiquement
@@ -38,199 +136,209 @@ Le script configure automatiquement :
 - Le script génère automatiquement des noms de connexion logiques
 - Exemple : `PRE_WIFI_2GHZ`, `PRE_WIFI_5GHZ_5GHZ`
 
-### Résolution automatique des conflits
-- Désactivation automatique de wpa_supplicant
-- Nettoyage des anciennes connexions WiFi
-- Configuration optimisée de NetworkManager
-
-## Utilisation
-
-### Syntaxe de base
-```bash
-sudo ./setup_network.sh --ssid "NOM_WIFI" --psk "MOT_DE_PASSE_WIFI" [OPTIONS]
-```
-
-### Options disponibles
-- `--ssid SSID` : Nom du réseau WiFi (requis)
-- `--psk PASSWORD` : Mot de passe du réseau WiFi (requis)
-- `--country CODE` : Code pays pour les régulations WiFi (défaut: FR)
-- `--band BAND` : Force une bande WiFi spécifique (défaut: auto)
-  - `auto` : Détection automatique selon le SSID
-  - `2g` : Force le 2.4GHz
-  - `5g` : Force le 5GHz
-
-### Exemples d'utilisation
-
-1. **Configuration automatique (recommandée)**
-```bash
-# Auto-détection 2.4GHz pour PRE_WIFI
-sudo ./Sp3ctra/scripts/raspberry/setup_network.sh --ssid "PRE_WIFI" --psk "FB5FA76AC3"
-
-# Auto-détection 5GHz pour PRE_WIFI_5GHZ
-sudo ./Sp3ctra/scripts/raspberry/setup_network.sh --ssid "PRE_WIFI_5GHZ" --psk "FB5FA76AC3"
-```
-
-2. **Force une bande spécifique**
-```bash
-# Force le 2.4GHz même pour un SSID 5GHz
-sudo ./setup_network.sh --ssid "PRE_WIFI_5GHZ" --psk "FB5FA76AC3" --band 2g
-
-# Force le 5GHz pour un SSID 2.4GHz
-sudo ./setup_network.sh --ssid "PRE_WIFI" --psk "FB5FA76AC3" --band 5g
-```
-
-3. **Avec code pays personnalisé**
-```bash
-sudo ./setup_network.sh --ssid "Mon_WiFi" --psk "password" --country US --band auto
-sudo ./Sp3ctra/scripts/raspberry/setup_network.sh --ssid "PRE_WIFI" --psk "FB5FA76AC3" --country FR --band auto
-
-# 1. Résoudre le conflit wpa_supplicant
-sudo systemctl disable wpa_supplicant.service
-sudo systemctl stop wpa_supplicant.service
-
-# 2. Nettoyer les anciennes connexions
-sudo nmcli connection delete PRE_WIFI_5GHZ 2>/dev/null || true
-
-# 3. Créer la connexion 2.4GHz
-sudo nmcli connection add type wifi ifname wlan0 con-name PRE_WIFI_2GHZ ssid PRE_WIFI
-sudo nmcli connection modify PRE_WIFI_2GHZ 802-11-wireless-security.key-mgmt wpa-psk
-sudo nmcli connection modify PRE_WIFI_2GHZ 802-11-wireless-security.psk FB5FA76AC3
-sudo nmcli connection modify PRE_WIFI_2GHZ 802-11-wireless.band bg
-sudo nmcli connection modify PRE_WIFI_2GHZ ipv4.route-metric 200
-sudo nmcli connection modify PRE_WIFI_2GHZ connection.autoconnect yes
-sudo nmcli connection up PRE_WIFI_2GHZ
-
-```
-
-## Vérification
-
-Le script affiche automatiquement :
-- Le statut des interfaces réseau
-- La configuration IP
-- La table de routage
-- Les tentatives de connexion avec retry logic
-
-### Vérification manuelle
-```bash
-# Statut des connexions
-nmcli device status
-
-# Configuration IP
-ip addr show
-
-# Table de routage
-ip route
-
-# Lister toutes les connexions
-nmcli connection show
-
-# Détail d'une connexion spécifique
-nmcli connection show PRE_WIFI_2GHZ
-```
-
 ## Priorité des Connexions
 
-Le script configure les métriques de routage pour :
+Le système configure les métriques de routage pour :
 1. **Ethernet (métrique 100)** : Prioritaire pour le trafic UDP sur 192.168.100.10
 2. **WiFi (métrique 200)** : Connexion secondaire avec fallback automatique
 
-## Résolution des problèmes
+Les métriques sont personnalisables via les options `--ethernet-metric` et `--wifi-metric`.
 
-### Problèmes courants résolus automatiquement
-- ✅ Conflit avec wpa_supplicant (désactivé automatiquement)
-- ✅ Problèmes DFS sur canaux 5GHz (utilisation du 2.4GHz par défaut)
-- ✅ Paramètres de sécurité WiFi incompatibles (configuration WPA/WPA2 mixte)
-- ✅ Permissions incorrectes des fichiers de configuration
-- ✅ Anciennes connexions conflictuelles (nettoyage automatique)
+## Cas d'Usage Courants
 
-### Diagnostic manuel si nécessaire
-
-1. **Vérifier l'état du hardware WiFi**
+### Cas d'usage 1 : Configuration initiale complète
 ```bash
-# Vérifier les drivers
-lsmod | grep brcm
+# Setup complet du Raspberry Pi avec Ethernet + WiFi
+sudo ./setup_network.sh --ssid "PRE_WIFI_5GHZ" --psk "FB5FA76AC3" --country FR
+```
 
-# Vérifier l'interface
+### Cas d'usage 2 : Réseaux de développement
+```bash
+# Configuration Ethernet pour développement local
+sudo ./setup_ethernet.sh --ip 192.168.1.100
+
+# Ajout WiFi ultérieurement
+sudo ./setup_wifi.sh --ssid "Dev_WiFi" --psk "devpassword"
+```
+
+### Cas d'usage 3 : WiFi uniquement (sans Ethernet)
+```bash
+# Configuration pour Raspberry Pi WiFi-only
+sudo ./setup_wifi.sh --ssid "HomeWiFi" --psk "homepassword" --band auto
+```
+
+### Cas d'usage 4 : Reconfiguration réseau
+```bash
+# Reconfiguration complète avec nouveaux paramètres
+sudo ./setup_network.sh --ssid "NewWiFi" --psk "newpass" \
+     --ethernet-ip 10.0.0.100 --band 5g --country US
+```
+
+## Fonctionnalités Avancées
+
+### Résolution automatique des conflits
+- ✅ Désactivation automatique de wpa_supplicant
+- ✅ Nettoyage des anciennes connexions WiFi
+- ✅ Configuration optimisée de NetworkManager
+- ✅ Gestion des permissions des fichiers de configuration
+
+### Retry Logic et Robustesse
+- ✅ Tentatives multiples de connexion WiFi (3 essais)
+- ✅ Vérification de connectivité Internet
+- ✅ Gestion des erreurs avec messages explicites
+- ✅ Logs détaillés pour diagnostic
+
+### Paramètres de Sécurité
+- ✅ Support WPA/WPA2 mixte (TKIP+AES)
+- ✅ Configuration sécurisée des fichiers NetworkManager
+- ✅ Désactivation de l'auto-création de connexions
+- ✅ Logging activé pour audit sécurisé
+
+## Vérification et Diagnostic
+
+### Affichage automatique du statut
+Tous les scripts affichent automatiquement :
+- Statut des interfaces réseau
+- Configuration IP active
+- Table de routage
+- Test de connectivité Internet
+
+### Vérification manuelle
+```bash
+# Statut global des connexions
+nmcli device status
+
+# Détail d'une connexion spécifique
+nmcli connection show eth0-static
+nmcli connection show PRE_WIFI_5GHZ_5GHZ
+
+# Configuration IP complète
+ip addr show
+
+# Table de routage avec métriques
+ip route show
+```
+
+### Commandes de diagnostic
+```bash
+# Lister toutes les connexions configurées
+nmcli connection show
+
+# Vérifier les connexions actives
+nmcli connection show --active
+
+# Scanner les réseaux WiFi disponibles
+nmcli device wifi list
+
+# Logs NetworkManager récents
+sudo journalctl -u NetworkManager -n 20 --no-pager
+```
+
+## Résolution des Problèmes
+
+### Problèmes courants automatiquement résolus
+- ✅ Conflit avec wpa_supplicant
+- ✅ Problèmes DFS sur canaux 5GHz
+- ✅ Paramètres de sécurité WiFi incompatibles
+- ✅ Permissions incorrectes des fichiers
+- ✅ Anciennes connexions conflictuelles
+
+### Diagnostic approfondi
+
+**1. Problèmes Ethernet** :
+```bash
+# Vérifier le lien physique
+ethtool eth0
+
+# Tester la connexion Ethernet
+sudo ./setup_ethernet.sh --ip 192.168.100.10
+```
+
+**2. Problèmes WiFi** :
+```bash
+# Vérifier le hardware WiFi
+lsmod | grep brcm
 ip link show wlan0
 
-# Vérifier les blocages radio
-sudo rfkill list all
+# Scanner et reconnecter
+sudo ./setup_wifi.sh --ssid "VotreSSID" --psk "VotrePassword"
 ```
 
-2. **Diagnostiquer NetworkManager**
+**3. Problèmes de routage** :
 ```bash
-# Statut du service
-sudo systemctl status NetworkManager
+# Afficher la table de routage détaillée
+ip route show table all
 
-# Logs récents
-sudo journalctl -u NetworkManager -n 20 --no-pager
-
-# Scanner les réseaux
-sudo nmcli device wifi list
+# Tester chaque interface
+ping -I eth0 -c 3 8.8.8.8
+ping -I wlan0 -c 3 8.8.8.8
 ```
 
-3. **Tester la connectivité**
+### Réparation rapide
 ```bash
-# Test de connectivité
-ping -c 3 8.8.8.8
-
-# Vérifier l'IP obtenue
-ip addr show wlan0
-```
-
-### Commandes de dépannage avancé
-
-```bash
-# Redémarrer NetworkManager si nécessaire
+# Redémarrage complet de NetworkManager
 sudo systemctl restart NetworkManager
 
-# Réactiver une connexion
-sudo nmcli connection up PRE_WIFI_2GHZ
-
-# Forcer un scan WiFi
-sudo nmcli device wifi rescan
-
-# Vérifier les paramètres de sécurité
-nmcli connection show PRE_WIFI_2GHZ | grep security
+# Reconfiguration forcée
+sudo ./setup_network.sh --ssid "VotreSSID" --psk "VotrePassword" --country FR
 ```
 
-## Architecture du script
+## Architecture Technique
 
-### Flux d'exécution
-1. **Vérification des prérequis** (root, outils)
-2. **Résolution des conflits** (wpa_supplicant)
-3. **Nettoyage** (anciennes connexions)
-4. **Configuration sécurisée** de NetworkManager
-5. **Configuration Ethernet** (IP statique)
-6. **Configuration WiFi dynamique** (bande auto-détectée)
-7. **Activation avec retry logic**
-8. **Vérification de connectivité**
+### Flux d'exécution du script principal
+1. **Analyse des arguments** (permet affichage aide sans root)
+2. **Vérification des privilèges root**
+3. **Vérification des scripts spécialisés**
+4. **Exécution du script Ethernet** (si activé)
+5. **Exécution du script WiFi** (si activé)
+6. **Attente de stabilisation** (3 secondes)
+7. **Affichage du statut final**
 
-### Sécurité
-- Configuration NetworkManager sécurisée (pas d'auto-création)
-- Permissions correctes (600) pour les fichiers de connexion
-- Logging activé pour audit
-- Désactivation des fonctions potentiellement problématiques
+### Flux des scripts spécialisés
+Ethernet (`setup_ethernet.sh`) :
+- Vérification outils → Configuration NetworkManager → Configuration interface → Activation → Test
 
-## Support des cas d'usage
+WiFi (`setup_wifi.sh`) :
+- Vérification outils → Gestion pays WiFi → Résolution conflits → Nettoyage → Configuration → Activation avec retry → Test
+
+### Sécurité et Permissions
+- Vérification root obligatoire pour les opérations système
+- Affichage aide possible sans privilèges élevés  
+- Fichiers NetworkManager avec permissions 600
+- Configuration sécurisée anti auto-création
+- Logging détaillé pour audit
+
+## Support et Compatibilité
 
 ### Cas d'usage supportés
 - ✅ Réseaux 2.4GHz et 5GHz
 - ✅ WPA/WPA2 Personnel (TKIP+AES)
-- ✅ Canaux DFS et non-DFS
+- ✅ IP statique et DHCP
+- ✅ Interfaces multiples
+- ✅ Métriques de routage personnalisées
 - ✅ Connexion automatique au démarrage
-- ✅ Fallback Ethernet automatique
 - ✅ Persistance après redémarrage
 
 ### Limitations connues
 - ❌ WPA3 (non testé)
 - ❌ Enterprise (802.1x)
-- ❌ Réseaux cachés (nécessite modification manuelle)
-- ❌ Connexions simultanées multiple SSIDs
+- ❌ Réseaux cachés (modification manuelle nécessaire)
+- ❌ Connexions simultanées multiples sur même interface
 
 ## Changelog
 
-### Version améliorée (2025)
+### Version Modulaire (2025)
+- ✨ **Architecture modulaire** : 3 scripts spécialisés
+- ✨ **setup_ethernet.sh** : Configuration Ethernet dédiée
+- ✨ **setup_wifi.sh** : Configuration WiFi dédiée
+- ✨ **Modes spécialisés** : --ethernet-only, --wifi-only
+- ✨ **Paramètres étendus** : Métriques, interfaces personnalisables
+- ✨ **Compatibilité maintenue** : Interface originale préservée
+- ✨ **Aide sans root** : Affichage documentation sans privilèges
+- 🔧 **Code refactorisé** : Maintenance facilitée
+- 📚 **Documentation étendue** : Guide complet d'utilisation
+
+### Version précédente (2025)
 - ✨ Détection automatique de bande WiFi
 - ✨ Noms de connexion dynamiques
 - ✨ Résolution automatique des conflits wpa_supplicant
