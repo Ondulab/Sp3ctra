@@ -38,9 +38,9 @@
 // 48kHz: 150 frames = 3.125ms latency (optimal for real-time)
 // 96kHz: 600 frames = 6.25ms latency (double latency for synthesis headroom)
 #if SAMPLING_FREQUENCY >= 96000
-#define AUDIO_BUFFER_SIZE            (250)
+#define AUDIO_BUFFER_SIZE            (80)
 #elif SAMPLING_FREQUENCY >= 48000
-#define AUDIO_BUFFER_SIZE            (200)   // 150
+#define AUDIO_BUFFER_SIZE            (30)   // 150
 #else
 #define AUDIO_BUFFER_SIZE            (208)
 #endif

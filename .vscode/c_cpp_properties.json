@@ -12,7 +12,10 @@
                 "/opt/homebrew/opt/sfml@2/include",
                 "/opt/homebrew/Cellar/csfml/2.6.1_1/include"
             ],
-            "defines": [],
+            "defines": [
+                "USE_RTAUDIO",
+                "ENABLE_IMAGE_DEBUG"
+            ],
             "macFrameworkPath": [
                 "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks"
             ],
@@ -21,6 +24,28 @@
             "cppStandard": "c++17",
             "intelliSenseMode": "macos-clang-arm64",
             "configurationProvider": "ms-vscode.cmake-tools"
+        },
+        {
+            "name": "Raspberry Pi",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/src/core",
+                "/usr/include",
+                "/usr/local/include",
+                "/usr/include/arm-linux-gnueabihf",
+                "/usr/include/aarch64-linux-gnu"
+            ],
+            "defines": [
+                "USE_RTAUDIO",
+                "ENABLE_IMAGE_DEBUG",
+                "NO_SFML",
+                "__LINUX__",
+                "_GNU_SOURCE"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-arm64"
         }
     ],
     "version": 4

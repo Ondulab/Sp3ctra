@@ -32,6 +32,12 @@
 #include "image_debug.h"
 #include "lock_free_pan.h"
 #include "../../config/config_debug.h"
+#include "../../config/config_synth_additive.h"
+
+// External declaration for debug configuration
+#ifdef DEBUG_OSC
+extern debug_additive_osc_config_t g_debug_osc_config;
+#endif
 
 /* Private includes ----------------------------------------------------------*/
 
@@ -205,10 +211,10 @@ int32_t synth_IfftInit(void) {
 
   int32_t value = VOLUME_INCREMENT;
 
-  if (value == 0)
-    value = 0;
-  if (value > 1000)
-    value = 1000;
+  if (value < 1)
+    value = 1;
+  if (value > 100000)
+    value = 100000;
   for (int32_t note = 0; note < NUMBER_OF_NOTES; note++) {
     waves[note].volume_increment =
         1.00 / (float)value * waves[note].max_volume_increment;
@@ -216,10 +222,10 @@ int32_t synth_IfftInit(void) {
 
   value = VOLUME_DECREMENT;
 
-  if (value == 0)
-    value = 0;
-  if (value > 1000)
-    value = 1000;
+  if (value < 1)
+    value = 1;
+  if (value > 100000)
+    value = 100000;
   for (int32_t note = 0; note < NUMBER_OF_NOTES; note++) {
     waves[note].volume_decrement = 1.00 / (float)value * waves[note].max_volume_decrement;
   }
@@ -779,7 +785,36 @@ static void synth_process_worker_range(synth_thread_worker_t *worker) {
         }
         worker->volumeBuffer[buff_idx] = waves[note].current_volume;
 
+#ifdef DEBUG_OSC
+        // Debug: Print oscillator values for specified range/single oscillator
+        if (g_debug_osc_config.enabled) {
+          int should_debug = 0;
+          
+          if (g_debug_osc_config.single_osc >= 0) {
+            // Single oscillator mode
+            should_debug = (note == g_debug_osc_config.single_osc);
+          } else {
+            // Range mode
+            should_debug = (note >= g_debug_osc_config.start_osc && note <= g_debug_osc_config.end_osc);
+          }
+          
+          if (should_debug) {
+            printf("[DEBUG_OSC_%d] sample=%d target=%.1f current=%.1f inc=%.3f dec=%.3f max_inc=%.3f max_dec=%.3f freq=%.1f\n",
+                   note,
+                   buff_idx,
+                   waves[note].target_volume,
+                   waves[note].current_volume,
+                   waves[note].volume_increment,
+                   waves[note].volume_decrement,
+                   waves[note].max_volume_increment,
+                   waves[note].max_volume_decrement,
+                   waves[note].frequency);
+            fflush(stdout);
+          }
+        }
+#endif
     }
+
 #else
     fill_float(worker->imageBuffer_f32[local_note_idx], worker->volumeBuffer,
                AUDIO_BUFFER_SIZE);
@@ -1291,6 +1326,14 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   if (log_counter % LOG_FREQUENCY == 0) {
     // printf("===== Audio Process appelé =====\n"); // Supprimé ou commenté
   }
+
+#ifdef DEBUG_OSC
+  // Debug: Print "NEW IMAGE LINE" when a new image is processed
+  if (g_debug_osc_config.enabled) {
+    printf("\n=== NEW IMAGE LINE ===\n");
+    fflush(stdout);
+  }
+#endif
 
   // Vérifier que les buffers d'entrée ne sont pas NULL
   if (!buffer_R || !buffer_G || !buffer_B) {
