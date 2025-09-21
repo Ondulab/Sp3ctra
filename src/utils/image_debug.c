@@ -25,6 +25,9 @@ static int debug_initialized = 0;
 static int debug_image_runtime_enabled = 0; // Runtime control for image debug
 static int raw_scanner_runtime_enabled = 0; // Runtime control for raw scanner capture
 static int raw_scanner_capture_lines = 1000; // Default number of lines to capture
+static int oscillator_runtime_enabled = 0; // Runtime control for oscillator capture
+static int oscillator_capture_samples = 48000; // Default number of samples to capture (1 second at 48kHz)
+static int oscillator_markers_enabled = 0; // Runtime control for oscillator markers
 #ifdef DEBUG_IMAGE_FRAME_COUNTER
 static int frame_counter = 0;
 #endif
@@ -241,9 +244,7 @@ int image_debug_is_enabled(void) {
 // Global oscillator volume scan structure
 static temporal_scan_t oscillator_volume_scan = {0};
 static int oscillator_scan_initialized = 0;
-#ifdef DEBUG_OSCILLATOR_VOLUMES
 static int oscillator_sample_counter = 0;
-#endif
 
 // Global raw scanner capture structure (now always available for runtime configuration)
 static temporal_scan_t raw_scanner_capture = {0};
@@ -253,14 +254,13 @@ static int raw_scanner_initialized = 0;
  * @brief Initialize oscillator volume scan buffer
  * @retval 0 on success, -1 on error
  */
-#ifdef DEBUG_OSCILLATOR_VOLUMES
 static int init_oscillator_volume_scan(void) {
     if (oscillator_scan_initialized) {
         return 0;
     }
     
     oscillator_volume_scan.width = NUMBER_OF_NOTES;
-    oscillator_volume_scan.max_height = OSCILLATOR_VOLUME_SCAN_SAMPLES;
+    oscillator_volume_scan.max_height = oscillator_capture_samples; // Use runtime-configured samples
     oscillator_volume_scan.current_height = 0;
     oscillator_volume_scan.initialized = 0;
     strncpy(oscillator_volume_scan.name, "oscillator_volumes", sizeof(oscillator_volume_scan.name) - 1);
@@ -277,15 +277,14 @@ static int init_oscillator_volume_scan(void) {
     oscillator_sample_counter = 0;
     
     printf("🔧 OSCILLATOR_SCAN: Initialized buffer (%dx%d samples)\n", 
-           NUMBER_OF_NOTES, OSCILLATOR_VOLUME_SCAN_SAMPLES);
+           NUMBER_OF_NOTES, oscillator_capture_samples);
     return 0;
 }
-#endif
 
 int image_debug_capture_oscillator_sample(void) {
-#ifdef DEBUG_OSCILLATOR_VOLUMES
-    if (!debug_initialized || !debug_image_runtime_enabled) {
-        return -1;
+    // Check if oscillator capture is enabled at runtime
+    if (!oscillator_runtime_enabled || !debug_initialized || !debug_image_runtime_enabled) {
+        return 0; // Not enabled, return success without doing anything
     }
     
     // Initialize oscillator scan if needed
@@ -305,21 +304,17 @@ int image_debug_capture_oscillator_sample(void) {
     oscillator_sample_counter++;
     
     // Auto-save when we reach the target number of samples
-    if (oscillator_sample_counter >= OSCILLATOR_VOLUME_SCAN_AUTO_SAVE) {
-        printf("🔧 OSCILLATOR_SCAN: Auto-saving after %d samples (1 second)\n", oscillator_sample_counter);
+    if (oscillator_sample_counter >= oscillator_capture_samples) {
+        printf("🔧 OSCILLATOR_SCAN: Auto-saving after %d samples\n", oscillator_sample_counter);
         image_debug_save_oscillator_volume_scan();
         image_debug_reset_oscillator_volume_scan();
         oscillator_sample_counter = 0;
     }
     
     return result;
-#else
-    return 0; // Debug disabled
-#endif
 }
 
 int image_debug_add_oscillator_volume_line(float *volumes, int count) {
-#ifdef DEBUG_OSCILLATOR_VOLUME_SCAN
     if (!debug_initialized || !volumes || !oscillator_scan_initialized) {
         return -1;
     }
@@ -361,14 +356,9 @@ int image_debug_add_oscillator_volume_line(float *volumes, int count) {
     scan->initialized = 1;
     
     return 0;
-#else
-    (void)volumes; (void)count;
-    return 0; // Debug disabled
-#endif
 }
 
 int image_debug_save_oscillator_volume_scan(void) {
-#ifdef DEBUG_OSCILLATOR_VOLUME_SCAN
     if (!debug_initialized || !oscillator_scan_initialized) {
         return -1;
     }
@@ -386,9 +376,7 @@ int image_debug_save_oscillator_volume_scan(void) {
     }
     
     uint16_t *buffer_16 = (uint16_t*)scan->buffer;
-#ifdef DEBUG_OSCILLATOR_SCAN_MARKERS
     int marker_count = 0; // Counter for markers
-#endif
     
     for (int y = 0; y < scan->current_height; y++) {
         for (int x = 0; x < scan->width; x++) {
@@ -404,9 +392,8 @@ int image_debug_save_oscillator_volume_scan(void) {
             rgb_8bit[idx_8_rgb + 2] = gray_value;
         }
         
-#ifdef DEBUG_OSCILLATOR_SCAN_MARKERS
-        // Add a more visible yellow marker block
-        if (y > 0 && y % AUDIO_BUFFER_SIZE == 0) {
+        // Add markers if enabled at runtime
+        if (oscillator_markers_enabled && y > 0 && y % AUDIO_BUFFER_SIZE == 0) {
             marker_count++;
             for (int marker_y = y; marker_y < y + 5 && marker_y < scan->current_height; marker_y++) {
                 for (int x = 0; x < 20 && x < scan->width; x++) { // 20 pixels wide marker
@@ -417,14 +404,13 @@ int image_debug_save_oscillator_volume_scan(void) {
                 }
             }
         }
-#endif
     }
     
-#ifdef DEBUG_OSCILLATOR_SCAN_MARKERS
-    printf("🔧 OSCILLATOR_SCAN: Drew %d yellow markers.\n", marker_count);
-#else
-    printf("🔧 OSCILLATOR_SCAN: Markers disabled (no visual markers drawn).\n");
-#endif
+    if (oscillator_markers_enabled) {
+        printf("🔧 OSCILLATOR_SCAN: Drew %d markers.\n", marker_count);
+    } else {
+        printf("🔧 OSCILLATOR_SCAN: Markers disabled (no visual markers drawn).\n");
+    }
     
     // Generate filename with timestamp
     char timestamp[32];
@@ -447,13 +433,9 @@ int image_debug_save_oscillator_volume_scan(void) {
         printf("ERROR: Failed to save oscillator volume scan: %s\n", full_path);
         return -1;
     }
-#else
-    return 0; // Debug disabled
-#endif
 }
 
 int image_debug_reset_oscillator_volume_scan(void) {
-#ifdef DEBUG_OSCILLATOR_VOLUME_SCAN
     if (!oscillator_scan_initialized) {
         return -1;
     }
@@ -471,9 +453,6 @@ int image_debug_reset_oscillator_volume_scan(void) {
     
     printf("🔧 OSCILLATOR_SCAN: Reset volume scan buffer (16-bit)\n");
     return 0;
-#else
-    return 0; // Debug disabled
-#endif
 }
 
 int image_debug_save_grayscale(void *buffer, int width, int height,
@@ -761,9 +740,9 @@ int image_debug_should_capture(int frame_number) {
 #ifdef ENABLE_IMAGE_DEBUG
 #ifdef DEBUG_FORCE_CAPTURE_TEST_DATA
     // Force capture even with test data
-    return (frame_number % DEBUG_IMAGE_CAPTURE_FREQUENCY) == 0;
+    return (frame_number % 1) == 0; // Capture every frame when forced
 #else
-    return (frame_number % DEBUG_IMAGE_CAPTURE_FREQUENCY) == 0;
+    return (frame_number % 1) == 0; // Capture every frame by default
 #endif
 #else
     (void)frame_number;
@@ -1177,4 +1156,42 @@ int image_debug_is_raw_scanner_enabled(void) {
 
 int image_debug_get_raw_scanner_lines(void) {
     return raw_scanner_capture_lines;
+}
+
+/**************************************************************************************
+ * Oscillator Runtime Configuration Functions
+ **************************************************************************************/
+
+void image_debug_configure_oscillator_capture(int enable, int capture_samples, int enable_markers) {
+    oscillator_runtime_enabled = enable;
+    
+    if (capture_samples > 0) {
+        oscillator_capture_samples = capture_samples;
+    }
+    
+    // Store markers setting in the global static variable
+    oscillator_markers_enabled = enable_markers;
+    
+    if (enable) {
+        printf("🔧 OSCILLATOR: Runtime capture enabled (%d samples%s)\n", 
+               oscillator_capture_samples, enable_markers ? ", markers enabled" : "");
+        // Auto-enable general image debug if oscillator capture is enabled
+        if (!debug_image_runtime_enabled) {
+            image_debug_enable_runtime(1);
+        }
+        // Auto-initialize debug system if not already done
+        if (!debug_initialized) {
+            image_debug_init();
+        }
+    } else {
+        printf("🔧 OSCILLATOR: Runtime capture disabled\n");
+    }
+}
+
+int image_debug_is_oscillator_capture_enabled(void) {
+    return oscillator_runtime_enabled;
+}
+
+int image_debug_get_oscillator_capture_samples(void) {
+    return oscillator_capture_samples;
 }
