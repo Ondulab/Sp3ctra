@@ -8,6 +8,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "config.h"
 #include "shared.h"
+#include "../../config/config_loader.h"
 
 #include "math.h"
 #include "stdio.h"
@@ -46,7 +47,7 @@ static float calculate_frequency(uint32_t comma_cnt,
   frequency =
       params->startFrequency *
       pow(2, ((float)comma_cnt /
-              (12.0 * ((SEMITONE_PER_OCTAVE * (float)params->commaPerSemitone) /
+              (12.0 * ((g_additive_config.semitone_per_octave * (float)params->commaPerSemitone) /
                        (12.00 / (log(2)) *
                         log((params->startFrequency * 2.00) /
                             (float)params->startFrequency))))));
@@ -88,7 +89,7 @@ uint32_t init_waves(volatile float *unitary_waveform,
 
   // compute cell number for storage all oscillators waveform
   for (uint32_t comma_cnt = 0;
-       comma_cnt < (SEMITONE_PER_OCTAVE * parameters->commaPerSemitone);
+       comma_cnt < (g_additive_config.semitone_per_octave * parameters->commaPerSemitone);
        comma_cnt++) {
     // store only first octave_coeff frequencies ---- logarithmic distribution
     float frequency = calculate_frequency(comma_cnt, parameters);
@@ -100,7 +101,7 @@ uint32_t init_waves(volatile float *unitary_waveform,
   // compute and store the waveform into unitary_waveform only for the reference
   // octave_coeff
   for (uint32_t comma_cnt = 0;
-       comma_cnt < (SEMITONE_PER_OCTAVE * parameters->commaPerSemitone);
+       comma_cnt < (g_additive_config.semitone_per_octave * parameters->commaPerSemitone);
        comma_cnt++) {
     // compute frequency for each comma into the reference octave_coeff
     float frequency = calculate_frequency(comma_cnt, parameters);
@@ -118,7 +119,7 @@ uint32_t init_waves(volatile float *unitary_waveform,
     // jump cell according to multiple frequencies)
     for (uint32_t octave = 0;
          octave <= (NUMBER_OF_NOTES /
-                    (SEMITONE_PER_OCTAVE * parameters->commaPerSemitone));
+                    (g_additive_config.semitone_per_octave * parameters->commaPerSemitone));
          octave++) {
       // compute the current pixel to associate an waveform pointer,
       //  *** is current pix, --- octave separation
@@ -129,7 +130,7 @@ uint32_t init_waves(volatile float *unitary_waveform,
       //  ------*---------*---------*---------*---------*---------*---------*---------*---
       //  ---------*---------*---------*---------*---------*---------*---------*---------*
       note = comma_cnt +
-             (SEMITONE_PER_OCTAVE * parameters->commaPerSemitone) * octave;
+             (g_additive_config.semitone_per_octave * parameters->commaPerSemitone) * octave;
       // sanity check, if user demand is't possible
       if (note < NUMBER_OF_NOTES) {
         // store frequencies

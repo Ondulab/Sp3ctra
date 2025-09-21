@@ -26,6 +26,9 @@
 // Main header
 #include "synth_additive.h"
 
+// Runtime configuration
+#include "../../config/config_loader.h"
+
 // Standard includes
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,15 +86,15 @@ int32_t synth_IfftInit(void) {
   atexit(synth_shutdown_thread_pool);
 
   // Initialize default parameters
-  wavesGeneratorParams.commaPerSemitone = COMMA_PER_SEMITONE;
-  wavesGeneratorParams.startFrequency = (uint32_t)START_FREQUENCY; // Cast to uint32_t
+  wavesGeneratorParams.commaPerSemitone = g_additive_config.comma_per_semitone;
+  wavesGeneratorParams.startFrequency = (uint32_t)g_additive_config.start_frequency; // Cast to uint32_t
   wavesGeneratorParams.harmonization = MAJOR;
   wavesGeneratorParams.harmonizationLevel = 100;
   wavesGeneratorParams.waveformOrder = 1;
 
   buffer_len = init_waves(unitary_waveform, waves, &wavesGeneratorParams);
 
-  int32_t value = VOLUME_INCREMENT;
+  int32_t value = g_additive_config.volume_increment;
 
   if (value < 1)
     value = 1;
@@ -102,7 +105,7 @@ int32_t synth_IfftInit(void) {
         1.00 / (float)value * waves[note].max_volume_increment;
   }
 
-  value = VOLUME_DECREMENT;
+  value = g_additive_config.volume_decrement;
 
   if (value < 1)
     value = 1;

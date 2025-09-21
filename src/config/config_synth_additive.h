@@ -3,6 +3,8 @@
 #ifndef __CONFIG_SYNTH_ADDITIVE_H__
 #define __CONFIG_SYNTH_ADDITIVE_H__
 
+#include "config_loader.h"  // For g_additive_config
+
 // #define DISABLE_ADDITIVE
 
 /**************************************************************************************
@@ -65,15 +67,13 @@
 
 #define WAVE_AMP_RESOLUTION          (16777215)             // Decimal value
 #define VOLUME_AMP_RESOLUTION        (65535)                // Decimal value
-#define START_FREQUENCY              (65.41)
 #define MAX_OCTAVE_NUMBER            (8)                    // >> le nb d'octaves n'a pas d'incidence ?
-#define SEMITONE_PER_OCTAVE          (12)
-#define COMMA_PER_SEMITONE           (36)
 
-#define VOLUME_INCREMENT             (1)
-#define VOLUME_DECREMENT             (1)
+// Note: START_FREQUENCY, SEMITONE_PER_OCTAVE, COMMA_PER_SEMITONE, 
+// VOLUME_INCREMENT, VOLUME_DECREMENT are now loaded from additive_synth.ini via g_additive_config
+// PIXELS_PER_NOTE remains as compile-time constant for array sizing
 
-#define PIXELS_PER_NOTE              (1)
+#define PIXELS_PER_NOTE              (1)                    // Must remain constant for array sizing
 #define NUMBER_OF_NOTES              (CIS_MAX_PIXELS_NB / PIXELS_PER_NOTE)
 
 /**************************************************************************************
@@ -134,13 +134,11 @@ typedef struct {
 /**************************************************************************************
  * Auto-volume
  **************************************************************************************/
-#define IMU_ACTIVE_THRESHOLD_X       (0.01f)                /* Threshold on accel X to consider active (sensor units) */
-#define IMU_FILTER_ALPHA_X           (0.25f)                /* Exponential smoothing alpha for acc X (0..1) */
-#define IMU_INACTIVITY_TIMEOUT_S     (5)                    /* Seconds of no activity before dimming */
-#define AUTO_VOLUME_INACTIVE_LEVEL   (0.01f)                /* Target volume when inactive (0.0..1.0) */
-#define AUTO_VOLUME_ACTIVE_LEVEL     (1.0f)                 /* Target volume when active (0.0..1.0) */
-#define AUTO_VOLUME_FADE_MS          (600)                  /* Fade duration in milliseconds */
-#define AUTO_VOLUME_POLL_MS          (10)                   /* How often auto-volume updates (ms) */
+// Note: Auto-volume parameters (IMU_ACTIVE_THRESHOLD_X, IMU_FILTER_ALPHA_X, 
+// IMU_INACTIVITY_TIMEOUT_S, AUTO_VOLUME_INACTIVE_LEVEL, AUTO_VOLUME_ACTIVE_LEVEL,
+// AUTO_VOLUME_FADE_MS, AUTO_VOLUME_POLL_MS) are now loaded from additive_synth.ini 
+// via g_additive_config
+
 #define AUTO_VOLUME_DISABLE_WITH_MIDI 1                     /* If 1, disable auto-dim when MIDI controller connected */
 
 #endif // __CONFIG_SYNTH_ADDITIVE_H__

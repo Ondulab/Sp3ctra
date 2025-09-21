@@ -13,6 +13,7 @@
 #include "synth_additive_math.h"
 #include "../../utils/shared.h"
 #include "../../config/config_debug.h"
+#include "../../config/config_loader.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -42,7 +43,7 @@ void process_image_preprocessing(int32_t *imageData, int32_t *imageBuffer_q31,
         for (acc = 0; acc < PIXELS_PER_NOTE; acc++) {
             imageBuffer_q31[local_note_idx] += (imageData[idx * PIXELS_PER_NOTE + acc]);
         }
-        
+        // Average the accumulated values
         imageBuffer_q31[local_note_idx] /= PIXELS_PER_NOTE;
         
         // Apply color inversion (dark pixels = more energy)
