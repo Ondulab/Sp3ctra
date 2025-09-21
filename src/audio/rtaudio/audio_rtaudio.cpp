@@ -1278,58 +1278,161 @@ void printAudioDevices() {
   }
 
   RtAudio* audio = gAudioSystem->getAudioDevice();
-  unsigned int deviceCount = audio->getDeviceCount();
-  unsigned int defaultDevice = audio->getDefaultOutputDevice();
+  unsigned int deviceCount = 0;
+  unsigned int defaultDevice = 0;
+  
+  // Get device count with error handling
+  try {
+    deviceCount = audio->getDeviceCount();
+    defaultDevice = audio->getDefaultOutputDevice();
+  } catch (const std::exception &error) {
+    printf("❌ Error getting device count: %s\n", error.what());
+    return;
+  }
 
   printf("Available output devices:\n");
   printf("🔧 Complete device enumeration (verbose mode)...\n");
+  printf("🔍 RtAudio reports %d total devices\n", deviceCount);
   
   std::vector<std::pair<unsigned int, std::string>> accessibleDevices;
   int failedDevices = 0;
+  int emptyDevices = 0;
   
+  // Enhanced enumeration with better error handling for macOS
+  // First, always try to show the default device (which we know works)
+  printf("🎯 Default device (ID %d):\n", defaultDevice);
+  try {
+    RtAudio::DeviceInfo defaultInfo = audio->getDeviceInfo(defaultDevice);
+    if (defaultInfo.outputChannels > 0 && !defaultInfo.name.empty()) {
+      accessibleDevices.push_back(std::make_pair(defaultDevice, defaultInfo.name));
+      
+      printf("📋 Device ID %d: %s (Default Output) [%d channels]\n", 
+             defaultDevice, defaultInfo.name.c_str(), defaultInfo.outputChannels);
+      
+      // Show supported sample rates
+      printf("    Sample rates: ");
+      if (!defaultInfo.sampleRates.empty()) {
+        for (size_t j = 0; j < defaultInfo.sampleRates.size(); j++) {
+          printf("%dHz", defaultInfo.sampleRates[j]);
+          if (j < defaultInfo.sampleRates.size() - 1) printf(", ");
+        }
+      } else {
+        printf("None reported");
+      }
+      printf("\n");
+      
+      // Show supported formats
+      printf("    Formats: ");
+      bool hasFormats = false;
+      if (defaultInfo.nativeFormats & RTAUDIO_SINT16) { printf("INT16 "); hasFormats = true; }
+      if (defaultInfo.nativeFormats & RTAUDIO_SINT24) { printf("INT24 "); hasFormats = true; }
+      if (defaultInfo.nativeFormats & RTAUDIO_SINT32) { printf("INT32 "); hasFormats = true; }
+      if (defaultInfo.nativeFormats & RTAUDIO_FLOAT32) { printf("FLOAT32 "); hasFormats = true; }
+      if (defaultInfo.nativeFormats & RTAUDIO_FLOAT64) { printf("FLOAT64 "); hasFormats = true; }
+      if (!hasFormats) printf("None reported");
+      printf("\n");
+    }
+  } catch (const std::exception &error) {
+    printf("❌ Default device ID %d: Query failed (%s)\n", defaultDevice, error.what());
+  }
+  
+  printf("\n🔍 Scanning all reported device IDs (0-%d):\n", deviceCount - 1);
+  
+  // Then scan through the reported device range
   for (unsigned int i = 0; i < deviceCount; i++) {
+    // Skip default device if we already processed it
+    if (i == defaultDevice) {
+      printf("ℹ️  Device ID %d: (Already shown as default device)\n", i);
+      continue;
+    }
+    
     try {
       RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
-      if (info.outputChannels > 0 && !info.name.empty()) {
-        accessibleDevices.push_back(std::make_pair(i, info.name));
-        
-        printf("📋 Device ID %d: %s", i, info.name.c_str());
-        if (i == defaultDevice) {
-          printf(" (Default Output)");
+      
+      // Check if device has valid output channels
+      if (info.outputChannels > 0) {
+        // Check if device name is valid (not empty)
+        if (!info.name.empty()) {
+          accessibleDevices.push_back(std::make_pair(i, info.name));
+          
+          printf("📋 Device ID %d: %s [%d channels]\n", 
+                 i, info.name.c_str(), info.outputChannels);
+          
+          // Show supported sample rates (with bounds checking)
+          printf("    Sample rates: ");
+          if (!info.sampleRates.empty()) {
+            for (size_t j = 0; j < info.sampleRates.size(); j++) {
+              printf("%dHz", info.sampleRates[j]);
+              if (j < info.sampleRates.size() - 1) printf(", ");
+            }
+          } else {
+            printf("None reported");
+          }
+          printf("\n");
+          
+          // Show supported formats
+          printf("    Formats: ");
+          bool hasFormats = false;
+          if (info.nativeFormats & RTAUDIO_SINT16) { printf("INT16 "); hasFormats = true; }
+          if (info.nativeFormats & RTAUDIO_SINT24) { printf("INT24 "); hasFormats = true; }
+          if (info.nativeFormats & RTAUDIO_SINT32) { printf("INT32 "); hasFormats = true; }
+          if (info.nativeFormats & RTAUDIO_FLOAT32) { printf("FLOAT32 "); hasFormats = true; }
+          if (info.nativeFormats & RTAUDIO_FLOAT64) { printf("FLOAT64 "); hasFormats = true; }
+          if (!hasFormats) printf("None reported");
+          printf("\n");
+          
+          // Additional diagnostic info for macOS
+          printf("    Input channels: %d, Duplex channels: %d\n", 
+                 info.inputChannels, info.duplexChannels);
+          if (info.isDefaultOutput) printf("    ✅ Marked as default output\n");
+          if (info.isDefaultInput) printf("    ✅ Marked as default input\n");
+          
+        } else {
+          emptyDevices++;
+          printf("⚠️  Device ID %d: Has %d output channels but empty name\n", 
+                 i, info.outputChannels);
         }
-        printf(" [%d channels]\n", info.outputChannels);
-        
-        // Show supported sample rates
-        printf("    Sample rates: ");
-        for (size_t j = 0; j < info.sampleRates.size(); j++) {
-          printf("%dHz", info.sampleRates[j]);
-          if (j < info.sampleRates.size() - 1) printf(", ");
+      } else {
+        // Device exists but has no output channels - show minimal info
+        if (!info.name.empty()) {
+          printf("ℹ️  Device ID %d: %s [Input only - %d input channels]\n", 
+                 i, info.name.c_str(), info.inputChannels);
+        } else {
+          printf("ℹ️  Device ID %d: Unnamed device [Input only - %d input channels]\n", 
+                 i, info.inputChannels);
         }
-        printf("\n");
-        
-        // Show supported formats
-        printf("    Formats: ");
-        if (info.nativeFormats & RTAUDIO_SINT16) printf("INT16 ");
-        if (info.nativeFormats & RTAUDIO_SINT24) printf("INT24 ");
-        if (info.nativeFormats & RTAUDIO_SINT32) printf("INT32 ");
-        if (info.nativeFormats & RTAUDIO_FLOAT32) printf("FLOAT32 ");
-        if (info.nativeFormats & RTAUDIO_FLOAT64) printf("FLOAT64 ");
-        printf("\n");
       }
     } catch (const std::exception &error) {
       failedDevices++;
-      printf("⚠️  Device ID %d: Query failed (%s)\n", i, error.what());
+      printf("❌ Device ID %d: Query failed (%s)\n", i, error.what());
+      
+      // On macOS, this is often due to device enumeration issues
+      // Continue with next device instead of stopping
+      continue;
     }
   }
   
-  printf("\n🎵 Summary: %zu accessible devices, %d failed queries\n", 
-         accessibleDevices.size(), failedDevices);
+  printf("\n🎵 Summary: %zu accessible devices, %d failed queries, %d empty names\n", 
+         accessibleDevices.size(), failedDevices, emptyDevices);
   
   if (accessibleDevices.empty()) {
     printf("❌ No accessible audio output devices found!\n");
+    printf("💡 Troubleshooting for macOS:\n");
+    printf("   1. Check System Preferences > Sound > Output\n");
+    printf("   2. Try disconnecting/reconnecting USB audio devices\n");
+    printf("   3. Restart Audio MIDI Setup application\n");
+    printf("   4. Check if other audio applications are blocking access\n");
+    printf("   5. Try running: sudo killall coreaudiod\n");
   } else {
     printf("✅ Use --audio-device=<ID> to select a specific device\n");
     printf("✅ Default device ID %d will be used if none specified\n", defaultDevice);
+    
+    // Show quick device list for easy reference
+    printf("\n📋 Quick device reference:\n");
+    for (const auto& device : accessibleDevices) {
+      printf("   ID %d: %s%s\n", device.first, device.second.c_str(),
+             (device.first == defaultDevice) ? " (default)" : "");
+    }
   }
 }
 
