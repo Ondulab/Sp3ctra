@@ -118,7 +118,7 @@ typedef enum {
 #define DEBUG_OSC
 
 #ifdef DEBUG_OSC
-#pragma message "🔧 DEBUG_OSC is enabled - additive oscillator debug features compiled"
+#pragma message "DEBUG_OSC is enabled - additive oscillator debug features compiled"
 #endif
 
 // Debug configuration structure (runtime)

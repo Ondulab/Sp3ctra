@@ -17,7 +17,7 @@
 static RtAudioFormat g_selected_audio_format = RTAUDIO_FLOAT32;
 static const char* g_selected_audio_format_name = "FLOAT32";
 
-// Variables globales pour compatibilité avec l'ancien code
+// Global variables for compatibility with legacy code
 AudioDataBuffers buffers_L[2];
 AudioDataBuffers buffers_R[2];
 volatile int current_buffer_index = 0;
@@ -171,10 +171,10 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       static int debug_counter = 0;
       if (++debug_counter >= 4800) {
         debug_counter = 0;
-        printf("🔍 SIGNAL DEBUG: dry_L=%.6f, dry_R=%.6f, additive_level=%.3f, reverb_send=%.3f\n",
+        printf("SIGNAL DEBUG: dry_L=%.6f, dry_R=%.6f, additive_level=%.3f, reverb_send=%.3f\n",
                dry_sample_left, dry_sample_right, cached_level_additive, cached_reverb_send_additive);
         if (source_additive_left) {
-          printf("🔍 SOURCE DEBUG: additive_L=%.6f, additive_R=%.6f\n",
+          printf("SOURCE DEBUG: additive_L=%.6f, additive_R=%.6f\n",
                  source_additive_left[i], source_additive_right ? source_additive_right[i] : 0.0f);
         }
       }
@@ -195,7 +195,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       static int reverb_debug_counter = 0;
       if (++reverb_debug_counter >= 4800) {
         reverb_debug_counter = 0;
-        printf("🔍 REVERB CONDITION: ENABLE_REVERB=%d, reverbEnabled=%d, send_additive=%.3f, send_poly=%.3f\n",
+        printf("REVERB CONDITION: ENABLE_REVERB=%d, reverbEnabled=%d, send_additive=%.3f, send_poly=%.3f\n",
                ENABLE_REVERB, reverbEnabled ? 1 : 0, cached_reverb_send_additive, cached_reverb_send_polyphonic);
       }
 #endif
@@ -404,7 +404,7 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
   static int reverb_call_counter = 0;
   if (++reverb_call_counter >= 4800) {
     reverb_call_counter = 0;
-    printf("🔍 REVERB CALLED: inputL=%.6f, inputR=%.6f, reverbEnabled=%d, reverbMix=%.3f\n",
+    printf("REVERB CALLED: inputL=%.6f, inputR=%.6f, reverbEnabled=%d, reverbMix=%.3f\n",
            inputL, inputR, reverbEnabled ? 1 : 0, reverbMix);
   }
 #endif
@@ -415,7 +415,7 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
     outputL = inputL;
     outputR = inputR;
 #ifdef DEBUG_AUDIO_REVERB
-    printf("🔍 REVERB SKIPPED: reverbEnabled=%d, reverbMix=%.3f\n", reverbEnabled ? 1 : 0, reverbMix);
+    printf("REVERB SKIPPED: reverbEnabled=%d, reverbMix=%.3f\n", reverbEnabled ? 1 : 0, reverbMix);
 #endif
     return;
   }
@@ -470,9 +470,9 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
   static int reverb_output_counter = 0;
   if (++reverb_output_counter >= 4800) {
     reverb_output_counter = 0;
-    printf("🔍 REVERB OUTPUT: zita_outL=%.6f, zita_outR=%.6f, wet_gain=%.3f, dry_gain=%.3f\n",
+    printf("REVERB OUTPUT: zita_outL=%.6f, zita_outR=%.6f, wet_gain=%.3f, dry_gain=%.3f\n",
            outBufferL[0], outBufferR[0], cached_wet_gain, cached_dry_gain);
-    printf("🔍 FINAL REVERB: outputL=%.6f, outputR=%.6f (dry=%.6f + wet=%.6f)\n",
+    printf("FINAL REVERB: outputL=%.6f, outputR=%.6f (dry=%.6f + wet=%.6f)\n",
            outputL, outputR, inputL * cached_dry_gain, outBufferL[0] * cached_wet_gain);
   }
 #endif
@@ -745,41 +745,12 @@ bool AudioSystem::initialize() {
   // High priority for audio thread on Pi Module 5 - reduced for better compatibility
   options.priority = 70; // Real-time priority optimized for Pi permissions
 
-  // DIAGNOSTIC: Vérifier les capacités du périphérique avant ouverture
-  std::cout << "\n=== DIAGNOSTIC PÉRIPHÉRIQUE AUDIO ===" << std::endl;
-  std::cout << "Device ID demandé: " << preferredDeviceId << std::endl;
-
+  // Check device capabilities before opening
   try {
     RtAudio::DeviceInfo deviceInfo = audio->getDeviceInfo(preferredDeviceId);
-    std::cout << "✅ getDeviceInfo() réussie pour device " << preferredDeviceId
-              << std::endl;
-    std::cout << "Device Name: " << deviceInfo.name << std::endl;
-    std::cout << "Output Channels: " << deviceInfo.outputChannels << std::endl;
-    std::cout << "Duplex Channels: " << deviceInfo.duplexChannels << std::endl;
-    std::cout << "Input Channels: " << deviceInfo.inputChannels << std::endl;
-    std::cout << "Native Formats: ";
-    if (deviceInfo.nativeFormats & RTAUDIO_SINT8)
-      std::cout << "INT8 ";
-    if (deviceInfo.nativeFormats & RTAUDIO_SINT16)
-      std::cout << "INT16 ";
-    if (deviceInfo.nativeFormats & RTAUDIO_SINT24)
-      std::cout << "INT24 ";
-    if (deviceInfo.nativeFormats & RTAUDIO_SINT32)
-      std::cout << "INT32 ";
-    if (deviceInfo.nativeFormats & RTAUDIO_FLOAT32)
-      std::cout << "FLOAT32 ";
-    if (deviceInfo.nativeFormats & RTAUDIO_FLOAT64)
-      std::cout << "FLOAT64 ";
-    std::cout << std::endl;
-    std::cout << "Sample Rates: ";
-    for (unsigned int rate : deviceInfo.sampleRates) {
-      std::cout << rate << "Hz ";
-    }
-    std::cout << std::endl;
-    std::cout << "Preferred Sample Rate: " << deviceInfo.preferredSampleRate
-              << "Hz" << std::endl;
+    std::cout << "Audio device: " << deviceInfo.name << " (ID: " << preferredDeviceId << ")" << std::endl;
 
-    // Vérifier si la fréquence configurée est supportée
+    // Check if configured frequency is supported
     bool supportsConfigRate = false;
     unsigned int configRate = SAMPLING_FREQUENCY;
     for (unsigned int rate : deviceInfo.sampleRates) {
@@ -790,135 +761,54 @@ bool AudioSystem::initialize() {
     }
 
     if (!supportsConfigRate) {
-      std::cerr << "\n❌ ERREUR: Le périphérique ne supporte pas " << configRate
-                << "Hz !" << std::endl;
-      std::cerr << "Fréquences supportées: ";
-      for (unsigned int rate : deviceInfo.sampleRates) {
-        std::cerr << rate << "Hz ";
-      }
-      std::cerr << std::endl;
-      // Continuons quand même pour voir ce qui se passe
-    } else {
-      std::cout << "✅ Le périphérique supporte " << configRate << "Hz"
-                << std::endl;
+      std::cerr << "ERROR: Device does not support " << configRate << "Hz" << std::endl;
+      return false;
     }
   } catch (std::exception &e) {
-    std::cerr << "❌ getDeviceInfo() a échoué: " << e.what() << std::endl;
-    std::cerr
-        << "Impossible de récupérer les capacités détaillées du périphérique."
-        << std::endl;
-    std::cerr << "Cela explique peut-être pourquoi ALSA génère des erreurs 524."
-              << std::endl;
+    std::cerr << "Device query failed: " << e.what() << std::endl;
+    return false;
   }
-  std::cout << "======================================\n" << std::endl;
 
   // Use SAMPLING_FREQUENCY from config.h instead of hard-coding 96kHz
   unsigned int configSampleRate = SAMPLING_FREQUENCY;
   if (sampleRate != configSampleRate) {
-    std::cout << "🔧 CONFIGURATION: Changement de " << sampleRate << "Hz vers "
-              << configSampleRate << "Hz (défini dans config.h)" << std::endl;
+    std::cout << "CONFIGURATION: Change from " << sampleRate << "Hz to "
+              << configSampleRate << "Hz (defined in config.h)" << std::endl;
     sampleRate = configSampleRate;
   }
 
-  // Ouvrir le flux audio avec les options de faible latence
+  // Open audio stream with low latency options
   try {
-    std::cout << "Tentative d'ouverture du stream avec:" << std::endl;
-    std::cout << "  - Device ID: " << params.deviceId << std::endl;
-    std::cout << "  - Channels: " << params.nChannels << std::endl;
-    std::cout << "  - Sample Rate: " << sampleRate << "Hz" << std::endl;
-    std::cout << "  - Buffer Size: " << bufferSize << " frames" << std::endl;
-    std::cout << "  - Format: " << g_selected_audio_format_name << std::endl;
-
     audio->openStream(&params, nullptr, g_selected_audio_format, sampleRate,
                       &bufferSize, &AudioSystem::rtCallback, this, &options);
 
-    // Vérifier la fréquence réellement négociée
+    // Check actually negotiated parameters
     if (audio->isStreamOpen()) {
-      std::cout << "✅ Stream ouvert avec succès !" << std::endl;
-
       unsigned int actualSampleRate = audio->getStreamSampleRate();
-      std::cout << "📊 Fréquence négociée: " << actualSampleRate << "Hz"
-                << std::endl;
-      std::cout << "📊 Latence du stream: " << audio->getStreamLatency()
-                << " frames" << std::endl;
-
-      std::cout << "\n🔍 DIAGNOSTIC CRITIQUE:" << std::endl;
-      std::cout << "   FRÉQUENCE - Demandé: " << configSampleRate
-                << "Hz, Négocié: " << actualSampleRate << "Hz" << std::endl;
-      std::cout << "   BUFFER SIZE - Demandé: " << AUDIO_BUFFER_SIZE
-                << " frames, Négocié: " << bufferSize << " frames" << std::endl;
-
-      // Vérifier si le buffer size a été modifié par le hardware
+      
+      // Check for critical mismatches only
       if (bufferSize != AUDIO_BUFFER_SIZE) {
-        std::cerr << "\n🚨 PROBLÈME BUFFER SIZE DÉTECTÉ !" << std::endl;
-        std::cerr << "   Le BossDAC/Hardware a FORCÉ une taille différente !"
-                  << std::endl;
-        std::cerr << "   Config.h: " << AUDIO_BUFFER_SIZE << " frames"
-                  << std::endl;
-        std::cerr << "   Hardware: " << bufferSize << " frames" << std::endl;
-        std::cerr << "   Ratio: "
-                  << (float)bufferSize / (float)AUDIO_BUFFER_SIZE << "x"
-                  << std::endl;
-        std::cerr << "\n💡 CAUSE DU SON HACHÉ:" << std::endl;
-        std::cerr << "   - Synthèse produit des buffers de "
-                  << AUDIO_BUFFER_SIZE << " frames" << std::endl;
-        std::cerr << "   - Hardware demande des buffers de " << bufferSize
-                  << " frames" << std::endl;
-        std::cerr << "   - Désynchronisation = glitches audio" << std::endl;
-        std::cerr << "\n🔧 SOLUTIONS:" << std::endl;
-        std::cerr << "   1. Changer AUDIO_BUFFER_SIZE à " << bufferSize
-                  << " dans config.h" << std::endl;
-        std::cerr << "   2. Ou forcer le hardware à accepter "
-                  << AUDIO_BUFFER_SIZE << " frames" << std::endl;
-      } else {
-        std::cout << "✅ BUFFER SIZE: Parfaitement aligné (" << bufferSize
-                  << " frames)" << std::endl;
+        std::cerr << "ERROR: Buffer size mismatch - Config: " << AUDIO_BUFFER_SIZE 
+                  << " frames, Hardware: " << bufferSize << " frames" << std::endl;
+        std::cerr << "Change AUDIO_BUFFER_SIZE to " << bufferSize << " in config.h" << std::endl;
+        return false;
       }
 
       if (actualSampleRate != configSampleRate) {
-        std::cerr << "\n🚨 PROBLÈME DÉTECTÉ !" << std::endl;
-        std::cerr << "   Le périphérique ne supporte PAS " << configSampleRate
-                  << "Hz !" << std::endl;
-        std::cerr << "   Il fonctionne à " << actualSampleRate
-                  << "Hz au lieu de " << configSampleRate << "Hz" << std::endl;
-
-        float pitchRatio = (float)actualSampleRate / (float)configSampleRate;
-        std::cerr << "   Ratio de pitch: " << pitchRatio << " ("
-                  << (pitchRatio < 1.0f ? "plus grave" : "plus aigu") << ")"
-                  << std::endl;
-
-        if (configSampleRate == 96000 && actualSampleRate == 48000) {
-          std::cerr
-              << "   Vos sons sont d'UNE OCTAVE plus grave (48kHz vs 96kHz) !"
-              << std::endl;
-        }
-
-        std::cerr << "\n💡 SOLUTIONS POSSIBLES:" << std::endl;
-        std::cerr << "   1. Changer SAMPLING_FREQUENCY à " << actualSampleRate
-                  << " dans config.h" << std::endl;
-        std::cerr << "   2. Utiliser un périphérique supportant "
-                  << configSampleRate << "Hz" << std::endl;
-        std::cerr << "   3. Vérifier que votre récepteur audio supporte "
-                  << configSampleRate << "Hz" << std::endl;
-      } else {
-        std::cout << "🎯 PARFAIT: " << configSampleRate
-                  << "Hz négocié avec succès !" << std::endl;
-        std::cout << "   Votre configuration audio est optimale." << std::endl;
+        std::cerr << "ERROR: Sample rate mismatch - Requested: " << configSampleRate 
+                  << "Hz, Got: " << actualSampleRate << "Hz" << std::endl;
+        return false;
       }
-      std::cout << "======================================\n" << std::endl;
+
+      std::cout << "Stream opened successfully: " << actualSampleRate << "Hz, " 
+                << bufferSize << " frames" << std::endl;
     }
   } catch (std::exception &e) {
     std::cerr << "RtAudio error: " << e.what() << std::endl;
-    delete audio;    // Nettoyer l'objet RtAudio en cas d'échec
-    audio = nullptr; // Mettre le pointeur à nullptr
+    delete audio;    // Clean up RtAudio object on failure
+    audio = nullptr; // Set pointer to nullptr
     return false;
   }
-
-  std::cout << "RtAudio initialisé: "
-            << "SR=" << sampleRate << "Hz, "
-            << "BS=" << bufferSize << " frames, "
-            << "Latence=" << bufferSize * 1000.0 / sampleRate << "ms"
-            << std::endl;
 
   return true;
 }
@@ -1218,7 +1108,7 @@ void audio_Init(void) {
     float sampleRate = (gAudioSystem) ? SAMPLING_FREQUENCY : 44100.0f;
     eq_Init(sampleRate);
     std::cout
-        << "\033[1;32m[ThreeBandEQ] Égaliseur à 3 bandes initialisé\033[0m"
+        << "\033[1;32m[ThreeBandEQ] Three-band equalizer initialized\033[0m"
         << std::endl;
   }
 }
