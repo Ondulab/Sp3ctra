@@ -195,6 +195,47 @@ void image_debug_enable_runtime(int enable);
  */
 int image_debug_is_enabled(void);
 
+/**
+ * @brief Capture raw scanner line (unprocessed RGB data)
+ * @param buffer_R Red channel data (8-bit)
+ * @param buffer_G Green channel data (8-bit)
+ * @param buffer_B Blue channel data (8-bit)
+ * @retval 0 on success, -1 on error
+ */
+int image_debug_capture_raw_scanner_line(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B);
+
+/**
+ * @brief Save raw scanner capture to PNG file
+ * @retval 0 on success, -1 on error
+ */
+int image_debug_save_raw_scanner_capture(void);
+
+/**
+ * @brief Reset raw scanner capture buffer
+ * @retval 0 on success, -1 on error
+ */
+int image_debug_reset_raw_scanner_capture(void);
+
+/**
+ * @brief Configure raw scanner capture at runtime
+ * @param enable 1 to enable raw scanner capture, 0 to disable
+ * @param capture_lines Number of lines to capture before auto-saving (0 = use default)
+ * @retval None
+ */
+void image_debug_configure_raw_scanner(int enable, int capture_lines);
+
+/**
+ * @brief Check if raw scanner capture is enabled at runtime
+ * @retval 1 if enabled, 0 if disabled
+ */
+int image_debug_is_raw_scanner_enabled(void);
+
+/**
+ * @brief Get current raw scanner capture lines setting
+ * @retval Number of lines configured for capture
+ */
+int image_debug_get_raw_scanner_lines(void);
+
 #ifdef __cplusplus
 }
 #endif

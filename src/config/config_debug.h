@@ -43,12 +43,21 @@
  * - DEBUG_OSCILLATOR_VOLUMES peut fonctionner seul (mode basique)
  **************************************************************************************/
 
-#define DEBUG_OSCILLATOR_VOLUMES        // Enable oscillator volume capture (basic mode)
-#define DEBUG_OSCILLATOR_VOLUME_SCAN    // Enable temporal scan of oscillator volumes (advanced mode)
+//#define DEBUG_OSCILLATOR_VOLUMES        // Enable oscillator volume capture (basic mode)
+//#define DEBUG_OSCILLATOR_VOLUME_SCAN    // Enable temporal scan of oscillator volumes (advanced mode)
 
 // Configuration des paramètres oscillateur debug
 #define OSCILLATOR_VOLUME_SCAN_SAMPLES 48000                  // Oscillator volume scan configuration (1 second at 48kHz sampling rate)
 #define OSCILLATOR_VOLUME_SCAN_AUTO_SAVE 48000                // Auto-save threshold for oscillator volume scans (auto-save every 1 second)
+
+// Configuration des markers visuels
+// #define DEBUG_OSCILLATOR_SCAN_MARKERS   // Enable visual markers in oscillator volume scans (comment out to disable yellow/blue markers)
+
+// Configuration de capture d'images brutes du scanner
+// NOTE: Raw scanner capture is now configured at runtime via --debug-image argument
+// The old #define DEBUG_RAW_SCANNER_CAPTURE and RAW_SCANNER_CAPTURE_LINES are no longer used
+// Use: ./Sp3ctra --debug-image        (default: 1000 lines)
+// Use: ./Sp3ctra --debug-image=2000   (custom number of lines)
 
 // #define PRINT_IFFT_FREQUENCY         // Enable IFFT frequency printing
 // #define PRINT_IFFT_FREQUENCY_FULL    // Enable full IFFT frequency printing
@@ -71,16 +80,16 @@
 
 // #define DEBUG_IMAGE_TRANSFORMATIONS  // Enable image transformation visualization
 //#define DEBUG_IMAGE_SAVE_TO_FILES       // Save debug images to PNG files
-// #define DEBUG_IMAGE_STEREO_CHANNELS  // Enable stereo channel visualization (warm/cold)
+//#define DEBUG_IMAGE_STEREO_CHANNELS  // Enable stereo channel visualization (warm/cold)
 // #define DEBUG_IMAGE_SHOW_HISTOGRAMS  // Show pixel value histograms
 // #define DEBUG_IMAGE_FRAME_COUNTER    // Add frame counter to debug images
-//#define DEBUG_TEMPORAL_SCAN             // Enable temporal scan functionality (auto-save scan images)
+// #define DEBUG_TEMPORAL_SCAN             // Enable temporal scan functionality (auto-save scan images)
 
 // Configuration des paramètres image debug
 #define DEBUG_IMAGE_OUTPUT_DIR "./debug_images/"              // Debug image output directory (relative to executable)
 #define DEBUG_IMAGE_CAPTURE_FREQUENCY 1                       // Debug image capture frequency (capture every N frames to avoid flooding)
 #define DEBUG_IMAGE_MAX_FILES 100                             // Maximum number of debug images to keep (oldest files will be deleted)
-#define DEBUG_TEMPORAL_SCAN_MAX_LINES 5000                    // Temporal scan configuration (auto-save every N lines)
+//#define DEBUG_TEMPORAL_SCAN_MAX_LINES 10000                    // Temporal scan configuration (auto-save every N lines)
 #define DEBUG_FORCE_CAPTURE_TEST_DATA 0                       // Force capture even with test pattern data
 
 /**************************************************************************************
@@ -135,7 +144,7 @@
  **************************************************************************************/
 
 // Auto-enable ENABLE_IMAGE_DEBUG if any image debug feature is requested
-#if defined(DEBUG_OSCILLATOR_VOLUME_SCAN) || defined(DEBUG_IMAGE_SAVE_TO_FILES) || defined(DEBUG_TEMPORAL_SCAN) || defined(DEBUG_IMAGE_TRANSFORMATIONS) || defined(DEBUG_IMAGE_STEREO_CHANNELS) || defined(DEBUG_IMAGE_SHOW_HISTOGRAMS) || defined(DEBUG_IMAGE_FRAME_COUNTER)
+#if defined(DEBUG_OSCILLATOR_VOLUME_SCAN) || defined(DEBUG_IMAGE_SAVE_TO_FILES) || defined(DEBUG_TEMPORAL_SCAN) || defined(DEBUG_IMAGE_TRANSFORMATIONS) || defined(DEBUG_IMAGE_STEREO_CHANNELS) || defined(DEBUG_IMAGE_SHOW_HISTOGRAMS) || defined(DEBUG_IMAGE_FRAME_COUNTER) || defined(DEBUG_RAW_SCANNER_CAPTURE)
     #ifndef ENABLE_IMAGE_DEBUG
         #define ENABLE_IMAGE_DEBUG  // Auto-activated for image debug features
         #pragma message "ℹ️  ENABLE_IMAGE_DEBUG auto-activated for image debug features"

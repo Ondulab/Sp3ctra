@@ -74,6 +74,11 @@ volatile sig_atomic_t app_running = 1;
 Context *global_context =
     NULL; // Contexte global pour le gestionnaire de signaux
 
+// Global debug configuration for additive oscillators
+#ifdef DEBUG_OSC
+debug_additive_osc_config_t g_debug_osc_config = {0, -1, 0, 0};
+#endif
+
 // Rendre le gestionnaire de signal visible pour les autres modules (comme
 // dmx.c)
 void signalHandler(int signal) {
@@ -114,6 +119,9 @@ void signalHandler(int signal) {
 }
 
 int main(int argc, char **argv) {
+#ifdef DEBUG_OSC
+  // DEBUG_OSC is enabled - additive oscillator debug features available
+#endif
   // Configurez le gestionnaire de signaux SIGINT (Ctrl+C)
   signal(SIGINT, signalHandler);
   /* Parse command-line arguments */
@@ -139,7 +147,8 @@ int main(int argc, char **argv) {
              DMX_PORT);
       printf("  --silent-dmx             Suppress DMX error messages\n");
       printf("  --test-tone              Enable test tone mode (440Hz)\n");
-      printf("  --debug-image            Enable image transformation debug visualization\n");
+      printf("  --debug-image[=LINES]    Enable raw scanner capture debug (default: 1000 lines)\n");
+      printf("  --debug-additive-osc=<N|N-M> Debug one or a range of additive oscillators (e.g., 56 or 23-89)\n");
       printf("\nExamples:\n");
       printf("  %s --audio-device=3                 # Use audio device 3\n",
              argv[0]);
@@ -188,10 +197,70 @@ int main(int argc, char **argv) {
       printf("🎵 Test tone mode enabled (440Hz)\n");
       // Enable minimal callback mode for testing
       setMinimalCallbackMode(1);
-    } else if (strcmp(argv[i], "--debug-image") == 0) {
-      printf("🔧 Image transformation debug enabled\n");
-      // Enable runtime image debug
-      image_debug_enable_runtime(1);
+    } else if (strncmp(argv[i], "--debug-image", 13) == 0) {
+      const char *param = argv[i] + 13;
+      int capture_lines = 1000; // Default value
+      
+      if (*param == '=') {
+        // Parse the number after the equals sign
+        param++; // Skip the '='
+        char *endptr;
+        long lines = strtol(param, &endptr, 10);
+        if (*endptr == '\0' && lines > 0 && lines <= 50000) {
+          capture_lines = (int)lines;
+        } else {
+          printf("❌ Error: Invalid capture lines value '%s' (must be 1-50000)\n", param);
+          return EXIT_FAILURE;
+        }
+      } else if (*param != '\0') {
+        printf("❌ Error: Invalid --debug-image format '%s' (use --debug-image or --debug-image=LINES)\n", argv[i]);
+        return EXIT_FAILURE;
+      }
+      
+      printf("🔧 Image transformation debug enabled (%d lines)\n", capture_lines);
+      // Configure raw scanner capture with runtime parameters
+      image_debug_configure_raw_scanner(1, capture_lines);
+#ifdef DEBUG_OSC
+    } else if (strncmp(argv[i], "--debug-additive-osc=", 21) == 0) {
+      printf("🔧 Debug oscillateur additif activé !\n");
+      const char *osc_param = argv[i] + 21;
+      
+      // Parse "56" or "23-89"
+      if (strchr(osc_param, '-')) {
+        // Range format: "23-89"
+        int start, end;
+        if (sscanf(osc_param, "%d-%d", &start, &end) == 2) {
+          if (start >= 0 && end >= start && end < NUMBER_OF_NOTES) {
+            g_debug_osc_config.enabled = 1;
+            g_debug_osc_config.single_osc = -1;
+            g_debug_osc_config.start_osc = start;
+            g_debug_osc_config.end_osc = end;
+            printf("🔧 Debug oscillateur additif activé pour la plage %d-%d\n", start, end);
+          } else {
+            printf("❌ Erreur: plage d'oscillateurs invalide %d-%d (doit être 0-%d)\n", 
+                   start, end, NUMBER_OF_NOTES-1);
+            return EXIT_FAILURE;
+          }
+        } else {
+          printf("❌ Erreur: format de plage invalide '%s' (utilisez N-M)\n", osc_param);
+          return EXIT_FAILURE;
+        }
+      } else {
+        // Single oscillator format: "56"
+        int single_osc = atoi(osc_param);
+        if (single_osc >= 0 && single_osc < NUMBER_OF_NOTES) {
+          g_debug_osc_config.enabled = 1;
+          g_debug_osc_config.single_osc = single_osc;
+          g_debug_osc_config.start_osc = 0;
+          g_debug_osc_config.end_osc = 0;
+          printf("🔧 Debug oscillateur additif activé pour l'oscillateur %d\n", single_osc);
+        } else {
+          printf("❌ Erreur: numéro d'oscillateur invalide %d (doit être 0-%d)\n", 
+                 single_osc, NUMBER_OF_NOTES-1);
+          return EXIT_FAILURE;
+        }
+      }
+#endif
     } else {
       printf("Unknown option: %s\n", argv[i]);
       printf("Use --help for usage information\n");
@@ -375,6 +444,7 @@ int main(int argc, char **argv) {
   // visual_freeze_init(); // Removed: Old visual-only freeze
   synth_data_freeze_init();         // Initialize synth data freeze feature
   displayable_synth_buffers_init(); // Initialize displayable synth buffers
+
 
   int s = udp_Init(&si_other, &si_me);
   if (s < 0) {

@@ -10,6 +10,7 @@
 #include "error.h"
 #include "synth_additive.h"
 #include "udp.h"
+#include "image_debug.h"
 #include <time.h>
 
 #ifndef NO_SFML
@@ -385,6 +386,12 @@ void *udpThread(void *arg) {
       db->dataReady = 1;
       pthread_cond_signal(&db->cond);
       pthread_mutex_unlock(&db->mutex);
+
+      // Capture raw scanner data only when new UDP data arrives
+      // Function handles runtime enable/disable internally
+      image_debug_capture_raw_scanner_line(db->processingBuffer_R, 
+                                          db->processingBuffer_G, 
+                                          db->processingBuffer_B);
     }
   }
 

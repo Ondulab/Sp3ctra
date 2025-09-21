@@ -63,11 +63,6 @@
 #define IMAGE_ADAPTIVE_SMOOTHING     0                      /* Enable adaptive smoothing based on variation magnitude (0/1) */
 #endif
 
-// Logging Parameters
-#define LOG_FREQUENCY                (SAMPLING_FREQUENCY / AUDIO_BUFFER_SIZE) // Approximate logging frequency in Hz
-
-#define GAP_LIMITER
-
 #define WAVE_AMP_RESOLUTION          (16777215)             // Decimal value
 #define VOLUME_AMP_RESOLUTION        (65535)                // Decimal value
 #define START_FREQUENCY              (65.41)
@@ -84,7 +79,9 @@
 /**************************************************************************************
  * Phase-Aware Gap Limiter Configuration
  **************************************************************************************/
-// Enable phase-aware gap limiter for improved audio quality
+#define GAP_LIMITER
+
+ // Enable phase-aware gap limiter for improved audio quality
 #define ENABLE_PHASE_AWARE_GAP_LIMITER 0                    // Set to 1 to enable, 0 to use classic Gap Limiter
 
 // Phase-aware gap limiter mode enumeration (cleaner than #define constants)
@@ -113,6 +110,27 @@ typedef enum {
 // Debug mode for phase-aware gap limiter
 // #define DEBUG_PHASE_AWARE_GAP_LIMITER
 #define DEBUG_NOTE_INDEX             100                    // Note index to debug (if debug enabled)
+
+/**************************************************************************************
+ * Additive Oscillator Debug Configuration
+ **************************************************************************************/
+// Enable debug traces for additive oscillators (compile-time flag)
+#define DEBUG_OSC
+
+#ifdef DEBUG_OSC
+#pragma message "🔧 DEBUG_OSC is enabled - additive oscillator debug features compiled"
+#endif
+
+// Debug configuration structure (runtime)
+typedef struct {
+    int enabled;                    // Runtime enable/disable flag
+    int single_osc;                 // -1 if range, otherwise single oscillator number
+    int start_osc;                  // Start of range (for ranges)
+    int end_osc;                    // End of range (for ranges)
+} debug_additive_osc_config_t;
+
+// Logging Parameters
+#define LOG_FREQUENCY                (SAMPLING_FREQUENCY / AUDIO_BUFFER_SIZE) // Approximate logging frequency in Hz
 
 /**************************************************************************************
  * Auto-volume

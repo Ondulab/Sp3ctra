@@ -23,6 +23,8 @@
 
 static int debug_initialized = 0;
 static int debug_image_runtime_enabled = 0; // Runtime control for image debug
+static int raw_scanner_runtime_enabled = 0; // Runtime control for raw scanner capture
+static int raw_scanner_capture_lines = 1000; // Default number of lines to capture
 #ifdef DEBUG_IMAGE_FRAME_COUNTER
 static int frame_counter = 0;
 #endif
@@ -134,34 +136,27 @@ static void apply_color_palette(uint8_t *grayscale_8, uint8_t *rgb_output, int s
  **************************************************************************************/
 
 int image_debug_init(void) {
-#ifdef ENABLE_IMAGE_DEBUG
     if (debug_initialized) {
         return 0; // Already initialized
     }
     
-    // Set up output directory
-    strncpy(output_dir, DEBUG_IMAGE_OUTPUT_DIR, sizeof(output_dir) - 1);
+    // Set up output directory (always use "./debug_images")
+    strncpy(output_dir, "./debug_images", sizeof(output_dir) - 1);
     output_dir[sizeof(output_dir) - 1] = '\0';
     
-    // Create output directory
-    if (create_directory(output_dir) != 0) {
-        printf("ERROR: Failed to create debug image directory: %s\n", output_dir);
-        return -1;
+    // Create output directory (simple implementation)
+    struct stat st = {0};
+    if (stat(output_dir, &st) == -1) {
+        if (mkdir(output_dir, 0755) != 0) {
+            printf("ERROR: Failed to create debug image directory: %s\n", output_dir);
+            return -1;
+        }
     }
     
-    // Clean up old files
-    image_debug_cleanup_old_files();
-    
     debug_initialized = 1;
-#ifdef DEBUG_IMAGE_FRAME_COUNTER
-    frame_counter = 0;
-#endif
     
     printf("🔧 IMAGE_DEBUG: Initialized, output directory: %s\n", output_dir);
     return 0;
-#else
-    return 0; // Debug disabled, return success
-#endif
 }
 
 void image_debug_cleanup(void) {
@@ -249,6 +244,10 @@ static int oscillator_scan_initialized = 0;
 #ifdef DEBUG_OSCILLATOR_VOLUMES
 static int oscillator_sample_counter = 0;
 #endif
+
+// Global raw scanner capture structure (now always available for runtime configuration)
+static temporal_scan_t raw_scanner_capture = {0};
+static int raw_scanner_initialized = 0;
 
 /**
  * @brief Initialize oscillator volume scan buffer
@@ -387,7 +386,9 @@ int image_debug_save_oscillator_volume_scan(void) {
     }
     
     uint16_t *buffer_16 = (uint16_t*)scan->buffer;
+#ifdef DEBUG_OSCILLATOR_SCAN_MARKERS
     int marker_count = 0; // Counter for markers
+#endif
     
     for (int y = 0; y < scan->current_height; y++) {
         for (int x = 0; x < scan->width; x++) {
@@ -403,6 +404,7 @@ int image_debug_save_oscillator_volume_scan(void) {
             rgb_8bit[idx_8_rgb + 2] = gray_value;
         }
         
+#ifdef DEBUG_OSCILLATOR_SCAN_MARKERS
         // Add a more visible yellow marker block
         if (y > 0 && y % AUDIO_BUFFER_SIZE == 0) {
             marker_count++;
@@ -415,9 +417,14 @@ int image_debug_save_oscillator_volume_scan(void) {
                 }
             }
         }
+#endif
     }
     
+#ifdef DEBUG_OSCILLATOR_SCAN_MARKERS
     printf("🔧 OSCILLATOR_SCAN: Drew %d yellow markers.\n", marker_count);
+#else
+    printf("🔧 OSCILLATOR_SCAN: Markers disabled (no visual markers drawn).\n");
+#endif
     
     // Generate filename with timestamp
     char timestamp[32];
@@ -777,6 +784,126 @@ int image_debug_cleanup_old_files(void) {
 }
 
 /**************************************************************************************
+ * Raw Scanner Capture Functions
+ **************************************************************************************/
+
+/**
+ * @brief Initialize raw scanner capture buffer (now uses runtime configuration)
+ * @retval 0 on success, -1 on error
+ */
+static int init_raw_scanner_capture(void) {
+    if (raw_scanner_initialized) {
+        return 0;
+    }
+    
+    raw_scanner_capture.width = CIS_MAX_PIXELS_NB;
+    raw_scanner_capture.max_height = raw_scanner_capture_lines; // Use runtime-configured lines
+    raw_scanner_capture.current_height = 0;
+    raw_scanner_capture.initialized = 0;
+    strncpy(raw_scanner_capture.name, "raw_scanner", sizeof(raw_scanner_capture.name) - 1);
+    raw_scanner_capture.name[sizeof(raw_scanner_capture.name) - 1] = '\0';
+    
+    // Allocate buffer (RGB format for raw scanner data)
+    raw_scanner_capture.buffer = calloc(raw_scanner_capture.width * raw_scanner_capture.max_height * 3, sizeof(uint8_t));
+    if (!raw_scanner_capture.buffer) {
+        printf("ERROR: Failed to allocate raw scanner capture buffer\n");
+        return -1;
+    }
+    
+    raw_scanner_initialized = 1;
+    
+    printf("🔧 RAW_SCANNER: Initialized buffer (%dx%d lines)\n", 
+           CIS_MAX_PIXELS_NB, raw_scanner_capture_lines);
+    return 0;
+}
+
+int image_debug_capture_raw_scanner_line(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B) {
+    // Check if raw scanner capture is enabled at runtime
+    if (!raw_scanner_runtime_enabled || !debug_initialized || !debug_image_runtime_enabled) {
+        return 0; // Not enabled, return success without doing anything
+    }
+    
+    if (!buffer_R || !buffer_G || !buffer_B) {
+        return -1;
+    }
+    
+    // Initialize raw scanner capture if needed (now uses runtime configuration)
+    if (init_raw_scanner_capture() != 0) {
+        return -1;
+    }
+    
+    temporal_scan_t *scan = &raw_scanner_capture;
+    
+    // Check if buffer is full (using runtime-configured lines)
+    if (scan->current_height >= raw_scanner_capture_lines) {
+        printf("🔧 RAW_SCANNER: Auto-saving after %d lines\n", scan->current_height);
+        image_debug_save_raw_scanner_capture();
+        image_debug_reset_raw_scanner_capture();
+    }
+    
+    // Add RGB line to scan buffer (raw, unprocessed data)
+    for (int x = 0; x < CIS_MAX_PIXELS_NB && x < scan->width; x++) {
+        int idx = (scan->current_height * scan->width + x) * 3;
+        scan->buffer[idx + 0] = buffer_R[x];
+        scan->buffer[idx + 1] = buffer_G[x];
+        scan->buffer[idx + 2] = buffer_B[x];
+    }
+    
+    scan->current_height++;
+    scan->initialized = 1;
+    
+    return 0;
+}
+
+int image_debug_save_raw_scanner_capture(void) {
+    if (!debug_initialized || !raw_scanner_initialized) {
+        return -1;
+    }
+    
+    temporal_scan_t *scan = &raw_scanner_capture;
+    if (!scan->initialized || scan->current_height == 0) {
+        return 0; // Nothing to save
+    }
+    
+    // Generate filename with timestamp
+    char timestamp[32];
+    get_timestamp_string(timestamp, sizeof(timestamp));
+    char full_path[512];
+    snprintf(full_path, sizeof(full_path), "%s/%s_raw_scanner_capture.png", 
+             output_dir, timestamp);
+    
+    // Save PNG file as RGB (raw scanner data, no processing)
+    int result = stbi_write_png(full_path, scan->width, scan->current_height, 3, 
+                               scan->buffer, scan->width * 3);
+    
+    if (result) {
+        printf("🔧 RAW_SCANNER: Saved raw scanner capture (%dx%d): %s\n", 
+               scan->width, scan->current_height, full_path);
+        return 0;
+    } else {
+        printf("ERROR: Failed to save raw scanner capture: %s\n", full_path);
+        return -1;
+    }
+}
+
+int image_debug_reset_raw_scanner_capture(void) {
+    if (!raw_scanner_initialized) {
+        return -1;
+    }
+    
+    temporal_scan_t *scan = &raw_scanner_capture;
+    scan->current_height = 0;
+    
+    // Clear buffer (fill with black)
+    if (scan->buffer) {
+        memset(scan->buffer, 0, scan->width * scan->max_height * 3);
+    }
+    
+    printf("🔧 RAW_SCANNER: Reset raw scanner capture buffer\n");
+    return 0;
+}
+
+/**************************************************************************************
  * Temporal Scan Functions
  **************************************************************************************/
 
@@ -1016,4 +1143,38 @@ int image_debug_reset_scan(const char *scan_type) {
     (void)scan_type;
     return 0; // Debug disabled
 #endif
+}
+
+/**************************************************************************************
+ * Raw Scanner Runtime Configuration Functions
+ **************************************************************************************/
+
+void image_debug_configure_raw_scanner(int enable, int capture_lines) {
+    raw_scanner_runtime_enabled = enable;
+    
+    if (capture_lines > 0) {
+        raw_scanner_capture_lines = capture_lines;
+    }
+    
+    if (enable) {
+        printf("🔧 RAW_SCANNER: Runtime capture enabled (%d lines)\n", raw_scanner_capture_lines);
+        // Auto-enable general image debug if raw scanner is enabled
+        if (!debug_image_runtime_enabled) {
+            image_debug_enable_runtime(1);
+        }
+        // Auto-initialize debug system if not already done
+        if (!debug_initialized) {
+            image_debug_init();
+        }
+    } else {
+        printf("🔧 RAW_SCANNER: Runtime capture disabled\n");
+    }
+}
+
+int image_debug_is_raw_scanner_enabled(void) {
+    return raw_scanner_runtime_enabled;
+}
+
+int image_debug_get_raw_scanner_lines(void) {
+    return raw_scanner_capture_lines;
 }
