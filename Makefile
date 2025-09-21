@@ -20,14 +20,15 @@ ifeq ($(UNAME_S),Darwin)
     CXXFLAGS = $(BASE_CXXFLAGS)
     
     # Include directories for macOS
-    INCLUDES = -I/opt/homebrew/include \
+    INCLUDES = -I/opt/homebrew/include -I$(SFML_INCLUDE) \
                -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects \
                -Isrc/audio/pan -Isrc/synthesis/additive -Isrc/synthesis/polyphonic \
                -Isrc/synthesis/polyphonic/kissfft -Isrc/communication/network -Isrc/communication/midi \
                -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
     
-    # macOS Libraries - Support both standard and versioned SFML paths
-    SFML_PATH := $(shell if [ -d "/opt/homebrew/opt/sfml@2/lib" ]; then echo "/opt/homebrew/opt/sfml@2/lib"; else echo "/opt/homebrew/lib"; fi)
+    # macOS Libraries - Use SFML@2 exclusively to avoid version conflicts
+    SFML_PATH := /opt/homebrew/opt/sfml@2/lib
+    SFML_INCLUDE := /opt/homebrew/opt/sfml@2/include
     LIBS = -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa \
            -L/opt/homebrew/lib -L$(SFML_PATH) -lfftw3 -lsndfile -lrtaudio -lrtmidi \
            -lsfml-graphics -lsfml-window -lsfml-system \
@@ -64,7 +65,10 @@ AUDIO_BUFFERS_SOURCES = src/audio/buffers/audio_image_buffers.c
 AUDIO_PAN_SOURCES = src/audio/pan/lock_free_pan.c
 AUDIO_EFFECTS_SOURCES = src/audio/effects/auto_volume.c src/audio/effects/pareq.cpp \
                         src/audio/effects/three_band_eq.cpp src/audio/effects/ZitaRev1.cpp
-SYNTHESIS_ADDITIVE_SOURCES = src/synthesis/additive/synth_additive.c src/synthesis/additive/wave_generation.c
+SYNTHESIS_ADDITIVE_SOURCES = src/synthesis/additive/synth_additive.c src/synthesis/additive/wave_generation.c \
+                             src/synthesis/additive/synth_additive_math.c src/synthesis/additive/synth_additive_stereo.c \
+                             src/synthesis/additive/synth_additive_state.c src/synthesis/additive/synth_additive_threading.c \
+                             src/synthesis/additive/synth_additive_algorithms.c
 SYNTHESIS_POLYPHONIC_SOURCES = src/synthesis/polyphonic/synth_polyphonic.c \
                                src/synthesis/polyphonic/kissfft/kiss_fft.c \
                                src/synthesis/polyphonic/kissfft/kiss_fftr.c
