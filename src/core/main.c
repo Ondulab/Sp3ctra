@@ -148,6 +148,7 @@ int main(int argc, char **argv) {
       printf("  --silent-dmx             Suppress DMX error messages\n");
       printf("  --test-tone              Enable test tone mode (440Hz)\n");
       printf("  --debug-image[=LINES]    Enable raw scanner capture debug (default: 1000 lines)\n");
+      printf("  --debug-additive-osc-image[=SAMPLES] Enable oscillator volume capture debug (default: 48000 samples)\n");
       printf("  --debug-additive-osc=<N|N-M> Debug one or a range of additive oscillators (e.g., 56 or 23-89)\n");
       printf("\nExamples:\n");
       printf("  %s --audio-device=3                 # Use audio device 3\n",
@@ -220,8 +221,66 @@ int main(int argc, char **argv) {
       printf("🔧 Image transformation debug enabled (%d lines)\n", capture_lines);
       // Configure raw scanner capture with runtime parameters
       image_debug_configure_raw_scanner(1, capture_lines);
-#ifdef DEBUG_OSC
+    } else if (strncmp(argv[i], "--debug-additive-osc-image", 26) == 0) {
+      const char *param = argv[i] + 26;
+      int capture_samples = 48000; // Default value (1 second at 48kHz)
+      int enable_markers = 0; // Default: markers disabled
+      
+      if (*param == '=') {
+        // Parse the number after the equals sign
+        param++; // Skip the '='
+        char *comma_pos = strchr(param, ',');
+        
+        if (comma_pos) {
+          // Parse samples and markers: "2000,m"
+          char samples_str[32];
+          int samples_len = comma_pos - param;
+          if (samples_len < sizeof(samples_str)) {
+            strncpy(samples_str, param, samples_len);
+            samples_str[samples_len] = '\0';
+            
+            long samples = strtol(samples_str, NULL, 10);
+            if (samples > 0 && samples <= 480000) {
+              capture_samples = (int)samples;
+            } else {
+              printf("❌ Error: Invalid capture samples value '%s' (must be 1-480000)\n", samples_str);
+              return EXIT_FAILURE;
+            }
+            
+            // Check for markers flag
+            const char *marker_param = comma_pos + 1;
+            if (strcmp(marker_param, "m") == 0) {
+              enable_markers = 1;
+            } else {
+              printf("❌ Error: Invalid marker flag '%s' (use 'm' to enable markers)\n", marker_param);
+              return EXIT_FAILURE;
+            }
+          } else {
+            printf("❌ Error: Samples value too long\n");
+            return EXIT_FAILURE;
+          }
+        } else {
+          // Only samples specified: "2000"
+          char *endptr;
+          long samples = strtol(param, &endptr, 10);
+          if (*endptr == '\0' && samples > 0 && samples <= 480000) {
+            capture_samples = (int)samples;
+          } else {
+            printf("❌ Error: Invalid capture samples value '%s' (must be 1-480000)\n", param);
+            return EXIT_FAILURE;
+          }
+        }
+      } else if (*param != '\0') {
+        printf("❌ Error: Invalid --debug-additive-osc-image format '%s' (use --debug-additive-osc-image[=SAMPLES[,m]])\n", argv[i]);
+        return EXIT_FAILURE;
+      }
+      
+      printf("🔧 Additive oscillator debug enabled (%d samples%s)\n", 
+             capture_samples, enable_markers ? ", markers enabled" : "");
+      // Configure oscillator volume capture with runtime parameters
+      image_debug_configure_oscillator_capture(1, capture_samples, enable_markers);
     } else if (strncmp(argv[i], "--debug-additive-osc=", 21) == 0) {
+#ifdef DEBUG_OSC
       printf("🔧 Debug oscillateur additif activé !\n");
       const char *osc_param = argv[i] + 21;
       

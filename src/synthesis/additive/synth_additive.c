@@ -1221,10 +1221,8 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
         }
         tmp_audioData[buff_idx] = signal_R / (float)WAVE_AMP_RESOLUTION;
 
-#ifdef DEBUG_OSCILLATOR_VOLUMES
         // Capture oscillator volumes for each audio sample (48kHz resolution)
         image_debug_capture_oscillator_sample();
-#endif
     }
 
   // Le facteur de contraste est maintenant passé en paramètre depuis synth_AudioProcess
@@ -1505,26 +1503,6 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   memcpy(g_displayable_synth_B, buffer_B, CIS_MAX_PIXELS_NB);
   pthread_mutex_unlock(&g_displayable_synth_mutex);
   // Additive synthesis finished
-#endif
-
-#if 0
-  // Génération d'une onde sinusoïdale simple pour test audio
-  printf("Test audio: génération d'une onde sinusoïdale de 440Hz dans "
-         "buffer[%d]\n",
-         index);
-  for (int i = 0; i < AUDIO_BUFFER_SIZE; i++) {
-    buffers_R[index].data[i] = 0.5f * sinf(phase); // Amplitude de 0.5 (50%)
-    phase += (TWO_PI * 440) / SAMPLING_FREQUENCY;
-
-    // Éviter que phase devienne trop grand
-    if (phase >= TWO_PI) {
-      phase -= TWO_PI;
-    }
-  }
-
-  // Vérifier quelques valeurs de sortie audio
-  printf("Valeurs audio de test: %.6f, %.6f, %.6f\n", buffers_R[index].data[0],
-         buffers_R[index].data[1], buffers_R[index].data[2]);
 #endif
 
   // Marquer les buffers comme prêts

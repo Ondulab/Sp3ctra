@@ -236,6 +236,27 @@ int image_debug_is_raw_scanner_enabled(void);
  */
 int image_debug_get_raw_scanner_lines(void);
 
+/**
+ * @brief Configure oscillator volume capture at runtime
+ * @param enable 1 to enable oscillator capture, 0 to disable
+ * @param capture_samples Number of samples to capture before auto-saving (0 = use default)
+ * @param enable_markers 1 to enable visual markers, 0 to disable
+ * @retval None
+ */
+void image_debug_configure_oscillator_capture(int enable, int capture_samples, int enable_markers);
+
+/**
+ * @brief Check if oscillator volume capture is enabled at runtime
+ * @retval 1 if enabled, 0 if disabled
+ */
+int image_debug_is_oscillator_capture_enabled(void);
+
+/**
+ * @brief Get current oscillator capture samples setting
+ * @retval Number of samples configured for capture
+ */
+int image_debug_get_oscillator_capture_samples(void);
+
 #ifdef __cplusplus
 }
 #endif
