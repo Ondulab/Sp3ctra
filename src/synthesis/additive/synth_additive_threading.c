@@ -140,7 +140,7 @@ void *synth_persistent_worker_thread(void *arg) {
  * @retval None
  */
 void synth_process_worker_range(synth_thread_worker_t *worker) {
-  int32_t idx, acc, buff_idx, note, local_note_idx;
+  int32_t buff_idx, note, local_note_idx;
 
   // Initialize output buffers to zero
   fill_float(0, worker->thread_additiveBuffer, AUDIO_BUFFER_SIZE);

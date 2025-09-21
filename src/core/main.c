@@ -1,3 +1,52 @@
+// Standard library includes
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <termios.h>
+#include <unistd.h>
+
+// External library includes
+#ifdef NO_SFML
+// If SFML is disabled, provide stubs/forward declarations for SFML types used.
+// This is global for main.c when NO_SFML is defined.
+typedef struct {
+  unsigned long long microseconds;
+} sfTime;
+
+typedef struct sfClock sfClock; // Forward declaration for sfClock
+
+// Stubs for sfClock functions if they are called (they shouldn't be thanks to
+// #ifndef NO_SFML guards below). But the compiler needs to see them if PRINT_FPS
+// is active and tries to compile the calls. The guards around sfClock_* calls in
+// the main loop should prevent this. However, for `sfClock *clock = NULL;` to be
+// valid, the type declaration is sufficient. Function definitions here are for
+// completeness if they were ever called by mistake.
+sfClock *sfClock_create(void) { return NULL; }
+void sfClock_destroy(sfClock *clock) { (void)clock; }
+sfTime sfClock_getElapsedTime(const sfClock *clock) {
+  (void)clock;
+  sfTime t = {0};
+  return t;
+}
+void sfClock_restart(sfClock *clock) { (void)clock; }
+
+// Other SFML types might need forward declarations here if they are used in
+// main.c outside of #ifndef NO_SFML blocks and are not already covered by
+// context.h/display.h. For example: typedef struct sfVideoMode sfVideoMode;
+// If used directly. But sfVideoMode mode = ... is already in a #ifndef NO_SFML block
+
+#else // NO_SFML is NOT defined, so SFML is enabled
+// Include real SFML headers
+#include <SFML/Graphics.h>
+#include <SFML/Network.h>
+#endif // NO_SFML
+
+// Internal project includes
 #include "audio_c_api.h"
 #include "auto_volume.h"
 #include "config.h"
@@ -11,7 +60,7 @@
 #include "synth_polyphonic.h" // Added for the new FFT synth mode
 #include "udp.h"
 
-// Declaration des fonctions MIDI externes (C-compatible)
+// External MIDI function declarations (C-compatible)
 extern void midi_Init(void);
 extern void midi_Cleanup(void);
 extern int midi_Connect(void);
@@ -21,73 +70,24 @@ extern void midi_set_note_on_callback(void (*callback)(int noteNumber,
                                                        int velocity));
 extern void midi_set_note_off_callback(void (*callback)(int noteNumber));
 
-#ifdef NO_SFML
-// Si SFML est désactivé, fournir des stubs/déclarations anticipées pour les
-// types SFML utilisés. Ceci est global pour main.c lorsque NO_SFML est défini.
-typedef struct {
-  unsigned long long microseconds;
-} sfTime;
-
-typedef struct sfClock sfClock; // Déclaration anticipée pour sfClock
-
-// Stubs pour les fonctions sfClock si elles sont appelées (elles ne devraient
-// pas l'être grâce aux gardes #ifndef NO_SFML plus bas) Mais le compilateur a
-// besoin de les voir si PRINT_FPS est actif et qu'il essaie de compiler les
-// appels. Les gardes autour des appels sfClock_* dans la boucle principale
-// devraient empêcher cela. Cependant, pour que `sfClock *clock = NULL;` soit
-// valide, la déclaration de type est suffisante. Les définitions de fonctions
-// ici sont pour la complétude si jamais elles étaient appelées par erreur.
-sfClock *sfClock_create(void) { return NULL; }
-void sfClock_destroy(sfClock *clock) { (void)clock; }
-sfTime sfClock_getElapsedTime(const sfClock *clock) {
-  (void)clock;
-  sfTime t = {0};
-  return t;
-}
-void sfClock_restart(sfClock *clock) { (void)clock; }
-
-// D'autres types SFML pourraient nécessiter des déclarations anticipées ici
-// s'ils sont utilisés dans main.c en dehors des blocs #ifndef NO_SFML et ne
-// sont pas déjà couverts par context.h/display.h Par exemple: typedef struct
-// sfVideoMode sfVideoMode; // Si utilisé directement Mais sfVideoMode mode =
-// ... est déjà dans un bloc #ifndef NO_SFML
-
-#else // NO_SFML n'est PAS défini, donc SFML est activé
-// Inclure les vrais en-têtes SFML
-#include <SFML/Graphics.h>
-#include <SFML/Network.h>
-#endif // NO_SFML
-
-#include <arpa/inet.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <termios.h>
-#include <unistd.h>
-
-// Gestionnaire de signal global pour l'application
+// Global signal handler for the application
 volatile sig_atomic_t app_running = 1;
 Context *global_context =
-    NULL; // Contexte global pour le gestionnaire de signaux
+    NULL; // Global context for signal handler
 
 // Global debug configuration for additive oscillators
 #ifdef DEBUG_OSC
 debug_additive_osc_config_t g_debug_osc_config = {0, -1, 0, 0};
 #endif
 
-// Rendre le gestionnaire de signal visible pour les autres modules (comme
-// dmx.c)
+// Make signal handler visible to other modules (like dmx.c)
 void signalHandler(int signal) {
   static volatile sig_atomic_t already_called = 0;
 
-  // Éviter les appels récursifs au gestionnaire
+  // Avoid recursive calls to the handler
   if (already_called) {
-    // Si le gestionnaire est rappelé, c'est que l'utilisateur
-    // insiste avec les Ctrl+C, donc on force vraiment la sortie
+    // If handler is called again, user is insisting with Ctrl+C,
+    // so force exit immediately
     kill(getpid(), SIGKILL);
     return;
   }
@@ -98,7 +98,7 @@ void signalHandler(int signal) {
   printf("\nSignal d'arrêt reçu. Arrêt en cours...\n");
   fflush(stdout);
 
-  // Mettre à jour les flags d'arrêt
+  // Update stop flags
   app_running = 0;
   if (global_context) {
     global_context->running = 0;
@@ -108,13 +108,13 @@ void signalHandler(int signal) {
     // Cleanup UDP socket immediately to prevent port conflicts
     udp_cleanup(global_context->socket);
   }
-  keepRunning = 0; // Variable globale du module DMX
+  keepRunning = 0; // Global variable from DMX module
 
-  // Forcer la terminaison immédiate sans attendre les threads
+  // Force immediate termination without waiting for threads
   printf("\nForced exit!\n");
   fflush(stdout);
 
-  // Tuer le processus avec SIGKILL (ne peut pas être ignoré ou bloqué)
+  // Kill process with SIGKILL (cannot be ignored or blocked)
   kill(getpid(), SIGKILL);
 }
 
@@ -122,16 +122,16 @@ int main(int argc, char **argv) {
 #ifdef DEBUG_OSC
   // DEBUG_OSC is enabled - additive oscillator debug features available
 #endif
-  // Configurez le gestionnaire de signaux SIGINT (Ctrl+C)
+  // Configure SIGINT signal handler (Ctrl+C)
   signal(SIGINT, signalHandler);
   /* Parse command-line arguments */
-  int use_dmx = 0;                 // Par défaut, DMX désactivé
-  int verbose_dmx = 0;             // Par défaut, messages DMX normaux
-  const char *dmx_port = DMX_PORT; // Port DMX par défaut
-  int list_audio_devices = 0;      // Afficher les périphériques audio
-  int audio_device_id = -1;        // -1 = utiliser le périphérique par défaut
-  char *audio_device_name = NULL;  // Nom du périphérique audio recherché
-  int use_sfml_window = 0; // Par défaut, pas de fenêtre SFML en mode CLI
+  int use_dmx = 0;                 // Default: DMX disabled
+  int verbose_dmx = 0;             // Default: normal DMX messages
+  const char *dmx_port = DMX_PORT; // Default DMX port
+  int list_audio_devices = 0;      // Display audio devices
+  int audio_device_id = -1;        // -1 = use default device
+  char *audio_device_name = NULL;  // Name of requested audio device
+  int use_sfml_window = 0; // Default: no SFML window in CLI mode
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -148,22 +148,22 @@ int main(int argc, char **argv) {
       printf("  --debug-additive-osc-image[=SAMPLES[,m]] Enable oscillator volume capture debug (default: 48000 samples, m=markers)\n");
       printf("  --debug-additive-osc=<N|N-M> Debug one or a range of additive oscillators (e.g., 56 or 23-89)\n");
       printf("\nExamples:\n");
-      printf("  %s --audio-device=3                 # Use audio device 3\n",
-             argv[0]);
-      printf("  %s --list-audio-devices             # List all audio devices\n",
-             argv[0]);
-      printf("  %s --dmx                            # Enable DMX with default port\n",
-             argv[0]);
-      printf("  %s --dmx=/dev/ttyUSB0               # Enable DMX with custom port\n",
-             argv[0]);
-      printf("  %s --dmx=/dev/ttyUSB0,v             # Enable DMX with verbose mode\n",
-             argv[0]);
-      printf("  %s --display --audio-device=1       # Run with visual display\n",
-             argv[0]);
-      printf("\nFor Pi Module 5 optimization, use: "
-             "./launch_cisynth_optimized.sh\n");
+      printf("  ./build/Sp3ctra --help                           # Show this help message\n");
+      printf("  ./build/Sp3ctra --display                        # Enable visual scanner display\n");
+      printf("  ./build/Sp3ctra --list-audio-devices             # List available audio devices and exit\n");
+      printf("  ./build/Sp3ctra --audio-device=3                 # Use specific audio device ID\n");
+      printf("  ./build/Sp3ctra --dmx                            # Enable DMX with default port\n");
+      printf("  ./build/Sp3ctra --dmx=/dev/ttyUSB0               # Enable DMX with custom port\n");
+      printf("  ./build/Sp3ctra --dmx=/dev/ttyUSB0,v             # Enable DMX with verbose mode\n");
+      printf("  ./build/Sp3ctra --test-tone                      # Enable test tone mode (440Hz)\n");
+      printf("  ./build/Sp3ctra --debug-image=2000               # Enable raw scanner capture debug (2000 lines)\n");
+      printf("  ./build/Sp3ctra --debug-additive-osc-image=24000 # Enable oscillator volume capture debug (24000 samples)\n");
+      printf("  ./build/Sp3ctra --debug-additive-osc-image=24000,m # Enable oscillator debug with markers\n");
+      printf("  ./build/Sp3ctra --debug-additive-osc=56          # Debug one additive oscillator (56)\n");
+      printf("  ./build/Sp3ctra --debug-additive-osc=23-89       # Debug range of additive oscillators (23-89)\n");
+      printf("  ./build/Sp3ctra --display --audio-device=1       # Run with visual display and specific audio device\n");
       return EXIT_SUCCESS;
-    // Option --cli supprimée car redondante (mode CLI est le mode par défaut)
+    // Option --cli removed as redundant (CLI mode is the default mode)
     } else if (strcmp(argv[i], "--sfml-window") == 0 || strcmp(argv[i], "--show-display") == 0 || strcmp(argv[i], "--display") == 0) {
       use_sfml_window = 1;
       printf("Visual scanner display enabled\n");
@@ -264,7 +264,7 @@ int main(int argc, char **argv) {
           // Parse samples and markers: "2000,m"
           char samples_str[32];
           int samples_len = comma_pos - param;
-          if (samples_len < sizeof(samples_str)) {
+          if (samples_len < (int)sizeof(samples_str)) {
             strncpy(samples_str, param, samples_len);
             samples_str[samples_len] = '\0';
             
@@ -366,7 +366,7 @@ int main(int argc, char **argv) {
       if (verbose_dmx) {
         printf("Failed to initialize DMX. Continuing without DMX support.\n");
       }
-      // Si l'initialisation DMX a échoué, on désactive le DMX complètement
+      // If DMX initialization failed, disable DMX completely
       use_dmx = 0;
     }
 #endif
@@ -411,10 +411,10 @@ int main(int argc, char **argv) {
   /* Initialize CSFML */
   sfRenderWindow *window = NULL;
 #ifndef NO_SFML
-  // Tout ce bloc ne s'exécute que si SFML est activé
+  // This entire block only executes if SFML is enabled
   sfVideoMode mode = {WINDOWS_WIDTH, WINDOWS_HEIGHT, 32};
 
-  // Créer la fenêtre SFML uniquement si l'option est activée
+  // Create SFML window only if the option is enabled
   if (use_sfml_window) {
     window = sfRenderWindow_create(mode, "Sp3ctra SFML Viewer",
                                    sfResize | sfClose, NULL);
@@ -430,29 +430,29 @@ int main(int argc, char **argv) {
   /* Initialize UDP and Audio */
   struct sockaddr_in si_other, si_me;
 
-  // Traiter les options audio AVANT d'initialiser le système audio
+  // Process audio options BEFORE initializing the audio system
   if (list_audio_devices) {
-    // Initialiser temporairement l'audio juste pour lister les périphériques
+    // Initialize audio temporarily just to list devices
     audio_Init();
     printAudioDevices();
-    // Si --list-audio-devices est spécifié, on nettoie et on quitte,
-    // peu importe les autres arguments.
+    // If --list-audio-devices is specified, we clean up and exit,
+    // regardless of other arguments.
     printf("Audio device listing complete. Exiting.\n");
     audio_Cleanup();
-    midi_Cleanup();          // Assurer le nettoyage de MIDI aussi
-    if (dmxCtx) {            // Vérifier si dmxCtx a été alloué
-      if (dmxCtx->fd >= 0) { // Vérifier si le fd est valide avant de fermer
+    midi_Cleanup();          // Ensure MIDI cleanup as well
+    if (dmxCtx) {            // Check if dmxCtx was allocated
+      if (dmxCtx->fd >= 0) { // Check if fd is valid before closing
         close(dmxCtx->fd);
       }
-      pthread_mutex_destroy(&dmxCtx->mutex); // Nettoyer mutex et cond
+      pthread_mutex_destroy(&dmxCtx->mutex); // Clean up mutex and cond
       pthread_cond_destroy(&dmxCtx->cond);
       free(dmxCtx);
-      dmxCtx = NULL; // Éviter double free ou utilisation après libération
+      dmxCtx = NULL; // Avoid double free or use after free
     }
     return EXIT_SUCCESS;
   }
 
-  // Configurer le périphérique audio AVANT l'initialisation si spécifié
+  // Configure audio device BEFORE initialization if specified
   if (audio_device_id >= 0) {
     setRequestedAudioDevice(audio_device_id);
     printf("Périphérique audio %d configuré pour l'initialisation.\n",
@@ -463,7 +463,7 @@ int main(int argc, char **argv) {
            audio_device_name);
   }
 
-  // Initialiser l'audio (RtAudio) avec le bon périphérique
+  // Initialize audio (RtAudio) with the correct device
   audio_Init();
 
   // Determine synthesis modes based on configuration
@@ -548,7 +548,7 @@ int main(int argc, char **argv) {
     return EXIT_FAILURE;
   }
 
-  int status = startAudioUnit(); // RtAudio renvoie un int maintenant
+  int status = startAudioUnit(); // RtAudio now returns an int
   if (status != 0) {
     printf("Erreur lors du démarrage audio: %d\n", status);
   }
@@ -576,14 +576,14 @@ int main(int argc, char **argv) {
   context.socket = s;
   context.si_other = &si_other;
   context.si_me = &si_me;
-  context.audioData = NULL;   // RtAudio gère maintenant le buffer audio
+  context.audioData = NULL;   // RtAudio now manages the audio buffer
   context.doubleBuffer = &db; // Legacy double buffer (for display)
   context.audioImageBuffers =
       &audioImageBuffers; // New dual buffer system for audio
   context.dmxCtx = dmxCtx;
-  context.running = 1; // Flag de terminaison pour le contexte
+  context.running = 1; // Termination flag for the context
 
-  // Sauvegarde du contexte pour le gestionnaire de signaux
+  // Save context for signal handler
   global_context = &context;
 
   /* Initialize auto-volume controller (reads IMU X from UDP thread and

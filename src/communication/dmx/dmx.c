@@ -422,7 +422,7 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
   SpotColor finalColors[DMX_NUM_SPOTS] = {0};
 
   // PHASE 1: Détection des blobs et calcul des couleurs par zone
-  for (size_t i = 0; i < num_spots; i++) {
+  for (int i = 0; i < num_spots; i++) {
     // Calcul des limites de la zone avec chevauchement
     size_t zoneCenter = i * zoneSize + zoneSize / 2;
     size_t extendedZoneSize = (size_t)(zoneSize * (1.0 + overlap));
@@ -555,7 +555,7 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
   }
 
   // PHASE 2: Application des transitions douces entre zones
-  for (size_t i = 0; i < num_spots; i++) {
+  for (int i = 0; i < num_spots; i++) {
     // Initialiser avec la couleur de la zone elle-même
     finalColors[i] = zoneColors[i];
 
@@ -570,7 +570,7 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
     double totalWeight = 0;
 
     // Pour chaque zone, calculer l'influence de toutes les autres
-    for (size_t j = 0; j < num_spots; j++) {
+    for (int j = 0; j < num_spots; j++) {
       // Distance entre les centres des zones i et j
       double distance = fabs((double)(i - j) * zoneSize);
 
