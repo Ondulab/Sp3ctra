@@ -125,8 +125,8 @@ int main(int argc, char **argv) {
   // Configurez le gestionnaire de signaux SIGINT (Ctrl+C)
   signal(SIGINT, signalHandler);
   /* Parse command-line arguments */
-  int use_dmx = 1;                 // Par défaut, on active le DMX
-  int silent_dmx = 0;              // Par défaut, on affiche les messages DMX
+  int use_dmx = 0;                 // Par défaut, DMX désactivé
+  int verbose_dmx = 0;             // Par défaut, messages DMX normaux
   const char *dmx_port = DMX_PORT; // Port DMX par défaut
   int list_audio_devices = 0;      // Afficher les périphériques audio
   int audio_device_id = -1;        // -1 = utiliser le périphérique par défaut
@@ -142,20 +142,21 @@ int main(int argc, char **argv) {
       printf("  --display                Enable visual scanner display\n");
       printf("  --list-audio-devices     List available audio devices and exit\n");
       printf("  --audio-device=<ID>      Use specific audio device ID\n");
-      printf("  --no-dmx                 Disable DMX lighting output\n");
-      printf("  --dmx-port=<PORT>        Specify DMX serial port (default: %s)\n",
-             DMX_PORT);
-      printf("  --silent-dmx             Suppress DMX error messages\n");
+      printf("  --dmx[=<PORT>[,v]]       Enable DMX with default port (%s) or specific port (v=verbose)\n", DMX_PORT);
       printf("  --test-tone              Enable test tone mode (440Hz)\n");
       printf("  --debug-image[=LINES]    Enable raw scanner capture debug (default: 1000 lines)\n");
-      printf("  --debug-additive-osc-image[=SAMPLES] Enable oscillator volume capture debug (default: 48000 samples)\n");
+      printf("  --debug-additive-osc-image[=SAMPLES[,m]] Enable oscillator volume capture debug (default: 48000 samples, m=markers)\n");
       printf("  --debug-additive-osc=<N|N-M> Debug one or a range of additive oscillators (e.g., 56 or 23-89)\n");
       printf("\nExamples:\n");
       printf("  %s --audio-device=3                 # Use audio device 3\n",
              argv[0]);
       printf("  %s --list-audio-devices             # List all audio devices\n",
              argv[0]);
-      printf("  %s --no-dmx                         # Run without DMX\n",
+      printf("  %s --dmx                            # Enable DMX with default port\n",
+             argv[0]);
+      printf("  %s --dmx=/dev/ttyUSB0               # Enable DMX with custom port\n",
+             argv[0]);
+      printf("  %s --dmx=/dev/ttyUSB0,v             # Enable DMX with verbose mode\n",
              argv[0]);
       printf("  %s --display --audio-device=1       # Run with visual display\n",
              argv[0]);
@@ -166,15 +167,43 @@ int main(int argc, char **argv) {
     } else if (strcmp(argv[i], "--sfml-window") == 0 || strcmp(argv[i], "--show-display") == 0 || strcmp(argv[i], "--display") == 0) {
       use_sfml_window = 1;
       printf("Visual scanner display enabled\n");
-    } else if (strcmp(argv[i], "--no-dmx") == 0) {
-      use_dmx = 0;
-      printf("DMX disabled\n");
-    } else if (strncmp(argv[i], "--dmx-port=", 11) == 0) {
-      dmx_port = argv[i] + 11;
-      printf("Using DMX port: %s\n", dmx_port);
-    } else if (strcmp(argv[i], "--silent-dmx") == 0) {
-      silent_dmx = 1;
-      printf("DMX messages silenced\n");
+    } else if (strcmp(argv[i], "--dmx") == 0) {
+      use_dmx = 1;
+      verbose_dmx = 0;
+      printf("DMX enabled with default port: %s\n", dmx_port);
+    } else if (strncmp(argv[i], "--dmx=", 6) == 0) {
+      const char *dmx_param = argv[i] + 6;
+      
+      // Check for verbose flag: --dmx=<PORT>,v
+      char *comma_pos = strchr(dmx_param, ',');
+      if (comma_pos) {
+        // Extract port and check for verbose flag
+        size_t port_len = comma_pos - dmx_param;
+        if (port_len > 0 && port_len < 256) {
+          static char custom_port[256];
+          strncpy(custom_port, dmx_param, port_len);
+          custom_port[port_len] = '\0';
+          dmx_port = custom_port;
+          
+          // Check for verbose flag
+          if (strcmp(comma_pos + 1, "v") == 0) {
+            verbose_dmx = 1;
+            printf("DMX enabled with port: %s (verbose mode)\n", dmx_port);
+          } else {
+            printf("❌ Error: Invalid DMX flag '%s' (use 'v' for verbose)\n", comma_pos + 1);
+            return EXIT_FAILURE;
+          }
+        } else {
+          printf("❌ Error: Invalid DMX port length\n");
+          return EXIT_FAILURE;
+        }
+      } else {
+        // Only port specified: --dmx=<PORT>
+        dmx_port = dmx_param;
+        verbose_dmx = 0;
+        printf("DMX enabled with port: %s\n", dmx_port);
+      }
+      use_dmx = 1;
     } else if (strcmp(argv[i], "--list-audio-devices") == 0) {
       list_audio_devices = 1;
       printf("Will list audio devices\n");
@@ -330,9 +359,11 @@ int main(int argc, char **argv) {
   int dmxFd = -1;
   if (use_dmx) {
 #ifdef USE_DMX
+    // Convert verbose_dmx to silent_dmx for init_Dmx function (inverted logic)
+    int silent_dmx = !verbose_dmx;
     dmxFd = init_Dmx(dmx_port, silent_dmx);
     if (dmxFd < 0) {
-      if (!silent_dmx) {
+      if (verbose_dmx) {
         printf("Failed to initialize DMX. Continuing without DMX support.\n");
       }
       // Si l'initialisation DMX a échoué, on désactive le DMX complètement
