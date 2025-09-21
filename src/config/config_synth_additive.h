@@ -117,9 +117,8 @@ typedef enum {
 // Enable debug traces for additive oscillators (compile-time flag)
 #define DEBUG_OSC
 
-#ifdef DEBUG_OSC
-#pragma message "DEBUG_OSC is enabled - additive oscillator debug features compiled"
-#endif
+// Note: DEBUG_OSC pragma message removed to reduce compilation noise
+// Debug features are available when DEBUG_OSC is defined
 
 // Debug configuration structure (runtime)
 typedef struct {

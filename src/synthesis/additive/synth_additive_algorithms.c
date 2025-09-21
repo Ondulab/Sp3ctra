@@ -146,6 +146,9 @@ void apply_gamma_mapping(float *imageBuffer_f32, int count) {
  * @retval None
  */
 void apply_relative_mode(int32_t *imageBuffer_q31, int start_note, int end_note) {
+  (void)imageBuffer_q31; // Mark as unused to suppress warning
+  (void)start_note;      // Mark as unused to suppress warning
+  (void)end_note;        // Mark as unused to suppress warning
 #ifdef RELATIVE_MODE
     // Special processing for RELATIVE_MODE
     if (start_note < end_note - 1) {
@@ -173,6 +176,7 @@ void apply_relative_mode(int32_t *imageBuffer_q31, int start_note, int end_note)
  */
 void generate_waveform_samples(int note, float *waveBuffer, 
                               float precomputed_wave_data[AUDIO_BUFFER_SIZE]) {
+    (void)note; // Mark as unused to suppress warning
     // Use pre-computed data to avoid concurrent access to waves[]
     for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
         waveBuffer[buff_idx] = precomputed_wave_data[buff_idx];

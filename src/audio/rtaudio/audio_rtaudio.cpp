@@ -15,7 +15,7 @@
 
 // Global format selection variables for dynamic audio format
 static RtAudioFormat g_selected_audio_format = RTAUDIO_FLOAT32;
-static const char* g_selected_audio_format_name = "FLOAT32";
+static const char* g_selected_audio_format_name __attribute__((unused)) = "FLOAT32";
 
 // Global variables for compatibility with legacy code
 AudioDataBuffers buffers_L[2];
