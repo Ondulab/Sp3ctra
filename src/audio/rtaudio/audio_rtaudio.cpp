@@ -11,6 +11,7 @@
 #include <iostream>
 #include <rtaudio/RtAudio.h> // Explicitly include RtAudio.h
 #include <stdexcept>         // For std::exception
+#include <set>               // For std::set
 
 // Global format selection variables for dynamic audio format
 static RtAudioFormat g_selected_audio_format = RTAUDIO_FLOAT32;
@@ -649,199 +650,77 @@ bool AudioSystem::initialize() {
     return false;
   }
 
-  std::cout << "Available output devices:" << std::endl;
-  unsigned int preferredDeviceId = audio->getDefaultOutputDevice(); // Default
-  bool foundSpecificPreferred = false;
+  // Simplified device selection - use default device unless specific device requested
+  unsigned int preferredDeviceId = audio->getDefaultOutputDevice();
   bool foundRequestedDevice = false;
-
-  // Enhanced USB device enumeration - try to access all USB devices more carefully
-  std::cout << "🔧 Enhanced USB device enumeration with error recovery..." << std::endl;
   
-  // Step 1: Build list of potentially accessible devices
-  std::vector<std::pair<unsigned int, std::string>> accessibleDevices;
-  
-  for (unsigned int i = 0; i < deviceCount; i++) {
-    try {
-      RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
-      if (info.outputChannels > 0 && !info.name.empty()) {
-        // Store all devices that can be queried, even if they show errors later
-        accessibleDevices.push_back(std::make_pair(i, info.name));
-        std::cout << "📋 Detected device ID " << i << ": " << info.name 
-                  << " [" << info.outputChannels << " channels]" << std::endl;
-      }
-    } catch (const std::exception &error) {
-      // Even if getDeviceInfo fails, the device might still be usable via ALSA
-      std::cout << "⚠️  Device ID " << i << ": Info query failed (" << error.what() 
-                << ") - may still be accessible via ALSA" << std::endl;
-    }
-  }
-  
-  std::cout << "\n🎵 Total accessible audio devices found: " << accessibleDevices.size() << std::endl;
-  
-  // Step 2: Handle specific device name requests
-  if (g_requested_audio_device_name != NULL) {
-    std::cout << "🔍 Searching for requested device: '" << g_requested_audio_device_name << "'" << std::endl;
+  // Handle specific device requests (ID or name)
+  if (requestedDeviceId >= 0 || g_requested_audio_device_name != NULL) {
+    // Only enumerate devices when specifically requested
+    std::cout << "🔍 Searching for specific audio device..." << std::endl;
     
-    for (const auto& devicePair : accessibleDevices) {
-      std::string deviceName = devicePair.second;
-      std::string searchName = g_requested_audio_device_name;
-      
-      // Case-insensitive search
-      std::transform(deviceName.begin(), deviceName.end(), deviceName.begin(), ::tolower);
-      std::transform(searchName.begin(), searchName.end(), searchName.begin(), ::tolower);
-      
-      if (deviceName.find(searchName) != std::string::npos) {
-        preferredDeviceId = devicePair.first;
-        foundSpecificPreferred = true;
-        g_selected_audio_format = RTAUDIO_FLOAT32;
-        g_selected_audio_format_name = "FLOAT32";
-        std::cout << "🎯 FOUND: Using device ID " << devicePair.first << ": "
-                  << devicePair.second << " with FLOAT32" << std::endl;
-        break;
-      }
-    }
-    
-    if (!foundSpecificPreferred) {
-      std::cerr << "❌ Device '" << g_requested_audio_device_name << "' not found!" << std::endl;
-      std::cerr << "Available devices: ";
-      for (const auto& devicePair : accessibleDevices) {
-        std::cerr << "'" << devicePair.second << "' ";
-      }
-      std::cerr << std::endl;
-      return false;
-    }
-  } else {
-    // Step 3: Smart device selection (prefer USB, then default)
-    std::cout << "🤖 Smart device auto-selection..." << std::endl;
-    
-    // Priority 1: Any USB Audio device
-    for (const auto& devicePair : accessibleDevices) {
-      std::string deviceName = devicePair.second;
-      if (deviceName.find("USB") != std::string::npos ||
-          deviceName.find("SPDIF") != std::string::npos ||
-          deviceName.find("Bravo") != std::string::npos ||
-          deviceName.find("Audio Adapter") != std::string::npos) {
-        preferredDeviceId = devicePair.first;
-        foundSpecificPreferred = true;
-        g_selected_audio_format = RTAUDIO_FLOAT32;
-        g_selected_audio_format_name = "FLOAT32";
-        std::cout << "🎯 USB PREFERRED: Device ID " << devicePair.first << ": "
-                  << deviceName << std::endl;
-        break;
-      }
-    }
-    
-    // Priority 2: Default device
-    if (!foundSpecificPreferred && !accessibleDevices.empty()) {
-      // Use the first accessible device as fallback
-      preferredDeviceId = accessibleDevices[0].first;
-      g_selected_audio_format = RTAUDIO_FLOAT32;
-      g_selected_audio_format_name = "FLOAT32";
-      std::cout << "🔄 FALLBACK: Using first accessible device ID " << preferredDeviceId 
-                << ": " << accessibleDevices[0].second << std::endl;
-    }
-  }
-
-  // First, check if a specific device was requested
-  if (requestedDeviceId >= 0) {
-    std::cout << "User requested specific audio device ID: "
-              << requestedDeviceId << std::endl;
-  }
-
-  for (unsigned int i = 0; i < deviceCount; i++) {
-    try {
-      RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
-      bool isDefault = info.isDefaultOutput; // Store default status
-
-      if (info.outputChannels > 0) { // Only consider output devices
-        std::cout << "  Device ID " << i << ": " << info.name
-                  << (isDefault ? " (Default Output)" : "")
-                  << " [Output Channels: " << info.outputChannels << "]"
-                  << std::endl;
-
-        // Check if this is the requested device
-        if (requestedDeviceId >= 0 && i == (unsigned int)requestedDeviceId) {
-          std::cout << "    -> Found requested device ID " << i << ": "
-                    << info.name << std::endl;
-          preferredDeviceId = i;
-          foundRequestedDevice = true;
-          foundSpecificPreferred = true;
-        } else if (requestedDeviceId < 0) { // Only do auto-detection if no
-                                            // specific device requested
-          std::string deviceName(info.name);
-          // Prefer "Headphones" or "bcm2835 ALSA" (non-HDMI)
-          bool isHeadphones =
-              (deviceName.find("Headphones") != std::string::npos);
-          bool isAnalogue =
-              (deviceName.find("bcm2835 ALSA") != std::string::npos &&
-               deviceName.find("HDMI") == std::string::npos);
-
-          if (isHeadphones) {
-            std::cout << "    -> Found 'Headphones' device: " << deviceName
-                      << " with ID " << i << std::endl;
-            preferredDeviceId = i;
-            foundSpecificPreferred = true;
-            // Prioritize headphones over other analogue if both found
-          } else if (isAnalogue && !foundSpecificPreferred) {
-            std::cout << "    -> Found 'bcm2835 ALSA' (non-HDMI) device: "
-                      << deviceName << " with ID " << i << std::endl;
-            preferredDeviceId = i;
-            // Don't set foundSpecificPreferred to true here, to allow
-            // 'Headphones' to override if found later
-          }
-        }
-      }
-    } catch (const std::exception &error) {
-      // This is where the "Unknown error 524" might originate if getDeviceInfo
-      // fails for certain hw IDs
-      std::cerr
-          << "RtApiAlsa::getDeviceInfo: snd_pcm_open error for device (hw:" << i
-          << ",0 likely), " << error.what() << std::endl;
-    }
-  }
-
-  // Validate requested device if specified
-  if (requestedDeviceId >= 0 && !foundRequestedDevice) {
-    std::cerr << "ERROR: Requested audio device ID " << requestedDeviceId
-              << " not found or not available!" << std::endl;
-    std::cerr << "Available device IDs with output channels: ";
+    // Perform full enumeration only when needed
+    std::vector<std::pair<unsigned int, std::string>> accessibleDevices;
     for (unsigned int i = 0; i < deviceCount; i++) {
       try {
         RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
-        if (info.outputChannels > 0) {
-          std::cerr << i << " ";
+        if (info.outputChannels > 0 && !info.name.empty()) {
+          accessibleDevices.push_back(std::make_pair(i, info.name));
+          
+          // Check for requested device ID
+          if (requestedDeviceId >= 0 && i == (unsigned int)requestedDeviceId) {
+            preferredDeviceId = i;
+            foundRequestedDevice = true;
+            std::cout << "✅ Found requested device ID " << i << ": " << info.name << std::endl;
+          }
+          
+          // Check for requested device name
+          if (g_requested_audio_device_name != NULL) {
+            std::string deviceName = info.name;
+            std::string searchName = g_requested_audio_device_name;
+            std::transform(deviceName.begin(), deviceName.end(), deviceName.begin(), ::tolower);
+            std::transform(searchName.begin(), searchName.end(), searchName.begin(), ::tolower);
+            
+            if (deviceName.find(searchName) != std::string::npos) {
+              preferredDeviceId = i;
+              foundRequestedDevice = true;
+              std::cout << "✅ Found requested device '" << g_requested_audio_device_name 
+                        << "': " << info.name << std::endl;
+              break;
+            }
+          }
         }
       } catch (const std::exception &error) {
-        // Skip problematic devices
+        // Silently skip problematic devices during specific search
+        continue;
       }
     }
-    std::cerr << std::endl;
-    delete audio;
-    audio = nullptr;
-    return false;
+    
+    // Validate that requested device was found
+    if ((requestedDeviceId >= 0 || g_requested_audio_device_name != NULL) && !foundRequestedDevice) {
+      std::cerr << "❌ Requested audio device not found!" << std::endl;
+      if (requestedDeviceId >= 0) {
+        std::cerr << "   Device ID " << requestedDeviceId << " is not available." << std::endl;
+      }
+      if (g_requested_audio_device_name != NULL) {
+        std::cerr << "   Device '" << g_requested_audio_device_name << "' is not available." << std::endl;
+      }
+      std::cerr << "   Use --list-audio-devices to see available devices." << std::endl;
+      return false;
+    }
+  } else {
+    // Default behavior: use default device without enumeration
+    try {
+      RtAudio::DeviceInfo defaultInfo = audio->getDeviceInfo(preferredDeviceId);
+      std::cout << "🎯 Using default audio device: " << defaultInfo.name << std::endl;
+    } catch (const std::exception &error) {
+      std::cerr << "❌ Cannot access default audio device: " << error.what() << std::endl;
+      return false;
+    }
   }
 
-  if (foundSpecificPreferred) {
-    std::cout << "Using specifically preferred device ID " << preferredDeviceId
-              << " (" << audio->getDeviceInfo(preferredDeviceId).name << ")"
-              << std::endl;
-  } else if (preferredDeviceId != audio->getDefaultOutputDevice() &&
-             deviceCount > 0) { // A bcm2835 ALSA (non-HDMI) was found but not
-                                // "Headphones"
-    std::cout << "Using preferred analogue device ID " << preferredDeviceId
-              << " (" << audio->getDeviceInfo(preferredDeviceId).name << ")"
-              << std::endl;
-  } else if (deviceCount > 0) {
-    std::cout
-        << "No specific preferred device found, using default output device ID "
-        << preferredDeviceId << " ("
-        << audio->getDeviceInfo(preferredDeviceId).name << ")" << std::endl;
-  } else {
-    std::cout << "No output devices found!" << std::endl;
-    delete audio;
-    audio = nullptr;
-    return false;
-  }
+  // Device selection is now complete - preferredDeviceId contains the selected device
+  // No additional enumeration or validation needed since it was handled above
 
   // Paramètres du stream
   RtAudio::StreamParameters params;
@@ -1391,21 +1270,66 @@ void stopAudioUnit() {
   }
 }
 
-// Lister les périphériques audio disponibles
+// Lister les périphériques audio disponibles avec énumération complète
 void printAudioDevices() {
   if (!gAudioSystem || !gAudioSystem->getAudioDevice()) {
     printf("Système audio non initialisé\n");
     return;
   }
 
-  std::vector<std::string> devices = gAudioSystem->getAvailableDevices();
-  unsigned int defaultDevice =
-      gAudioSystem->getAudioDevice()->getDefaultOutputDevice();
+  RtAudio* audio = gAudioSystem->getAudioDevice();
+  unsigned int deviceCount = audio->getDeviceCount();
+  unsigned int defaultDevice = audio->getDefaultOutputDevice();
 
-  printf("Périphériques audio disponibles:\n");
-  for (unsigned int i = 0; i < devices.size(); i++) {
-    printf("  [%d] %s %s\n", i, devices[i].c_str(),
-           (i == defaultDevice) ? "(défaut)" : "");
+  printf("Available output devices:\n");
+  printf("🔧 Complete device enumeration (verbose mode)...\n");
+  
+  std::vector<std::pair<unsigned int, std::string>> accessibleDevices;
+  int failedDevices = 0;
+  
+  for (unsigned int i = 0; i < deviceCount; i++) {
+    try {
+      RtAudio::DeviceInfo info = audio->getDeviceInfo(i);
+      if (info.outputChannels > 0 && !info.name.empty()) {
+        accessibleDevices.push_back(std::make_pair(i, info.name));
+        
+        printf("📋 Device ID %d: %s", i, info.name.c_str());
+        if (i == defaultDevice) {
+          printf(" (Default Output)");
+        }
+        printf(" [%d channels]\n", info.outputChannels);
+        
+        // Show supported sample rates
+        printf("    Sample rates: ");
+        for (size_t j = 0; j < info.sampleRates.size(); j++) {
+          printf("%dHz", info.sampleRates[j]);
+          if (j < info.sampleRates.size() - 1) printf(", ");
+        }
+        printf("\n");
+        
+        // Show supported formats
+        printf("    Formats: ");
+        if (info.nativeFormats & RTAUDIO_SINT16) printf("INT16 ");
+        if (info.nativeFormats & RTAUDIO_SINT24) printf("INT24 ");
+        if (info.nativeFormats & RTAUDIO_SINT32) printf("INT32 ");
+        if (info.nativeFormats & RTAUDIO_FLOAT32) printf("FLOAT32 ");
+        if (info.nativeFormats & RTAUDIO_FLOAT64) printf("FLOAT64 ");
+        printf("\n");
+      }
+    } catch (const std::exception &error) {
+      failedDevices++;
+      printf("⚠️  Device ID %d: Query failed (%s)\n", i, error.what());
+    }
+  }
+  
+  printf("\n🎵 Summary: %zu accessible devices, %d failed queries\n", 
+         accessibleDevices.size(), failedDevices);
+  
+  if (accessibleDevices.empty()) {
+    printf("❌ No accessible audio output devices found!\n");
+  } else {
+    printf("✅ Use --audio-device=<ID> to select a specific device\n");
+    printf("✅ Default device ID %d will be used if none specified\n", defaultDevice);
   }
 }
 
