@@ -7,6 +7,7 @@
 
 #include "auto_volume.h"
 #include "audio_c_interface.h" /* C interface for audio operations */
+#include "config_loader.h"     /* Runtime configuration */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,13 +36,13 @@ AutoVolume *auto_volume_create(Context *ctx) {
   if (!av)
     return NULL;
   av->ctx = ctx;
-  av->auto_volume_current = AUTO_VOLUME_ACTIVE_LEVEL;
+  av->auto_volume_current = g_additive_config.auto_volume_active_level;
   av->last_call_ms = now_ms();
   gAutoVolumeInstance = av;
   /* Mirror initial state in Context for observability (protected by mutex) */
   pthread_mutex_lock(&ctx->imu_mutex);
   ctx->auto_volume_current = av->auto_volume_current;
-  ctx->auto_volume_target = AUTO_VOLUME_ACTIVE_LEVEL;
+  ctx->auto_volume_target = g_additive_config.auto_volume_active_level;
   ctx->auto_last_activity_time = 0;
   ctx->auto_is_active = 1;
   pthread_mutex_unlock(&ctx->imu_mutex);
@@ -84,7 +85,7 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
   last_activity_time = ctx->auto_last_activity_time;
   pthread_mutex_unlock(&ctx->imu_mutex);
 
-  if (has && fabsf(imu_x) >= IMU_ACTIVE_THRESHOLD_X) {
+  if (has && fabsf(imu_x) >= g_additive_config.imu_active_threshold_x) {
     // Activity detected, definitely active
     active = 1;
     // Update last activity time in context
@@ -102,7 +103,7 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
       pthread_mutex_lock(&ctx->imu_mutex);
       ctx->auto_last_activity_time = current_time;
       pthread_mutex_unlock(&ctx->imu_mutex);
-    } else if (seconds_since_activity > IMU_INACTIVITY_TIMEOUT_S) {
+    } else if (seconds_since_activity > g_additive_config.imu_inactivity_timeout_s) {
       // Been inactive for more than timeout, set to inactive
       active = 0;
     } else {
@@ -121,11 +122,11 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
   /* TODO: Add C interface for MIDI controller status */
 #endif
 
-  float target = active ? AUTO_VOLUME_ACTIVE_LEVEL : AUTO_VOLUME_INACTIVE_LEVEL;
+  float target = active ? g_additive_config.auto_volume_active_level : g_additive_config.auto_volume_inactive_level;
 
   /* Exponential smoothing towards target using time constant tau =
    * AUTO_VOLUME_FADE_MS */
-  float tau = (float)AUTO_VOLUME_FADE_MS;
+  float tau = (float)g_additive_config.auto_volume_fade_ms;
   float alpha;
   if (dt_ms == 0)
     alpha = 1.0f;

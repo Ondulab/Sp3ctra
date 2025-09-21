@@ -60,6 +60,7 @@ TARGET = $(BUILD_DIR)/Sp3ctra
 
 # Source files organized by module
 CORE_SOURCES = src/core/main.c
+CONFIG_SOURCES = src/config/config_loader.c
 AUDIO_RTAUDIO_SOURCES = src/audio/rtaudio/audio_c_interface.cpp src/audio/rtaudio/audio_rtaudio.cpp
 AUDIO_BUFFERS_SOURCES = src/audio/buffers/audio_image_buffers.c
 AUDIO_PAN_SOURCES = src/audio/pan/lock_free_pan.c
@@ -86,7 +87,7 @@ DISPLAY_SOURCES =
 endif
 
 # All sources
-ALL_SOURCES = $(CORE_SOURCES) $(AUDIO_RTAUDIO_SOURCES) $(AUDIO_BUFFERS_SOURCES) \
+ALL_SOURCES = $(CORE_SOURCES) $(CONFIG_SOURCES) $(AUDIO_RTAUDIO_SOURCES) $(AUDIO_BUFFERS_SOURCES) \
               $(AUDIO_PAN_SOURCES) $(AUDIO_EFFECTS_SOURCES) $(SYNTHESIS_ADDITIVE_SOURCES) \
               $(SYNTHESIS_POLYPHONIC_SOURCES) $(COMMUNICATION_SOURCES) \
               $(DISPLAY_SOURCES) $(THREADING_SOURCES) $(UTILS_SOURCES)
@@ -101,6 +102,7 @@ all: $(TARGET)
 # Create build directories
 $(OBJ_DIR):
 	@mkdir -p $(OBJ_DIR)/core
+	@mkdir -p $(OBJ_DIR)/config
 	@mkdir -p $(OBJ_DIR)/audio/rtaudio
 	@mkdir -p $(OBJ_DIR)/audio/buffers
 	@mkdir -p $(OBJ_DIR)/audio/pan

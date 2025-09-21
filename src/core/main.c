@@ -50,6 +50,7 @@ void sfClock_restart(sfClock *clock) { (void)clock; }
 #include "audio_c_api.h"
 #include "auto_volume.h"
 #include "config.h"
+#include "config_loader.h"
 #include "context.h"
 #include "display.h"
 #include "dmx.h"
@@ -122,6 +123,14 @@ int main(int argc, char **argv) {
 #ifdef DEBUG_OSC
   // DEBUG_OSC is enabled - additive oscillator debug features available
 #endif
+  
+  /* Load additive synthesis configuration */
+  printf("[CONFIG] Loading additive synthesis configuration...\n");
+  if (load_additive_config("additive_synth.ini") != 0) {
+    printf("[CONFIG] Failed to load configuration. Exiting.\n");
+    return EXIT_FAILURE;
+  }
+  
   // Configure SIGINT signal handler (Ctrl+C)
   signal(SIGINT, signalHandler);
   /* Parse command-line arguments */
@@ -591,9 +600,9 @@ int main(int argc, char **argv) {
      gAutoVolumeInstance. */
   printf("[INIT] Initializing auto-volume controller...\n");
   printf("[INIT] Auto-volume config: threshold=%.3f, timeout=%ds, fade=%dms\n",
-         IMU_ACTIVE_THRESHOLD_X, IMU_INACTIVITY_TIMEOUT_S, AUTO_VOLUME_FADE_MS);
+         g_additive_config.imu_active_threshold_x, g_additive_config.imu_inactivity_timeout_s, g_additive_config.auto_volume_fade_ms);
   printf("[INIT] Volume levels: active=%.3f, inactive=%.3f\n",
-         AUTO_VOLUME_ACTIVE_LEVEL, AUTO_VOLUME_INACTIVE_LEVEL);
+         g_additive_config.auto_volume_active_level, g_additive_config.auto_volume_inactive_level);
 
   gAutoVolumeInstance = auto_volume_create(&context);
   if (!gAutoVolumeInstance) {

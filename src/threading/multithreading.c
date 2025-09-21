@@ -4,6 +4,7 @@
 #include "audio_c_api.h"
 #include "auto_volume.h"
 #include "config.h"
+#include "config_loader.h"
 #include "context.h"
 #include "display.h"
 #include "dmx.h"
@@ -255,16 +256,16 @@ void *udpThread(void *arg) {
         printf("[IMU] First IMU packet received! raw_x=%.6f\n", raw_x);
 #endif
       } else {
-        ctx->imu_x_filtered = IMU_FILTER_ALPHA_X * raw_x +
-                              (1.0f - IMU_FILTER_ALPHA_X) * ctx->imu_x_filtered;
+        ctx->imu_x_filtered = g_additive_config.imu_filter_alpha_x * raw_x +
+                              (1.0f - g_additive_config.imu_filter_alpha_x) * ctx->imu_x_filtered;
       }
       ctx->last_imu_time = time(NULL);
       pthread_mutex_unlock(&ctx->imu_mutex);
 
 #ifdef DEBUG_IMU_PACKETS
       printf("[IMU] raw_x=%.6f filtered=%.6f threshold=%.6f active=%s\n", raw_x,
-             ctx->imu_x_filtered, IMU_ACTIVE_THRESHOLD_X,
-             (fabsf(ctx->imu_x_filtered) >= IMU_ACTIVE_THRESHOLD_X) ? "YES"
+             ctx->imu_x_filtered, g_additive_config.imu_active_threshold_x,
+             (fabsf(ctx->imu_x_filtered) >= g_additive_config.imu_active_threshold_x) ? "YES"
                                                                     : "NO");
 #endif
 #ifdef DEBUG_UDP
@@ -508,7 +509,7 @@ void *audioProcessingThread(void *arg) {
         last_auto_ms = now;
       }
       uint64_t dt = (now > last_auto_ms) ? (now - last_auto_ms) : 0;
-      if (dt >= AUTO_VOLUME_POLL_MS) {
+      if (dt >= (uint64_t)g_additive_config.auto_volume_poll_ms) {
         auto_volume_step(gAutoVolumeInstance, (unsigned int)dt);
         last_auto_ms = now;
       }
