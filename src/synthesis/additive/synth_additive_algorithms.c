@@ -11,7 +11,8 @@
 /* Includes ------------------------------------------------------------------*/
 #include "synth_additive_algorithms.h"
 #include "synth_additive_math.h"
-#include "../../utils/shared.h"
+#include "wave_generation.h"
+#include "../../core/context.h"
 #include "../../config/config_debug.h"
 #include "../../config/config_loader.h"
 #include <stdio.h>

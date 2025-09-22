@@ -77,7 +77,7 @@ COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/midi/midi_controller.cpp \
                         src/communication/dmx/dmx.c
 THREADING_SOURCES = src/threading/multithreading.c
-UTILS_SOURCES = src/utils/shared.c src/utils/error.c src/utils/image_debug.c
+UTILS_SOURCES = src/utils/error.c src/utils/image_debug.c
 
 # Conditional display sources (only include if NO_SFML is not defined)
 ifeq ($(findstring -DNO_SFML,$(CFLAGS)),)

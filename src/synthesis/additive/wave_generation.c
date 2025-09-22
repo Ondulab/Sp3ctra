@@ -7,7 +7,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "config.h"
-#include "shared.h"
+#include "wave_generation.h"
 #include "../../config/config_loader.h"
 
 #include "math.h"
@@ -19,7 +19,10 @@
 
 #define PI (3.14159265358979323846)
 
+/* Global variables definitions (moved from shared.c) */
 volatile struct waveParams wavesGeneratorParams;
+volatile struct wave waves[MAX_NUMBER_OF_NOTES];
+volatile float unitary_waveform[WAVEFORM_TABLE_SIZE];
 
 /* Private includes ----------------------------------------------------------*/
 
@@ -132,7 +135,7 @@ uint32_t init_waves(volatile float *unitary_waveform,
       note = comma_cnt +
              (g_additive_config.semitone_per_octave * parameters->commaPerSemitone) * octave;
       // sanity check, if user demand is't possible
-      if (note < get_current_number_of_notes()) {
+      if ((int)note < get_current_number_of_notes()) {
         // store frequencies
         waves[note].frequency = frequency * pow(2, octave);
         // store aera size
@@ -157,7 +160,7 @@ uint32_t init_waves(volatile float *unitary_waveform,
     }
   }
 
-  if (note < get_current_number_of_notes()) {
+  if ((int)note < get_current_number_of_notes()) {
     printf("Configuration fail, current pix : %d\n", (int)note);
     die("wave init failed");
   }
