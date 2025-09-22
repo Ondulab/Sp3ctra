@@ -51,7 +51,7 @@ static char* trim_whitespace(char* str) {
     
     // Trim trailing space
     end = str + strlen(str) - 1;
-    while (end > str && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) end--;
+    while (end >= str && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) end--;
     
     // Write new null terminator
     *(end + 1) = 0;
@@ -288,7 +288,7 @@ int load_additive_config(const char* config_file_path) {
         // Parse key=value pairs
         char* equals = strchr(trimmed, '=');
         if (!equals) {
-            fprintf(stderr, "[CONFIG ERROR] Line %d: Invalid key=value format\n", line_number);
+            fprintf(stderr, "[CONFIG ERROR] Line %d: Invalid key=value format: '%s'\n", line_number, trimmed);
             fclose(file);
             exit(EXIT_FAILURE);
         }
