@@ -29,58 +29,6 @@ int image_debug_init(void);
 void image_debug_cleanup(void);
 
 /**
- * @brief Save RGB image data to PNG file for debugging
- * @param buffer_R Red channel data (8-bit)
- * @param buffer_G Green channel data (8-bit)
- * @param buffer_B Blue channel data (8-bit)
- * @param width Image width in pixels
- * @param height Image height in pixels
- * @param filename Output filename (without extension)
- * @param stage_name Description of processing stage
- * @retval 0 on success, -1 on error
- */
-int image_debug_save_rgb(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
-                        int width, int height, const char *filename, const char *stage_name);
-
-/**
- * @brief Save grayscale image data to PNG file for debugging
- * @param buffer Grayscale data (16-bit or 32-bit)
- * @param width Image width in pixels
- * @param height Image height in pixels
- * @param filename Output filename (without extension)
- * @param stage_name Description of processing stage
- * @param is_32bit Set to 1 for 32-bit data, 0 for 16-bit data
- * @retval 0 on success, -1 on error
- */
-int image_debug_save_grayscale(void *buffer, int width, int height,
-                              const char *filename, const char *stage_name, int is_32bit);
-
-/**
- * @brief Save stereo channel visualization (warm/cold side by side)
- * @param warm_channel Warm channel data (32-bit)
- * @param cold_channel Cold channel data (32-bit)
- * @param width Image width in pixels
- * @param height Image height in pixels
- * @param filename Output filename (without extension)
- * @param stage_name Description of processing stage
- * @retval 0 on success, -1 on error
- */
-int image_debug_save_stereo_channels(int32_t *warm_channel, int32_t *cold_channel,
-                                    int width, int height, const char *filename, const char *stage_name);
-
-/**
- * @brief Create histogram visualization of pixel values
- * @param buffer Data buffer (32-bit)
- * @param size Number of pixels
- * @param filename Output filename (without extension)
- * @param stage_name Description of processing stage
- * @param max_value Maximum expected value for normalization
- * @retval 0 on success, -1 on error
- */
-int image_debug_save_histogram(int32_t *buffer, int size, const char *filename,
-                              const char *stage_name, int32_t max_value);
-
-/**
  * @brief Capture and save all transformation stages for mono mode
  * @param buffer_R Original red channel
  * @param buffer_G Original green channel
@@ -115,12 +63,6 @@ int image_debug_capture_stereo_pipeline(uint8_t *buffer_R, uint8_t *buffer_G, ui
  * @retval 1 if should capture, 0 if should skip
  */
 int image_debug_should_capture(int frame_number);
-
-/**
- * @brief Clean up old debug files to prevent disk space issues
- * @retval 0 on success, -1 on error
- */
-int image_debug_cleanup_old_files(void);
 
 /**
  * @brief Add a line to the temporal scan image (accumulates over time)

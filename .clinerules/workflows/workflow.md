@@ -4,6 +4,7 @@
 - Separation of concerns:
   - Rules = how code must be written (see custom_instructions.md).
   - Workflow = how Cline must execute work (this file).
+- Developer role: Cline proposes and implements changes, but the repository owner compiles and tests all changes locally.
 
 2) Operating Principles
 - Always start in Plan Mode; only implement in Act Mode after explicit approval.
@@ -11,6 +12,7 @@
 - Prefer small, atomic changes with clear acceptance criteria.
 - Never modify files outside this repository.
 - Use idiomatic and measurable phrasing in plans (avoid vague directives like “optimize where possible”).
+- Compilation and runtime testing are performed manually by the repository owner, not by Cline.
 
 3) Plan Mode (analysis and planning)
 1. Context gathering
@@ -27,6 +29,7 @@
    - Strict RT rules respected (no alloc/lock/log in callback).
    - clang-format applied; no French in code; compile warnings clean where feasible.
    - Unit/integration tests updated or added (when applicable).
+   - Build and runtime validation will be performed by the repository owner.
 5. Execution guardrails
    - Flag any intrusive action requiring approval (package installs, network ops, system services).
    - Provide the command(s) to be run and their expected, short-lived nature.
@@ -44,11 +47,15 @@
      - Long-running audio sessions or demos
      - Package installation, network operations, system/service changes
    - Never edit outside this repository.
+   - Cline must not run these commands directly; they are executed by the repository owner.
+
 3. Local quality checks
    - Apply clang-format (LLVM + Allman).
    - Enforce English-only in code (no French words or accents).
    - Build headless by default (no SFML unless required).
    - Run available unit tests (if present).
+   - Owner compiles/tests changes; Cline only prepares commands.
+
 4. Output and traceability
    - Use Conventional Commits (English).
    - Keep commits atomic and scoped.
@@ -104,6 +111,7 @@ B. “RT change” checklist (when touching RT paths)
 - Never start long-running RT audio without explicit approval.
 - Always call out intrusive operations for approval first.
 - Do not modify global system configuration or external repositories.
+- Compilation and runtime tests are never executed by Cline, but only by the repository owner.
 
 9) Maintenance and Evolution
 - Treat this workflow as living documentation.

@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <time.h>
+#include <math.h>
 
 // Include stb_image_write for PNG output (header-only library)
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -33,15 +34,6 @@ static int frame_counter = 0;
 #endif
 static char output_dir[256];
 
-// Color palettes for visualization
-#ifdef DEBUG_IMAGE_STEREO_CHANNELS
-static const uint8_t warm_palette[3] = {255, 100, 50};  // Orange-red for warm channel
-static const uint8_t cold_palette[3] = {50, 150, 255}; // Blue for cold channel
-#endif
-#ifdef DEBUG_IMAGE_SHOW_HISTOGRAMS
-static const uint8_t gray_palette[3] = {128, 128, 128}; // Gray for mono
-#endif
-
 // Temporal scan buffers
 #define MAX_SCAN_HEIGHT 48000  // Maximum number of lines in scan (increased for 48k lines)
 #define MAX_SCAN_TYPES 3       // "grayscale", "processed", "original"
@@ -55,33 +47,9 @@ typedef struct {
     int initialized;          // Is this scan initialized?
 } temporal_scan_t;
 
-#ifdef DEBUG_TEMPORAL_SCAN
-static temporal_scan_t scans[MAX_SCAN_TYPES];
-static int scans_initialized = 0;
-#endif
-
 /**************************************************************************************
  * Internal Helper Functions
  **************************************************************************************/
-
-/**
- * @brief Create directory if it doesn't exist
- * @param path Directory path to create
- * @retval 0 on success, -1 on error
- */
-#ifdef ENABLE_IMAGE_DEBUG
-static int create_directory(const char *path) {
-    struct stat st = {0};
-    if (stat(path, &st) == -1) {
-        if (mkdir(path, 0755) != 0) {
-            perror("mkdir");
-            return -1;
-        }
-    }
-    return 0;
-}
-#endif
-
 /**
  * @brief Generate timestamp string for filenames
  * @param buffer Output buffer for timestamp
@@ -95,44 +63,79 @@ static void get_timestamp_string(char *buffer, size_t buffer_size) {
 }
 
 /**
- * @brief Convert 32-bit data to 8-bit for PNG output
- * @param input_32 Input 32-bit data
- * @param output_8 Output 8-bit data
- * @param size Number of pixels
- * @param max_value Maximum value for normalization
+ * @brief Convert HSL to RGB color space
+ * @param h Hue (0.0 to 360.0)
+ * @param s Saturation (0.0 to 1.0)
+ * @param l Lightness (0.0 to 1.0)
+ * @param r Output red component (0-255)
+ * @param g Output green component (0-255)
+ * @param b Output blue component (0-255)
  * @retval None
  */
-#if defined(DEBUG_IMAGE_SAVE_TO_FILES) || defined(DEBUG_IMAGE_STEREO_CHANNELS) || defined(DEBUG_TEMPORAL_SCAN)
-static void convert_32bit_to_8bit(int32_t *input_32, uint8_t *output_8, int size, int32_t max_value) {
-    if (max_value == 0) max_value = 1; // Avoid division by zero
+static void hsl_to_rgb(float h, float s, float l, uint8_t *r, uint8_t *g, uint8_t *b) {
+    float c = (1.0f - fabsf(2.0f * l - 1.0f)) * s;
+    float x = c * (1.0f - fabsf(fmodf(h / 60.0f, 2.0f) - 1.0f));
+    float m = l - c / 2.0f;
     
-    for (int i = 0; i < size; i++) {
-        int32_t value = input_32[i];
-        if (value < 0) value = 0;
-        if (value > max_value) value = max_value;
-        output_8[i] = (uint8_t)((value * 255) / max_value);
+    float r_prime, g_prime, b_prime;
+    
+    if (h >= 0.0f && h < 60.0f) {
+        r_prime = c; g_prime = x; b_prime = 0.0f;
+    } else if (h >= 60.0f && h < 120.0f) {
+        r_prime = x; g_prime = c; b_prime = 0.0f;
+    } else if (h >= 120.0f && h < 180.0f) {
+        r_prime = 0.0f; g_prime = c; b_prime = x;
+    } else if (h >= 180.0f && h < 240.0f) {
+        r_prime = 0.0f; g_prime = x; b_prime = c;
+    } else if (h >= 240.0f && h < 300.0f) {
+        r_prime = x; g_prime = 0.0f; b_prime = c;
+    } else {
+        r_prime = c; g_prime = 0.0f; b_prime = x;
     }
+    
+    *r = (uint8_t)((r_prime + m) * 255.0f);
+    *g = (uint8_t)((g_prime + m) * 255.0f);
+    *b = (uint8_t)((b_prime + m) * 255.0f);
 }
-#endif
 
 /**
- * @brief Apply color palette to grayscale data
- * @param grayscale_8 Input grayscale data (8-bit)
- * @param rgb_output Output RGB data
- * @param size Number of pixels
- * @param palette Color palette to apply (RGB)
+ * @brief Calculate color based on volume difference and absolute level
+ * @param current_volume Current oscillator volume
+ * @param target_volume Target oscillator volume
+ * @param max_volume Maximum volume for normalization
+ * @param r Output red component (0-255)
+ * @param g Output green component (0-255)
+ * @param b Output blue component (0-255)
  * @retval None
  */
-#ifdef DEBUG_IMAGE_SHOW_HISTOGRAMS
-static void apply_color_palette(uint8_t *grayscale_8, uint8_t *rgb_output, int size, const uint8_t *palette) {
-    for (int i = 0; i < size; i++) {
-        float intensity = grayscale_8[i] / 255.0f;
-        rgb_output[i * 3 + 0] = (uint8_t)(palette[0] * intensity);
-        rgb_output[i * 3 + 1] = (uint8_t)(palette[1] * intensity);
-        rgb_output[i * 3 + 2] = (uint8_t)(palette[2] * intensity);
-    }
+static void calculate_oscillator_color(float current_volume, float target_volume, float max_volume,
+                                     uint8_t *r, uint8_t *g, uint8_t *b) {
+    // Calculate absolute difference between current and target
+    float volume_diff = fabsf(current_volume - target_volume);
+    float max_diff = max_volume; // Maximum possible difference
+    
+    // Normalize difference (0.0 = close, 1.0 = far)
+    float diff_normalized = (max_diff > 0.0f) ? (volume_diff / max_diff) : 0.0f;
+    if (diff_normalized > 1.0f) diff_normalized = 1.0f;
+    
+    // Calculate hue: blue (240°) when far, yellow/orange (60°) when close
+    //float hue = 240.0f - (diff_normalized * 180.0f); // 240° -> 60°
+    float hue = 180.0f - (diff_normalized * 240.0f); // 240° -> 0°
+    
+    // High saturation for vivid colors
+    float saturation = 1.0f;
+    
+    // Lightness based on absolute current volume level
+    // Low volume = high lightness (white), high volume = low lightness (black)
+    float volume_normalized = (max_volume > 0.0f) ? (current_volume / max_volume) : 0.0f;
+    if (volume_normalized > 1.0f) volume_normalized = 1.0f;
+    
+    // Invert: low volume = bright (0.8), high volume = dark (0.2)
+    float lightness = 1.0f - (volume_normalized * 1.0f);
+    
+    // Convert HSL to RGB
+    hsl_to_rgb(hue, saturation, lightness, r, g, b);
 }
-#endif
 
 /**************************************************************************************
  * Public API Implementation
@@ -163,57 +166,15 @@ int image_debug_init(void) {
 }
 
 void image_debug_cleanup(void) {
-#ifdef ENABLE_IMAGE_DEBUG
     debug_initialized = 0;
     printf("🔧 IMAGE_DEBUG: Cleanup completed\n");
-#endif
 }
 
 int image_debug_save_rgb(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
                         int width, int height, const char *filename, const char *stage_name) {
-#ifdef DEBUG_IMAGE_SAVE_TO_FILES
-    if (!debug_initialized || !buffer_R || !buffer_G || !buffer_B) {
-        return -1;
-    }
-    
-    // Allocate RGB interleaved buffer
-    uint8_t *rgb_data = malloc(width * height * 3);
-    if (!rgb_data) {
-        printf("ERROR: Failed to allocate RGB buffer for debug image\n");
-        return -1;
-    }
-    
-    // Interleave RGB data
-    for (int i = 0; i < width * height; i++) {
-        rgb_data[i * 3 + 0] = buffer_R[i];
-        rgb_data[i * 3 + 1] = buffer_G[i];
-        rgb_data[i * 3 + 2] = buffer_B[i];
-    }
-    
-    // Generate full filename with timestamp
-    char timestamp[32];
-    get_timestamp_string(timestamp, sizeof(timestamp));
-    char full_path[512];
-    snprintf(full_path, sizeof(full_path), "%s/%s_%s_%s.png", 
-             output_dir, timestamp, filename, stage_name);
-    
-    // Save PNG file
-    int result = stbi_write_png(full_path, width, height, 3, rgb_data, width * 3);
-    
-    free(rgb_data);
-    
-    if (result) {
-        printf("🔧 IMAGE_DEBUG: Saved RGB image: %s\n", full_path);
-        return 0;
-    } else {
-        printf("ERROR: Failed to save RGB debug image: %s\n", full_path);
-        return -1;
-    }
-#else
     (void)buffer_R; (void)buffer_G; (void)buffer_B;
     (void)width; (void)height; (void)filename; (void)stage_name;
     return 0; // Debug disabled
-#endif
 }
 
 /**************************************************************************************
@@ -246,6 +207,15 @@ static temporal_scan_t oscillator_volume_scan = {0};
 static int oscillator_scan_initialized = 0;
 static int oscillator_sample_counter = 0;
 
+// Structure to store both current and target volumes for colorization
+typedef struct {
+    float current_volume;
+    float target_volume;
+} oscillator_volume_data_t;
+
+// Buffer to store volume data for colorization (16-bit resolution)
+static oscillator_volume_data_t *oscillator_volume_buffer = NULL;
+
 // Global raw scanner capture structure (now always available for runtime configuration)
 static temporal_scan_t raw_scanner_capture = {0};
 static int raw_scanner_initialized = 0;
@@ -266,10 +236,19 @@ static int init_oscillator_volume_scan(void) {
     strncpy(oscillator_volume_scan.name, "oscillator_volumes", sizeof(oscillator_volume_scan.name) - 1);
     oscillator_volume_scan.name[sizeof(oscillator_volume_scan.name) - 1] = '\0';
     
-    // Allocate buffer (16-bit grayscale format for oscillator volumes, same resolution as VOLUME_AMP_RESOLUTION)
+    // Allocate buffer for volume data (stores both current and target volumes)
+    oscillator_volume_buffer = calloc(oscillator_volume_scan.width * oscillator_volume_scan.max_height, sizeof(oscillator_volume_data_t));
+    if (!oscillator_volume_buffer) {
+        printf("ERROR: Failed to allocate oscillator volume data buffer\n");
+        return -1;
+    }
+    
+    // Keep the old buffer for compatibility (not used in new colorized version)
     oscillator_volume_scan.buffer = calloc(oscillator_volume_scan.width * oscillator_volume_scan.max_height, sizeof(uint16_t));
     if (!oscillator_volume_scan.buffer) {
         printf("ERROR: Failed to allocate oscillator volume scan buffer\n");
+        free(oscillator_volume_buffer);
+        oscillator_volume_buffer = NULL;
         return -1;
     }
     
@@ -316,7 +295,7 @@ int image_debug_capture_oscillator_sample(void) {
 }
 
 int image_debug_add_oscillator_volume_line(float *volumes, int count) {
-    if (!debug_initialized || !volumes || !oscillator_scan_initialized) {
+    if (!debug_initialized || !volumes || !oscillator_scan_initialized || !oscillator_volume_buffer) {
         return -1;
     }
     
@@ -329,7 +308,14 @@ int image_debug_add_oscillator_volume_line(float *volumes, int count) {
         image_debug_reset_oscillator_volume_scan();
     }
     
-    // Find min/max volumes for normalization
+    // Store both current and target volumes in the new buffer
+    for (int x = 0; x < count && x < scan->width; x++) {
+        int idx = scan->current_height * scan->width + x;
+        oscillator_volume_buffer[idx].current_volume = waves[x].current_volume;
+        oscillator_volume_buffer[idx].target_volume = waves[x].target_volume;
+    }
+    
+    // Keep old logic for compatibility (16-bit buffer)
     float min_vol = volumes[0];
     float max_vol = volumes[0];
     for (int i = 1; i < count && i < get_current_number_of_notes(); i++) {
@@ -360,7 +346,7 @@ int image_debug_add_oscillator_volume_line(float *volumes, int count) {
 }
 
 int image_debug_save_oscillator_volume_scan(void) {
-    if (!debug_initialized || !oscillator_scan_initialized) {
+    if (!debug_initialized || !oscillator_scan_initialized || !oscillator_volume_buffer) {
         return -1;
     }
     
@@ -376,41 +362,65 @@ int image_debug_save_oscillator_volume_scan(void) {
         return -1;
     }
     
-    uint16_t *buffer_16 = (uint16_t*)scan->buffer;
+    // Find global min/max volumes for normalization
+    float global_min_current = oscillator_volume_buffer[0].current_volume;
+    float global_max_current = oscillator_volume_buffer[0].current_volume;
+    float global_min_target = oscillator_volume_buffer[0].target_volume;
+    float global_max_target = oscillator_volume_buffer[0].target_volume;
+    
+    for (int i = 0; i < scan->width * scan->current_height; i++) {
+        float current = oscillator_volume_buffer[i].current_volume;
+        float target = oscillator_volume_buffer[i].target_volume;
+        
+        if (current < global_min_current) global_min_current = current;
+        if (current > global_max_current) global_max_current = current;
+        if (target < global_min_target) global_min_target = target;
+        if (target > global_max_target) global_max_target = target;
+    }
+    
+    // Calculate maximum possible volume for normalization
+    float max_volume = (global_max_current > global_max_target) ? global_max_current : global_max_target;
+    if (max_volume == 0.0f) max_volume = 1.0f; // Avoid division by zero
+    
     int marker_count = 0; // Counter for markers
     
+    // Generate colorized image using new algorithm
     for (int y = 0; y < scan->current_height; y++) {
         for (int x = 0; x < scan->width; x++) {
-            int idx_16 = y * scan->width + x;
-            int idx_8_rgb = idx_16 * 3;
+            int idx = y * scan->width + x;
+            int idx_8_rgb = idx * 3;
             
-            // Convert 16-bit grayscale to 8-bit
-            uint8_t gray_value = (uint8_t)(buffer_16[idx_16] >> 8);
+            // Get volume data for this pixel
+            float current_volume = oscillator_volume_buffer[idx].current_volume;
+            float target_volume = oscillator_volume_buffer[idx].target_volume;
             
-            // Default to grayscale
-            rgb_8bit[idx_8_rgb + 0] = gray_value;
-            rgb_8bit[idx_8_rgb + 1] = gray_value;
-            rgb_8bit[idx_8_rgb + 2] = gray_value;
+            // Calculate color based on volume difference and absolute level
+            uint8_t r, g, b;
+            calculate_oscillator_color(current_volume, target_volume, max_volume, &r, &g, &b);
+            
+            // Apply the calculated color
+            rgb_8bit[idx_8_rgb + 0] = r;
+            rgb_8bit[idx_8_rgb + 1] = g;
+            rgb_8bit[idx_8_rgb + 2] = b;
         }
         
-        // Add markers if enabled at runtime
+        // Add yellow separator lines if markers enabled at runtime
         if (oscillator_markers_enabled && y > 0 && y % AUDIO_BUFFER_SIZE == 0) {
             marker_count++;
-            for (int marker_y = y; marker_y < y + 5 && marker_y < scan->current_height; marker_y++) {
-                for (int x = 0; x < 20 && x < scan->width; x++) { // 20 pixels wide marker
-                    int idx_8_rgb = (marker_y * scan->width + x) * 3;
-                    rgb_8bit[idx_8_rgb + 0] = 0;   // R (Dark Blue)
-                    rgb_8bit[idx_8_rgb + 1] = 0;   // G (Dark Blue)
-                    rgb_8bit[idx_8_rgb + 2] = 128; // B (Dark Blue)
-                }
+            // Draw a full-width yellow line markers
+            for (int x = 0; x < scan->width; x++) {
+                int idx_8_rgb = (y * scan->width + x) * 3;
+                rgb_8bit[idx_8_rgb + 0] = 255; // R (Yellow)
+                rgb_8bit[idx_8_rgb + 1] = 255; // G (Yellow)
+                rgb_8bit[idx_8_rgb + 2] = 0; // B (Yellow)
             }
         }
     }
     
     if (oscillator_markers_enabled) {
-        printf("🔧 OSCILLATOR_SCAN: Drew %d markers.\n", marker_count);
+        printf("🔧 OSCILLATOR_SCAN: Drew %d yellow separator lines.\n", marker_count);
     } else {
-        printf("🔧 OSCILLATOR_SCAN: Markers disabled (no visual markers drawn).\n");
+        printf("🔧 OSCILLATOR_SCAN: Markers disabled (no separator lines drawn).\n");
     }
     
     // Generate filename with timestamp
@@ -427,11 +437,11 @@ int image_debug_save_oscillator_volume_scan(void) {
     free(rgb_8bit);
     
     if (result) {
-        printf("🔧 OSCILLATOR_SCAN: Saved volume scan with markers (%dx%d): %s\n", 
+        printf("🔧 OSCILLATOR_SCAN: Saved colorized volume scan (%dx%d): %s\n", 
                scan->width, scan->current_height, full_path);
         return 0;
     } else {
-        printf("ERROR: Failed to save oscillator volume scan: %s\n", full_path);
+        printf("ERROR: Failed to save colorized oscillator volume scan: %s\n", full_path);
         return -1;
     }
 }
@@ -456,215 +466,9 @@ int image_debug_reset_oscillator_volume_scan(void) {
     return 0;
 }
 
-int image_debug_save_grayscale(void *buffer, int width, int height,
-                              const char *filename, const char *stage_name, int is_32bit) {
-#ifdef DEBUG_IMAGE_SAVE_TO_FILES
-    if (!debug_initialized || !buffer) {
-        return -1;
-    }
-    
-    uint8_t *gray_8bit = malloc(width * height);
-    if (!gray_8bit) {
-        printf("ERROR: Failed to allocate grayscale buffer for debug image\n");
-        return -1;
-    }
-    
-    if (is_32bit) {
-        // Convert 32-bit to 8-bit
-        convert_32bit_to_8bit((int32_t*)buffer, gray_8bit, width * height, VOLUME_AMP_RESOLUTION);
-    } else {
-        // Convert 16-bit to 8-bit
-        uint16_t *buffer_16 = (uint16_t*)buffer;
-        for (int i = 0; i < width * height; i++) {
-            gray_8bit[i] = (uint8_t)(buffer_16[i] >> 8); // Simple 16->8 bit conversion
-        }
-    }
-    
-    // Generate full filename with timestamp
-    char timestamp[32];
-    get_timestamp_string(timestamp, sizeof(timestamp));
-    char full_path[512];
-    snprintf(full_path, sizeof(full_path), "%s/%s_%s_%s.png", 
-             output_dir, timestamp, filename, stage_name);
-    
-    // Save PNG file (grayscale)
-    int result = stbi_write_png(full_path, width, height, 1, gray_8bit, width);
-    
-    free(gray_8bit);
-    
-    if (result) {
-        printf("🔧 IMAGE_DEBUG: Saved grayscale image: %s\n", full_path);
-        return 0;
-    } else {
-        printf("ERROR: Failed to save grayscale debug image: %s\n", full_path);
-        return -1;
-    }
-#else
-    (void)buffer; (void)width; (void)height; (void)filename; (void)stage_name; (void)is_32bit;
-    return 0; // Debug disabled
-#endif
-}
-
-int image_debug_save_stereo_channels(int32_t *warm_channel, int32_t *cold_channel,
-                                    int width, int height, const char *filename, const char *stage_name) {
-#ifdef DEBUG_IMAGE_STEREO_CHANNELS
-    if (!debug_initialized || !warm_channel || !cold_channel) {
-        return -1;
-    }
-    
-    // Create side-by-side image (double width)
-    int total_width = width * 2;
-    uint8_t *rgb_data = malloc(total_width * height * 3);
-    if (!rgb_data) {
-        printf("ERROR: Failed to allocate stereo buffer for debug image\n");
-        return -1;
-    }
-    
-    // Convert channels to 8-bit
-    uint8_t *warm_8bit = malloc(width * height);
-    uint8_t *cold_8bit = malloc(width * height);
-    if (!warm_8bit || !cold_8bit) {
-        free(rgb_data);
-        free(warm_8bit);
-        free(cold_8bit);
-        return -1;
-    }
-    
-    convert_32bit_to_8bit(warm_channel, warm_8bit, width * height, VOLUME_AMP_RESOLUTION);
-    convert_32bit_to_8bit(cold_channel, cold_8bit, width * height, VOLUME_AMP_RESOLUTION);
-    
-    // Create side-by-side visualization
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            int src_idx = y * width + x;
-            int dst_idx_left = y * total_width + x;
-            int dst_idx_right = y * total_width + (width + x);
-            
-            // Left side: warm channel (orange-red)
-            float warm_intensity = warm_8bit[src_idx] / 255.0f;
-            rgb_data[dst_idx_left * 3 + 0] = (uint8_t)(warm_palette[0] * warm_intensity);
-            rgb_data[dst_idx_left * 3 + 1] = (uint8_t)(warm_palette[1] * warm_intensity);
-            rgb_data[dst_idx_left * 3 + 2] = (uint8_t)(warm_palette[2] * warm_intensity);
-            
-            // Right side: cold channel (blue)
-            float cold_intensity = cold_8bit[src_idx] / 255.0f;
-            rgb_data[dst_idx_right * 3 + 0] = (uint8_t)(cold_palette[0] * cold_intensity);
-            rgb_data[dst_idx_right * 3 + 1] = (uint8_t)(cold_palette[1] * cold_intensity);
-            rgb_data[dst_idx_right * 3 + 2] = (uint8_t)(cold_palette[2] * cold_intensity);
-        }
-    }
-    
-    // Generate full filename with timestamp
-    char timestamp[32];
-    get_timestamp_string(timestamp, sizeof(timestamp));
-    char full_path[512];
-    snprintf(full_path, sizeof(full_path), "%s/%s_%s_%s_stereo.png", 
-             output_dir, timestamp, filename, stage_name);
-    
-    // Save PNG file
-    int result = stbi_write_png(full_path, total_width, height, 3, rgb_data, total_width * 3);
-    
-    free(rgb_data);
-    free(warm_8bit);
-    free(cold_8bit);
-    
-    if (result) {
-        printf("🔧 IMAGE_DEBUG: Saved stereo channels image: %s\n", full_path);
-        return 0;
-    } else {
-        printf("ERROR: Failed to save stereo debug image: %s\n", full_path);
-        return -1;
-    }
-#else
-    (void)warm_channel; (void)cold_channel; (void)width; (void)height; 
-    (void)filename; (void)stage_name;
-    return 0; // Debug disabled
-#endif
-}
-
-int image_debug_save_histogram(int32_t *buffer, int size, const char *filename,
-                              const char *stage_name, int32_t max_value) {
-#ifdef DEBUG_IMAGE_SHOW_HISTOGRAMS
-    if (!debug_initialized || !buffer) {
-        return -1;
-    }
-    
-    // Create histogram (256 bins)
-    const int hist_bins = 256;
-    const int hist_width = 512;
-    const int hist_height = 256;
-    int histogram[hist_bins] = {0};
-    
-    // Calculate histogram
-    for (int i = 0; i < size; i++) {
-        int32_t value = buffer[i];
-        if (value < 0) value = 0;
-        if (value > max_value) value = max_value;
-        int bin = (value * (hist_bins - 1)) / max_value;
-        histogram[bin]++;
-    }
-    
-    // Find max count for normalization
-    int max_count = 0;
-    for (int i = 0; i < hist_bins; i++) {
-        if (histogram[i] > max_count) {
-            max_count = histogram[i];
-        }
-    }
-    
-    if (max_count == 0) max_count = 1; // Avoid division by zero
-    
-    // Create histogram image
-    uint8_t *hist_image = calloc(hist_width * hist_height * 3, 1);
-    if (!hist_image) {
-        printf("ERROR: Failed to allocate histogram buffer\n");
-        return -1;
-    }
-    
-    // Draw histogram bars
-    for (int bin = 0; bin < hist_bins; bin++) {
-        int bar_height = (histogram[bin] * hist_height) / max_count;
-        int x_start = (bin * hist_width) / hist_bins;
-        int x_end = ((bin + 1) * hist_width) / hist_bins;
-        
-        for (int x = x_start; x < x_end; x++) {
-            for (int y = hist_height - bar_height; y < hist_height; y++) {
-                int idx = (y * hist_width + x) * 3;
-                hist_image[idx + 0] = 255; // White bars
-                hist_image[idx + 1] = 255;
-                hist_image[idx + 2] = 255;
-            }
-        }
-    }
-    
-    // Generate full filename with timestamp
-    char timestamp[32];
-    get_timestamp_string(timestamp, sizeof(timestamp));
-    char full_path[512];
-    snprintf(full_path, sizeof(full_path), "%s/%s_%s_%s_histogram.png", 
-             output_dir, timestamp, filename, stage_name);
-    
-    // Save PNG file
-    int result = stbi_write_png(full_path, hist_width, hist_height, 3, hist_image, hist_width * 3);
-    
-    free(hist_image);
-    
-    if (result) {
-        printf("🔧 IMAGE_DEBUG: Saved histogram: %s\n", full_path);
-        return 0;
-    } else {
-        printf("ERROR: Failed to save histogram: %s\n", full_path);
-        return -1;
-    }
-#else
-    (void)buffer; (void)size; (void)filename; (void)stage_name; (void)max_value;
-    return 0; // Debug disabled
-#endif
-}
-
 int image_debug_capture_mono_pipeline(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
                                      int32_t *grayscale_data, int32_t *processed_data, int frame_number) {
-#ifdef ENABLE_IMAGE_DEBUG
+
     if (!image_debug_should_capture(frame_number)) {
         return 0; // Skip this frame
     }
@@ -681,17 +485,15 @@ int image_debug_capture_mono_pipeline(uint8_t *buffer_R, uint8_t *buffer_G, uint
     image_debug_add_scan_line(processed_data, CIS_MAX_PIXELS_NB, "processed");
     
     return 0;
-#else
+
     (void)buffer_R; (void)buffer_G; (void)buffer_B; (void)grayscale_data; 
     (void)processed_data; (void)frame_number;
     return 0; // Debug disabled
-#endif
 }
 
 int image_debug_capture_stereo_pipeline(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
                                        int32_t *warm_raw __attribute__((unused)), int32_t *cold_raw __attribute__((unused)),
                                        int32_t *warm_processed, int32_t *cold_processed, int frame_number) {
-#ifdef ENABLE_IMAGE_DEBUG
     if (!image_debug_should_capture(frame_number)) {
         return 0; // Skip this frame
     }
@@ -730,37 +532,10 @@ int image_debug_capture_stereo_pipeline(uint8_t *buffer_R, uint8_t *buffer_G, ui
     }
     
     return 0;
-#else
-    (void)buffer_R; (void)buffer_G; (void)buffer_B; (void)warm_raw; (void)cold_raw;
-    (void)warm_processed; (void)cold_processed; (void)frame_number;
-    return 0; // Debug disabled
-#endif
 }
 
 int image_debug_should_capture(int frame_number) {
-#ifdef ENABLE_IMAGE_DEBUG
-#ifdef DEBUG_FORCE_CAPTURE_TEST_DATA
-    // Force capture even with test data
-    return (frame_number % 1) == 0; // Capture every frame when forced
-#else
     return (frame_number % 1) == 0; // Capture every frame by default
-#endif
-#else
-    (void)frame_number;
-    return 0; // Debug disabled
-#endif
-}
-
-int image_debug_cleanup_old_files(void) {
-#ifdef DEBUG_IMAGE_SAVE_TO_FILES
-    // This is a simplified cleanup - in a real implementation,
-    // you would scan the directory and remove old files based on
-    // DEBUG_IMAGE_MAX_FILES setting
-    printf("🔧 IMAGE_DEBUG: Cleanup old files (simplified implementation)\n");
-    return 0;
-#else
-    return 0; // Debug disabled
-#endif
 }
 
 /**************************************************************************************
@@ -887,242 +662,28 @@ int image_debug_reset_raw_scanner_capture(void) {
  * Temporal Scan Functions
  **************************************************************************************/
 
-/**
- * @brief Initialize temporal scan buffers
- * @retval 0 on success, -1 on error
- */
-#ifdef DEBUG_TEMPORAL_SCAN
-static int init_temporal_scans(void) {
-    if (scans_initialized) {
-        return 0;
-    }
-    
-    // Initialize scan buffers
-    const char *scan_names[] = {"grayscale", "processed", "original"};
-    
-    for (int i = 0; i < MAX_SCAN_TYPES; i++) {
-        scans[i].width = CIS_MAX_PIXELS_NB;
-        scans[i].max_height = MAX_SCAN_HEIGHT;
-        scans[i].current_height = 0;
-        scans[i].initialized = 0;
-        strncpy(scans[i].name, scan_names[i], sizeof(scans[i].name) - 1);
-        scans[i].name[sizeof(scans[i].name) - 1] = '\0';
-        
-        // Allocate buffer (RGB format for visualization)
-        scans[i].buffer = calloc(scans[i].width * scans[i].max_height * 3, sizeof(uint8_t));
-        if (!scans[i].buffer) {
-            printf("ERROR: Failed to allocate temporal scan buffer for %s\n", scans[i].name);
-            return -1;
-        }
-    }
-    
-    scans_initialized = 1;
-    printf("🔧 TEMPORAL_SCAN: Initialized %d scan buffers (%dx%d each)\n", 
-           MAX_SCAN_TYPES, CIS_MAX_PIXELS_NB, MAX_SCAN_HEIGHT);
-    return 0;
-}
-
-/**
- * @brief Find scan index by name
- * @param scan_type Name of scan type
- * @retval Index or -1 if not found
- */
-static int find_scan_index(const char *scan_type) {
-    for (int i = 0; i < MAX_SCAN_TYPES; i++) {
-        if (strcmp(scans[i].name, scan_type) == 0) {
-            return i;
-        }
-    }
-    return -1;
-}
-#endif
-
 int image_debug_add_scan_line_rgb(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B, int width, const char *scan_type) {
-#ifdef ENABLE_IMAGE_DEBUG
-#ifdef DEBUG_TEMPORAL_SCAN
-    if (!debug_initialized) {
-        return -1;
-    }
-    
-    // Initialize temporal scans if needed
-    if (init_temporal_scans() != 0) {
-        return -1;
-    }
-    
-    // Find scan by type
-    int scan_idx = find_scan_index(scan_type);
-    if (scan_idx < 0) {
-        return -1;
-    }
-    
-    temporal_scan_t *scan = &scans[scan_idx];
-    
-    // Check if buffer is full
-    if (scan->current_height >= scan->max_height) {
-        printf("🚨 TEMPORAL_SCAN: Buffer full for %s, auto-saving\n", scan_type);
-        image_debug_save_scan(scan_type);
-        image_debug_reset_scan(scan_type);
-    }
-    
-    // Add RGB line to scan buffer
-    for (int x = 0; x < width && x < scan->width; x++) {
-        int idx = (scan->current_height * scan->width + x) * 3;
-        scan->buffer[idx + 0] = buffer_R[x];
-        scan->buffer[idx + 1] = buffer_G[x];
-        scan->buffer[idx + 2] = buffer_B[x];
-    }
-    
-    scan->current_height++;
-    scan->initialized = 1;
-    
-    return 0;
-#else
     // Function exists for linking compatibility, but temporal scan functionality requires DEBUG_TEMPORAL_SCAN
     (void)buffer_R; (void)buffer_G; (void)buffer_B; (void)width; (void)scan_type;
     return 0; // Stub implementation - temporal scan not enabled
-#endif
-#else
-    (void)buffer_R; (void)buffer_G; (void)buffer_B; (void)width; (void)scan_type;
-    return 0; // Debug disabled
-#endif
 }
 
 int image_debug_add_scan_line(int32_t *buffer_data, int width, const char *scan_type) {
-#ifdef ENABLE_IMAGE_DEBUG
-#ifdef DEBUG_TEMPORAL_SCAN
-    if (!debug_initialized || !buffer_data) {
-        return -1;
-    }
-    
-    // Initialize temporal scans if needed
-    if (init_temporal_scans() != 0) {
-        return -1;
-    }
-    
-    // Find scan by type
-    int scan_idx = find_scan_index(scan_type);
-    if (scan_idx < 0) {
-        return -1;
-    }
-    
-    temporal_scan_t *scan = &scans[scan_idx];
-    
-    // Check if buffer is full
-    if (scan->current_height >= scan->max_height) {
-        printf("🚨 TEMPORAL_SCAN: Buffer full for %s, auto-saving\n", scan_type);
-        image_debug_save_scan(scan_type);
-        image_debug_reset_scan(scan_type);
-    }
-    
-    // Convert 32-bit data to 8-bit RGB (grayscale)
-    for (int x = 0; x < width && x < scan->width; x++) {
-        int32_t value = buffer_data[x];
-        if (value < 0) value = 0;
-        if (value > VOLUME_AMP_RESOLUTION) value = VOLUME_AMP_RESOLUTION;
-        
-        uint8_t gray_value = (uint8_t)((value * 255) / VOLUME_AMP_RESOLUTION);
-        
-        int idx = (scan->current_height * scan->width + x) * 3;
-        scan->buffer[idx + 0] = gray_value;
-        scan->buffer[idx + 1] = gray_value;
-        scan->buffer[idx + 2] = gray_value;
-    }
-    
-    scan->current_height++;
-    scan->initialized = 1;
-    
-    return 0;
-#else
     // Function exists for linking compatibility, but temporal scan functionality requires DEBUG_TEMPORAL_SCAN
     (void)buffer_data; (void)width; (void)scan_type;
     return 0; // Stub implementation - temporal scan not enabled
-#endif
-#else
-    (void)buffer_data; (void)width; (void)scan_type;
-    return 0; // Debug disabled
-#endif
 }
 
 int image_debug_save_scan(const char *scan_type) {
-#ifdef ENABLE_IMAGE_DEBUG
-#ifdef DEBUG_TEMPORAL_SCAN
-    if (!debug_initialized) {
-        return -1;
-    }
-    
-    // Find scan by type
-    int scan_idx = find_scan_index(scan_type);
-    if (scan_idx < 0) {
-        return -1;
-    }
-    
-    temporal_scan_t *scan = &scans[scan_idx];
-    if (!scan->initialized || scan->current_height == 0) {
-        return 0; // Nothing to save
-    }
-    
-    // Generate filename with timestamp
-    char timestamp[32];
-    get_timestamp_string(timestamp, sizeof(timestamp));
-    char full_path[512];
-    snprintf(full_path, sizeof(full_path), "%s/%s_temporal_scan_%s.png", 
-             output_dir, timestamp, scan_type);
-    
-    // Save PNG file
-    int result = stbi_write_png(full_path, scan->width, scan->current_height, 3, 
-                               scan->buffer, scan->width * 3);
-    
-    if (result) {
-        printf("🔧 TEMPORAL_SCAN: Saved %s scan (%dx%d): %s\n", 
-               scan_type, scan->width, scan->current_height, full_path);
-        return 0;
-    } else {
-        printf("ERROR: Failed to save temporal scan: %s\n", full_path);
-        return -1;
-    }
-#else
     // Function exists for linking compatibility, but temporal scan functionality requires DEBUG_TEMPORAL_SCAN
     (void)scan_type;
     return 0; // Stub implementation - temporal scan not enabled
-#endif
-#else
-    (void)scan_type;
-    return 0; // Debug disabled
-#endif
 }
 
 int image_debug_reset_scan(const char *scan_type) {
-#ifdef ENABLE_IMAGE_DEBUG
-#ifdef DEBUG_TEMPORAL_SCAN
-    if (!scans_initialized) {
-        return -1;
-    }
-    
-    // Find scan by type
-    int scan_idx = find_scan_index(scan_type);
-    if (scan_idx < 0) {
-        return -1;
-    }
-    
-    temporal_scan_t *scan = &scans[scan_idx];
-    scan->current_height = 0;
-    
-    // Clear buffer (fill with black)
-    if (scan->buffer) {
-        memset(scan->buffer, 0, scan->width * scan->max_height * 3);
-    }
-    
-    printf("🔧 TEMPORAL_SCAN: Reset %s scan buffer\n", scan_type);
-    return 0;
-#else
     // Function exists for linking compatibility, but temporal scan functionality requires DEBUG_TEMPORAL_SCAN
     (void)scan_type;
     return 0; // Stub implementation - temporal scan not enabled
-#endif
-#else
-    (void)scan_type;
-    return 0; // Debug disabled
-#endif
 }
 
 /**************************************************************************************

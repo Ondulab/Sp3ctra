@@ -40,7 +40,7 @@
 #if SAMPLING_FREQUENCY >= 96000
 #define AUDIO_BUFFER_SIZE            (80)
 #elif SAMPLING_FREQUENCY >= 48000
-#define AUDIO_BUFFER_SIZE            (30)   // 150
+#define AUDIO_BUFFER_SIZE            (100)   // 150
 #else
 #define AUDIO_BUFFER_SIZE            (208)
 #endif

@@ -38,6 +38,10 @@
  * Synth and Image Processing Configuration
  **************************************************************************************/
 
+// Global Volume Contrast Modulation Control
+// Uncomment the line below to disable global volume modulation based on image contrast
+// #define DISABLE_CONTRAST_MODULATION
+
 // Image Processing and Contrast Modulation
 #define CONTRAST_MIN                 0.01f                   // Minimum volume for blurred images (0.0 to 1.0)
 #define CONTRAST_STRIDE              4.0f                   // Pixel sampling stride for optimization

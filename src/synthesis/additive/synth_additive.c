@@ -97,7 +97,7 @@ int32_t synth_IfftInit(void) {
 
   buffer_len = init_waves(unitary_waveform, waves, &wavesGeneratorParams);
 
-  int32_t value = g_additive_config.volume_increment;
+  int32_t value = g_additive_config.volume_ramp_up_divisor;
 
   if (value < 1)
     value = 1;
@@ -108,7 +108,7 @@ int32_t synth_IfftInit(void) {
         1.00 / (float)value * waves[note].max_volume_increment;
   }
 
-  value = g_additive_config.volume_decrement;
+  value = g_additive_config.volume_ramp_down_divisor;
 
   if (value < 1)
     value = 1;
@@ -517,13 +517,11 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   lock_free_pan_update(left_gains, right_gains, pan_positions, current_notes);
 #endif // STEREO_MODE
 
-#ifdef ENABLE_IMAGE_DEBUG
   // Capture mono pipeline for debug visualization
   static int debug_frame_counter_mono = 0;
   image_debug_capture_mono_pipeline(buffer_R, buffer_G, buffer_B,
                                    g_grayScale_live, processed_grayScale,
                                    debug_frame_counter_mono++);
-#endif
 
   // --- Synth Data Freeze/Fade Logic ---
   pthread_mutex_lock(&g_synth_data_freeze_mutex);
@@ -582,7 +580,11 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // Calculate contrast factor based on the processed grayscale image
   // This optimization moves the contrast calculation from synth_IfftMode to here
   // for better performance (calculated once per image instead of per audio buffer)
+#ifdef DISABLE_CONTRAST_MODULATION
+  float contrast_factor = 1.0f; // Disable contrast modulation - constant volume
+#else
   float contrast_factor = calculate_contrast(processed_grayScale, CIS_MAX_PIXELS_NB);
+#endif
 
   // Launch synthesis with potentially frozen/faded data
   // Unified mode: always pass both left and right buffers

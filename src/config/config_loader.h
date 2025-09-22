@@ -22,8 +22,8 @@ typedef struct {
     float start_frequency;
     int semitone_per_octave;
     int comma_per_semitone;
-    int volume_increment;
-    int volume_decrement;
+    int volume_ramp_up_divisor;    // Higher value = slower volume increase
+    int volume_ramp_down_divisor;  // Higher value = slower volume decrease
     int pixels_per_note;
 } additive_synth_config_t;
 

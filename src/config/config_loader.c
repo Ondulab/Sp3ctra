@@ -29,8 +29,8 @@ static const additive_synth_config_t DEFAULT_CONFIG = {
     .start_frequency = 65.41f,
     .semitone_per_octave = 12,
     .comma_per_semitone = 36,
-    .volume_increment = 1,
-    .volume_decrement = 1,
+    .volume_ramp_up_divisor = 1,
+    .volume_ramp_down_divisor = 1,
     .pixels_per_note = 1
 };
 
@@ -121,8 +121,8 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "start_frequency = %.2f\n", DEFAULT_CONFIG.start_frequency);
     fprintf(file, "semitone_per_octave = %d\n", DEFAULT_CONFIG.semitone_per_octave);
     fprintf(file, "comma_per_semitone = %d\n", DEFAULT_CONFIG.comma_per_semitone);
-    fprintf(file, "volume_increment = %d\n", DEFAULT_CONFIG.volume_increment);
-    fprintf(file, "volume_decrement = %d\n", DEFAULT_CONFIG.volume_decrement);
+    fprintf(file, "volume_ramp_up_divisor = %d\n", DEFAULT_CONFIG.volume_ramp_up_divisor);
+    fprintf(file, "volume_ramp_down_divisor = %d\n", DEFAULT_CONFIG.volume_ramp_down_divisor);
     fprintf(file, "pixels_per_note = %d\n", DEFAULT_CONFIG.pixels_per_note);
     
     fclose(file);
@@ -200,15 +200,15 @@ void validate_config(const additive_synth_config_t* config) {
         errors++;
     }
     
-    if (config->volume_increment < 1 || config->volume_increment > 100) {
-        fprintf(stderr, "[CONFIG ERROR] volume_increment must be between 1 and 100, got %d\n", 
-                config->volume_increment);
+    if (config->volume_ramp_up_divisor < 1 || config->volume_ramp_up_divisor > 100000) {
+        fprintf(stderr, "[CONFIG ERROR] volume_ramp_up_divisor must be between 1 and 100000, got %d\n", 
+                config->volume_ramp_up_divisor);
         errors++;
     }
     
-    if (config->volume_decrement < 1 || config->volume_decrement > 100) {
-        fprintf(stderr, "[CONFIG ERROR] volume_decrement must be between 1 and 100, got %d\n", 
-                config->volume_decrement);
+    if (config->volume_ramp_down_divisor < 1 || config->volume_ramp_down_divisor > 100000) {
+        fprintf(stderr, "[CONFIG ERROR] volume_ramp_down_divisor must be between 1 and 100000, got %d\n", 
+                config->volume_ramp_down_divisor);
         errors++;
     }
     
@@ -354,13 +354,15 @@ int load_additive_config(const char* config_file_path) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
-            } else if (strcmp(key, "volume_increment") == 0) {
-                if (parse_int(value, &g_additive_config.volume_increment, key) != 0) {
+            } else if (strcmp(key, "volume_increment") == 0 || strcmp(key, "volume_ramp_up_divisor") == 0) {
+                // Support both old and new parameter names for backward compatibility
+                if (parse_int(value, &g_additive_config.volume_ramp_up_divisor, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
-            } else if (strcmp(key, "volume_decrement") == 0) {
-                if (parse_int(value, &g_additive_config.volume_decrement, key) != 0) {
+            } else if (strcmp(key, "volume_decrement") == 0 || strcmp(key, "volume_ramp_down_divisor") == 0) {
+                // Support both old and new parameter names for backward compatibility
+                if (parse_int(value, &g_additive_config.volume_ramp_down_divisor, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
