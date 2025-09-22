@@ -327,7 +327,7 @@ int main(int argc, char **argv) {
         // Range format: "23-89"
         int start, end;
         if (sscanf(osc_param, "%d-%d", &start, &end) == 2) {
-          if (start >= 0 && end >= start && end < NUMBER_OF_NOTES) {
+          if (start >= 0 && end >= start && end < get_current_number_of_notes()) {
             g_debug_osc_config.enabled = 1;
             g_debug_osc_config.single_osc = -1;
             g_debug_osc_config.start_osc = start;
@@ -335,7 +335,7 @@ int main(int argc, char **argv) {
             printf("🔧 Debug oscillateur additif activé pour la plage %d-%d\n", start, end);
           } else {
             printf("❌ Erreur: plage d'oscillateurs invalide %d-%d (doit être 0-%d)\n", 
-                   start, end, NUMBER_OF_NOTES-1);
+                   start, end, get_current_number_of_notes()-1);
             return EXIT_FAILURE;
           }
         } else {
@@ -345,7 +345,7 @@ int main(int argc, char **argv) {
       } else {
         // Single oscillator format: "56"
         int single_osc = atoi(osc_param);
-        if (single_osc >= 0 && single_osc < NUMBER_OF_NOTES) {
+        if (single_osc >= 0 && single_osc < get_current_number_of_notes()) {
           g_debug_osc_config.enabled = 1;
           g_debug_osc_config.single_osc = single_osc;
           g_debug_osc_config.start_osc = 0;
@@ -353,7 +353,7 @@ int main(int argc, char **argv) {
           printf("🔧 Debug oscillateur additif activé pour l'oscillateur %d\n", single_osc);
         } else {
           printf("❌ Erreur: numéro d'oscillateur invalide %d (doit être 0-%d)\n", 
-                 single_osc, NUMBER_OF_NOTES-1);
+                 single_osc, get_current_number_of_notes()-1);
           return EXIT_FAILURE;
         }
       }

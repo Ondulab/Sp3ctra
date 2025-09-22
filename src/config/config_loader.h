@@ -24,7 +24,7 @@ typedef struct {
     int comma_per_semitone;
     int volume_increment;
     int volume_decrement;
-    // Note: pixels_per_note removed - must remain compile-time constant
+    int pixels_per_note;
 } additive_synth_config_t;
 
 /**************************************************************************************

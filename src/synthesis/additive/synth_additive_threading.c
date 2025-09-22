@@ -49,7 +49,8 @@ int synth_init_thread_pool(void) {
   if (synth_pool_initialized)
     return 0;
 
-  int notes_per_thread = NUMBER_OF_NOTES / 3;
+  int current_notes = get_current_number_of_notes();
+  int notes_per_thread = current_notes / 3;
 
   for (int i = 0; i < 3; i++) {
     synth_thread_worker_t *worker = &thread_pool[i];
@@ -57,7 +58,7 @@ int synth_init_thread_pool(void) {
     // Worker configuration
     worker->thread_id = i;
     worker->start_note = i * notes_per_thread;
-    worker->end_note = (i == 2) ? NUMBER_OF_NOTES : (i + 1) * notes_per_thread;
+    worker->end_note = (i == 2) ? current_notes : (i + 1) * notes_per_thread;
     worker->work_ready = 0;
     worker->work_done = 0;
 

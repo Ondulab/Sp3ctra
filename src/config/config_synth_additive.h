@@ -4,6 +4,7 @@
 #define __CONFIG_SYNTH_ADDITIVE_H__
 
 #include "config_loader.h"  // For g_additive_config
+#include "config_instrument.h"  // For CIS_MAX_PIXELS_NB
 
 // #define DISABLE_ADDITIVE
 
@@ -73,8 +74,18 @@
 // VOLUME_INCREMENT, VOLUME_DECREMENT are now loaded from additive_synth.ini via g_additive_config
 // PIXELS_PER_NOTE remains as compile-time constant for array sizing
 
-#define PIXELS_PER_NOTE              (1)                    // Must remain constant for array sizing
-#define NUMBER_OF_NOTES              (CIS_MAX_PIXELS_NB / PIXELS_PER_NOTE)
+// PIXELS_PER_NOTE is now configurable via additive_synth.ini (g_additive_config.pixels_per_note)
+// This constant is kept for documentation: default was 1 pixel per note
+#define PIXELS_PER_NOTE_DEFAULT      (1)                    // Default value, now runtime configurable
+
+// Maximum number of notes for static buffer allocation (when pixels_per_note = 1)
+#define MAX_NUMBER_OF_NOTES          (CIS_MAX_PIXELS_NB)
+
+// Helper function to get current number of notes based on runtime configuration
+static inline int get_current_number_of_notes(void) {
+    extern additive_synth_config_t g_additive_config;
+    return CIS_MAX_PIXELS_NB / g_additive_config.pixels_per_note;
+}
 
 /**************************************************************************************
  * Phase-Aware Gap Limiter Configuration

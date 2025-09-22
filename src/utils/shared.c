@@ -25,7 +25,7 @@ struct shared_var shared_var;
 
 volatile int32_t audioBuff[AUDIO_BUFFER_SIZE * 4];
 
-volatile struct wave waves[NUMBER_OF_NOTES];
+volatile struct wave waves[MAX_NUMBER_OF_NOTES];
 
 volatile float unitary_waveform[WAVEFORM_TABLE_SIZE];
 

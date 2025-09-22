@@ -77,7 +77,7 @@ extern volatile struct params params;
 extern volatile int32_t cvData[];
 //extern volatile int32_t imageData[];
 extern volatile int32_t audioBuff[];
-extern volatile struct wave waves[NUMBER_OF_NOTES];
+extern volatile struct wave waves[MAX_NUMBER_OF_NOTES];
 extern volatile float unitary_waveform[WAVEFORM_TABLE_SIZE];
 
 extern int params_size;
