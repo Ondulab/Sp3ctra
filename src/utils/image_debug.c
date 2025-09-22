@@ -259,7 +259,7 @@ static int init_oscillator_volume_scan(void) {
         return 0;
     }
     
-    oscillator_volume_scan.width = NUMBER_OF_NOTES;
+    oscillator_volume_scan.width = get_current_number_of_notes();
     oscillator_volume_scan.max_height = oscillator_capture_samples; // Use runtime-configured samples
     oscillator_volume_scan.current_height = 0;
     oscillator_volume_scan.initialized = 0;
@@ -277,7 +277,7 @@ static int init_oscillator_volume_scan(void) {
     oscillator_sample_counter = 0;
     
     printf("🔧 OSCILLATOR_SCAN: Initialized buffer (%dx%d samples)\n", 
-           NUMBER_OF_NOTES, oscillator_capture_samples);
+           get_current_number_of_notes(), oscillator_capture_samples);
     return 0;
 }
 
@@ -293,13 +293,14 @@ int image_debug_capture_oscillator_sample(void) {
     }
     
     // Capture current oscillator volumes
-    float volumes[NUMBER_OF_NOTES];
-    for (int i = 0; i < NUMBER_OF_NOTES; i++) {
+    int current_notes = get_current_number_of_notes();
+    float volumes[MAX_NUMBER_OF_NOTES];
+    for (int i = 0; i < current_notes; i++) {
         volumes[i] = waves[i].current_volume;
     }
     
     // Add to scan buffer
-    int result = image_debug_add_oscillator_volume_line(volumes, NUMBER_OF_NOTES);
+    int result = image_debug_add_oscillator_volume_line(volumes, current_notes);
     
     oscillator_sample_counter++;
     
@@ -331,7 +332,7 @@ int image_debug_add_oscillator_volume_line(float *volumes, int count) {
     // Find min/max volumes for normalization
     float min_vol = volumes[0];
     float max_vol = volumes[0];
-    for (int i = 1; i < count && i < NUMBER_OF_NOTES; i++) {
+    for (int i = 1; i < count && i < get_current_number_of_notes(); i++) {
         if (volumes[i] < min_vol) min_vol = volumes[i];
         if (volumes[i] > max_vol) max_vol = volumes[i];
     }

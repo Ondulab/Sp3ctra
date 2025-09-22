@@ -72,7 +72,7 @@ static pthread_mutex_t g_synth_process_mutex;
 static uint32_t log_counter = 0;
 #define LOG_FREQUENCY (SAMPLING_FREQUENCY / AUDIO_BUFFER_SIZE) // Environ 1 seconde
 
-static int32_t imageRef[NUMBER_OF_NOTES] = {0};
+static int32_t imageRef[MAX_NUMBER_OF_NOTES] = {0};
 
 /* Public functions ----------------------------------------------------------*/
 
@@ -100,7 +100,7 @@ int32_t synth_IfftInit(void) {
     value = 1;
   if (value > 100000)
     value = 100000;
-  for (int32_t note = 0; note < NUMBER_OF_NOTES; note++) {
+  for (int32_t note = 0; note < get_current_number_of_notes(); note++) {
     waves[note].volume_increment =
         1.00 / (float)value * waves[note].max_volume_increment;
   }
@@ -111,12 +111,12 @@ int32_t synth_IfftInit(void) {
     value = 1;
   if (value > 100000)
     value = 100000;
-  for (int32_t note = 0; note < NUMBER_OF_NOTES; note++) {
+  for (int32_t note = 0; note < get_current_number_of_notes(); note++) {
     waves[note].volume_decrement = 1.00 / (float)value * waves[note].max_volume_decrement;
   }
 
   // Start with random index
-  for (uint32_t i = 0; i < NUMBER_OF_NOTES; i++) {
+  for (uint32_t i = 0; i < get_current_number_of_notes(); i++) {
 #ifdef __APPLE__
     uint32_t aRandom32bit = arc4random();
 #else
@@ -133,21 +133,22 @@ int32_t synth_IfftInit(void) {
     return -1;
   }
 
-  printf("Note number  = %d\n", (int)NUMBER_OF_NOTES);
+  printf("Note number  = %d\n", (int)get_current_number_of_notes());
   printf("Buffer length = %d uint16\n", (int)buffer_len);
 
   uint8_t FreqStr[256] = {0};
+  int current_notes = get_current_number_of_notes();
   sprintf((char *)FreqStr, " %d -> %dHz      Octave:%d",
-          (int)waves[0].frequency, (int)waves[NUMBER_OF_NOTES - 1].frequency,
-          (int)sqrt(waves[NUMBER_OF_NOTES - 1].octave_coeff));
+          (int)waves[0].frequency, (int)waves[current_notes - 1].frequency,
+          (int)sqrt(waves[current_notes - 1].octave_coeff));
 
   printf("First note Freq = %dHz\nSize = %d\n", (int)waves[0].frequency,
          (int)waves[0].area_size);
   printf("Last  note Freq = %dHz\nSize = %d\nOctave = %d\n",
-         (int)waves[NUMBER_OF_NOTES - 1].frequency,
-         (int)waves[NUMBER_OF_NOTES - 1].area_size /
-             (int)sqrt(waves[NUMBER_OF_NOTES - 1].octave_coeff),
-         (int)sqrt(waves[NUMBER_OF_NOTES - 1].octave_coeff));
+         (int)waves[current_notes - 1].frequency,
+         (int)waves[current_notes - 1].area_size /
+             (int)sqrt(waves[current_notes - 1].octave_coeff),
+         (int)sqrt(waves[current_notes - 1].octave_coeff));
 
   printf("-------------------------------\n");
 
@@ -178,9 +179,9 @@ int32_t synth_IfftInit(void) {
   printf("-------------------------------\n");
 #endif
 
-  printf("Note number  = %d\n", (int)NUMBER_OF_NOTES);
+  printf("Note number  = %d\n", (int)get_current_number_of_notes());
 
-  fill_int32(65535, (int32_t *)imageRef, NUMBER_OF_NOTES);
+  fill_int32(65535, (int32_t *)imageRef, get_current_number_of_notes());
 
   // Initialize image debug system
   image_debug_init();
@@ -449,13 +450,14 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
 #ifdef STEREO_MODE
   // Calculate color temperature and pan positions for each oscillator
   // This is done once per image reception for efficiency
-  for (uint32_t note = 0; note < NUMBER_OF_NOTES; note++) {
+  int current_notes = get_current_number_of_notes();
+  for (uint32_t note = 0; note < current_notes; note++) {
     // Calculate average color for this note's pixels
     uint32_t r_sum = 0, g_sum = 0, b_sum = 0;
     uint32_t pixel_count = 0;
     
-    for (uint32_t pix = 0; pix < PIXELS_PER_NOTE; pix++) {
-      uint32_t pixel_idx = note * PIXELS_PER_NOTE + pix;
+    for (uint32_t pix = 0; pix < g_additive_config.pixels_per_note; pix++) {
+      uint32_t pixel_idx = note * g_additive_config.pixels_per_note + pix;
       if (pixel_idx < CIS_MAX_PIXELS_NB) {
         r_sum += buffer_R[pixel_idx];
         g_sum += buffer_G[pixel_idx];
@@ -498,18 +500,18 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   
   // Update lock-free pan gains system with calculated values
   // Prepare arrays for batch update
-  static float left_gains[NUMBER_OF_NOTES];
-  static float right_gains[NUMBER_OF_NOTES];
-  static float pan_positions[NUMBER_OF_NOTES];
+  static float left_gains[MAX_NUMBER_OF_NOTES];
+  static float right_gains[MAX_NUMBER_OF_NOTES];
+  static float pan_positions[MAX_NUMBER_OF_NOTES];
   
-  for (uint32_t note = 0; note < NUMBER_OF_NOTES; note++) {
+  for (uint32_t note = 0; note < current_notes; note++) {
     left_gains[note] = waves[note].left_gain;
     right_gains[note] = waves[note].right_gain;
     pan_positions[note] = waves[note].pan_position;
   }
   
   // Atomic update of all pan gains
-  lock_free_pan_update(left_gains, right_gains, pan_positions, NUMBER_OF_NOTES);
+  lock_free_pan_update(left_gains, right_gains, pan_positions, current_notes);
 #endif // STEREO_MODE
 
 #ifdef ENABLE_IMAGE_DEBUG

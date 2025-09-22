@@ -30,8 +30,8 @@ static const additive_synth_config_t DEFAULT_CONFIG = {
     .semitone_per_octave = 12,
     .comma_per_semitone = 36,
     .volume_increment = 1,
-    .volume_decrement = 1
-    // Note: pixels_per_note removed - must remain compile-time constant
+    .volume_decrement = 1,
+    .pixels_per_note = 1
 };
 
 /**************************************************************************************
@@ -123,6 +123,7 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "comma_per_semitone = %d\n", DEFAULT_CONFIG.comma_per_semitone);
     fprintf(file, "volume_increment = %d\n", DEFAULT_CONFIG.volume_increment);
     fprintf(file, "volume_decrement = %d\n", DEFAULT_CONFIG.volume_decrement);
+    fprintf(file, "pixels_per_note = %d\n", DEFAULT_CONFIG.pixels_per_note);
     
     fclose(file);
     
@@ -211,7 +212,19 @@ void validate_config(const additive_synth_config_t* config) {
         errors++;
     }
     
-    // Note: pixels_per_note validation removed - now compile-time constant
+    // Validate pixels_per_note parameter
+    if (config->pixels_per_note < 1 || config->pixels_per_note > 100) {
+        fprintf(stderr, "[CONFIG ERROR] pixels_per_note must be between 1 and 100, got %d\n", 
+                config->pixels_per_note);
+        errors++;
+    }
+    
+    // Ensure CIS_MAX_PIXELS_NB is divisible by pixels_per_note
+    if ((CIS_MAX_PIXELS_NB % config->pixels_per_note) != 0) {
+        fprintf(stderr, "[CONFIG ERROR] pixels_per_note (%d) must divide evenly into CIS_MAX_PIXELS_NB (%d)\n", 
+                config->pixels_per_note, CIS_MAX_PIXELS_NB);
+        errors++;
+    }
     
     if (errors > 0) {
         fprintf(stderr, "[CONFIG ERROR] Configuration validation failed with %d error(s). Exiting.\n", errors);
@@ -352,9 +365,10 @@ int load_additive_config(const char* config_file_path) {
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "pixels_per_note") == 0) {
-                // Note: pixels_per_note is now a compile-time constant, ignore this parameter
-                fprintf(stderr, "[CONFIG WARNING] Line %d: pixels_per_note is now a compile-time constant and cannot be changed at runtime\n", 
-                        line_number);
+                if (parse_int(value, &g_additive_config.pixels_per_note, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
             } else {
                 fprintf(stderr, "[CONFIG WARNING] Line %d: Unknown parameter '%s' in section '%s'\n", 
                         line_number, key, current_section);

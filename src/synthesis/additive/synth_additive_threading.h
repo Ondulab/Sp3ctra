@@ -38,22 +38,22 @@ typedef struct synth_thread_worker_s {
   float thread_additiveBuffer_R[AUDIO_BUFFER_SIZE];
 
   // Local work buffers (avoids VLA on stack)
-  int32_t imageBuffer_q31[NUMBER_OF_NOTES / 3 + 100]; // +100 for safety
-  float imageBuffer_f32[NUMBER_OF_NOTES / 3 + 100];
+  int32_t imageBuffer_q31[MAX_NUMBER_OF_NOTES / 3 + 100]; // +100 for safety
+  float imageBuffer_f32[MAX_NUMBER_OF_NOTES / 3 + 100];
   float waveBuffer[AUDIO_BUFFER_SIZE];
   float volumeBuffer[AUDIO_BUFFER_SIZE];
 
   // Pre-computed waves[] data (read-only)
-  int32_t precomputed_new_idx[NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
-  float precomputed_wave_data[NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
-  float precomputed_volume[NUMBER_OF_NOTES / 3 + 100];
-  float precomputed_volume_increment[NUMBER_OF_NOTES / 3 + 100];
-  float precomputed_volume_decrement[NUMBER_OF_NOTES / 3 + 100];
+  int32_t precomputed_new_idx[MAX_NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
+  float precomputed_wave_data[MAX_NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
+  float precomputed_volume[MAX_NUMBER_OF_NOTES / 3 + 100];
+  float precomputed_volume_increment[MAX_NUMBER_OF_NOTES / 3 + 100];
+  float precomputed_volume_decrement[MAX_NUMBER_OF_NOTES / 3 + 100];
   
   // Pre-computed pan positions and gains for each note
-  float precomputed_pan_position[NUMBER_OF_NOTES / 3 + 100];
-  float precomputed_left_gain[NUMBER_OF_NOTES / 3 + 100];
-  float precomputed_right_gain[NUMBER_OF_NOTES / 3 + 100];
+  float precomputed_pan_position[MAX_NUMBER_OF_NOTES / 3 + 100];
+  float precomputed_left_gain[MAX_NUMBER_OF_NOTES / 3 + 100];
+  float precomputed_right_gain[MAX_NUMBER_OF_NOTES / 3 + 100];
 
   // Synchronization
   pthread_mutex_t work_mutex;

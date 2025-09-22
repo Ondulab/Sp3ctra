@@ -23,7 +23,7 @@ void lock_free_pan_init(void) {
     /* Initialize all buffers with center pan (0.707 for equal power) */
     const float center_gain = 0.707f; /* -3dB for center position */
     
-    for (uint32_t i = 0; i < NUMBER_OF_NOTES; i++) {
+    for (uint32_t i = 0; i < MAX_NUMBER_OF_NOTES; i++) {
         /* Buffer A initialization */
         g_lock_free_pan_gains.left_gain_buffer_A[i] = center_gain;
         g_lock_free_pan_gains.right_gain_buffer_A[i] = center_gain;
@@ -89,8 +89,8 @@ void lock_free_pan_update(const float* new_left_gains,
     }
     
     /* Clamp to maximum notes */
-    if (num_notes > NUMBER_OF_NOTES) {
-        num_notes = NUMBER_OF_NOTES;
+    if (num_notes > MAX_NUMBER_OF_NOTES) {
+        num_notes = MAX_NUMBER_OF_NOTES;
     }
     
     /* Select write buffers based on current state */

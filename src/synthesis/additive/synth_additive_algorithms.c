@@ -40,11 +40,11 @@ void process_image_preprocessing(int32_t *imageData, int32_t *imageBuffer_q31,
         int local_note_idx = idx - start_note;
         imageBuffer_q31[local_note_idx] = 0;
         
-        for (acc = 0; acc < PIXELS_PER_NOTE; acc++) {
-            imageBuffer_q31[local_note_idx] += (imageData[idx * PIXELS_PER_NOTE + acc]);
+        for (acc = 0; acc < g_additive_config.pixels_per_note; acc++) {
+            imageBuffer_q31[local_note_idx] += (imageData[idx * g_additive_config.pixels_per_note + acc]);
         }
         // Average the accumulated values
-        imageBuffer_q31[local_note_idx] /= PIXELS_PER_NOTE;
+        imageBuffer_q31[local_note_idx] /= g_additive_config.pixels_per_note;
         
         // Apply color inversion (dark pixels = more energy)
         imageBuffer_q31[local_note_idx] = VOLUME_AMP_RESOLUTION - imageBuffer_q31[local_note_idx];

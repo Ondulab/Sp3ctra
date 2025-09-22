@@ -118,7 +118,7 @@ uint32_t init_waves(volatile float *unitary_waveform,
     // octave_coeff start_ptr stay on reference octave waveform but current_ptr
     // jump cell according to multiple frequencies)
     for (uint32_t octave = 0;
-         octave <= (NUMBER_OF_NOTES /
+         octave <= (get_current_number_of_notes() /
                     (g_additive_config.semitone_per_octave * parameters->commaPerSemitone));
          octave++) {
       // compute the current pixel to associate an waveform pointer,
@@ -132,7 +132,7 @@ uint32_t init_waves(volatile float *unitary_waveform,
       note = comma_cnt +
              (g_additive_config.semitone_per_octave * parameters->commaPerSemitone) * octave;
       // sanity check, if user demand is't possible
-      if (note < NUMBER_OF_NOTES) {
+      if (note < get_current_number_of_notes()) {
         // store frequencies
         waves[note].frequency = frequency * pow(2, octave);
         // store aera size
@@ -157,7 +157,7 @@ uint32_t init_waves(volatile float *unitary_waveform,
     }
   }
 
-  if (note < NUMBER_OF_NOTES) {
+  if (note < get_current_number_of_notes()) {
     printf("Configuration fail, current pix : %d\n", (int)note);
     die("wave init failed");
   }
