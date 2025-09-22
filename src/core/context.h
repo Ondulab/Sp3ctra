@@ -8,6 +8,50 @@
 #include "doublebuffer.h"
 #include <pthread.h>
 #include <time.h>
+#include <stdint.h>
+
+/* Synthesis mode enums (moved from shared.h) */
+typedef enum {
+    IFFT_MODE = 0,
+    DWAVE_MODE,
+    MENU_MODE
+} synthModeTypeDef;
+
+typedef enum {
+    CV_ON = 0,
+    KEYBOARD_ON
+} synthCVTypeDef;
+
+typedef enum {
+    NORMAL_READ = 0,
+    NORMAL_REVERSE_READ,
+    DUAL_READ
+} synthReadModeTypeDef;
+
+/* Synthesis parameters structure (moved from shared.h) */
+struct params {
+    int32_t start_frequency;
+    int32_t comma_per_semitone;
+    int32_t ifft_attack;
+    int32_t ifft_release;
+    int32_t volume;
+};
+
+/* Shared synthesis variables structure (moved from shared.h) */
+struct shared_var {
+    synthModeTypeDef mode;
+    synthCVTypeDef CV_or_Keyboard;
+    synthReadModeTypeDef directRead_Mode;
+    int32_t synth_process_cnt;
+};
+
+/* Global synthesis variables (moved from shared.h) */
+extern struct shared_var shared_var;
+extern volatile struct params params;
+extern volatile int32_t cvData[];
+extern volatile int32_t audioBuff[];
+
+extern int params_size;
 
 #ifdef __LINUX__
 // Vérifier si SFML est désactivé

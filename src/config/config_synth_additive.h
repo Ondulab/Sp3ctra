@@ -68,15 +68,6 @@
 
 #define WAVE_AMP_RESOLUTION          (16777215)             // Decimal value
 #define VOLUME_AMP_RESOLUTION        (65535)                // Decimal value
-#define MAX_OCTAVE_NUMBER            (8)                    // >> le nb d'octaves n'a pas d'incidence ?
-
-// Note: START_FREQUENCY, SEMITONE_PER_OCTAVE, COMMA_PER_SEMITONE, 
-// VOLUME_INCREMENT, VOLUME_DECREMENT are now loaded from additive_synth.ini via g_additive_config
-// PIXELS_PER_NOTE remains as compile-time constant for array sizing
-
-// PIXELS_PER_NOTE is now configurable via additive_synth.ini (g_additive_config.pixels_per_note)
-// This constant is kept for documentation: default was 1 pixel per note
-#define PIXELS_PER_NOTE_DEFAULT      (1)                    // Default value, now runtime configurable
 
 // Maximum number of notes for static buffer allocation (when pixels_per_note = 1)
 #define MAX_NUMBER_OF_NOTES          (CIS_MAX_PIXELS_NB)

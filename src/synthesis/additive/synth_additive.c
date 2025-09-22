@@ -39,8 +39,8 @@
 // Project includes
 #include "audio_c_api.h"
 #include "error.h"
-#include "shared.h"
 #include "wave_generation.h"
+#include "../../core/context.h"
 #include "image_debug.h"
 #include "lock_free_pan.h"
 #include "../../config/config_debug.h"
@@ -50,7 +50,6 @@
 #include "../../audio/rtaudio/audio_c_api.h"
 #include "../../audio/pan/lock_free_pan.h"
 #include "../../utils/error.h"
-#include "../../utils/shared.h"
 #include "../../utils/image_debug.h"
 
 #ifdef __APPLE__
@@ -73,6 +72,10 @@ static uint32_t log_counter = 0;
 #define LOG_FREQUENCY (SAMPLING_FREQUENCY / AUDIO_BUFFER_SIZE) // Environ 1 seconde
 
 static int32_t imageRef[MAX_NUMBER_OF_NOTES] = {0};
+
+/* Global context variables (moved from shared.c) */
+struct shared_var shared_var;
+volatile int32_t audioBuff[AUDIO_BUFFER_SIZE * 4];
 
 /* Public functions ----------------------------------------------------------*/
 
@@ -116,7 +119,7 @@ int32_t synth_IfftInit(void) {
   }
 
   // Start with random index
-  for (uint32_t i = 0; i < get_current_number_of_notes(); i++) {
+  for (int i = 0; i < get_current_number_of_notes(); i++) {
 #ifdef __APPLE__
     uint32_t aRandom32bit = arc4random();
 #else
@@ -451,12 +454,12 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // Calculate color temperature and pan positions for each oscillator
   // This is done once per image reception for efficiency
   int current_notes = get_current_number_of_notes();
-  for (uint32_t note = 0; note < current_notes; note++) {
+  for (int note = 0; note < current_notes; note++) {
     // Calculate average color for this note's pixels
     uint32_t r_sum = 0, g_sum = 0, b_sum = 0;
     uint32_t pixel_count = 0;
     
-    for (uint32_t pix = 0; pix < g_additive_config.pixels_per_note; pix++) {
+    for (int pix = 0; pix < g_additive_config.pixels_per_note; pix++) {
       uint32_t pixel_idx = note * g_additive_config.pixels_per_note + pix;
       if (pixel_idx < CIS_MAX_PIXELS_NB) {
         r_sum += buffer_R[pixel_idx];
@@ -504,7 +507,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   static float right_gains[MAX_NUMBER_OF_NOTES];
   static float pan_positions[MAX_NUMBER_OF_NOTES];
   
-  for (uint32_t note = 0; note < current_notes; note++) {
+  for (int note = 0; note < current_notes; note++) {
     left_gains[note] = waves[note].left_gain;
     right_gains[note] = waves[note].right_gain;
     pan_positions[note] = waves[note].pan_position;
