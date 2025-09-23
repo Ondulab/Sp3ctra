@@ -330,9 +330,6 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
             signal_R = 0;
         }
         tmp_audioData[buff_idx] = signal_R / (float)WAVE_AMP_RESOLUTION;
-
-        // Capture oscillator volumes for each audio sample (48kHz resolution)
-        image_debug_capture_oscillator_sample();
     }
 
   // The contrast factor is now passed as parameter from synth_AudioProcess

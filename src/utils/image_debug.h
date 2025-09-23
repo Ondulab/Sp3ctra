@@ -199,6 +199,17 @@ int image_debug_is_oscillator_capture_enabled(void);
  */
 int image_debug_get_oscillator_capture_samples(void);
 
+/**
+ * @brief Ultra-fast volume capture for real-time processing
+ * This function performs minimal work - just stores values in a buffer
+ * Only active when --debug-additive-osc-image is enabled
+ * @param note Note index
+ * @param current_volume Current volume value
+ * @param target_volume Target volume value
+ * @retval None (inline for maximum performance)
+ */
+void image_debug_capture_volume_sample_fast(int note, float current_volume, float target_volume);
+
 #ifdef __cplusplus
 }
 #endif

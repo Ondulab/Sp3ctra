@@ -14,7 +14,6 @@
             ],
             "defines": [
                 "USE_RTAUDIO",
-                "ENABLE_IMAGE_DEBUG"
             ],
             "macFrameworkPath": [
                 "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks"
@@ -37,7 +36,6 @@
             ],
             "defines": [
                 "USE_RTAUDIO",
-                "ENABLE_IMAGE_DEBUG",
                 "NO_SFML",
                 "__LINUX__",
                 "_GNU_SOURCE"
