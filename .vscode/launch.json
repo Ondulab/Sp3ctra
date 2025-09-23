@@ -5,16 +5,33 @@
             "name": "Debug Sp3ctra",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build_nogui/Sp3ctra_noGUI",
+            "program": "${workspaceFolder}/build/Sp3ctra",
             "args": [
-                "--sfml-window"
+                "--debug-additive-osc-image=4800"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": false,
             "MIMode": "lldb",
-            "preLaunchTask": "build-debug"
+            "preLaunchTask": "build-debug",
+            "setupCommands": [
+                {
+                    "description": "Set Disassembly Flavor to Intel (ignored on ARM)",
+                    "text": "settings set target.x86-disassembly-flavor intel",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Allow breakpoints in all threads",
+                    "text": "settings set target.process.thread.step-avoid-regexp \"\"",
+                    "ignoreFailures": true
+                }
+            ],
+            "logging": {
+                "engineLogging": true,
+                "trace": true,
+                "traceResponse": true
+            }
         }
     ]
 }

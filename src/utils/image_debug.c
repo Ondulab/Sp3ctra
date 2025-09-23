@@ -110,28 +110,31 @@ static void hsl_to_rgb(float h, float s, float l, uint8_t *r, uint8_t *g, uint8_
  */
 static void calculate_oscillator_color(float current_volume, float target_volume, float max_volume,
                                      uint8_t *r, uint8_t *g, uint8_t *b) {
-    // Calculate absolute difference between current and target
-    float volume_diff = fabsf(current_volume - target_volume);
-    float max_diff = max_volume; // Maximum possible difference
+    (void)target_volume; // Unused parameter
     
-    // Normalize difference (0.0 = close, 1.0 = far)
-    float diff_normalized = (max_diff > 0.0f) ? (volume_diff / max_diff) : 0.0f;
-    if (diff_normalized > 1.0f) diff_normalized = 1.0f;
+    // CORRECTED ALGORITHM: Low volume = WHITE, High volume = COLORED
+    // This matches the expected behavior where silence should be white
     
-    // Calculate hue: blue (240°) when far, yellow/orange (60°) when close
-    //float hue = 240.0f - (diff_normalized * 180.0f); // 240° -> 60°
-    float hue = 180.0f - (diff_normalized * 240.0f); // 240° -> 0°
-    
-    // High saturation for vivid colors
-    float saturation = 1.0f;
-    
-    // Lightness based on absolute current volume level
-    // Low volume = high lightness (white), high volume = low lightness (black)
+    // Normalize current volume (0.0 = no volume, 1.0 = max volume)
     float volume_normalized = (max_volume > 0.0f) ? (current_volume / max_volume) : 0.0f;
     if (volume_normalized > 1.0f) volume_normalized = 1.0f;
     
-    // Invert: low volume = bright (0.8), high volume = dark (0.2)
-    float lightness = 1.0f - (volume_normalized * 1.0f);
+    // Special case: if volume is extremely low (less than 0.01%), make it WHITE
+    if (volume_normalized < 0.0001f) {
+        *r = 255; *g = 255; *b = 255; // Pure white for silence
+        return;
+    }
+    
+    // Calculate hue based on volume level: 
+    // Low volume = blue (240°), High volume = red (0°)
+    float hue = 240.0f * (1.0f - volume_normalized); // 240° -> 0°
+    
+    // Saturation: lower for low volumes (more white), higher for high volumes
+    float saturation = volume_normalized * 0.9f;
+    
+    // Lightness: always bright to avoid dark colors
+    // Low volume = very bright (0.9), High volume = medium bright (0.6)
+    float lightness = 0.9f - (volume_normalized * 0.3f);
     
     // Convert HSL to RGB
     hsl_to_rgb(hue, saturation, lightness, r, g, b);
@@ -215,6 +218,14 @@ typedef struct {
 
 // Buffer to store volume data for colorization (16-bit resolution)
 static oscillator_volume_data_t *oscillator_volume_buffer = NULL;
+
+// Ultra-fast capture system - STATIC buffer for reliable capture
+#define MAX_CAPTURE_SAMPLES 96000  // 2 seconds at 48kHz
+#define MAX_CAPTURE_NOTES 3456     // Maximum number of notes
+static float static_volume_buffer[MAX_CAPTURE_NOTES][MAX_CAPTURE_SAMPLES];
+static volatile int static_capture_write_index = 0;
+static volatile int static_capture_samples_captured = 0;
+static int static_capture_initialized = 0;
 
 // Global raw scanner capture structure (now always available for runtime configuration)
 static temporal_scan_t raw_scanner_capture = {0};
@@ -380,7 +391,14 @@ int image_debug_save_oscillator_volume_scan(void) {
     
     // Calculate maximum possible volume for normalization
     float max_volume = (global_max_current > global_max_target) ? global_max_current : global_max_target;
-    if (max_volume == 0.0f) max_volume = 1.0f; // Avoid division by zero
+    
+    // SPECIAL CASE: If all volumes are very small or zero, use a default scale
+    // This happens when scanner is on image but volumes are very low
+    if (max_volume < 0.01f) {
+        printf("🔧 OSCILLATOR_SCAN: Very low max_volume (%.6f), using default scale\n", max_volume);
+        max_volume = 1.0f; // Use default scale for better visualization
+    }
+    
     
     int marker_count = 0; // Counter for markers
     
@@ -393,6 +411,7 @@ int image_debug_save_oscillator_volume_scan(void) {
             // Get volume data for this pixel
             float current_volume = oscillator_volume_buffer[idx].current_volume;
             float target_volume = oscillator_volume_buffer[idx].target_volume;
+            
             
             // Calculate color based on volume difference and absolute level
             uint8_t r, g, b;
@@ -756,4 +775,138 @@ int image_debug_is_oscillator_capture_enabled(void) {
 
 int image_debug_get_oscillator_capture_samples(void) {
     return oscillator_capture_samples;
+}
+
+/**************************************************************************************
+ * Ultra-Fast Volume Capture Functions
+ **************************************************************************************/
+
+/**
+ * @brief Copy data from static buffer to oscillator buffer for PNG generation
+ * @retval 0 on success, -1 on error
+ */
+static int copy_static_buffer_to_oscillator_buffer(void) {
+    if (!static_capture_initialized) {
+        return -1;
+    }
+    
+    // Initialize oscillator scan if needed
+    if (init_oscillator_volume_scan() != 0) {
+        return -1;
+    }
+    
+    int current_notes = get_current_number_of_notes();
+    int samples_to_copy = (static_capture_samples_captured < oscillator_capture_samples) ? 
+                         static_capture_samples_captured : oscillator_capture_samples;
+    
+    printf("🔧 STATIC_CAPTURE: Copying %d samples from static buffer\n", samples_to_copy);
+    
+    // Copy data from static buffer to oscillator buffer
+    for (int sample = 0; sample < samples_to_copy; sample++) {
+        for (int note = 0; note < current_notes; note++) {
+            int osc_idx = (sample * current_notes) + note;
+            
+            // Copy volume from static buffer (same value for current and target)
+            float volume = static_volume_buffer[note][sample];
+            oscillator_volume_buffer[osc_idx].current_volume = volume;
+            oscillator_volume_buffer[osc_idx].target_volume = volume;
+        }
+    }
+    
+    // Update oscillator scan height
+    oscillator_volume_scan.current_height = samples_to_copy;
+    oscillator_volume_scan.initialized = 1;
+    
+    printf("🔧 STATIC_CAPTURE: Copied %d samples to oscillator buffer for PNG generation\n", samples_to_copy);
+    return 0;
+}
+
+/**
+ * @brief Initialize static capture buffer
+ * @retval 0 on success, -1 on error
+ */
+static int init_static_capture_buffer(void) {
+    if (static_capture_initialized) {
+        return 0;
+    }
+    
+    // Clear the static buffer
+    memset(static_volume_buffer, 0, sizeof(static_volume_buffer));
+    
+    static_capture_write_index = 0;
+    static_capture_samples_captured = 0;
+    static_capture_initialized = 1;
+    
+    printf("🔧 STATIC_CAPTURE: Initialized static buffer (%d notes x %d samples)\n", 
+           MAX_CAPTURE_NOTES, MAX_CAPTURE_SAMPLES);
+    
+    return 0;
+}
+
+/**
+ * @brief Ultra-fast volume capture for real-time processing - SIMPLIFIED STATIC VERSION
+ * This function performs minimal work - just stores values in a static buffer
+ * Only active when --debug-additive-osc-image is enabled
+ * @param note Note index
+ * @param current_volume Current volume value
+ * @param target_volume Target volume value (unused but kept for compatibility)
+ * @retval None (inline for maximum performance)
+ */
+void image_debug_capture_volume_sample_fast(int note, float current_volume, float target_volume) {
+    (void)target_volume; // Unused parameter
+    
+    // DEBUG: Log first few calls to verify function is called
+    static int debug_call_count = 0;
+    if (debug_call_count < 10) {
+        printf("DEBUG_CAPTURE: Call #%d - note=%d, volume=%.3f, enabled=%d\n", 
+               debug_call_count, note, current_volume, oscillator_runtime_enabled);
+        debug_call_count++;
+    }
+    
+    // ULTRA-FAST PATH: Only execute if oscillator capture is enabled
+    if (!oscillator_runtime_enabled) {
+        return; // Exit immediately if not enabled
+    }
+    
+    // Initialize buffer on first call (lazy initialization)
+    if (!static_capture_initialized) {
+        if (init_static_capture_buffer() != 0) {
+            return; // Failed to initialize, abort
+        }
+    }
+    
+    // CRITICAL: Bounds checking to prevent buffer overflow
+    if (note < 0 || note >= MAX_CAPTURE_NOTES) {
+        return; // Invalid note index, abort
+    }
+    
+    if (static_capture_write_index >= MAX_CAPTURE_SAMPLES) {
+        return; // Buffer full, abort
+    }
+    
+    // ULTRA-FAST STORE: Just copy the current volume to static buffer
+    static_volume_buffer[note][static_capture_write_index] = current_volume;
+    
+    // Only increment counters for the last note to avoid race conditions
+    int current_notes = get_current_number_of_notes();
+    if (note == (current_notes - 1)) {
+        static_capture_samples_captured++;
+        static_capture_write_index++;
+        
+        // Auto-process when we have enough samples (non-blocking check)
+        if (static_capture_samples_captured >= oscillator_capture_samples) {
+            // SOLUTION: Copy static buffer to oscillator buffer and generate PNG
+            printf("🔧 STATIC_CAPTURE: Processing %d samples for PNG generation\n", static_capture_samples_captured);
+            
+            if (copy_static_buffer_to_oscillator_buffer() == 0) {
+                // Generate and save the PNG image
+                image_debug_save_oscillator_volume_scan();
+                image_debug_reset_oscillator_volume_scan();
+            }
+            
+            // Reset the counter for next capture cycle
+            static_capture_samples_captured = 0;
+            static_capture_write_index = 0;
+        }
+    }
 }

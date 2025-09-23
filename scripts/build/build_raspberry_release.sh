@@ -150,7 +150,7 @@ if [ "$VERBOSE" -eq 1 ]; then
 fi
 
 BUILD_SUCCESS=0
-if make -j$JOBS CFLAGS="-O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DENABLE_IMAGE_DEBUG -DNO_SFML -D__LINUX__ -Wno-deprecated-declarations -march=native -mtune=native" 2>&1; then
+if make -j$JOBS CFLAGS="-O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DNO_SFML -D__LINUX__ -Wno-deprecated-declarations -march=native -mtune=native" 2>&1; then
     BUILD_SUCCESS=1
     echo -e "\n${GREEN}✅ Build completed successfully!${NC}"
 else

@@ -1,10 +1,18 @@
 {
-    "[c]": {
-        "editor.formatOnSave": false
-    },
-    "[cpp]": {
-        "editor.formatOnSave": false
-    },
-    "C_Cpp.formatting": "disabled",
-    "editor.formatOnSaveMode": "modifications"
+    "C_Cpp.default.cppStandard": "c++17",
+    "C_Cpp.default.cStandard": "c11",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/src/**",
+        "/opt/homebrew/include",
+        "/opt/homebrew/opt/sfml@2/include"
+    ],
+    "C_Cpp.default.defines": [
+        "USE_RTAUDIO",
+        "PRINT_FPS"
+    ],
+    "C_Cpp.default.compilerPath": "/usr/bin/gcc",
+    "C_Cpp.default.intelliSenseMode": "macos-gcc-arm64",
+    "debug.allowBreakpointsEverywhere": true,
+    "debug.showBreakpointsInOverviewRuler": true,
+    "debug.inlineValues": "on"
 }

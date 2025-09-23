@@ -15,6 +15,7 @@
 #include "../../core/context.h"
 #include "../../config/config_debug.h"
 #include "../../config/config_loader.h"
+#include "../../utils/image_debug.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -88,6 +89,12 @@ void apply_gap_limiter_ramp(int note, float target_volume, float *volumeBuffer) 
         }
         volumeBuffer[buff_idx] = waves[note].current_volume;
 
+        // ULTRA-FAST CAPTURE: Only if debug oscillator is enabled
+        // This is just a memory copy - no processing, no allocation
+        if (image_debug_is_oscillator_capture_enabled()) {
+            image_debug_capture_volume_sample_fast(note, waves[note].current_volume, waves[note].target_volume);
+        }
+
 #ifdef DEBUG_OSC
         // Debug: Print oscillator values for specified range/single oscillator
         if (g_debug_osc_config.enabled) {
@@ -120,6 +127,17 @@ void apply_gap_limiter_ramp(int note, float target_volume, float *volumeBuffer) 
 #else
     // Without GAP_LIMITER, just fill with constant volume
     fill_float(target_volume, volumeBuffer, AUDIO_BUFFER_SIZE);
+    
+    // Set current_volume to target_volume for consistency
+    waves[note].current_volume = target_volume;
+    waves[note].target_volume = target_volume;
+    
+    // ULTRA-FAST CAPTURE: Only if debug oscillator is enabled (constant volume case)
+    if (image_debug_is_oscillator_capture_enabled()) {
+        for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+            image_debug_capture_volume_sample_fast(note, target_volume, target_volume);
+        }
+    }
 #endif
 }
 
