@@ -261,7 +261,7 @@ int main(int argc, char **argv) {
       image_debug_configure_raw_scanner(1, capture_lines);
     } else if (strncmp(argv[i], "--debug-additive-osc-image", 26) == 0) {
       const char *param = argv[i] + 26;
-      int capture_samples = 48000; // Default value (1 second at 48kHz)
+      int capture_samples = SAMPLING_FREQUENCY; // Default value (1 second at 48kHz)
       int enable_markers = 0; // Default: markers disabled
       
       if (*param == '=') {

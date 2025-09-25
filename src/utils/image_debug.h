@@ -210,6 +210,14 @@ int image_debug_get_oscillator_capture_samples(void);
  */
 void image_debug_capture_volume_sample_fast(int note, float current_volume, float target_volume);
 
+/**
+ * @brief Mark current line as a new image boundary for visual debugging
+ * This function marks the current capture line as the start of a new scanner image
+ * Used to draw yellow separator lines in the oscillator volume visualization
+ * @retval None
+ */
+void image_debug_mark_new_image_boundary(void);
+
 #ifdef __cplusplus
 }
 #endif

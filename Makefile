@@ -16,8 +16,10 @@ BASE_CXXFLAGS = -std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -Wn
 # OS-specific flags and libraries
 ifeq ($(UNAME_S),Darwin)
     # macOS specific settings
-    CFLAGS = $(BASE_CFLAGS)
-    CXXFLAGS = $(BASE_CXXFLAGS)
+    MACOSX_DEPLOYMENT_TARGET ?= 13.0
+    export MACOSX_DEPLOYMENT_TARGET
+    CFLAGS = $(BASE_CFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)
+    CXXFLAGS = $(BASE_CXXFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)
     
     # Include directories for macOS
     INCLUDES = -I/opt/homebrew/include -I$(SFML_INCLUDE) \
@@ -150,7 +152,7 @@ debug:
 # Build without SFML (headless mode) - Cross-platform
 no-sfml:
 ifeq ($(UNAME_S),Darwin)
-	$(MAKE) CFLAGS="$(BASE_CFLAGS) -DNO_SFML" CXXFLAGS="$(BASE_CXXFLAGS) -DNO_SFML" \
+	$(MAKE) CFLAGS="$(BASE_CFLAGS) -DNO_SFML -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" CXXFLAGS="$(BASE_CXXFLAGS) -DNO_SFML -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" \
 	        LIBS="-framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa -L/opt/homebrew/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi"
 else
 	$(MAKE) CFLAGS="$(BASE_CFLAGS) -DNO_SFML -D__LINUX__" CXXFLAGS="$(BASE_CXXFLAGS) -DNO_SFML -D__LINUX__" \
