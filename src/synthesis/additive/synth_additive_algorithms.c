@@ -89,12 +89,6 @@ void apply_gap_limiter_ramp(int note, float target_volume, float *volumeBuffer) 
         }
         volumeBuffer[buff_idx] = waves[note].current_volume;
 
-        // ULTRA-FAST CAPTURE: Only if debug oscillator is enabled
-        // This is just a memory copy - no processing, no allocation
-        if (image_debug_is_oscillator_capture_enabled()) {
-            image_debug_capture_volume_sample_fast(note, waves[note].current_volume, waves[note].target_volume);
-        }
-
 #ifdef DEBUG_OSC
         // Debug: Print oscillator values for specified range/single oscillator
         if (g_debug_osc_config.enabled) {
@@ -132,12 +126,8 @@ void apply_gap_limiter_ramp(int note, float target_volume, float *volumeBuffer) 
     waves[note].current_volume = target_volume;
     waves[note].target_volume = target_volume;
     
-    // ULTRA-FAST CAPTURE: Only if debug oscillator is enabled (constant volume case)
-    if (image_debug_is_oscillator_capture_enabled()) {
-        for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-            image_debug_capture_volume_sample_fast(note, target_volume, target_volume);
-        }
-    }
+    // Volume capture is now handled continuously in synth_additive_threading.c
+    // No need for conditional capture here
 #endif
 }
 

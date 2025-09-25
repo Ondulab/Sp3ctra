@@ -6,6 +6,8 @@
 #include "synth_polyphonic.h" // For polyphonic_audio_buffers and related variables
 #include "../../config/config_debug.h"    // For debug configuration macros
 #include "../../config/config_audio.h"    // For HDMI format configuration
+#include "../../utils/image_debug.h"      // For continuous volume capture
+#include "../../synthesis/additive/wave_generation.h"  // For waves[] access
 #include <algorithm>         // For std::transform
 #include <cstring>
 #include <iostream>
@@ -56,7 +58,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     // Simple test tone generation - no complex processing
     static float phase = 0.0f;
     static const float frequency = 440.0f; // A4 note
-    static const float sample_rate = 48000.0f;
+    static const float sample_rate = SAMPLING_FREQUENCY;
     static const float phase_increment = 2.0f * M_PI * frequency / sample_rate;
 
     for (unsigned int i = 0; i < nFrames; i++) {
@@ -245,6 +247,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       // Output
       outLeft[i] = final_left;
       outRight[i] = final_right;
+      
     }
 
     // Advance pointers

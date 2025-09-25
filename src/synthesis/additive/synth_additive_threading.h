@@ -55,6 +55,10 @@ typedef struct synth_thread_worker_s {
   float precomputed_left_gain[MAX_NUMBER_OF_NOTES / 3 + 100];
   float precomputed_right_gain[MAX_NUMBER_OF_NOTES / 3 + 100];
 
+  // Debug capture: per-note per-sample volumes (current and target) for this buffer
+  float captured_current_volume[MAX_NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
+  float captured_target_volume[MAX_NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
+
   // Synchronization
   pthread_mutex_t work_mutex;
   pthread_cond_t work_cond;

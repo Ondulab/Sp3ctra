@@ -18,6 +18,10 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
+// Forward declarations for static allocation helpers
+static int init_static_capture_buffer(void);
+static void free_static_capture_buffer(void);
+
 /**************************************************************************************
  * Internal State and Definitions
  **************************************************************************************/
@@ -27,7 +31,7 @@ static int debug_image_runtime_enabled = 0; // Runtime control for image debug
 static int raw_scanner_runtime_enabled = 0; // Runtime control for raw scanner capture
 static int raw_scanner_capture_lines = 1000; // Default number of lines to capture
 static int oscillator_runtime_enabled = 0; // Runtime control for oscillator capture
-static int oscillator_capture_samples = 48000; // Default number of samples to capture (1 second at 48kHz)
+static int oscillator_capture_samples = SAMPLING_FREQUENCY; // Default number of samples to capture (1 second at 48kHz)
 static int oscillator_markers_enabled = 0; // Runtime control for oscillator markers
 #ifdef DEBUG_IMAGE_FRAME_COUNTER
 static int frame_counter = 0;
@@ -35,7 +39,7 @@ static int frame_counter = 0;
 static char output_dir[256];
 
 // Temporal scan buffers
-#define MAX_SCAN_HEIGHT 48000  // Maximum number of lines in scan (increased for 48k lines)
+#define MAX_SCAN_HEIGHT SAMPLING_FREQUENCY  // Maximum number of lines in scan (increased for 48k lines)
 #define MAX_SCAN_TYPES 3       // "grayscale", "processed", "original"
 
 typedef struct {
@@ -110,31 +114,28 @@ static void hsl_to_rgb(float h, float s, float l, uint8_t *r, uint8_t *g, uint8_
  */
 static void calculate_oscillator_color(float current_volume, float target_volume, float max_volume,
                                      uint8_t *r, uint8_t *g, uint8_t *b) {
-    (void)target_volume; // Unused parameter
+    // Calculate absolute difference between current and target
+    float volume_diff = fabsf(current_volume - target_volume);
+    float max_diff = max_volume; // Maximum possible difference
     
-    // CORRECTED ALGORITHM: Low volume = WHITE, High volume = COLORED
-    // This matches the expected behavior where silence should be white
+    // Normalize difference (0.0 = close, 1.0 = far)
+    float diff_normalized = (max_diff > 0.0f) ? (volume_diff / max_diff) : 0.0f;
+    if (diff_normalized > 1.0f) diff_normalized = 1.0f;
     
-    // Normalize current volume (0.0 = no volume, 1.0 = max volume)
+    // Calculate hue: blue (240°) when far, yellow/orange (60°) when close
+    //float hue = 240.0f - (diff_normalized * 180.0f); // 240° -> 60°
+    float hue = 180.0f - (diff_normalized * 240.0f); // 240° -> 0°
+    
+    // High saturation for vivid colors
+    float saturation = 1.0f;
+    
+    // Lightness based on absolute current volume level
+    // Low volume = high lightness (white), high volume = low lightness (black)
     float volume_normalized = (max_volume > 0.0f) ? (current_volume / max_volume) : 0.0f;
     if (volume_normalized > 1.0f) volume_normalized = 1.0f;
     
-    // Special case: if volume is extremely low (less than 0.01%), make it WHITE
-    if (volume_normalized < 0.0001f) {
-        *r = 255; *g = 255; *b = 255; // Pure white for silence
-        return;
-    }
-    
-    // Calculate hue based on volume level: 
-    // Low volume = blue (240°), High volume = red (0°)
-    float hue = 240.0f * (1.0f - volume_normalized); // 240° -> 0°
-    
-    // Saturation: lower for low volumes (more white), higher for high volumes
-    float saturation = volume_normalized * 0.9f;
-    
-    // Lightness: always bright to avoid dark colors
-    // Low volume = very bright (0.9), High volume = medium bright (0.6)
-    float lightness = 0.9f - (volume_normalized * 0.3f);
+    // Invert: low volume = bright (0.8), high volume = dark (0.2)
+    float lightness = 1.0f - (volume_normalized * 1.0f);
     
     // Convert HSL to RGB
     hsl_to_rgb(hue, saturation, lightness, r, g, b);
@@ -219,17 +220,29 @@ typedef struct {
 // Buffer to store volume data for colorization (16-bit resolution)
 static oscillator_volume_data_t *oscillator_volume_buffer = NULL;
 
-// Ultra-fast capture system - STATIC buffer for reliable capture
+ // Ultra-fast capture system - dynamic buffers to avoid huge BSS on macOS dyld
 #define MAX_CAPTURE_SAMPLES 96000  // 2 seconds at 48kHz
 #define MAX_CAPTURE_NOTES 3456     // Maximum number of notes
-static float static_volume_buffer[MAX_CAPTURE_NOTES][MAX_CAPTURE_SAMPLES];
+static float *static_volume_buffer = NULL;   // size = MAX_CAPTURE_NOTES * MAX_CAPTURE_SAMPLES
+static float *static_target_buffer = NULL;   // size = MAX_CAPTURE_NOTES * MAX_CAPTURE_SAMPLES
+static uint8_t *static_marker_buffer = NULL; // size = MAX_CAPTURE_SAMPLES
 static volatile int static_capture_write_index = 0;
 static volatile int static_capture_samples_captured = 0;
 static int static_capture_initialized = 0;
 
+// Marker system integrated into static buffer
+// 1 byte per sample line for marker flag (allocated at init)
+static volatile int static_marker_count = 0;
+
 // Global raw scanner capture structure (now always available for runtime configuration)
 static temporal_scan_t raw_scanner_capture = {0};
 static int raw_scanner_initialized = 0;
+
+// Global system to track new image boundaries for yellow markers
+#define MAX_IMAGE_BOUNDARIES 1000  // Maximum number of boundaries to track
+static int g_image_boundary_positions[MAX_IMAGE_BOUNDARIES];
+static volatile int g_image_boundary_count = 0;
+static volatile int g_current_capture_line = 0;
 
 /**
  * @brief Initialize oscillator volume scan buffer
@@ -392,14 +405,6 @@ int image_debug_save_oscillator_volume_scan(void) {
     // Calculate maximum possible volume for normalization
     float max_volume = (global_max_current > global_max_target) ? global_max_current : global_max_target;
     
-    // SPECIAL CASE: If all volumes are very small or zero, use a default scale
-    // This happens when scanner is on image but volumes are very low
-    if (max_volume < 0.01f) {
-        printf("🔧 OSCILLATOR_SCAN: Very low max_volume (%.6f), using default scale\n", max_volume);
-        max_volume = 1.0f; // Use default scale for better visualization
-    }
-    
-    
     int marker_count = 0; // Counter for markers
     
     // Generate colorized image using new algorithm
@@ -423,15 +428,18 @@ int image_debug_save_oscillator_volume_scan(void) {
             rgb_8bit[idx_8_rgb + 2] = b;
         }
         
-        // Add yellow separator lines if markers enabled at runtime
-        if (oscillator_markers_enabled && y > 0 && y % AUDIO_BUFFER_SIZE == 0) {
-            marker_count++;
-            // Draw a full-width yellow line markers
-            for (int x = 0; x < scan->width; x++) {
-                int idx_8_rgb = (y * scan->width + x) * 3;
-                rgb_8bit[idx_8_rgb + 0] = 255; // R (Yellow)
-                rgb_8bit[idx_8_rgb + 1] = 255; // G (Yellow)
-                rgb_8bit[idx_8_rgb + 2] = 0; // B (Yellow)
+        // Add yellow separator lines using integrated marker system
+        if (oscillator_markers_enabled && static_capture_initialized) {
+            // Check if this line has a marker in the static marker buffer
+            if (y < MAX_CAPTURE_SAMPLES && static_marker_buffer[y] == 1) {
+                marker_count++;
+                // Draw a full-width yellow line marker at the exact boundary position
+                for (int x = 0; x < scan->width; x++) {
+                    int idx_8_rgb = (y * scan->width + x) * 3;
+                    rgb_8bit[idx_8_rgb + 0] = 255; // R (Yellow)
+                    rgb_8bit[idx_8_rgb + 1] = 255; // G (Yellow)
+                    rgb_8bit[idx_8_rgb + 2] = 0;   // B (Yellow)
+                }
             }
         }
     }
@@ -764,8 +772,15 @@ void image_debug_configure_oscillator_capture(int enable, int capture_samples, i
         if (!debug_initialized) {
             image_debug_init();
         }
+        // Pre-allocate capture buffers outside RT path
+        if (init_static_capture_buffer() != 0) {
+            printf("ERROR: Unable to allocate static capture buffers, disabling oscillator capture.\n");
+            oscillator_runtime_enabled = 0;
+        }
     } else {
         printf("🔧 OSCILLATOR: Runtime capture disabled\n");
+        // Free capture buffers when disabling to release memory
+        free_static_capture_buffer();
     }
 }
 
@@ -806,10 +821,10 @@ static int copy_static_buffer_to_oscillator_buffer(void) {
         for (int note = 0; note < current_notes; note++) {
             int osc_idx = (sample * current_notes) + note;
             
-            // Copy volume from static buffer (same value for current and target)
-            float volume = static_volume_buffer[note][sample];
+            // Copy volume from static buffers (current and target)
+            float volume = static_volume_buffer[(size_t)note * MAX_CAPTURE_SAMPLES + sample];
             oscillator_volume_buffer[osc_idx].current_volume = volume;
-            oscillator_volume_buffer[osc_idx].target_volume = volume;
+            oscillator_volume_buffer[osc_idx].target_volume = static_target_buffer[(size_t)note * MAX_CAPTURE_SAMPLES + sample];
         }
     }
     
@@ -829,18 +844,40 @@ static int init_static_capture_buffer(void) {
     if (static_capture_initialized) {
         return 0;
     }
-    
-    // Clear the static buffer
-    memset(static_volume_buffer, 0, sizeof(static_volume_buffer));
-    
+
+    size_t total = (size_t)MAX_CAPTURE_NOTES * (size_t)MAX_CAPTURE_SAMPLES;
+
+    static_volume_buffer = (float *)calloc(total, sizeof(float));
+    static_target_buffer = (float *)calloc(total, sizeof(float));
+    static_marker_buffer = (uint8_t *)calloc(MAX_CAPTURE_SAMPLES, sizeof(uint8_t));
+    if (!static_volume_buffer || !static_target_buffer || !static_marker_buffer) {
+        printf("ERROR: Failed to allocate static capture buffers (%d notes x %d samples)\n",
+               MAX_CAPTURE_NOTES, MAX_CAPTURE_SAMPLES);
+        free(static_volume_buffer); static_volume_buffer = NULL;
+        free(static_target_buffer); static_target_buffer = NULL;
+        free(static_marker_buffer); static_marker_buffer = NULL;
+        return -1;
+    }
+
     static_capture_write_index = 0;
     static_capture_samples_captured = 0;
+    static_marker_count = 0;
     static_capture_initialized = 1;
-    
-    printf("🔧 STATIC_CAPTURE: Initialized static buffer (%d notes x %d samples)\n", 
+
+    printf("🔧 STATIC_CAPTURE: Allocated buffers (%d notes x %d samples) with markers\n",
            MAX_CAPTURE_NOTES, MAX_CAPTURE_SAMPLES);
-    
+
     return 0;
+}
+
+static void free_static_capture_buffer(void) {
+    if (static_volume_buffer) { free(static_volume_buffer); static_volume_buffer = NULL; }
+    if (static_target_buffer) { free(static_target_buffer); static_target_buffer = NULL; }
+    if (static_marker_buffer) { free(static_marker_buffer); static_marker_buffer = NULL; }
+    static_capture_write_index = 0;
+    static_capture_samples_captured = 0;
+    static_marker_count = 0;
+    static_capture_initialized = 0;
 }
 
 /**
@@ -853,26 +890,14 @@ static int init_static_capture_buffer(void) {
  * @retval None (inline for maximum performance)
  */
 void image_debug_capture_volume_sample_fast(int note, float current_volume, float target_volume) {
-    (void)target_volume; // Unused parameter
-    
-    // DEBUG: Log first few calls to verify function is called
-    static int debug_call_count = 0;
-    if (debug_call_count < 10) {
-        printf("DEBUG_CAPTURE: Call #%d - note=%d, volume=%.3f, enabled=%d\n", 
-               debug_call_count, note, current_volume, oscillator_runtime_enabled);
-        debug_call_count++;
-    }
-    
     // ULTRA-FAST PATH: Only execute if oscillator capture is enabled
     if (!oscillator_runtime_enabled) {
         return; // Exit immediately if not enabled
     }
     
-    // Initialize buffer on first call (lazy initialization)
-    if (!static_capture_initialized) {
-        if (init_static_capture_buffer() != 0) {
-            return; // Failed to initialize, abort
-        }
+    // Do not allocate in RT path; require pre-allocation via configuration
+    if (!static_capture_initialized || !static_volume_buffer || !static_target_buffer || !static_marker_buffer) {
+        return; // Not initialized; ignore to keep RT path safe
     }
     
     // CRITICAL: Bounds checking to prevent buffer overflow
@@ -885,7 +910,9 @@ void image_debug_capture_volume_sample_fast(int note, float current_volume, floa
     }
     
     // ULTRA-FAST STORE: Just copy the current volume to static buffer
-    static_volume_buffer[note][static_capture_write_index] = current_volume;
+    static_volume_buffer[(size_t)note * MAX_CAPTURE_SAMPLES + static_capture_write_index] = current_volume;
+    // Store target volume aligned with current sample
+    static_target_buffer[(size_t)note * MAX_CAPTURE_SAMPLES + static_capture_write_index] = target_volume;
     
     // Only increment counters for the last note to avoid race conditions
     int current_notes = get_current_number_of_notes();
@@ -893,20 +920,64 @@ void image_debug_capture_volume_sample_fast(int note, float current_volume, floa
         static_capture_samples_captured++;
         static_capture_write_index++;
         
+        #if 0
+        // Mark every AUDIO_BUFFER_SIZE samples (end of each audio buffer processing cycle)
+        if ((static_capture_write_index % AUDIO_BUFFER_SIZE) == 0) {
+            if (oscillator_runtime_enabled && oscillator_markers_enabled && static_capture_initialized) {
+                if (static_capture_write_index < MAX_CAPTURE_SAMPLES) {
+                    static_marker_buffer[static_capture_write_index - 1] = 1; // Mark the last sample of this buffer
+                    static_marker_count++;
+                    printf("🔧 AUDIO_BUFFER_BOUNDARY: Marked audio buffer boundary at sample %d (buffer #%d)\n", 
+                           static_capture_write_index - 1, static_capture_write_index / AUDIO_BUFFER_SIZE);
+                }
+            }
+        }
+        #endif
+        
+        // Increment the global capture line counter for marker positioning
+        g_current_capture_line++;
+        
         // Auto-process when we have enough samples (non-blocking check)
         if (static_capture_samples_captured >= oscillator_capture_samples) {
             // SOLUTION: Copy static buffer to oscillator buffer and generate PNG
-            printf("🔧 STATIC_CAPTURE: Processing %d samples for PNG generation\n", static_capture_samples_captured);
+            // Use a static flag to prevent multiple concurrent processing
+            static volatile int processing_in_progress = 0;
             
-            if (copy_static_buffer_to_oscillator_buffer() == 0) {
-                // Generate and save the PNG image
-                image_debug_save_oscillator_volume_scan();
-                image_debug_reset_oscillator_volume_scan();
+            if (__sync_bool_compare_and_swap(&processing_in_progress, 0, 1)) {
+                printf("🔧 STATIC_CAPTURE: Processing %d samples for PNG generation\n", static_capture_samples_captured);
+                
+                if (copy_static_buffer_to_oscillator_buffer() == 0) {
+                    // Generate and save the PNG image
+                    image_debug_save_oscillator_volume_scan();
+                    image_debug_reset_oscillator_volume_scan();
+                }
+                
+                // Reset the counter for next capture cycle
+                static_capture_samples_captured = 0;
+                static_capture_write_index = 0;
+                
+                // Release the processing flag
+                processing_in_progress = 0;
             }
-            
-            // Reset the counter for next capture cycle
-            static_capture_samples_captured = 0;
-            static_capture_write_index = 0;
+        }
+    }
+}
+
+/**
+ * @brief Mark current line as a new image boundary for visual debugging
+ * This function marks the current capture line as the start of a new scanner image
+ * Used to draw yellow separator lines in the oscillator volume visualization
+ * @retval None
+ */
+void image_debug_mark_new_image_boundary(void) {
+    // Only mark if oscillator capture is enabled
+    if (oscillator_runtime_enabled && oscillator_markers_enabled && static_capture_initialized) {
+        // Mark directly in the static marker buffer at current write position
+        if (static_capture_write_index < MAX_CAPTURE_SAMPLES) {
+            static_marker_buffer[static_capture_write_index] = 1; // Mark this line as boundary
+            static_marker_count++;
+            //printf("🔧 IMAGE_BOUNDARY: Marked new image boundary at sample %d (total: %d)\n", 
+                  //static_capture_write_index, static_marker_count);
         }
     }
 }

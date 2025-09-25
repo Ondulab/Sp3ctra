@@ -240,6 +240,9 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     first_call = 0;
   }
 
+  // Debug marker: start of new image (yellow line)
+  image_debug_mark_new_image_boundary();
+
   // Final buffers for combined results
   static float additiveBuffer[AUDIO_BUFFER_SIZE];
   static float sumVolumeBuffer[AUDIO_BUFFER_SIZE];
@@ -278,6 +281,24 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
         pthread_mutex_lock(&thread_pool[i].work_mutex);
       }
       pthread_mutex_unlock(&thread_pool[i].work_mutex);
+    }
+
+    // Capture per-sample (per buffer) volumes across all notes to ensure 1 image line = 1 audio sample
+    if (image_debug_is_oscillator_capture_enabled()) {
+      int current_notes = get_current_number_of_notes();
+      // Iterate over each sample inside this audio buffer
+      for (int s = 0; s < AUDIO_BUFFER_SIZE; s++) {
+        // Visit notes in ascending order across workers to keep strict note order
+        for (int wi = 0; wi < 3; wi++) {
+          synth_thread_worker_t *w = &thread_pool[wi];
+          for (int note = w->start_note; note < w->end_note; note++) {
+            int local_note_idx = note - w->start_note;
+            float cur = w->captured_current_volume[local_note_idx][s];
+            float tgt = w->captured_target_volume[local_note_idx][s];
+            image_debug_capture_volume_sample_fast(note, cur, tgt);
+          }
+        }
+      }
     }
 
     // Phase 4: Combine results from threads with normalization
@@ -443,7 +464,6 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   }
   pthread_mutex_unlock(&buffers_R[index].mutex);
 
-#if 1
   // Launch grayscale conversion
   greyScale(buffer_R, buffer_G, buffer_B, g_grayScale_live, CIS_MAX_PIXELS_NB);
 
@@ -597,7 +617,6 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   memcpy(g_displayable_synth_B, buffer_B, CIS_MAX_PIXELS_NB);
   pthread_mutex_unlock(&g_displayable_synth_mutex);
   // Additive synthesis finished
-#endif
 
   // Mark buffers as ready
   pthread_mutex_lock(&buffers_L[index].mutex);

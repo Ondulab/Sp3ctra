@@ -14,6 +14,7 @@
 #include "wave_generation.h"
 #include "../../audio/pan/lock_free_pan.h"
 #include "../../config/config_debug.h"
+#include "../../utils/image_debug.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -159,22 +160,26 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
   // Use centralized RELATIVE_MODE algorithm
   apply_relative_mode(worker->imageBuffer_q31, worker->start_note, worker->end_note);
 
-  // Main note processing
-  for (note = worker->start_note; note < worker->end_note; note++) {
-    local_note_idx = note - worker->start_note;
-    worker->imageBuffer_f32[local_note_idx] =
-        (float)worker->imageBuffer_q31[local_note_idx];
+    // Main note processing
+    for (note = worker->start_note; note < worker->end_note; note++) {
+        local_note_idx = note - worker->start_note;
+        worker->imageBuffer_f32[local_note_idx] =
+            (float)worker->imageBuffer_q31[local_note_idx];
 
-    // Use centralized gamma mapping algorithm
-    apply_gamma_mapping(&worker->imageBuffer_f32[local_note_idx], 1);
+        // Use centralized gamma mapping algorithm
+        apply_gamma_mapping(&worker->imageBuffer_f32[local_note_idx], 1);
 
-    // Use centralized waveform generation algorithm
-    generate_waveform_samples(note, worker->waveBuffer, 
-                             worker->precomputed_wave_data[local_note_idx]);
+        // Use centralized waveform generation algorithm
+        generate_waveform_samples(note, worker->waveBuffer, 
+                                 worker->precomputed_wave_data[local_note_idx]);
 
-    // Use centralized GAP_LIMITER algorithm
-    apply_gap_limiter_ramp(note, worker->imageBuffer_f32[local_note_idx], 
-                          worker->volumeBuffer);
+        // Use centralized GAP_LIMITER algorithm
+        apply_gap_limiter_ramp(note, worker->imageBuffer_f32[local_note_idx], 
+                              worker->volumeBuffer);
+
+        // Debug capture: copy per-sample volumes for this note into worker buffers (fast path)
+        memcpy(&worker->captured_current_volume[local_note_idx][0], worker->volumeBuffer, sizeof(float) * AUDIO_BUFFER_SIZE);
+        fill_float(waves[note].target_volume, &worker->captured_target_volume[local_note_idx][0], AUDIO_BUFFER_SIZE);
 
     // Apply volume scaling to the current note waveform
     mult_float(worker->waveBuffer, worker->volumeBuffer, worker->waveBuffer,
