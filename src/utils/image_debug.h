@@ -11,7 +11,12 @@ extern "C" {
 #endif
 
 /**************************************************************************************
- * Image Debug Visualization Functions
+ * Image Debug Functions - Simplified
+ * 
+ * Supports only the 3 debug options:
+ * --debug-image[=LINES]                    Raw scanner capture
+ * --debug-additive-osc-image[=SAMPLES[,m]] Oscillator volume capture
+ * --debug-additive-osc=<N|N-M>            Oscillator debug (handled in main.c)
  **************************************************************************************/
 
 /**
@@ -29,102 +34,6 @@ int image_debug_init(void);
 void image_debug_cleanup(void);
 
 /**
- * @brief Capture and save all transformation stages for mono mode
- * @param buffer_R Original red channel
- * @param buffer_G Original green channel
- * @param buffer_B Original blue channel
- * @param grayscale_data Converted grayscale data
- * @param processed_data Final processed data for synthesis
- * @param frame_number Current frame number
- * @retval 0 on success, -1 on error
- */
-int image_debug_capture_mono_pipeline(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
-                                     int32_t *grayscale_data, int32_t *processed_data, int frame_number);
-
-/**
- * @brief Capture and save all transformation stages for stereo mode
- * @param buffer_R Original red channel
- * @param buffer_G Original green channel
- * @param buffer_B Original blue channel
- * @param warm_raw Raw warm channel data
- * @param cold_raw Raw cold channel data
- * @param warm_processed Final processed warm channel data
- * @param cold_processed Final processed cold channel data
- * @param frame_number Current frame number
- * @retval 0 on success, -1 on error
- */
-int image_debug_capture_stereo_pipeline(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
-                                       int32_t *warm_raw, int32_t *cold_raw,
-                                       int32_t *warm_processed, int32_t *cold_processed, int frame_number);
-
-/**
- * @brief Check if debug capture should occur for this frame
- * @param frame_number Current frame number
- * @retval 1 if should capture, 0 if should skip
- */
-int image_debug_should_capture(int frame_number);
-
-/**
- * @brief Add a line to the temporal scan image (accumulates over time)
- * @param buffer_data Line data to add (32-bit)
- * @param width Width of the line (number of pixels)
- * @param scan_type Type of scan ("original", "grayscale", "processed")
- * @retval 0 on success, -1 on error
- */
-int image_debug_add_scan_line(int32_t *buffer_data, int width, const char *scan_type);
-
-/**
- * @brief Add RGB line to the temporal scan image (for original color data)
- * @param buffer_R Red channel data (8-bit)
- * @param buffer_G Green channel data (8-bit)
- * @param buffer_B Blue channel data (8-bit)
- * @param width Width of the line (number of pixels)
- * @param scan_type Type of scan ("original", "grayscale", "processed")
- * @retval 0 on success, -1 on error
- */
-int image_debug_add_scan_line_rgb(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B, int width, const char *scan_type);
-
-/**
- * @brief Save accumulated temporal scan image to file
- * @param scan_type Type of scan to save
- * @retval 0 on success, -1 on error
- */
-int image_debug_save_scan(const char *scan_type);
-
-/**
- * @brief Reset temporal scan buffer (start new scan)
- * @param scan_type Type of scan to reset
- * @retval 0 on success, -1 on error
- */
-int image_debug_reset_scan(const char *scan_type);
-
-/**
- * @brief Capture oscillator volumes for current audio sample
- * @retval 0 on success, -1 on error
- */
-int image_debug_capture_oscillator_sample(void);
-
-/**
- * @brief Add oscillator volume line to temporal scan
- * @param volumes Array of oscillator volumes (float)
- * @param count Number of oscillators
- * @retval 0 on success, -1 on error
- */
-int image_debug_add_oscillator_volume_line(float *volumes, int count);
-
-/**
- * @brief Save oscillator volume scan to PNG file
- * @retval 0 on success, -1 on error
- */
-int image_debug_save_oscillator_volume_scan(void);
-
-/**
- * @brief Reset oscillator volume scan buffer
- * @retval 0 on success, -1 on error
- */
-int image_debug_reset_oscillator_volume_scan(void);
-
-/**
  * @brief Enable or disable image debug at runtime
  * @param enable 1 to enable, 0 to disable
  * @retval None
@@ -136,6 +45,10 @@ void image_debug_enable_runtime(int enable);
  * @retval 1 if enabled, 0 if disabled
  */
 int image_debug_is_enabled(void);
+
+/**************************************************************************************
+ * Raw Scanner Capture Functions (--debug-image)
+ **************************************************************************************/
 
 /**
  * @brief Capture raw scanner line (unprocessed RGB data)
@@ -177,6 +90,10 @@ int image_debug_is_raw_scanner_enabled(void);
  * @retval Number of lines configured for capture
  */
 int image_debug_get_raw_scanner_lines(void);
+
+/**************************************************************************************
+ * Oscillator Volume Capture Functions (--debug-additive-osc-image)
+ **************************************************************************************/
 
 /**
  * @brief Configure oscillator volume capture at runtime

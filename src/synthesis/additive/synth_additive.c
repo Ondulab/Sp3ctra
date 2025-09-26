@@ -58,10 +58,6 @@
 #include <stdlib.h>
 #endif
 
-// External declaration for debug configuration
-#ifdef DEBUG_OSC
-extern debug_additive_osc_config_t g_debug_osc_config;
-#endif
 
 /* Private variables ---------------------------------------------------------*/
 // Mutex to ensure thread-safe synthesis processing for stereo channels
@@ -438,13 +434,6 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     // printf("===== Audio Process called =====\n"); // Removed or commented
   }
 
-#ifdef DEBUG_OSC
-  // Debug: Print "NEW IMAGE LINE" when a new image is processed
-  if (g_debug_osc_config.enabled) {
-    printf("\n=== NEW IMAGE LINE ===\n");
-    fflush(stdout);
-  }
-#endif
 
   // Check that input buffers are not NULL
   if (!buffer_R || !buffer_G || !buffer_B) {
@@ -534,11 +523,8 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   lock_free_pan_update(left_gains, right_gains, pan_positions, current_notes);
 #endif // STEREO_MODE
 
-  // Capture mono pipeline for debug visualization
-  static int debug_frame_counter_mono = 0;
-  image_debug_capture_mono_pipeline(buffer_R, buffer_G, buffer_B,
-                                   g_grayScale_live, processed_grayScale,
-                                   debug_frame_counter_mono++);
+  // Capture raw scanner line for debug visualization
+  image_debug_capture_raw_scanner_line(buffer_R, buffer_G, buffer_B);
 
   // --- Synth Data Freeze/Fade Logic ---
   pthread_mutex_lock(&g_synth_data_freeze_mutex);

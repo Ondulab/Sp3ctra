@@ -76,11 +76,6 @@ volatile sig_atomic_t app_running = 1;
 Context *global_context =
     NULL; // Global context for signal handler
 
-// Global debug configuration for additive oscillators
-#ifdef DEBUG_OSC
-debug_additive_osc_config_t g_debug_osc_config = {0, -1, 0, 0};
-#endif
-
 // Make signal handler visible to other modules (like dmx.c)
 void signalHandler(int signal) {
   static volatile sig_atomic_t already_called = 0;
@@ -120,10 +115,6 @@ void signalHandler(int signal) {
 }
 
 int main(int argc, char **argv) {
-#ifdef DEBUG_OSC
-  // DEBUG_OSC is enabled - additive oscillator debug features available
-#endif
-  
   /* Load additive synthesis configuration */
   printf("[CONFIG] Loading additive synthesis configuration...\n");
   if (load_additive_config("additive_synth.ini") != 0) {
@@ -318,26 +309,15 @@ int main(int argc, char **argv) {
       // Configure oscillator volume capture with runtime parameters
       image_debug_configure_oscillator_capture(1, capture_samples, enable_markers);
     } else if (strncmp(argv[i], "--debug-additive-osc=", 21) == 0) {
-#ifdef DEBUG_OSC
       printf("🔧 Debug oscillateur additif activé !\n");
       const char *osc_param = argv[i] + 21;
       
-      // Parse "56" or "23-89"
+      // Parse "56" or "23-89" - simplified version without global config
       if (strchr(osc_param, '-')) {
         // Range format: "23-89"
         int start, end;
         if (sscanf(osc_param, "%d-%d", &start, &end) == 2) {
-          if (start >= 0 && end >= start && end < get_current_number_of_notes()) {
-            g_debug_osc_config.enabled = 1;
-            g_debug_osc_config.single_osc = -1;
-            g_debug_osc_config.start_osc = start;
-            g_debug_osc_config.end_osc = end;
-            printf("🔧 Debug oscillateur additif activé pour la plage %d-%d\n", start, end);
-          } else {
-            printf("❌ Erreur: plage d'oscillateurs invalide %d-%d (doit être 0-%d)\n", 
-                   start, end, get_current_number_of_notes()-1);
-            return EXIT_FAILURE;
-          }
+          printf("🔧 Debug oscillateur additif activé pour la plage %d-%d\n", start, end);
         } else {
           printf("❌ Erreur: format de plage invalide '%s' (utilisez N-M)\n", osc_param);
           return EXIT_FAILURE;
@@ -345,19 +325,8 @@ int main(int argc, char **argv) {
       } else {
         // Single oscillator format: "56"
         int single_osc = atoi(osc_param);
-        if (single_osc >= 0 && single_osc < get_current_number_of_notes()) {
-          g_debug_osc_config.enabled = 1;
-          g_debug_osc_config.single_osc = single_osc;
-          g_debug_osc_config.start_osc = 0;
-          g_debug_osc_config.end_osc = 0;
-          printf("🔧 Debug oscillateur additif activé pour l'oscillateur %d\n", single_osc);
-        } else {
-          printf("❌ Erreur: numéro d'oscillateur invalide %d (doit être 0-%d)\n", 
-                 single_osc, get_current_number_of_notes()-1);
-          return EXIT_FAILURE;
-        }
+        printf("🔧 Debug oscillateur additif activé pour l'oscillateur %d\n", single_osc);
       }
-#endif
     } else {
       printf("Unknown option: %s\n", argv[i]);
       printf("Use --help for usage information\n");
