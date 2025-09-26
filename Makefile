@@ -15,11 +15,11 @@ BASE_CXXFLAGS = -std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -Wn
 
 # OS-specific flags and libraries
 ifeq ($(UNAME_S),Darwin)
-    # macOS specific settings
-    MACOSX_DEPLOYMENT_TARGET ?= 13.0
+    # macOS specific settings - Use current macOS version to avoid dylib warnings
+    MACOSX_DEPLOYMENT_TARGET ?= 15.0
     export MACOSX_DEPLOYMENT_TARGET
-    CFLAGS = $(BASE_CFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)
-    CXXFLAGS = $(BASE_CXXFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)
+    CFLAGS = $(BASE_CFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET) -Wno-deprecated-declarations
+    CXXFLAGS = $(BASE_CXXFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET) -Wno-deprecated-declarations
     
     # Include directories for macOS
     INCLUDES = -I/opt/homebrew/include -I$(SFML_INCLUDE) \
