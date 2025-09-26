@@ -136,18 +136,17 @@ int32_t synth_IfftInit(void) {
   printf("Buffer length = %d uint16\n", (int)buffer_len);
 
   uint8_t FreqStr[256] = {0};
-  int current_notes = get_current_number_of_notes();
   sprintf((char *)FreqStr, " %d -> %dHz      Octave:%d",
-          (int)waves[0].frequency, (int)waves[current_notes - 1].frequency,
-          (int)sqrt(waves[current_notes - 1].octave_coeff));
+          (int)waves[0].frequency, (int)waves[get_current_number_of_notes() - 1].frequency,
+          (int)sqrt(waves[get_current_number_of_notes() - 1].octave_coeff));
 
   printf("First note Freq = %dHz\nSize = %d\n", (int)waves[0].frequency,
          (int)waves[0].area_size);
   printf("Last  note Freq = %dHz\nSize = %d\nOctave = %d\n",
-         (int)waves[current_notes - 1].frequency,
-         (int)waves[current_notes - 1].area_size /
-             (int)sqrt(waves[current_notes - 1].octave_coeff),
-         (int)sqrt(waves[current_notes - 1].octave_coeff));
+         (int)waves[get_current_number_of_notes() - 1].frequency,
+         (int)waves[get_current_number_of_notes() - 1].area_size /
+             (int)sqrt(waves[get_current_number_of_notes() - 1].octave_coeff),
+         (int)sqrt(waves[get_current_number_of_notes() - 1].octave_coeff));
 
   printf("-------------------------------\n");
 
@@ -281,7 +280,6 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
 
     // Capture per-sample (per buffer) volumes across all notes to ensure 1 image line = 1 audio sample
     if (image_debug_is_oscillator_capture_enabled()) {
-      int current_notes = get_current_number_of_notes();
       // Iterate over each sample inside this audio buffer
       for (int s = 0; s < AUDIO_BUFFER_SIZE; s++) {
         // Visit notes in ascending order across workers to keep strict note order
@@ -459,8 +457,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
 #ifdef STEREO_MODE
   // Calculate color temperature and pan positions for each oscillator
   // This is done once per image reception for efficiency
-  int current_notes = get_current_number_of_notes();
-  for (int note = 0; note < current_notes; note++) {
+  for (int note = 0; note < get_current_number_of_notes(); note++) {
     // Calculate average color for this note's pixels
     uint32_t r_sum = 0, g_sum = 0, b_sum = 0;
     uint32_t pixel_count = 0;
@@ -513,6 +510,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   static float right_gains[MAX_NUMBER_OF_NOTES];
   static float pan_positions[MAX_NUMBER_OF_NOTES];
   
+  int current_notes = get_current_number_of_notes();
   for (int note = 0; note < current_notes; note++) {
     left_gains[note] = waves[note].left_gain;
     right_gains[note] = waves[note].right_gain;
