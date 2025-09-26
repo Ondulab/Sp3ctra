@@ -19,9 +19,6 @@
 #include <stdio.h>
 #include <math.h>
 
-#ifdef DEBUG_OSC
-extern debug_additive_osc_config_t g_debug_osc_config;
-#endif
 
 /* Function implementations --------------------------------------------------*/
 
@@ -88,35 +85,6 @@ void apply_gap_limiter_ramp(int note, float target_volume, float *volumeBuffer) 
             }
         }
         volumeBuffer[buff_idx] = waves[note].current_volume;
-
-#ifdef DEBUG_OSC
-        // Debug: Print oscillator values for specified range/single oscillator
-        if (g_debug_osc_config.enabled) {
-            int should_debug = 0;
-            
-            if (g_debug_osc_config.single_osc >= 0) {
-                // Single oscillator mode
-                should_debug = (note == g_debug_osc_config.single_osc);
-            } else {
-                // Range mode
-                should_debug = (note >= g_debug_osc_config.start_osc && note <= g_debug_osc_config.end_osc);
-            }
-            
-            if (should_debug) {
-                printf("[DEBUG_OSC_%d] sample=%d target=%.1f current=%.1f inc=%.3f dec=%.3f max_inc=%.3f max_dec=%.3f freq=%.1f\n",
-                       note,
-                       buff_idx,
-                       waves[note].target_volume,
-                       waves[note].current_volume,
-                       waves[note].volume_increment,
-                       waves[note].volume_decrement,
-                       waves[note].max_volume_increment,
-                       waves[note].max_volume_decrement,
-                       waves[note].frequency);
-                fflush(stdout);
-            }
-        }
-#endif
     }
 #else
     // Without GAP_LIMITER, just fill with constant volume
