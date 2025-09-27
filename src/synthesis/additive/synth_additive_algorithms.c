@@ -102,52 +102,6 @@ void apply_gap_limiter_ramp(int note, float target_volume, float *volumeBuffer) 
 #endif
 }
 
-/**
- * @brief Apply GAP_LIMITER volume ramp for a single note (Q24 version)
- * @param note Note index
- * @param target_volume_q24 Target volume for the note (Q24)
- * @param volumeBuffer_q24 Output volume buffer for audio samples (Q24)
- * @retval None
- */
-void apply_gap_limiter_ramp_q24(int note, q24_t target_volume_q24, q24_t *volumeBuffer_q24) {
-#ifdef GAP_LIMITER
-    // Set the target volume for the oscillator
-    waves[note].target_volume_q24 = target_volume_q24;
-    
-    // Apply volume ramp per sample
-    for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-        if (waves[note].current_volume_q24 < waves[note].target_volume_q24) {
-            // Use 64-bit arithmetic to prevent overflow
-            int64_t temp = (int64_t)waves[note].current_volume_q24 + waves[note].volume_increment_q24;
-            if (temp > waves[note].target_volume_q24) {
-                waves[note].current_volume_q24 = waves[note].target_volume_q24;
-            } else if (temp > Q24_MAX) {
-                waves[note].current_volume_q24 = Q24_MAX;
-            } else {
-                waves[note].current_volume_q24 = (q24_t)temp;
-            }
-        } else if (waves[note].current_volume_q24 > waves[note].target_volume_q24) {
-            // Use 64-bit arithmetic to prevent underflow
-            int64_t temp = (int64_t)waves[note].current_volume_q24 - waves[note].volume_decrement_q24;
-            if (temp < waves[note].target_volume_q24) {
-                waves[note].current_volume_q24 = waves[note].target_volume_q24;
-            } else if (temp < Q24_MIN) {
-                waves[note].current_volume_q24 = Q24_MIN;
-            } else {
-                waves[note].current_volume_q24 = (q24_t)temp;
-            }
-        }
-        volumeBuffer_q24[buff_idx] = waves[note].current_volume_q24;
-    }
-#else
-    // Without GAP_LIMITER, just fill with constant volume
-    fill_q24(target_volume_q24, volumeBuffer_q24, AUDIO_BUFFER_SIZE);
-    
-    // Set current_volume to target_volume for consistency
-    waves[note].current_volume_q24 = target_volume_q24;
-    waves[note].target_volume_q24 = target_volume_q24;
-#endif
-}
 
 /**
  * @brief Apply non-linear gamma mapping to image buffer

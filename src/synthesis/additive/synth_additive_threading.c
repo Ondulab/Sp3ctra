@@ -72,12 +72,6 @@ int synth_init_thread_pool(void) {
     memset(worker->thread_additiveBuffer_L, 0, sizeof(worker->thread_additiveBuffer_L));
     memset(worker->thread_additiveBuffer_R, 0, sizeof(worker->thread_additiveBuffer_R));
     
-    // Initialize Q24 buffers to zero
-    memset(worker->thread_additiveBuffer_q24, 0, sizeof(worker->thread_additiveBuffer_q24));
-    memset(worker->thread_sumVolumeBuffer_q24, 0, sizeof(worker->thread_sumVolumeBuffer_q24));
-    memset(worker->thread_maxVolumeBuffer_q24, 0, sizeof(worker->thread_maxVolumeBuffer_q24));
-    memset(worker->thread_additiveBuffer_L_q24, 0, sizeof(worker->thread_additiveBuffer_L_q24));
-    memset(worker->thread_additiveBuffer_R_q24, 0, sizeof(worker->thread_additiveBuffer_R_q24));
 
     // Initialize work buffers
     memset(worker->imageBuffer_q31, 0, sizeof(worker->imageBuffer_q31));
@@ -85,9 +79,6 @@ int synth_init_thread_pool(void) {
     memset(worker->waveBuffer, 0, sizeof(worker->waveBuffer));
     memset(worker->volumeBuffer, 0, sizeof(worker->volumeBuffer));
     
-    // Initialize Q24 work buffers
-    memset(worker->waveBuffer_q24, 0, sizeof(worker->waveBuffer_q24));
-    memset(worker->volumeBuffer_q24, 0, sizeof(worker->volumeBuffer_q24));
     
     // Initialize precomputed data arrays
     memset(worker->precomputed_new_idx, 0, sizeof(worker->precomputed_new_idx));
@@ -134,12 +125,8 @@ void *synth_persistent_worker_thread(void *arg) {
     if (synth_pool_shutdown)
       break;
 
-    // Perform the work - select Q24 or Float32 based on configuration
-#if ENABLE_Q24_PROCESSING
-    synth_process_worker_range_q24(worker);
-#else
+    // Perform the work (Float32 path)
     synth_process_worker_range(worker);
-#endif
 
     // Signal that work is done
     pthread_mutex_lock(&worker->work_mutex);
@@ -151,131 +138,6 @@ void *synth_persistent_worker_thread(void *arg) {
   return NULL;
 }
 
-/**
- * @brief  Process a range of notes for a given worker (Q24 version)
- * @param  worker Pointer to worker structure
- * @retval None
- */
-void synth_process_worker_range_q24(synth_thread_worker_t *worker) {
-  int32_t buff_idx, note, local_note_idx;
-  static int q24_logged = 0;
-  /* DEBUG DISABLED
-  if (!q24_logged) {
-    printf("[Q24 WORKER] Using Q24 path in workers\n");
-    q24_logged = 1;
-  }
-  */
-  int nz_notes = 0;  // count notes with non-zero target volume this cycle
-
-  // Initialize Q24 output buffers to zero
-  fill_q24(0, worker->thread_additiveBuffer_q24, AUDIO_BUFFER_SIZE);
-  fill_q24(0, worker->thread_sumVolumeBuffer_q24, AUDIO_BUFFER_SIZE);
-  fill_q24(0, worker->thread_maxVolumeBuffer_q24, AUDIO_BUFFER_SIZE);
-  
-  // Initialize Q24 stereo buffers
-  fill_q24(0, worker->thread_additiveBuffer_L_q24, AUDIO_BUFFER_SIZE);
-  fill_q24(0, worker->thread_additiveBuffer_R_q24, AUDIO_BUFFER_SIZE);
-
-  // Initialize corresponding FLOAT accumulators (to avoid Q24 saturation during sums)
-  fill_float(0.0f, worker->thread_additiveBuffer, AUDIO_BUFFER_SIZE);
-  fill_float(0.0f, worker->thread_sumVolumeBuffer, AUDIO_BUFFER_SIZE);
-
-  // Use centralized preprocessing algorithm (still int32)
-  process_image_preprocessing(worker->imageData, worker->imageBuffer_q31, 
-                             worker->start_note, worker->end_note);
-
-  // Use centralized RELATIVE_MODE algorithm (still int32)
-  apply_relative_mode(worker->imageBuffer_q31, worker->start_note, worker->end_note);
-
-  // Main note processing - Q24 version
-  for (note = worker->start_note; note < worker->end_note; note++) {
-    local_note_idx = note - worker->start_note;
-    
-    // Convert image data to Q24 target volume
-    float target_volume_f = (float)worker->imageBuffer_q31[local_note_idx];
-    if (target_volume_f > 0.0f) nz_notes++;
-    
-    // Apply gamma mapping to float version
-    apply_gamma_mapping(&target_volume_f, 1);
-    
-    // Convert to Q24 target volume
-    q24_t target_volume_q24 = FLOAT_TO_Q24(target_volume_f / (float)VOLUME_AMP_RESOLUTION);
-
-    // Generate Q24 waveform samples directly from Q24 table
-    for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-      int32_t new_idx = (waves[note].current_idx + waves[note].octave_coeff);
-      if ((uint32_t)new_idx >= waves[note].area_size) {
-        new_idx -= waves[note].area_size;
-      }
-      worker->waveBuffer_q24[buff_idx] = *(waves[note].start_ptr_q24 + new_idx);
-      waves[note].current_idx = new_idx;
-    }
-
-    // Apply Q24 GAP_LIMITER algorithm
-    apply_gap_limiter_ramp_q24(note, target_volume_q24, worker->volumeBuffer_q24);
-
-    // Apply Q24 volume scaling to waveform
-    mult_q24(worker->waveBuffer_q24, worker->volumeBuffer_q24, worker->waveBuffer_q24, AUDIO_BUFFER_SIZE);
-
-    // Accumulate into FLOAT buffers to avoid Q24 saturation during summations
-    // 1) Convert per-sample volumes (Q24) to float and accumulate
-    q24_to_float_array(worker->volumeBuffer_q24, worker->volumeBuffer, AUDIO_BUFFER_SIZE);
-    add_float(worker->volumeBuffer, worker->thread_sumVolumeBuffer,
-              worker->thread_sumVolumeBuffer, AUDIO_BUFFER_SIZE);
-
-    // 2) Convert wave samples (post-volume) to float and accumulate
-    q24_to_float_array(worker->waveBuffer_q24, worker->waveBuffer, AUDIO_BUFFER_SIZE);
-    add_float(worker->waveBuffer, worker->thread_additiveBuffer,
-              worker->thread_additiveBuffer, AUDIO_BUFFER_SIZE);
-
-    /* DEBUG DISABLED: per-sample worker trace */
-
-    // Update max volume buffer (Q24)
-    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-      if (worker->volumeBuffer_q24[buff_idx] > worker->thread_maxVolumeBuffer_q24[buff_idx]) {
-        worker->thread_maxVolumeBuffer_q24[buff_idx] = worker->volumeBuffer_q24[buff_idx];
-      }
-    }
-
-    // Stereo processing (Q24)
-#ifdef STEREO_MODE
-    // Get Q24 pan gains
-    q24_t left_gain_q24 = FLOAT_TO_Q24(worker->precomputed_left_gain[local_note_idx]);
-    q24_t right_gain_q24 = FLOAT_TO_Q24(worker->precomputed_right_gain[local_note_idx]);
-    
-    // Apply panning gains and accumulate to stereo buffers
-    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-      q24_t left_sample = Q24_MULTIPLY(worker->waveBuffer_q24[buff_idx], left_gain_q24);
-      q24_t right_sample = Q24_MULTIPLY(worker->waveBuffer_q24[buff_idx], right_gain_q24);
-      
-      // Accumulate with overflow protection
-      int64_t temp_L = (int64_t)worker->thread_additiveBuffer_L_q24[buff_idx] + left_sample;
-      int64_t temp_R = (int64_t)worker->thread_additiveBuffer_R_q24[buff_idx] + right_sample;
-      
-      worker->thread_additiveBuffer_L_q24[buff_idx] = (temp_L > Q24_MAX) ? Q24_MAX : 
-                                                      (temp_L < Q24_MIN) ? Q24_MIN : (q24_t)temp_L;
-      worker->thread_additiveBuffer_R_q24[buff_idx] = (temp_R > Q24_MAX) ? Q24_MAX : 
-                                                      (temp_R < Q24_MIN) ? Q24_MIN : (q24_t)temp_R;
-    }
-#else
-    // Mono mode: duplicate to both channels
-    add_q24(worker->waveBuffer_q24, worker->thread_additiveBuffer_L_q24,
-            worker->thread_additiveBuffer_L_q24, AUDIO_BUFFER_SIZE);
-    add_q24(worker->waveBuffer_q24, worker->thread_additiveBuffer_R_q24,
-            worker->thread_additiveBuffer_R_q24, AUDIO_BUFFER_SIZE);
-#endif
-
-    // Additive summation (Q24)
-    add_q24(worker->waveBuffer_q24, worker->thread_additiveBuffer_q24,
-            worker->thread_additiveBuffer_q24, AUDIO_BUFFER_SIZE);
-    
-    // Volume summation (Q24)
-    add_q24(worker->volumeBuffer_q24, worker->thread_sumVolumeBuffer_q24,
-            worker->thread_sumVolumeBuffer_q24, AUDIO_BUFFER_SIZE);
-  }
-
-  /* DEBUG DISABLED: worker-level summary */
-}
 
 /**
  * @brief  Process a range of notes for a given worker (Float32 version)
@@ -286,7 +148,7 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
   int32_t buff_idx, note, local_note_idx;
   static int f32_logged = 0;
   if (!f32_logged) {
-    printf("[Q24 WORKER] Using legacy Float32 path in workers\n");
+    printf("[Float32 WORKER] Using Float32 path in workers\n");
     f32_logged = 1;
   }
 
