@@ -70,6 +70,40 @@
 #define IMAGE_ADAPTIVE_SMOOTHING     0                      /* Enable adaptive smoothing based on variation magnitude (0/1) */
 #endif
 
+/**************************************************************************************
+ * Q24 Fixed-Point Configuration
+ **************************************************************************************/
+
+// Q24 runtime selection flag
+// Set to 1 to enable Q24 processing, 0 for Float32 (legacy)
+#define ENABLE_Q24_PROCESSING    0
+
+// Q24 fixed-point type definition
+typedef int32_t q24_t;
+
+// Q24 constants
+#define Q24_ONE                      (16777215)             // 2^24 - 1
+#define Q24_HALF                     (8388607)              // Q24_ONE / 2
+#define Q24_MIN                      (-16777216)            // -2^24
+#define Q24_MAX                      (16777215)             // 2^24 - 1
+
+// Q24 conversion macros
+#define FLOAT_TO_Q24(f)              ((q24_t)((f) * (float)Q24_ONE))
+#define Q24_TO_FLOAT(q)              ((float)(q) / (float)Q24_ONE)
+
+// Q24 arithmetic macros
+#define Q24_MULTIPLY(a, b)           ((q24_t)(((int64_t)(a) * (b)) >> 24))
+#define Q24_ADD(a, b)                ((a) + (b))
+#define Q24_SUBTRACT(a, b)           ((a) - (b))
+
+// Q24 cache alignment for optimization
+#define Q24_CACHE_ALIGN              __attribute__((aligned(64)))
+
+// Q24 resolution constants
+#define WAVE_AMP_RESOLUTION_Q24      Q24_ONE                // Q24 wave amplitude resolution
+#define VOLUME_AMP_RESOLUTION_Q24    Q24_ONE                // Q24 volume amplitude resolution
+
+// Legacy float constants (maintained for compatibility)
 #define WAVE_AMP_RESOLUTION          (16777215)             // Decimal value
 #define VOLUME_AMP_RESOLUTION        (65535)                // Decimal value
 
