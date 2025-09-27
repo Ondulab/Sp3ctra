@@ -23,6 +23,7 @@
 volatile struct waveParams wavesGeneratorParams;
 volatile struct wave waves[MAX_NUMBER_OF_NOTES];
 volatile float unitary_waveform[WAVEFORM_TABLE_SIZE];
+volatile q24_t unitary_waveform_q24[WAVEFORM_TABLE_SIZE] Q24_CACHE_ALIGN;
 
 /* Private includes ----------------------------------------------------------*/
 
@@ -41,6 +42,12 @@ static uint32_t calculate_waveform(uint32_t current_aera_size,
                                    uint32_t current_unitary_waveform_cell,
                                    uint32_t buffer_len,
                                    volatile struct waveParams *params);
+static uint32_t calculate_waveform_q24(uint32_t current_aera_size,
+                                       uint32_t current_unitary_waveform_cell,
+                                       uint32_t buffer_len,
+                                       volatile struct waveParams *params);
+static void convert_float_to_q24_waveform(void);
+static void init_waves_q24_parameters(volatile struct wave *waves);
 
 /* Private user code ---------------------------------------------------------*/
 
@@ -165,5 +172,92 @@ uint32_t init_waves(volatile float *unitary_waveform,
     die("wave init failed");
   }
 
+  // Initialize Q24 waveform table and parameters
+  convert_float_to_q24_waveform();
+  init_waves_q24_parameters(waves);
+  
+  printf("Q24 waveform conversion completed\n");
+
   return buffer_len;
+}
+
+/**
+ * @brief Generate Q24 sinusoidal waveform
+ * @param current_aera_size Size of current waveform area
+ * @param current_unitary_waveform_cell Current cell index
+ * @param buffer_len Total buffer length
+ * @param params Wave parameters (unused)
+ * @retval Updated cell index
+ */
+static uint32_t calculate_waveform_q24(uint32_t current_aera_size,
+                                       uint32_t current_unitary_waveform_cell,
+                                       uint32_t buffer_len,
+                                       volatile struct waveParams *params) {
+  (void)params; // Suppress unused parameter warning
+
+  unitary_waveform_q24[current_unitary_waveform_cell] = 0;
+
+  // Generate sinusoidal waveform in Q24 format
+  for (uint32_t x = 0; x < current_aera_size; x++) {
+    // sanity check
+    if (current_unitary_waveform_cell < buffer_len) {
+      // Calculate sine value and convert to Q24
+      float sine_value = sin((x * 2.00 * PI) / (float)current_aera_size);
+      // Scale by Q24_ONE/2 (equivalent to WAVE_AMP_RESOLUTION_Q24/2)
+      unitary_waveform_q24[current_unitary_waveform_cell] = 
+          FLOAT_TO_Q24(sine_value * 0.5f);
+    }
+    current_unitary_waveform_cell++;
+  }
+
+  return current_unitary_waveform_cell;
+}
+
+/**
+ * @brief Convert existing float waveform to Q24 format
+ * @retval None
+ */
+static void convert_float_to_q24_waveform(void) {
+  printf("Converting float waveform to Q24...\n");
+  
+  for (uint32_t i = 0; i < WAVEFORM_TABLE_SIZE; i++) {
+    // Convert float sample to Q24
+    // Normalize by WAVE_AMP_RESOLUTION since float samples are scaled by this value
+    float normalized_sample = unitary_waveform[i] / (WAVE_AMP_RESOLUTION / 2.0f);
+    unitary_waveform_q24[i] = FLOAT_TO_Q24(normalized_sample);
+  }
+  
+  printf("Q24 waveform conversion: %u samples converted\n", WAVEFORM_TABLE_SIZE);
+}
+
+/**
+ * @brief Initialize Q24 parameters for all waves
+ * @param waves Wave array to initialize
+ * @retval None
+ */
+static void init_waves_q24_parameters(volatile struct wave *waves) {
+  printf("Initializing Q24 wave parameters...\n");
+  
+  int current_notes = get_current_number_of_notes();
+  
+  for (int note = 0; note < current_notes; note++) {
+    // Set Q24 waveform pointer (offset from float pointer)
+    ptrdiff_t offset = waves[note].start_ptr - unitary_waveform;
+    waves[note].start_ptr_q24 = &unitary_waveform_q24[offset];
+    
+    // Convert volume parameters to Q24 (normalize legacy float units by VOLUME_AMP_RESOLUTION)
+    waves[note].target_volume_q24 = FLOAT_TO_Q24(waves[note].target_volume / (float)VOLUME_AMP_RESOLUTION);
+    waves[note].current_volume_q24 = FLOAT_TO_Q24(waves[note].current_volume / (float)VOLUME_AMP_RESOLUTION);
+    waves[note].volume_increment_q24 = FLOAT_TO_Q24(waves[note].volume_increment / (float)VOLUME_AMP_RESOLUTION);
+    waves[note].max_volume_increment_q24 = FLOAT_TO_Q24(waves[note].max_volume_increment / (float)VOLUME_AMP_RESOLUTION);
+    waves[note].volume_decrement_q24 = FLOAT_TO_Q24(waves[note].volume_decrement / (float)VOLUME_AMP_RESOLUTION);
+    waves[note].max_volume_decrement_q24 = FLOAT_TO_Q24(waves[note].max_volume_decrement / (float)VOLUME_AMP_RESOLUTION);
+    
+    // Convert stereo parameters to Q24
+    waves[note].pan_position_q24 = FLOAT_TO_Q24(waves[note].pan_position);
+    waves[note].left_gain_q24 = FLOAT_TO_Q24(waves[note].left_gain);
+    waves[note].right_gain_q24 = FLOAT_TO_Q24(waves[note].right_gain);
+  }
+  
+  printf("Q24 wave parameters initialized for %d notes\n", current_notes);
 }
