@@ -32,8 +32,7 @@ static const additive_synth_config_t DEFAULT_CONFIG = {
     .volume_ramp_up_divisor = 1,
     .volume_ramp_down_divisor = 1,
     .pixels_per_note = 1,
-    .invert_intensity = 0,
-    .q24_gain = 1.0f
+    .invert_intensity = 0
 };
 
 /**************************************************************************************
@@ -127,7 +126,6 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "volume_ramp_down_divisor = %d\n", DEFAULT_CONFIG.volume_ramp_down_divisor);
     fprintf(file, "pixels_per_note = %d\n", DEFAULT_CONFIG.pixels_per_note);
     fprintf(file, "invert_intensity = %d\n", DEFAULT_CONFIG.invert_intensity);
-    fprintf(file, "q24_gain = %.3f\n", DEFAULT_CONFIG.q24_gain);
     
     fclose(file);
     
@@ -232,11 +230,6 @@ void validate_config(const additive_synth_config_t* config) {
     if (config->invert_intensity != 0 && config->invert_intensity != 1) {
         fprintf(stderr, "[CONFIG ERROR] invert_intensity must be 0 or 1, got %d\n",
                 config->invert_intensity);
-        errors++;
-    }
-    if (config->q24_gain <= 0.0f || config->q24_gain > 16.0f) {
-        fprintf(stderr, "[CONFIG ERROR] q24_gain must be in (0.0, 16.0], got %.3f\n",
-                config->q24_gain);
         errors++;
     }
     
@@ -387,11 +380,6 @@ int load_additive_config(const char* config_file_path) {
                 }
             } else if (strcmp(key, "invert_intensity") == 0) {
                 if (parse_int(value, &g_additive_config.invert_intensity, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
-            } else if (strcmp(key, "q24_gain") == 0) {
-                if (parse_float(value, &g_additive_config.q24_gain, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }

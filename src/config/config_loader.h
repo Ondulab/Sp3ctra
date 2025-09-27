@@ -26,7 +26,6 @@ typedef struct {
     int volume_ramp_down_divisor;  // Higher value = slower volume decrease
     int pixels_per_note;
     int invert_intensity;         // 0 = white brightest gives loudest sound, 1 = dark pixels give more energy
-    float q24_gain;               // Linear gain applied to Q24 path after ratio (default 1.0)
 } additive_synth_config_t;
 
 /**************************************************************************************

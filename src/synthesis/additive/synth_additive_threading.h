@@ -38,14 +38,6 @@ typedef struct synth_thread_worker_s {
   float thread_additiveBuffer_L[AUDIO_BUFFER_SIZE];
   float thread_additiveBuffer_R[AUDIO_BUFFER_SIZE];
 
-  // Local output buffers per thread - Q24 (new)
-  q24_t thread_additiveBuffer_q24[AUDIO_BUFFER_SIZE] Q24_CACHE_ALIGN;
-  q24_t thread_sumVolumeBuffer_q24[AUDIO_BUFFER_SIZE] Q24_CACHE_ALIGN;
-  q24_t thread_maxVolumeBuffer_q24[AUDIO_BUFFER_SIZE] Q24_CACHE_ALIGN;
-  
-  // Stereo buffers Q24 (new)
-  q24_t thread_additiveBuffer_L_q24[AUDIO_BUFFER_SIZE] Q24_CACHE_ALIGN;
-  q24_t thread_additiveBuffer_R_q24[AUDIO_BUFFER_SIZE] Q24_CACHE_ALIGN;
 
   // Local work buffers (avoids VLA on stack) - Float32
   int32_t imageBuffer_q31[MAX_NUMBER_OF_NOTES / 3 + 100]; // +100 for safety
@@ -53,9 +45,6 @@ typedef struct synth_thread_worker_s {
   float waveBuffer[AUDIO_BUFFER_SIZE];
   float volumeBuffer[AUDIO_BUFFER_SIZE];
   
-  // Local work buffers - Q24 (new)
-  q24_t waveBuffer_q24[AUDIO_BUFFER_SIZE] Q24_CACHE_ALIGN;
-  q24_t volumeBuffer_q24[AUDIO_BUFFER_SIZE] Q24_CACHE_ALIGN;
 
   // Pre-computed waves[] data (read-only)
   int32_t precomputed_new_idx[MAX_NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
@@ -91,7 +80,6 @@ void synth_shutdown_thread_pool(void);
 /* Thread processing functions */
 void *synth_persistent_worker_thread(void *arg);
 void synth_process_worker_range(synth_thread_worker_t *worker);
-void synth_process_worker_range_q24(synth_thread_worker_t *worker);
 void synth_precompute_wave_data(int32_t *imageData);
 
 /* Thread pool access for synthesis core */

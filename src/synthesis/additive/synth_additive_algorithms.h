@@ -38,14 +38,6 @@ void process_image_preprocessing(int32_t *imageData, int32_t *imageBuffer_q31,
  */
 void apply_gap_limiter_ramp(int note, float target_volume, float *volumeBuffer);
 
-/**
- * @brief Apply GAP_LIMITER volume ramp for a single note (Q24 version)
- * @param note Note index
- * @param target_volume_q24 Target volume for the note (Q24)
- * @param volumeBuffer_q24 Output volume buffer for audio samples (Q24)
- * @retval None
- */
-void apply_gap_limiter_ramp_q24(int note, q24_t target_volume_q24, q24_t *volumeBuffer_q24);
 
 /**
  * @brief Apply non-linear gamma mapping to image buffer

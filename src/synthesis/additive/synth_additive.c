@@ -114,32 +114,6 @@ int32_t synth_IfftInit(void) {
     waves[note].volume_decrement = 1.00 / (float)value * waves[note].max_volume_decrement;
   }
 
-#if ENABLE_Q24_PROCESSING
-  // Sync Q24 ramp parameters with updated float ramps (post-init)
-  for (int32_t note = 0; note < get_current_number_of_notes(); note++) {
-    waves[note].volume_increment_q24 =
-        FLOAT_TO_Q24(waves[note].volume_increment / (float)VOLUME_AMP_RESOLUTION);
-    waves[note].max_volume_increment_q24 =
-        FLOAT_TO_Q24(waves[note].max_volume_increment / (float)VOLUME_AMP_RESOLUTION);
-    waves[note].volume_decrement_q24 =
-        FLOAT_TO_Q24(waves[note].volume_decrement / (float)VOLUME_AMP_RESOLUTION);
-    waves[note].max_volume_decrement_q24 =
-        FLOAT_TO_Q24(waves[note].max_volume_decrement / (float)VOLUME_AMP_RESOLUTION);
-
-    // Enforce a minimum ramp step in Q24 to avoid stuck-at-zero volumes
-    q24_t min_up_step = (q24_t)(Q24_ONE / (g_additive_config.volume_ramp_up_divisor * 2048.0f));
-    if (min_up_step <= 0) min_up_step = 1;
-    q24_t min_down_step = (q24_t)(Q24_ONE / (g_additive_config.volume_ramp_down_divisor * 2048.0f));
-    if (min_down_step <= 0) min_down_step = 1;
-
-    if (waves[note].volume_increment_q24 <= 0 && waves[note].max_volume_increment_q24 > 0) {
-      waves[note].volume_increment_q24 = min_up_step;
-    }
-    if (waves[note].volume_decrement_q24 <= 0 && waves[note].max_volume_decrement_q24 > 0) {
-      waves[note].volume_decrement_q24 = min_down_step;
-    }
-  }
-#endif
 
   // Start with random index
   for (int i = 0; i < get_current_number_of_notes(); i++) {
@@ -152,10 +126,7 @@ int32_t synth_IfftInit(void) {
     waves[i].current_idx = aRandom32bit % waves[i].area_size;
     waves[i].current_volume = 0;
     
-    // Initialize Q24 volume fields
-    waves[i].current_volume_q24 = 0;
-    waves[i].target_volume_q24 = 0;
-  }
+    }
 
   if (buffer_len > (2400000 - 1)) {
     printf("RAM overflow");
@@ -164,11 +135,7 @@ int32_t synth_IfftInit(void) {
   }
 
   printf("Note number  = %d\n", (int)get_current_number_of_notes());
-#if ENABLE_Q24_PROCESSING
-  printf("[Q24] ENABLED fixed-point path (Q24)\n");
-#else
-  printf("[Q24] DISABLED - using legacy Float32 path\n");
-#endif
+  printf("[INFO] using Float32 path\n");
   printf("Buffer length = %d uint16\n", (int)buffer_len);
 
   uint8_t FreqStr[256] = {0};
@@ -331,26 +298,7 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
       }
     }
 
-    // Phase 4: Combine results from threads with normalization
-#if ENABLE_Q24_PROCESSING
-    // NEW: combine FLOAT accumulators from workers to avoid Q24 saturation
-    for (int i = 0; i < 3; i++) {
-      // Sum additive signal and sumVolume in float
-      add_float(thread_pool[i].thread_additiveBuffer, additiveBuffer,
-                additiveBuffer, AUDIO_BUFFER_SIZE);
-      add_float(thread_pool[i].thread_sumVolumeBuffer, sumVolumeBuffer,
-                sumVolumeBuffer, AUDIO_BUFFER_SIZE);
-
-      // Track max volume using Q24 worker maxima (convert to float)
-      for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-        float maxCandidate = Q24_TO_FLOAT(thread_pool[i].thread_maxVolumeBuffer_q24[buff_idx]);
-        if (maxCandidate > maxVolumeBuffer[buff_idx]) {
-          maxVolumeBuffer[buff_idx] = maxCandidate;
-        }
-      }
-    }
-#else
-    // Float32 version: combine float buffers directly
+        // Float32 version: combine float buffers directly
     for (int i = 0; i < 3; i++) {
       add_float(thread_pool[i].thread_additiveBuffer, additiveBuffer,
                 additiveBuffer, AUDIO_BUFFER_SIZE);
@@ -366,7 +314,6 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
         }
       }
     }
-#endif
 
     // CORRECTION: Conditional normalization by platform
 #ifdef __linux__
@@ -391,28 +338,14 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
   // === FINAL PHASE (common to both modes) ===
   mult_float(additiveBuffer, maxVolumeBuffer, additiveBuffer,
              AUDIO_BUFFER_SIZE);
-#if ENABLE_Q24_PROCESSING
-  // Q24 version: volumes are already normalized [0,1], no additional scaling needed
-  // scale_float(sumVolumeBuffer, 1.0f, AUDIO_BUFFER_SIZE); // No-op, commented out
-#else
   // Float32 version (legacy): scale sum by VOLUME_AMP_RESOLUTION/2 before ratio
   // This restores the original normalization preventing huge pre-limit peaks
   scale_float(sumVolumeBuffer, (float)VOLUME_AMP_RESOLUTION / 2.0f, AUDIO_BUFFER_SIZE);
-#endif
 
     // Small-denominator handling WITHOUT injecting noise:
     // If sum is below threshold, output zero (do not divide by epsilon)
     const float SUM_EPS_FLOAT = 1.0f;   // after scaling (Float path)
-    const float SUM_EPS_Q24   = 1e-6f;  // Q24 path (volumes in [0,1])
     for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-#if ENABLE_Q24_PROCESSING
-        if (sumVolumeBuffer[buff_idx] > SUM_EPS_Q24) {
-          float ratio = additiveBuffer[buff_idx] / sumVolumeBuffer[buff_idx];
-          tmp_audioData[buff_idx] = ratio * g_additive_config.q24_gain;
-        } else {
-          tmp_audioData[buff_idx] = 0.0f;
-        }
-#else
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           float ratio = additiveBuffer[buff_idx] / sumVolumeBuffer[buff_idx];
           // Float legacy path: divide by WAVE_AMP_RESOLUTION (no extra factor 2)
@@ -420,7 +353,6 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
         } else {
           tmp_audioData[buff_idx] = 0.0f;
         }
-#endif
     }
 
   // The contrast factor is now passed as parameter from synth_AudioProcess
@@ -437,26 +369,6 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     fill_float(0, stereoBuffer_L, AUDIO_BUFFER_SIZE);
     fill_float(0, stereoBuffer_R, AUDIO_BUFFER_SIZE);
     
-    // Accumulate stereo buffers from all threads
-#if ENABLE_Q24_PROCESSING
-    // Q24 version: combine Q24 stereo buffers and convert to float
-    static q24_t stereoBuffer_L_q24[AUDIO_BUFFER_SIZE];
-    static q24_t stereoBuffer_R_q24[AUDIO_BUFFER_SIZE];
-    
-    fill_q24(0, stereoBuffer_L_q24, AUDIO_BUFFER_SIZE);
-    fill_q24(0, stereoBuffer_R_q24, AUDIO_BUFFER_SIZE);
-    
-    for (int i = 0; i < 3; i++) {
-      add_q24(thread_pool[i].thread_additiveBuffer_L_q24, stereoBuffer_L_q24,
-              stereoBuffer_L_q24, AUDIO_BUFFER_SIZE);
-      add_q24(thread_pool[i].thread_additiveBuffer_R_q24, stereoBuffer_R_q24,
-              stereoBuffer_R_q24, AUDIO_BUFFER_SIZE);
-    }
-    
-    // Convert Q24 stereo buffers to float
-    q24_to_float_array(stereoBuffer_L_q24, stereoBuffer_L, AUDIO_BUFFER_SIZE);
-    q24_to_float_array(stereoBuffer_R_q24, stereoBuffer_R, AUDIO_BUFFER_SIZE);
-#else
     // Float32 version: combine float stereo buffers directly
     for (int i = 0; i < 3; i++) {
       add_float(thread_pool[i].thread_additiveBuffer_L, stereoBuffer_L,
@@ -464,7 +376,6 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
       add_float(thread_pool[i].thread_additiveBuffer_R, stereoBuffer_R,
                 stereoBuffer_R, AUDIO_BUFFER_SIZE);
     }
-#endif
     
     // Apply same normalization as mono signal
     mult_float(stereoBuffer_L, maxVolumeBuffer, stereoBuffer_L, AUDIO_BUFFER_SIZE);
@@ -478,19 +389,6 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
       float left_signal, right_signal;
 
-      // Small-denominator handling WITHOUT injecting noise: if sum is too small, output 0
-#if ENABLE_Q24_PROCESSING
-      {
-        const float SUM_EPS_Q24 = 1e-6f;
-        if (sumVolumeBuffer[buff_idx] > SUM_EPS_Q24) {
-          left_signal  = (stereoBuffer_L[buff_idx] / sumVolumeBuffer[buff_idx]) * g_additive_config.q24_gain;
-          right_signal = (stereoBuffer_R[buff_idx] / sumVolumeBuffer[buff_idx]) * g_additive_config.q24_gain;
-        } else {
-          left_signal = 0.0f;
-          right_signal = 0.0f;
-        }
-      }
-#else
       {
         const float SUM_EPS_FLOAT = 1.0f;
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
@@ -504,7 +402,6 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
           right_signal = 0.0f;
         }
       }
-#endif
 
       // Track pre-limit peaks and clipping count
       float aL = fabsf(left_signal), aR = fabsf(right_signal);
@@ -525,12 +422,12 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
 
     if (log_counter % LOG_FREQUENCY == 0) {
       if (preClipCount > 0) {
-        printf("[Q24 CLIP] pre=%d/%d (%.1f%%) peakPreL=%.3f peakPreR=%.3f\n",
+        printf("[CLIP] pre=%d/%d (%.1f%%) peakPreL=%.3f peakPreR=%.3f\n",
                preClipCount, AUDIO_BUFFER_SIZE,
                (preClipCount * 100.0f) / (float)AUDIO_BUFFER_SIZE,
                peakPreL, peakPreR);
       } else {
-        printf("[Q24 CLIP] pre=0 peakPreL=%.3f peakPreR=%.3f\n", peakPreL, peakPreR);
+        printf("[CLIP] pre=0 peakPreL=%.3f peakPreR=%.3f\n", peakPreL, peakPreR);
       }
     }
 
@@ -562,12 +459,12 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
 
     if (log_counter % LOG_FREQUENCY == 0) {
       if (preClipCount > 0) {
-        printf("[Q24 CLIP] pre=%d/%d (%.1f%%) peakPre=%.3f (mono)\n",
+        printf("[CLIP] pre=%d/%d (%.1f%%) peakPre=%.3f (mono)\n",
                preClipCount, AUDIO_BUFFER_SIZE,
                (preClipCount * 100.0f) / (float)AUDIO_BUFFER_SIZE,
                peakPre);
       } else {
-        printf("[Q24 CLIP] pre=0 peakPre=%.3f (mono)\n", peakPre);
+        printf("[CLIP] pre=0 peakPre=%.3f (mono)\n", peakPre);
       }
     }
 #endif
