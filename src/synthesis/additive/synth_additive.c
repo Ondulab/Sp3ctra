@@ -65,7 +65,6 @@ static pthread_mutex_t g_synth_process_mutex;
 
 // Variables pour la limitation des logs (affichage périodique)
 static uint32_t log_counter = 0;
-#define LOG_FREQUENCY (SAMPLING_FREQUENCY / AUDIO_BUFFER_SIZE) // Environ 1 seconde
 
 static int32_t imageRef[MAX_NUMBER_OF_NOTES] = {0};
 
