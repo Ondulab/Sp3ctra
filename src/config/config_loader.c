@@ -148,14 +148,14 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "# Enable/disable stereo mode (0=mono, 1=stereo)\n");
     fprintf(file, "stereo_mode_enabled = %d\n", DEFAULT_CONFIG.stereo_mode_enabled);
     fprintf(file, "\n");
-    fprintf(file, "# VERY IMPACTFUL - Controls global stereo intensity\n");
+    fprintf(file, "# Controls global stereo intensity\n");
     fprintf(file, "stereo_temperature_amplification = %.1f\n", DEFAULT_CONFIG.stereo_temperature_amplification);
     fprintf(file, "\n");
-    fprintf(file, "# IMPACTFUL - Balance between color axes\n");
+    fprintf(file, "# Balance between color axes\n");
     fprintf(file, "stereo_blue_red_weight = %.1f\n", DEFAULT_CONFIG.stereo_blue_red_weight);
     fprintf(file, "stereo_cyan_yellow_weight = %.1f\n", DEFAULT_CONFIG.stereo_cyan_yellow_weight);
     fprintf(file, "\n");
-    fprintf(file, "# MODERATELY IMPACTFUL - Shape of response curve\n");
+    fprintf(file, "# Shape of response curve\n");
     fprintf(file, "stereo_temperature_curve_exponent = %.1f\n", DEFAULT_CONFIG.stereo_temperature_curve_exponent);
     
     fclose(file);

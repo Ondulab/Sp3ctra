@@ -130,6 +130,14 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
         phase_eps = PHASE_WEIGHT_EPS_MIN + k * (PHASE_WEIGHT_EPS_MAX - PHASE_WEIGHT_EPS_MIN);
     }
 
+    // Debug counters for phase weighting analysis
+    static int debug_counter = 0;
+    static float debug_s_norm_sum = 0.0f;
+    static float debug_w_phase_sum = 0.0f;
+    static float debug_alpha_base_sum = 0.0f;
+    static float debug_alpha_eff_sum = 0.0f;
+    static int debug_samples = 0;
+    
     for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
         // Phase weighting using precomputed waveform sample
         float s_norm = 0.0f;
@@ -153,13 +161,41 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
 #if SLEW_DECAY_MODE_EXPO
         // Exponential approach (recommended): v += alpha_eff * (t - v)
         const int is_attack = (t > v) ? 1 : 0;
-        float alpha_eff = is_attack ? alpha_up : (alpha_down * g_down);
+        float alpha_base = is_attack ? alpha_up : (alpha_down * g_down);
+        float alpha_eff = alpha_base;
 #if ENABLE_PHASE_WEIGHTED_SLEW
         alpha_eff *= w_phase;
 #endif
         // Clamp alpha_eff
         if (alpha_eff < ALPHA_MIN) alpha_eff = ALPHA_MIN;
         if (alpha_eff > 1.0f)      alpha_eff = 1.0f;
+
+        // Debug data collection (sample every 100 buffers for note 60)
+        if (note == 60 && debug_counter % 100 == 0 && buff_idx == 0) {
+            debug_s_norm_sum += fabsf(s_norm);
+            debug_w_phase_sum += w_phase;
+            debug_alpha_base_sum += alpha_base;
+            debug_alpha_eff_sum += alpha_eff;
+            debug_samples++;
+            
+            // Print debug info every 1000 samples
+            if (debug_samples >= 10) {
+                printf("[PHASE_WEIGHT_DEBUG] note=%d pre_wave=%s\n", 
+                       note, pre_wave ? "YES" : "NULL");
+                printf("[PHASE_WEIGHT_DEBUG] avg_s_norm=%.4f avg_w_phase=%.4f avg_alpha_base=%.4f avg_alpha_eff=%.4f\n",
+                       debug_s_norm_sum / debug_samples,
+                       debug_w_phase_sum / debug_samples,
+                       debug_alpha_base_sum / debug_samples,
+                       debug_alpha_eff_sum / debug_samples);
+                printf("[PHASE_WEIGHT_DEBUG] reduction_ratio=%.2f%% phase_eps=%.4f POWER=%.1f\n",
+                       100.0f * (1.0f - (debug_alpha_eff_sum / debug_alpha_base_sum)),
+                       phase_eps, PHASE_WEIGHT_POWER);
+                       
+                // Reset counters
+                debug_s_norm_sum = debug_w_phase_sum = debug_alpha_base_sum = debug_alpha_eff_sum = 0.0f;
+                debug_samples = 0;
+            }
+        }
 
         v += alpha_eff * (t - v);
 #else
@@ -180,10 +216,6 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
             if (v < t) v = t;
         }
 #endif
-        // Release floor: if target is near zero and volume is very low, snap to zero to avoid residual hiss
-        if (t <= RELEASE_FLOOR_VOLUME && v < RELEASE_FLOOR_VOLUME) {
-            v = 0.0f;
-        }
         // Clamp volume to legal range
         if (v < 0.0f) v = 0.0f;
         if (v > (float)VOLUME_AMP_RESOLUTION) v = (float)VOLUME_AMP_RESOLUTION;
@@ -191,6 +223,9 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
         volumeBuffer[buff_idx] = v;
     }
 
+    // Increment debug counter
+    debug_counter++;
+    
     // Write back current volume once per buffer
     waves[note].current_volume = v;
 #else
