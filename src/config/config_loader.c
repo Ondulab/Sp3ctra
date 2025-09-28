@@ -16,14 +16,11 @@ additive_synth_config_t g_additive_config;
  * Default Values (from original #define values)
  **************************************************************************************/
 static const additive_synth_config_t DEFAULT_CONFIG = {
-    // Auto-volume parameters
-    .imu_active_threshold_x = 0.01f,
-    .imu_filter_alpha_x = 0.25f,
+    // Auto-volume parameters (runtime configurable)
+    .auto_volume_enabled = 0,            // Default: auto-volume disabled
     .imu_inactivity_timeout_s = 5,
     .auto_volume_inactive_level = 0.01f,
-    .auto_volume_active_level = 1.0f,
     .auto_volume_fade_ms = 600,
-    .auto_volume_poll_ms = 10,
     
     // Synthesis parameters
     .start_frequency = 65.41f,
@@ -32,7 +29,14 @@ static const additive_synth_config_t DEFAULT_CONFIG = {
     .volume_ramp_up_divisor = 1,
     .volume_ramp_down_divisor = 1,
     .pixels_per_note = 1,
-    .invert_intensity = 0
+    .invert_intensity = 1,
+    
+    // Stereo processing parameters
+    .stereo_mode_enabled = 1,                  // Default: stereo enabled
+    .stereo_temperature_amplification = 2.5f,
+    .stereo_blue_red_weight = 0.8f,
+    .stereo_cyan_yellow_weight = 0.2f,
+    .stereo_temperature_curve_exponent = 0.6f
 };
 
 /**************************************************************************************
@@ -109,23 +113,50 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "# Modify these values as needed - the program will validate them on startup\n\n");
     
     fprintf(file, "[auto_volume]\n");
-    fprintf(file, "imu_active_threshold_x = %.3f\n", DEFAULT_CONFIG.imu_active_threshold_x);
-    fprintf(file, "imu_filter_alpha_x = %.3f\n", DEFAULT_CONFIG.imu_filter_alpha_x);
+    fprintf(file, "# Enable/disable IMU-based auto-volume (0=disabled, 1=enabled)\n");
+    fprintf(file, "auto_volume_enabled = %d\n", DEFAULT_CONFIG.auto_volume_enabled);
+    fprintf(file, "\n");
+    fprintf(file, "# Timeout before switching to inactive mode (seconds)\n");
     fprintf(file, "imu_inactivity_timeout_s = %d\n", DEFAULT_CONFIG.imu_inactivity_timeout_s);
+    fprintf(file, "\n");
+    fprintf(file, "# Volume level when inactive (0.0-1.0)\n");
     fprintf(file, "auto_volume_inactive_level = %.3f\n", DEFAULT_CONFIG.auto_volume_inactive_level);
-    fprintf(file, "auto_volume_active_level = %.3f\n", DEFAULT_CONFIG.auto_volume_active_level);
+    fprintf(file, "\n");
+    fprintf(file, "# Fade duration for volume transitions (ms)\n");
     fprintf(file, "auto_volume_fade_ms = %d\n", DEFAULT_CONFIG.auto_volume_fade_ms);
-    fprintf(file, "auto_volume_poll_ms = %d\n", DEFAULT_CONFIG.auto_volume_poll_ms);
     fprintf(file, "\n");
     
     fprintf(file, "[synthesis]\n");
+    fprintf(file, "# Base frequency for the first note (Hz)\n");
     fprintf(file, "start_frequency = %.2f\n", DEFAULT_CONFIG.start_frequency);
+    fprintf(file, "\n");
+    fprintf(file, "# Musical scale configuration\n");
     fprintf(file, "semitone_per_octave = %d\n", DEFAULT_CONFIG.semitone_per_octave);
     fprintf(file, "comma_per_semitone = %d\n", DEFAULT_CONFIG.comma_per_semitone);
+    fprintf(file, "\n");
+    fprintf(file, "# Volume ramping speed (higher = slower transitions)\n");
     fprintf(file, "volume_ramp_up_divisor = %d\n", DEFAULT_CONFIG.volume_ramp_up_divisor);
     fprintf(file, "volume_ramp_down_divisor = %d\n", DEFAULT_CONFIG.volume_ramp_down_divisor);
+    fprintf(file, "\n");
+    fprintf(file, "# Pixel to note mapping and intensity behavior\n");
     fprintf(file, "pixels_per_note = %d\n", DEFAULT_CONFIG.pixels_per_note);
+    fprintf(file, "# 0=bright pixels louder, 1=dark pixels louder\n");
     fprintf(file, "invert_intensity = %d\n", DEFAULT_CONFIG.invert_intensity);
+    fprintf(file, "\n");
+    
+    fprintf(file, "[stereo_processing]\n");
+    fprintf(file, "# Enable/disable stereo mode (0=mono, 1=stereo)\n");
+    fprintf(file, "stereo_mode_enabled = %d\n", DEFAULT_CONFIG.stereo_mode_enabled);
+    fprintf(file, "\n");
+    fprintf(file, "# VERY IMPACTFUL - Controls global stereo intensity\n");
+    fprintf(file, "stereo_temperature_amplification = %.1f\n", DEFAULT_CONFIG.stereo_temperature_amplification);
+    fprintf(file, "\n");
+    fprintf(file, "# IMPACTFUL - Balance between color axes\n");
+    fprintf(file, "stereo_blue_red_weight = %.1f\n", DEFAULT_CONFIG.stereo_blue_red_weight);
+    fprintf(file, "stereo_cyan_yellow_weight = %.1f\n", DEFAULT_CONFIG.stereo_cyan_yellow_weight);
+    fprintf(file, "\n");
+    fprintf(file, "# MODERATELY IMPACTFUL - Shape of response curve\n");
+    fprintf(file, "stereo_temperature_curve_exponent = %.1f\n", DEFAULT_CONFIG.stereo_temperature_curve_exponent);
     
     fclose(file);
     
@@ -140,16 +171,10 @@ int create_default_config_file(const char* config_file_path) {
 void validate_config(const additive_synth_config_t* config) {
     int errors = 0;
     
-    // Validate auto-volume parameters
-    if (config->imu_active_threshold_x < 0.0f || config->imu_active_threshold_x > 10.0f) {
-        fprintf(stderr, "[CONFIG ERROR] imu_active_threshold_x must be between 0.0 and 10.0, got %.3f\n", 
-                config->imu_active_threshold_x);
-        errors++;
-    }
-    
-    if (config->imu_filter_alpha_x < 0.0f || config->imu_filter_alpha_x > 1.0f) {
-        fprintf(stderr, "[CONFIG ERROR] imu_filter_alpha_x must be between 0.0 and 1.0, got %.3f\n", 
-                config->imu_filter_alpha_x);
+    // Validate auto-volume parameters (runtime configurable)
+    if (config->auto_volume_enabled != 0 && config->auto_volume_enabled != 1) {
+        fprintf(stderr, "[CONFIG ERROR] auto_volume_enabled must be 0 or 1, got %d\n",
+                config->auto_volume_enabled);
         errors++;
     }
     
@@ -165,21 +190,9 @@ void validate_config(const additive_synth_config_t* config) {
         errors++;
     }
     
-    if (config->auto_volume_active_level < 0.0f || config->auto_volume_active_level > 1.0f) {
-        fprintf(stderr, "[CONFIG ERROR] auto_volume_active_level must be between 0.0 and 1.0, got %.3f\n", 
-                config->auto_volume_active_level);
-        errors++;
-    }
-    
     if (config->auto_volume_fade_ms < 10 || config->auto_volume_fade_ms > 10000) {
         fprintf(stderr, "[CONFIG ERROR] auto_volume_fade_ms must be between 10 and 10000, got %d\n", 
                 config->auto_volume_fade_ms);
-        errors++;
-    }
-    
-    if (config->auto_volume_poll_ms < 1 || config->auto_volume_poll_ms > 1000) {
-        fprintf(stderr, "[CONFIG ERROR] auto_volume_poll_ms must be between 1 and 1000, got %d\n", 
-                config->auto_volume_poll_ms);
         errors++;
     }
     
@@ -230,6 +243,37 @@ void validate_config(const additive_synth_config_t* config) {
     if (config->invert_intensity != 0 && config->invert_intensity != 1) {
         fprintf(stderr, "[CONFIG ERROR] invert_intensity must be 0 or 1, got %d\n",
                 config->invert_intensity);
+        errors++;
+    }
+    
+    // Validate stereo processing parameters
+    if (config->stereo_mode_enabled != 0 && config->stereo_mode_enabled != 1) {
+        fprintf(stderr, "[CONFIG ERROR] stereo_mode_enabled must be 0 or 1, got %d\n",
+                config->stereo_mode_enabled);
+        errors++;
+    }
+    
+    if (config->stereo_temperature_amplification < 0.1f || config->stereo_temperature_amplification > 10.0f) {
+        fprintf(stderr, "[CONFIG ERROR] stereo_temperature_amplification must be between 0.1 and 10.0, got %.1f\n", 
+                config->stereo_temperature_amplification);
+        errors++;
+    }
+    
+    if (config->stereo_blue_red_weight < 0.0f || config->stereo_blue_red_weight > 1.0f) {
+        fprintf(stderr, "[CONFIG ERROR] stereo_blue_red_weight must be between 0.0 and 1.0, got %.1f\n", 
+                config->stereo_blue_red_weight);
+        errors++;
+    }
+    
+    if (config->stereo_cyan_yellow_weight < 0.0f || config->stereo_cyan_yellow_weight > 1.0f) {
+        fprintf(stderr, "[CONFIG ERROR] stereo_cyan_yellow_weight must be between 0.0 and 1.0, got %.1f\n", 
+                config->stereo_cyan_yellow_weight);
+        errors++;
+    }
+    
+    if (config->stereo_temperature_curve_exponent < 0.1f || config->stereo_temperature_curve_exponent > 2.0f) {
+        fprintf(stderr, "[CONFIG ERROR] stereo_temperature_curve_exponent must be between 0.1 and 2.0, got %.1f\n", 
+                config->stereo_temperature_curve_exponent);
         errors++;
     }
     
@@ -306,13 +350,8 @@ int load_additive_config(const char* config_file_path) {
         
         // Parse parameters based on section and key
         if (strcmp(current_section, "auto_volume") == 0) {
-            if (strcmp(key, "imu_active_threshold_x") == 0) {
-                if (parse_float(value, &g_additive_config.imu_active_threshold_x, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
-            } else if (strcmp(key, "imu_filter_alpha_x") == 0) {
-                if (parse_float(value, &g_additive_config.imu_filter_alpha_x, key) != 0) {
+            if (strcmp(key, "auto_volume_enabled") == 0) {
+                if (parse_int(value, &g_additive_config.auto_volume_enabled, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
@@ -326,21 +365,18 @@ int load_additive_config(const char* config_file_path) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
-            } else if (strcmp(key, "auto_volume_active_level") == 0) {
-                if (parse_float(value, &g_additive_config.auto_volume_active_level, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
             } else if (strcmp(key, "auto_volume_fade_ms") == 0) {
                 if (parse_int(value, &g_additive_config.auto_volume_fade_ms, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
-            } else if (strcmp(key, "auto_volume_poll_ms") == 0) {
-                if (parse_int(value, &g_additive_config.auto_volume_poll_ms, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
+            } else if (strcmp(key, "imu_active_threshold_x") == 0 || 
+                       strcmp(key, "imu_filter_alpha_x") == 0 ||
+                       strcmp(key, "auto_volume_active_level") == 0 ||
+                       strcmp(key, "auto_volume_poll_ms") == 0) {
+                // Ignore deprecated parameters (now #define constants)
+                fprintf(stderr, "[CONFIG INFO] Line %d: Parameter '%s' is now a compile-time constant, ignoring\n", 
+                        line_number, key);
             } else {
                 fprintf(stderr, "[CONFIG WARNING] Line %d: Unknown parameter '%s' in section '%s'\n", 
                         line_number, key, current_section);
@@ -380,6 +416,36 @@ int load_additive_config(const char* config_file_path) {
                 }
             } else if (strcmp(key, "invert_intensity") == 0) {
                 if (parse_int(value, &g_additive_config.invert_intensity, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else {
+                fprintf(stderr, "[CONFIG WARNING] Line %d: Unknown parameter '%s' in section '%s'\n", 
+                        line_number, key, current_section);
+            }
+        } else if (strcmp(current_section, "stereo_processing") == 0) {
+            if (strcmp(key, "stereo_mode_enabled") == 0) {
+                if (parse_int(value, &g_additive_config.stereo_mode_enabled, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "stereo_temperature_amplification") == 0) {
+                if (parse_float(value, &g_additive_config.stereo_temperature_amplification, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "stereo_blue_red_weight") == 0) {
+                if (parse_float(value, &g_additive_config.stereo_blue_red_weight, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "stereo_cyan_yellow_weight") == 0) {
+                if (parse_float(value, &g_additive_config.stereo_cyan_yellow_weight, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "stereo_temperature_curve_exponent") == 0) {
+                if (parse_float(value, &g_additive_config.stereo_temperature_curve_exponent, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }

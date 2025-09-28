@@ -12,6 +12,33 @@
 #define __SYNTH_ADDITIVE_H
 
 /* Includes ------------------------------------------------------------------*/
+#include "../../config/config_instrument.h"  // For CIS_MAX_PIXELS_NB
+#include "../../config/config_loader.h"      // For additive_synth_config_t
+
+/**************************************************************************************
+ * Buffer Management Configuration
+ **************************************************************************************/
+// Maximum number of notes for static buffer allocation (when pixels_per_note = 1)
+#define MAX_NUMBER_OF_NOTES          (CIS_MAX_PIXELS_NB)
+
+// Helper function to get current number of notes based on runtime configuration
+static inline int get_current_number_of_notes(void) {
+    extern additive_synth_config_t g_additive_config;
+    return CIS_MAX_PIXELS_NB / g_additive_config.pixels_per_note;
+}
+
+/**************************************************************************************
+ * Debug Configuration
+ **************************************************************************************/
+// Debug configuration structure (runtime)
+typedef struct {
+    int enabled;                    // Runtime enable/disable flag
+    int single_osc;                 // -1 if range, otherwise single oscillator number
+    int start_osc;                  // Start of range (for ranges)
+    int end_osc;                    // End of range (for ranges)
+} debug_additive_osc_config_t;
+
+/* Module Headers (included after constants definition) ----------------------*/
 #include "synth_additive_math.h"
 #include "synth_additive_stereo.h"
 #include "synth_additive_state.h"

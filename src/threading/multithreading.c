@@ -5,6 +5,7 @@
 #include "auto_volume.h"
 #include "config.h"
 #include "config_loader.h"
+#include "config_synth_additive.h" /* For IMU_FILTER_ALPHA_X, AUTO_VOLUME_POLL_MS */
 #include "context.h"
 #include "display.h"
 #include "dmx.h"
@@ -256,8 +257,8 @@ void *udpThread(void *arg) {
         printf("[IMU] First IMU packet received! raw_x=%.6f\n", raw_x);
 #endif
       } else {
-        ctx->imu_x_filtered = g_additive_config.imu_filter_alpha_x * raw_x +
-                              (1.0f - g_additive_config.imu_filter_alpha_x) * ctx->imu_x_filtered;
+        ctx->imu_x_filtered = IMU_FILTER_ALPHA_X * raw_x +
+                              (1.0f - IMU_FILTER_ALPHA_X) * ctx->imu_x_filtered;
       }
       ctx->last_imu_time = time(NULL);
       pthread_mutex_unlock(&ctx->imu_mutex);
@@ -509,7 +510,7 @@ void *audioProcessingThread(void *arg) {
         last_auto_ms = now;
       }
       uint64_t dt = (now > last_auto_ms) ? (now - last_auto_ms) : 0;
-      if (dt >= (uint64_t)g_additive_config.auto_volume_poll_ms) {
+      if (dt >= (uint64_t)AUTO_VOLUME_POLL_MS) {
         auto_volume_step(gAutoVolumeInstance, (unsigned int)dt);
         last_auto_ms = now;
       }

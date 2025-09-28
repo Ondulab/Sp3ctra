@@ -14,6 +14,7 @@
 #include "wave_generation.h"
 #include "../../audio/pan/lock_free_pan.h"
 #include "../../config/config_debug.h"
+#include "../../config/config_loader.h"
 #include "../../utils/image_debug.h"
 #include <stdio.h>
 #include <string.h>
@@ -202,34 +203,34 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     }
 
     // Always fill stereo buffers (unified approach)
-#ifdef STEREO_MODE
-    // Stereo mode: Apply per-oscillator panning and accumulate to L/R buffers
-    float left_gain = worker->precomputed_left_gain[local_note_idx];
-    float right_gain = worker->precomputed_right_gain[local_note_idx];
-    
-    // Create temporary buffers for L/R channels
-    float waveBuffer_L[AUDIO_BUFFER_SIZE];
-    float waveBuffer_R[AUDIO_BUFFER_SIZE];
-    
-    // Apply panning gains
-    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-      waveBuffer_L[buff_idx] = worker->waveBuffer[buff_idx] * left_gain;
-      waveBuffer_R[buff_idx] = worker->waveBuffer[buff_idx] * right_gain;
+    if (g_additive_config.stereo_mode_enabled) {
+      // Stereo mode: Apply per-oscillator panning and accumulate to L/R buffers
+      float left_gain = worker->precomputed_left_gain[local_note_idx];
+      float right_gain = worker->precomputed_right_gain[local_note_idx];
+      
+      // Create temporary buffers for L/R channels
+      float waveBuffer_L[AUDIO_BUFFER_SIZE];
+      float waveBuffer_R[AUDIO_BUFFER_SIZE];
+      
+      // Apply panning gains
+      for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+        waveBuffer_L[buff_idx] = worker->waveBuffer[buff_idx] * left_gain;
+        waveBuffer_R[buff_idx] = worker->waveBuffer[buff_idx] * right_gain;
+      }
+      
+      // Accumulate to stereo buffers
+      add_float(waveBuffer_L, worker->thread_additiveBuffer_L,
+                worker->thread_additiveBuffer_L, AUDIO_BUFFER_SIZE);
+      add_float(waveBuffer_R, worker->thread_additiveBuffer_R,
+                worker->thread_additiveBuffer_R, AUDIO_BUFFER_SIZE);
+    } else {
+      // Mono mode: Duplicate mono signal to both L/R channels (center panning)
+      // This creates a unified architecture where stereo buffers are always filled
+      add_float(worker->waveBuffer, worker->thread_additiveBuffer_L,
+                worker->thread_additiveBuffer_L, AUDIO_BUFFER_SIZE);
+      add_float(worker->waveBuffer, worker->thread_additiveBuffer_R,
+                worker->thread_additiveBuffer_R, AUDIO_BUFFER_SIZE);
     }
-    
-    // Accumulate to stereo buffers
-    add_float(waveBuffer_L, worker->thread_additiveBuffer_L,
-              worker->thread_additiveBuffer_L, AUDIO_BUFFER_SIZE);
-    add_float(waveBuffer_R, worker->thread_additiveBuffer_R,
-              worker->thread_additiveBuffer_R, AUDIO_BUFFER_SIZE);
-#else
-    // Mono mode: Duplicate mono signal to both L/R channels (center panning)
-    // This creates a unified architecture where stereo buffers are always filled
-    add_float(worker->waveBuffer, worker->thread_additiveBuffer_L,
-              worker->thread_additiveBuffer_L, AUDIO_BUFFER_SIZE);
-    add_float(worker->waveBuffer, worker->thread_additiveBuffer_R,
-              worker->thread_additiveBuffer_R, AUDIO_BUFFER_SIZE);
-#endif
 
     // Additive summation for mono or combined processing
     add_float(worker->waveBuffer, worker->thread_additiveBuffer,
@@ -291,15 +292,15 @@ void synth_precompute_wave_data(int32_t *imageData) {
           waves[note].volume_decrement;
 #endif
 
-#ifdef STEREO_MODE
-      // Use lock-free pan system to get current gains
-      float left_gain, right_gain, pan_position;
-      lock_free_pan_read(note, &left_gain, &right_gain, &pan_position);
-      
-      worker->precomputed_pan_position[local_note_idx] = pan_position;
-      worker->precomputed_left_gain[local_note_idx] = left_gain;
-      worker->precomputed_right_gain[local_note_idx] = right_gain;
-#endif
+      if (g_additive_config.stereo_mode_enabled) {
+        // Use lock-free pan system to get current gains
+        float left_gain, right_gain, pan_position;
+        lock_free_pan_read(note, &left_gain, &right_gain, &pan_position);
+        
+        worker->precomputed_pan_position[local_note_idx] = pan_position;
+        worker->precomputed_left_gain[local_note_idx] = left_gain;
+        worker->precomputed_right_gain[local_note_idx] = right_gain;
+      }
     }
   }
 
@@ -362,11 +363,11 @@ void synth_shutdown_thread_pool(void) {
     pthread_cond_destroy(&thread_pool[i].work_cond);
   }
 
-#ifdef STEREO_MODE
-  // Cleanup lock-free pan gains system
-  lock_free_pan_cleanup();
-  printf("🔧 LOCK_FREE_PAN: System cleaned up\n");
-#endif
+  if (g_additive_config.stereo_mode_enabled) {
+    // Cleanup lock-free pan gains system
+    lock_free_pan_cleanup();
+    printf("🔧 LOCK_FREE_PAN: System cleaned up\n");
+  }
 
   synth_pool_initialized = 0;
 }

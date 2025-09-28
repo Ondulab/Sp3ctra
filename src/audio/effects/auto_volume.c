@@ -8,6 +8,7 @@
 #include "auto_volume.h"
 #include "audio_c_interface.h" /* C interface for audio operations */
 #include "config_loader.h"     /* Runtime configuration */
+#include "config_synth_additive.h" /* For IMU_ACTIVE_THRESHOLD_X */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,13 +37,13 @@ AutoVolume *auto_volume_create(Context *ctx) {
   if (!av)
     return NULL;
   av->ctx = ctx;
-  av->auto_volume_current = g_additive_config.auto_volume_active_level;
+  av->auto_volume_current = 1.0f; // Always maximum volume when active
   av->last_call_ms = now_ms();
   gAutoVolumeInstance = av;
   /* Mirror initial state in Context for observability (protected by mutex) */
   pthread_mutex_lock(&ctx->imu_mutex);
   ctx->auto_volume_current = av->auto_volume_current;
-  ctx->auto_volume_target = g_additive_config.auto_volume_active_level;
+  ctx->auto_volume_target = 1.0f; // Always maximum volume when active
   ctx->auto_last_activity_time = 0;
   ctx->auto_is_active = 1;
   pthread_mutex_unlock(&ctx->imu_mutex);
@@ -85,7 +86,7 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
   last_activity_time = ctx->auto_last_activity_time;
   pthread_mutex_unlock(&ctx->imu_mutex);
 
-  if (has && fabsf(imu_x) >= g_additive_config.imu_active_threshold_x) {
+  if (has && fabsf(imu_x) >= IMU_ACTIVE_THRESHOLD_X) {
     // Activity detected, definitely active
     active = 1;
     // Update last activity time in context
@@ -122,7 +123,7 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
   /* TODO: Add C interface for MIDI controller status */
 #endif
 
-  float target = active ? g_additive_config.auto_volume_active_level : g_additive_config.auto_volume_inactive_level;
+  float target = active ? 1.0f : g_additive_config.auto_volume_inactive_level;
 
   /* Exponential smoothing towards target using time constant tau =
    * AUTO_VOLUME_FADE_MS */

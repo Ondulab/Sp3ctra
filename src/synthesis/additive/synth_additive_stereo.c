@@ -9,6 +9,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "synth_additive_stereo.h"
+#include "synth_additive_math.h"  // For VOLUME_AMP_RESOLUTION
 #include "../../config/config_synth_additive.h"
 #include "../../config/config_audio.h"
 #include <math.h>
@@ -130,17 +131,17 @@ float calculate_color_temperature(uint8_t r, uint8_t g, uint8_t b) {
   float yellow_strength = (r_norm + g_norm) * 0.5f;
   float cyan_yellow_diff = cyan_strength - yellow_strength;
   
-  // Combine with heavy weight on blue-red axis
-  float temperature = blue_red_diff * 0.8f + cyan_yellow_diff * 0.2f;
+  // Combine with configurable weight on blue-red axis
+  float temperature = blue_red_diff * g_additive_config.stereo_blue_red_weight + cyan_yellow_diff * g_additive_config.stereo_cyan_yellow_weight;
   
-  // AGGRESSIVE AMPLIFICATION: Make the effect much more pronounced
-  temperature *= 2.5f;  // Amplify the base signal
+  // Configurable amplification: Make the effect adjustable
+  temperature *= g_additive_config.stereo_temperature_amplification;  // Amplify the base signal
   
-  // Apply aggressive non-linear curve to push values toward extremes
+  // Apply configurable non-linear curve to push values toward extremes
   if (temperature > 0) {
-    temperature = powf(temperature, 0.6f);  // Compress less, keep more dynamic range
+    temperature = powf(temperature, g_additive_config.stereo_temperature_curve_exponent);  // Configurable curve exponent
   } else {
-    temperature = -powf(-temperature, 0.6f);
+    temperature = -powf(-temperature, g_additive_config.stereo_temperature_curve_exponent);
   }
   
   // Hard clamp to [-1, 1] range
@@ -173,10 +174,9 @@ void calculate_pan_gains(float pan_position, float *left_gain, float *right_gain
   
   // Apply center compensation to maintain perceived loudness
   // At center (pan=0), both gains would be 0.707, boost slightly
-  if (fabsf(pan_position) < 0.1f) {
-    float center_boost = 1.02f;
-    *left_gain *= center_boost;
-    *right_gain *= center_boost;
+  if (fabsf(pan_position) < STEREO_CENTER_COMPENSATION_THRESHOLD) {
+    *left_gain *= STEREO_CENTER_BOOST_FACTOR;
+    *right_gain *= STEREO_CENTER_BOOST_FACTOR;
   }
 #else
   // Linear panning law (simpler but less perceptually uniform)

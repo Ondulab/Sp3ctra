@@ -9,14 +9,11 @@
  * Additive Synthesis Runtime Configuration Structure
  **************************************************************************************/
 typedef struct {
-    // Auto-volume parameters
-    float imu_active_threshold_x;
-    float imu_filter_alpha_x;
-    int imu_inactivity_timeout_s;
-    float auto_volume_inactive_level;
-    float auto_volume_active_level;
-    int auto_volume_fade_ms;
-    int auto_volume_poll_ms;
+    // Auto-volume parameters (runtime configurable)
+    int auto_volume_enabled;             // Enable/disable IMU-based auto-volume (0/1)
+    int imu_inactivity_timeout_s;        // Timeout before switching to inactive mode (seconds)
+    float auto_volume_inactive_level;    // Volume level when inactive (0.0-1.0)
+    int auto_volume_fade_ms;             // Fade duration for volume transitions (ms)
     
     // Synthesis parameters
     float start_frequency;
@@ -26,6 +23,13 @@ typedef struct {
     int volume_ramp_down_divisor;  // Higher value = slower volume decrease
     int pixels_per_note;
     int invert_intensity;         // 0 = white brightest gives loudest sound, 1 = dark pixels give more energy
+    
+    // Stereo processing parameters
+    int stereo_mode_enabled;                   // Enable/disable stereo mode (0/1)
+    float stereo_temperature_amplification;    // Global stereo intensity control
+    float stereo_blue_red_weight;              // Weight for blue-red opponent axis
+    float stereo_cyan_yellow_weight;           // Weight for cyan-yellow opponent axis
+    float stereo_temperature_curve_exponent;   // Exponent for response curve shaping
 } additive_synth_config_t;
 
 /**************************************************************************************
