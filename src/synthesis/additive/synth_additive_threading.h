@@ -44,31 +44,31 @@ typedef struct synth_thread_worker_s {
 
 
   // Local work buffers (avoids VLA on stack) - Float32
-  int32_t imageBuffer_q31[MAX_NUMBER_OF_NOTES / 3 + 100]; // +100 for safety
-  float imageBuffer_f32[MAX_NUMBER_OF_NOTES / 3 + 100];
+  int32_t imageBuffer_q31[MAX_NUMBER_OF_NOTES / 3]; // +100 for safety
+  float imageBuffer_f32[MAX_NUMBER_OF_NOTES / 3];
   float waveBuffer[AUDIO_BUFFER_SIZE];
   float volumeBuffer[AUDIO_BUFFER_SIZE];
   
 
   // Pre-computed waves[] data (read-only)
-  int32_t precomputed_new_idx[MAX_NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
-  float precomputed_wave_data[MAX_NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
-  float precomputed_volume[MAX_NUMBER_OF_NOTES / 3 + 100];
-  float precomputed_volume_increment[MAX_NUMBER_OF_NOTES / 3 + 100];
-  float precomputed_volume_decrement[MAX_NUMBER_OF_NOTES / 3 + 100];
+  int32_t precomputed_new_idx[MAX_NUMBER_OF_NOTES / 3][AUDIO_BUFFER_SIZE];
+  float precomputed_wave_data[MAX_NUMBER_OF_NOTES / 3][AUDIO_BUFFER_SIZE];
+  float precomputed_volume[MAX_NUMBER_OF_NOTES / 3];
+  float precomputed_volume_increment[MAX_NUMBER_OF_NOTES / 3];
+  float precomputed_volume_decrement[MAX_NUMBER_OF_NOTES / 3];
   
   // Pre-computed pan positions and gains for each note
-  float precomputed_pan_position[MAX_NUMBER_OF_NOTES / 3 + 100];
-  float precomputed_left_gain[MAX_NUMBER_OF_NOTES / 3 + 100];
-  float precomputed_right_gain[MAX_NUMBER_OF_NOTES / 3 + 100];
+  float precomputed_pan_position[MAX_NUMBER_OF_NOTES / 3];
+  float precomputed_left_gain[MAX_NUMBER_OF_NOTES / 3];
+  float precomputed_right_gain[MAX_NUMBER_OF_NOTES / 3];
 
   // Persistent last applied gains for per-buffer ramping (zipper-noise mitigation)
-  float last_left_gain[MAX_NUMBER_OF_NOTES / 3 + 100];
-  float last_right_gain[MAX_NUMBER_OF_NOTES / 3 + 100];
+  float last_left_gain[MAX_NUMBER_OF_NOTES / 3];
+  float last_right_gain[MAX_NUMBER_OF_NOTES / 3];
 
   // Debug capture: per-note per-sample volumes (current and target) for this buffer
-  float captured_current_volume[MAX_NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
-  float captured_target_volume[MAX_NUMBER_OF_NOTES / 3 + 100][AUDIO_BUFFER_SIZE];
+  float captured_current_volume[MAX_NUMBER_OF_NOTES / 3][AUDIO_BUFFER_SIZE];
+  float captured_target_volume[MAX_NUMBER_OF_NOTES / 3][AUDIO_BUFFER_SIZE];
 
   // Synchronization
   pthread_mutex_t work_mutex;

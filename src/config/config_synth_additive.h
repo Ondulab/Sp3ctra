@@ -52,11 +52,11 @@
 
 // Base time constants for envelope slew (multiplied by runtime divisors)
 #ifndef TAU_UP_BASE_MS
-#define TAU_UP_BASE_MS 2.0f     // Base attack time in milliseconds
+#define TAU_UP_BASE_MS 0.10f     // Base attack time in milliseconds
 #endif
 
 #ifndef TAU_DOWN_BASE_MS
-#define TAU_DOWN_BASE_MS 3.0f   // Base release time in milliseconds
+#define TAU_DOWN_BASE_MS 0.10f   // Base release time in milliseconds
 #endif
 
 // Phase weighting parameters (applied per sample)

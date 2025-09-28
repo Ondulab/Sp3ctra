@@ -18,7 +18,6 @@
 /* Private variables ---------------------------------------------------------*/
 // Variables for log frequency limitation
 static uint32_t log_counter = 0;
-#define LOG_FREQUENCY (SAMPLING_FREQUENCY / AUDIO_BUFFER_SIZE) // About 1 second
 
 /* Private function implementations ------------------------------------------*/
 
