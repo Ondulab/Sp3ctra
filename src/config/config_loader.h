@@ -23,7 +23,16 @@ typedef struct {
     int volume_ramp_down_divisor;  // Higher value = slower volume decrease
     int pixels_per_note;
     int invert_intensity;         // 0 = white brightest gives loudest sound, 1 = dark pixels give more energy
-    
+
+    // Envelope slew parameters (runtime configurable; defaults from compile-time defines)
+    int   decay_mode_exponential;     // 0 = legacy linear ramp, 1 = exponential (recommended)
+    float tau_up_base_ms;             // Base attack time in milliseconds
+    float tau_down_base_ms;           // Base release time in milliseconds
+    float decay_freq_ref_hz;          // Reference frequency in Hz for frequency weighting
+    float decay_freq_beta;            // >0 slows highs, <0 speeds highs
+    int   enable_phase_weighted_slew; // 0/1: enable phase-weighted slew
+    float phase_weight_power;         // 1.0 = linear, 2.0 = square
+
     // Stereo processing parameters
     int stereo_mode_enabled;                   // Enable/disable stereo mode (0/1)
     float stereo_temperature_amplification;    // Global stereo intensity control
