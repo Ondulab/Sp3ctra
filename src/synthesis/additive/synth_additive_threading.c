@@ -92,6 +92,12 @@ int synth_init_thread_pool(void) {
     memset(worker->precomputed_left_gain, 0, sizeof(worker->precomputed_left_gain));
     memset(worker->precomputed_right_gain, 0, sizeof(worker->precomputed_right_gain));
 
+    // Initialize last pan gains for per-buffer ramping (center equal-power)
+    for (int idx = 0; idx < (MAX_NUMBER_OF_NOTES / 3 + 100); idx++) {
+      worker->last_left_gain[idx] = 0.707f;
+      worker->last_right_gain[idx] = 0.707f;
+    }
+
     // Initialize synchronization
     if (pthread_mutex_init(&worker->work_mutex, NULL) != 0) {
       printf("Error initializing mutex for thread %d\n", i);
@@ -182,9 +188,11 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
         generate_waveform_samples(note, worker->waveBuffer, 
                                  worker->precomputed_wave_data[local_note_idx]);
 
-        // Use centralized GAP_LIMITER algorithm
-        apply_gap_limiter_ramp(note, worker->imageBuffer_f32[local_note_idx], 
-                              worker->volumeBuffer);
+        // Use centralized GAP_LIMITER algorithm (phase-weighted; pass precomputed waveform)
+        apply_gap_limiter_ramp(note,
+                               worker->imageBuffer_f32[local_note_idx],
+                               worker->precomputed_wave_data[local_note_idx],
+                               worker->volumeBuffer);
 
         // Debug capture: copy per-sample volumes for this note into worker buffers (fast path)
         memcpy(&worker->captured_current_volume[local_note_idx][0], worker->volumeBuffer, sizeof(float) * AUDIO_BUFFER_SIZE);
@@ -204,20 +212,33 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
 
     // Always fill stereo buffers (unified approach)
     if (g_additive_config.stereo_mode_enabled) {
-      // Stereo mode: Apply per-oscillator panning and accumulate to L/R buffers
-      float left_gain = worker->precomputed_left_gain[local_note_idx];
-      float right_gain = worker->precomputed_right_gain[local_note_idx];
-      
+      // Stereo mode: Apply per-oscillator panning with per-buffer ramp (zipper-noise mitigation)
+      const float start_left  = worker->last_left_gain[local_note_idx];
+      const float start_right = worker->last_right_gain[local_note_idx];
+      const float end_left    = worker->precomputed_left_gain[local_note_idx];
+      const float end_right   = worker->precomputed_right_gain[local_note_idx];
+
       // Create temporary buffers for L/R channels
       float waveBuffer_L[AUDIO_BUFFER_SIZE];
       float waveBuffer_R[AUDIO_BUFFER_SIZE];
-      
-      // Apply panning gains
+
+      // Linear interpolation across this audio buffer to avoid abrupt pan jumps
+      const float step = 1.0f / (float)AUDIO_BUFFER_SIZE;
+      float t = 0.0f;
       for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-        waveBuffer_L[buff_idx] = worker->waveBuffer[buff_idx] * left_gain;
-        waveBuffer_R[buff_idx] = worker->waveBuffer[buff_idx] * right_gain;
+        t += step; // ramp from start -> end across the buffer
+        float gl = start_left  + (end_left  - start_left)  * t;
+        float gr = start_right + (end_right - start_right) * t;
+
+        // Apply interpolated panning gains
+        waveBuffer_L[buff_idx] = worker->waveBuffer[buff_idx] * gl;
+        waveBuffer_R[buff_idx] = worker->waveBuffer[buff_idx] * gr;
       }
-      
+
+      // Persist end-gains for next buffer ramp
+      worker->last_left_gain[local_note_idx]  = end_left;
+      worker->last_right_gain[local_note_idx] = end_right;
+
       // Accumulate to stereo buffers
       add_float(waveBuffer_L, worker->thread_additiveBuffer_L,
                 worker->thread_additiveBuffer_L, AUDIO_BUFFER_SIZE);

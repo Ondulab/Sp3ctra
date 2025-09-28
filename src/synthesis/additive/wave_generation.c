@@ -151,10 +151,14 @@ uint32_t init_waves(volatile float *unitary_waveform,
         waves[note].octave_coeff = pow(2, octave);
         // store octave divider
         waves[note].octave_divider = 1;
-        // store max_volume_increment
-        waves[note].max_volume_increment =
-            (*(waves[note].start_ptr + waves[note].octave_coeff)) /
-            (WAVE_AMP_RESOLUTION / VOLUME_AMP_RESOLUTION);
+        // store max_volume_increment (frequency-neutral; legacy formula removed to avoid HF bias)
+#if SLEW_DECAY_MODE_EXPO
+        // In exponential mode, linear step is unused (kept for legacy/debug): set a benign uniform base
+        waves[note].max_volume_increment = (float)VOLUME_AMP_RESOLUTION / 512.0f;
+#else
+        // Legacy linear mode: use a uniform step (frequency independent) to keep decay homogeneous
+        waves[note].max_volume_increment = (float)VOLUME_AMP_RESOLUTION / 512.0f;
+#endif
         waves[note].max_volume_decrement = waves[note].max_volume_increment;
       }
     }

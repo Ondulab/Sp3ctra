@@ -506,6 +506,21 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // Launch grayscale conversion
   greyScale(buffer_R, buffer_G, buffer_B, g_grayScale_live, CIS_MAX_PIXELS_NB);
 
+  // Debug auto-freeze after N images: keep reception active but freeze synth data
+#if ADDITIVE_DEBUG_AUTOFREEZE_ENABLE
+  {
+    static uint32_t g_image_count = 0;
+    g_image_count++;
+    if (g_image_count == (uint32_t)ADDITIVE_DEBUG_AUTOFREEZE_AFTER_IMAGES) {
+      pthread_mutex_lock(&g_synth_data_freeze_mutex);
+      // Hard freeze (no fade) - synth_additive.c logic will snapshot current g_grayScale_live
+      g_is_synth_data_frozen = 1;
+      g_is_synth_data_fading_out = 0;
+      pthread_mutex_unlock(&g_synth_data_freeze_mutex);
+    }
+  }
+#endif
+
   if (g_additive_config.stereo_mode_enabled) {
     // Calculate color temperature and pan positions for each oscillator
     // This is done once per image reception for efficiency
