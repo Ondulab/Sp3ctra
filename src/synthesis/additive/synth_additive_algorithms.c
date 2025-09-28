@@ -78,10 +78,10 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
     float v = waves[note].current_volume;
     const float t = waves[note].target_volume;
 
-    // Compute per-buffer base time constants from divisors (keeps legacy control semantics)
-    // tau_ms = BASE * divisor; alpha = 1 - exp(-1/(tau_s * Fs))
-    float tau_up_ms   = TAU_UP_BASE_MS   * (float)g_additive_config.volume_ramp_up_divisor;
-    float tau_down_ms = TAU_DOWN_BASE_MS * (float)g_additive_config.volume_ramp_down_divisor;
+    // Compute per-buffer base time constants from runtime config
+    // tau_ms are directly provided by configuration; alpha = 1 - exp(-1/(tau_s * Fs))
+    float tau_up_ms   = g_additive_config.tau_up_base_ms;
+    float tau_down_ms = g_additive_config.tau_down_base_ms;
 
     // Clamp taus to avoid division by zero or denormals
     if (tau_up_ms   < 0.01f) tau_up_ms   = 0.01f;
@@ -109,9 +109,9 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
     {
         float f = waves[note].frequency;
         if (f < 1.0f) f = 1.0f;
-        float ratio = f / DECAY_FREQ_REF_HZ;
+        float ratio = f / g_additive_config.decay_freq_ref_hz;
         // powf is used once per buffer (acceptable). If performance becomes critical, approximate.
-        float w = powf(ratio, -DECAY_FREQ_BETA);
+        float w = powf(ratio, -g_additive_config.decay_freq_beta);
         if (w < DECAY_FREQ_MIN) w = DECAY_FREQ_MIN;
         if (w > DECAY_FREQ_MAX) w = DECAY_FREQ_MAX;
         g_down = w;
@@ -152,20 +152,23 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
 
         float w_phase;
         // Avoid powf in hot path: support common p = 1 or 2 fast, else fallback linear
-        if (PHASE_WEIGHT_POWER >= 1.9f && PHASE_WEIGHT_POWER <= 2.1f) {
-            w_phase = one_minus_s2 * one_minus_s2; // p = 2
-        } else {
-            w_phase = one_minus_s2; // p ≈ 1 (default)
+        {
+            float p = g_additive_config.phase_weight_power;
+            if (p >= 1.9f && p <= 2.1f) {
+                w_phase = one_minus_s2 * one_minus_s2; // p = 2
+            } else {
+                w_phase = one_minus_s2; // p ≈ 1 (default)
+            }
         }
 
-#if SLEW_DECAY_MODE_EXPO
+if (g_additive_config.decay_mode_exponential) {
         // Exponential approach (recommended): v += alpha_eff * (t - v)
         const int is_attack = (t > v) ? 1 : 0;
         float alpha_base = is_attack ? alpha_up : (alpha_down * g_down);
         float alpha_eff = alpha_base;
-#if ENABLE_PHASE_WEIGHTED_SLEW
+if (g_additive_config.enable_phase_weighted_slew) {
         alpha_eff *= w_phase;
-#endif
+        }
         // Clamp alpha_eff
         if (alpha_eff < ALPHA_MIN) alpha_eff = ALPHA_MIN;
         if (alpha_eff > 1.0f)      alpha_eff = 1.0f;
@@ -198,24 +201,24 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
         }
 
         v += alpha_eff * (t - v);
-#else
+} else {
         // Legacy linear ramp compatibility with weighting
         if (v < t) {
             float step = waves[note].volume_increment;
-#if ENABLE_PHASE_WEIGHTED_SLEW
+            if (g_additive_config.enable_phase_weighted_slew) {
             step *= w_phase;
-#endif
+            }
             v += step;
             if (v > t) v = t;
         } else if (v > t) {
             float step = waves[note].volume_decrement * g_down;
-#if ENABLE_PHASE_WEIGHTED_SLEW
+            if (g_additive_config.enable_phase_weighted_slew) {
             step *= w_phase;
-#endif
+            }
             v -= step;
             if (v < t) v = t;
         }
-#endif
+}
         // Clamp volume to legal range
         if (v < 0.0f) v = 0.0f;
         if (v > (float)VOLUME_AMP_RESOLUTION) v = (float)VOLUME_AMP_RESOLUTION;
