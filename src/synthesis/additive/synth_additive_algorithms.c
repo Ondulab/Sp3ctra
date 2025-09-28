@@ -69,36 +69,137 @@ void process_image_preprocessing(int32_t *imageData, int32_t *imageBuffer_q31,
  * @param volumeBuffer Output volume buffer for audio samples
  * @retval None
  */
-void apply_gap_limiter_ramp(int note, float target_volume, float *volumeBuffer) {
+void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave, float *volumeBuffer) {
 #ifdef GAP_LIMITER
-    // Set the target volume for the oscillator
+    // Set the target volume for the oscillator (per-buffer constant)
     waves[note].target_volume = target_volume;
-    
-    // Apply volume ramp per sample
-    for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-        if (waves[note].current_volume < waves[note].target_volume) {
-            waves[note].current_volume += waves[note].volume_increment;
-            if (waves[note].current_volume > waves[note].target_volume) {
-                waves[note].current_volume = waves[note].target_volume;
-            }
-        } else if (waves[note].current_volume > waves[note].target_volume) {
-            waves[note].current_volume -= waves[note].volume_decrement;
-            if (waves[note].current_volume < waves[note].target_volume) {
-                waves[note].current_volume = waves[note].target_volume;
-            }
-        }
-        volumeBuffer[buff_idx] = waves[note].current_volume;
+
+    // Local copies (avoid repeated volatile access)
+    float v = waves[note].current_volume;
+    const float t = waves[note].target_volume;
+
+    // Compute per-buffer base time constants from divisors (keeps legacy control semantics)
+    // tau_ms = BASE * divisor; alpha = 1 - exp(-1/(tau_s * Fs))
+    float tau_up_ms   = TAU_UP_BASE_MS   * (float)g_additive_config.volume_ramp_up_divisor;
+    float tau_down_ms = TAU_DOWN_BASE_MS * (float)g_additive_config.volume_ramp_down_divisor;
+
+    // Clamp taus to avoid division by zero or denormals
+    if (tau_up_ms   < 0.01f) tau_up_ms   = 0.01f;
+    if (tau_down_ms < 0.01f) tau_down_ms = 0.01f;
+    // Cap extremely long time constants to avoid underflow/denormals and residual hiss
+    if (tau_up_ms   > TAU_UP_MAX_MS)   tau_up_ms   = TAU_UP_MAX_MS;
+    if (tau_down_ms > TAU_DOWN_MAX_MS) tau_down_ms = TAU_DOWN_MAX_MS;
+
+    const float Fs = (float)SAMPLING_FREQUENCY;
+    const float tau_up_s   = tau_up_ms   * 0.001f;
+    const float tau_down_s = tau_down_ms * 0.001f;
+
+    // Compute base alphas once per buffer
+    float alpha_up   = 1.0f - expf(-1.0f / (tau_up_s   * Fs));
+    float alpha_down = 1.0f - expf(-1.0f / (tau_down_s * Fs));
+
+    // Clamp alphas to reasonable bounds
+    if (alpha_up   < ALPHA_MIN) alpha_up   = ALPHA_MIN;
+    if (alpha_down < ALPHA_MIN) alpha_down = ALPHA_MIN;
+    if (alpha_up   > 1.0f)      alpha_up   = 1.0f;
+    if (alpha_down > 1.0f)      alpha_down = 1.0f;
+
+    // Frequency-dependent release weighting (applied only when t < v)
+    float g_down = 1.0f;
+    {
+        float f = waves[note].frequency;
+        if (f < 1.0f) f = 1.0f;
+        float ratio = f / DECAY_FREQ_REF_HZ;
+        // powf is used once per buffer (acceptable). If performance becomes critical, approximate.
+        float w = powf(ratio, -DECAY_FREQ_BETA);
+        if (w < DECAY_FREQ_MIN) w = DECAY_FREQ_MIN;
+        if (w > DECAY_FREQ_MAX) w = DECAY_FREQ_MAX;
+        g_down = w;
     }
+
+    // Constants for phase weighting
+    const float half_wave = (float)WAVE_AMP_RESOLUTION * 0.5f;
+    const float inv_half  = (half_wave > 0.0f) ? (1.0f / half_wave) : 0.0f;
+
+    // Adaptive phase epsilon for very long releases to avoid ultra-small alpha_eff
+    float phase_eps = PHASE_WEIGHT_EPS;
+    if (tau_down_ms > 500.0f) {
+        float k = (tau_down_ms - 500.0f) / (TAU_DOWN_MAX_MS - 500.0f);
+        if (k < 0.0f) k = 0.0f;
+        if (k > 1.0f) k = 1.0f;
+        phase_eps = PHASE_WEIGHT_EPS_MIN + k * (PHASE_WEIGHT_EPS_MAX - PHASE_WEIGHT_EPS_MIN);
+    }
+
+    for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+        // Phase weighting using precomputed waveform sample
+        float s_norm = 0.0f;
+        if (pre_wave) {
+            // Normalize to [-1, 1]
+            s_norm = pre_wave[buff_idx] * inv_half;
+            if (s_norm >  1.0f) s_norm =  1.0f;
+            if (s_norm < -1.0f) s_norm = -1.0f;
+        }
+        float one_minus_s2 = 1.0f - (s_norm * s_norm);  // in [0,1]
+        if (one_minus_s2 < phase_eps) one_minus_s2 = phase_eps;
+
+        float w_phase;
+        // Avoid powf in hot path: support common p = 1 or 2 fast, else fallback linear
+        if (PHASE_WEIGHT_POWER >= 1.9f && PHASE_WEIGHT_POWER <= 2.1f) {
+            w_phase = one_minus_s2 * one_minus_s2; // p = 2
+        } else {
+            w_phase = one_minus_s2; // p ≈ 1 (default)
+        }
+
+#if SLEW_DECAY_MODE_EXPO
+        // Exponential approach (recommended): v += alpha_eff * (t - v)
+        const int is_attack = (t > v) ? 1 : 0;
+        float alpha_eff = is_attack ? alpha_up : (alpha_down * g_down);
+#if ENABLE_PHASE_WEIGHTED_SLEW
+        alpha_eff *= w_phase;
+#endif
+        // Clamp alpha_eff
+        if (alpha_eff < ALPHA_MIN) alpha_eff = ALPHA_MIN;
+        if (alpha_eff > 1.0f)      alpha_eff = 1.0f;
+
+        v += alpha_eff * (t - v);
+#else
+        // Legacy linear ramp compatibility with weighting
+        if (v < t) {
+            float step = waves[note].volume_increment;
+#if ENABLE_PHASE_WEIGHTED_SLEW
+            step *= w_phase;
+#endif
+            v += step;
+            if (v > t) v = t;
+        } else if (v > t) {
+            float step = waves[note].volume_decrement * g_down;
+#if ENABLE_PHASE_WEIGHTED_SLEW
+            step *= w_phase;
+#endif
+            v -= step;
+            if (v < t) v = t;
+        }
+#endif
+        // Release floor: if target is near zero and volume is very low, snap to zero to avoid residual hiss
+        if (t <= RELEASE_FLOOR_VOLUME && v < RELEASE_FLOOR_VOLUME) {
+            v = 0.0f;
+        }
+        // Clamp volume to legal range
+        if (v < 0.0f) v = 0.0f;
+        if (v > (float)VOLUME_AMP_RESOLUTION) v = (float)VOLUME_AMP_RESOLUTION;
+
+        volumeBuffer[buff_idx] = v;
+    }
+
+    // Write back current volume once per buffer
+    waves[note].current_volume = v;
 #else
     // Without GAP_LIMITER, just fill with constant volume
     fill_float(target_volume, volumeBuffer, AUDIO_BUFFER_SIZE);
-    
-    // Set current_volume to target_volume for consistency
+
+    // Keep state consistent
     waves[note].current_volume = target_volume;
     waves[note].target_volume = target_volume;
-    
-    // Volume capture is now handled continuously in synth_additive_threading.c
-    // No need for conditional capture here
 #endif
 }
 

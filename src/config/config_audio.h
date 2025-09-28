@@ -40,7 +40,7 @@
 #if SAMPLING_FREQUENCY >= 96000
 #define AUDIO_BUFFER_SIZE            (150)
 #elif SAMPLING_FREQUENCY >= 48000
-#define AUDIO_BUFFER_SIZE            (50)   // restore legacy buffer length for 48 kHz
+#define AUDIO_BUFFER_SIZE            (60)   // restore legacy buffer length for 48 kHz
 #else
 #define AUDIO_BUFFER_SIZE            (208)
 #endif

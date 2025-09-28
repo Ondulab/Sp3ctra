@@ -36,7 +36,15 @@ void process_image_preprocessing(int32_t *imageData, int32_t *imageBuffer_q31,
  * @param volumeBuffer Output volume buffer for audio samples
  * @retval None
  */
-void apply_gap_limiter_ramp(int note, float target_volume, float *volumeBuffer);
+/**
+ * @brief Apply GAP_LIMITER volume ramp for a single note
+ * @param note Note index
+ * @param target_volume Target volume for the note
+ * @param pre_wave Pointer to precomputed waveform samples for this note (AUDIO_BUFFER_SIZE, in WAVE_AMP_RESOLUTION scale)
+ * @param volumeBuffer Output volume buffer for audio samples
+ * @retval None
+ */
+void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave, float *volumeBuffer);
 
 
 /**
