@@ -256,9 +256,13 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     // Additive summation for mono or combined processing
     add_float(worker->waveBuffer, worker->thread_additiveBuffer,
               worker->thread_additiveBuffer, AUDIO_BUFFER_SIZE);
-    // Volume summation (local to thread)
-    add_float(worker->volumeBuffer, worker->thread_sumVolumeBuffer,
-              worker->thread_sumVolumeBuffer, AUDIO_BUFFER_SIZE);
+    // Intelligent volume weighting: strong oscillators dominate over weak background noise
+    for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+        float current_volume = worker->volumeBuffer[buff_idx];
+        float volume_normalized = current_volume / (float)VOLUME_AMP_RESOLUTION;
+        float weighted_volume = powf(volume_normalized, g_additive_config.volume_weighting_exponent) * (float)VOLUME_AMP_RESOLUTION;
+        worker->thread_sumVolumeBuffer[buff_idx] += weighted_volume;
+    }
 
     // Commit phase continuity: set waves[note].current_idx to the last precomputed index for this buffer
     waves[note].current_idx = worker->precomputed_new_idx[local_note_idx][AUDIO_BUFFER_SIZE - 1];
