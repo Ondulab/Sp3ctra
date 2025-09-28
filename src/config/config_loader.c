@@ -30,22 +30,17 @@ static const additive_synth_config_t DEFAULT_CONFIG = {
     .volume_ramp_down_divisor = 1,
     .pixels_per_note = 1,
     .invert_intensity = 1,
-
-    // Envelope slew defaults (from compile-time constants)
-    .decay_mode_exponential = SLEW_DECAY_MODE_EXPO,
-    .tau_up_base_ms = TAU_UP_BASE_MS,
-    .tau_down_base_ms = TAU_DOWN_BASE_MS,
-    .decay_freq_ref_hz = DECAY_FREQ_REF_HZ,
-    .decay_freq_beta = DECAY_FREQ_BETA,
-    .enable_phase_weighted_slew = ENABLE_PHASE_WEIGHTED_SLEW,
-    .phase_weight_power = PHASE_WEIGHT_POWER,
     
     // Stereo processing parameters
-    .stereo_mode_enabled = 0,                  // Default: stereo enabled
+    .stereo_mode_enabled = 1,                  // Default: stereo enabled
     .stereo_temperature_amplification = 2.5f,
     .stereo_blue_red_weight = 0.8f,
     .stereo_cyan_yellow_weight = 0.2f,
-    .stereo_temperature_curve_exponent = 1.0f
+    .stereo_temperature_curve_exponent = 0.6f,
+    
+    // Summation normalization parameters
+    .volume_weighting_exponent = 0.5f,         // Default: moderate domination (balanced)
+    .summation_response_exponent = 2.0f        // Default: compression (good sound quality)
 };
 
 /**************************************************************************************
@@ -143,28 +138,9 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "semitone_per_octave = %d\n", DEFAULT_CONFIG.semitone_per_octave);
     fprintf(file, "comma_per_semitone = %d\n", DEFAULT_CONFIG.comma_per_semitone);
     fprintf(file, "\n");
-    fprintf(file, "[envelope_slew]\n");
-    fprintf(file, "# Select decay mode: 0 = legacy linear ramp, 1 = exponential (recommended)\n");
-    fprintf(file, "# Exponential mode provides more natural sounding volume transitions\n");
-    fprintf(file, "decay_mode_exponential = %d\n", DEFAULT_CONFIG.decay_mode_exponential);
-    fprintf(file, "\n");
-    fprintf(file, "# Base time constants for envelope slew (multiplied by runtime divisors)\n");
-    fprintf(file, "# These values control how quickly volume changes occur\n");
-    fprintf(file, "tau_up_base_ms = %.1f\n", DEFAULT_CONFIG.tau_up_base_ms);
-    fprintf(file, "tau_down_base_ms = %.1f\n", DEFAULT_CONFIG.tau_down_base_ms);
-    fprintf(file, "\n");
-    fprintf(file, "# Frequency-dependent release weighting (stabilizes highs vs lows)\n");
-    fprintf(file, "# Helps balance volume transitions across different frequency ranges\n");
-    fprintf(file, "decay_freq_ref_hz = %.1f\n", DEFAULT_CONFIG.decay_freq_ref_hz);
-    fprintf(file, "decay_freq_beta = %.1f\n", DEFAULT_CONFIG.decay_freq_beta);
-    fprintf(file, "\n");
-    fprintf(file, "# Enable phase-weighted slew to minimize gain changes at waveform peaks\n");
-    fprintf(file, "# This reduces audio artifacts by timing volume changes with the audio waveform\n");
-    fprintf(file, "enable_phase_weighted_slew = %d\n", DEFAULT_CONFIG.enable_phase_weighted_slew);
-    fprintf(file, "\n");
-    fprintf(file, "# Phase weighting parameters (applied per sample)\n");
-    fprintf(file, "# Control how the phase weighting affects the slew behavior\n");
-    fprintf(file, "phase_weight_power = %.1f\n", DEFAULT_CONFIG.phase_weight_power);
+    fprintf(file, "# Volume ramping speed (higher = slower transitions)\n");
+    fprintf(file, "volume_ramp_up_divisor = %d\n", DEFAULT_CONFIG.volume_ramp_up_divisor);
+    fprintf(file, "volume_ramp_down_divisor = %d\n", DEFAULT_CONFIG.volume_ramp_down_divisor);
     fprintf(file, "\n");
     fprintf(file, "# Pixel to note mapping and intensity behavior\n");
     fprintf(file, "pixels_per_note = %d\n", DEFAULT_CONFIG.pixels_per_note);
@@ -185,6 +161,17 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "\n");
     fprintf(file, "# Shape of response curve\n");
     fprintf(file, "stereo_temperature_curve_exponent = %.1f\n", DEFAULT_CONFIG.stereo_temperature_curve_exponent);
+    fprintf(file, "\n");
+    
+    fprintf(file, "[summation_normalization]\n");
+    fprintf(file, "# Volume weighting exponent - LOWER values make strong oscillators dominate more\n");
+    fprintf(file, "# Valid range: 0.01 to 10.0 (0.1 = strong domination, 1.0 = linear, 2.0+ = flattened)\n");
+    fprintf(file, "volume_weighting_exponent = %.1f\n", DEFAULT_CONFIG.volume_weighting_exponent);
+    fprintf(file, "\n");
+    fprintf(file, "# Final response curve exponent - HIGHER values = MORE compression\n");
+    fprintf(file, "# Valid range: 0.1 to 3.0 (0.5 = expand, 1.0 = linear, 2.0+ = compress)\n");
+    fprintf(file, "summation_response_exponent = %.1f\n", DEFAULT_CONFIG.summation_response_exponent);
+    fprintf(file, "\n");
     
     fclose(file);
     
@@ -273,43 +260,6 @@ void validate_config(const additive_synth_config_t* config) {
                 config->invert_intensity);
         errors++;
     }
-
-    // Validate envelope slew parameters
-    if (config->decay_mode_exponential != 0 && config->decay_mode_exponential != 1) {
-        fprintf(stderr, "[CONFIG ERROR] decay_mode_exponential must be 0 or 1, got %d\n",
-                config->decay_mode_exponential);
-        errors++;
-    }
-    if (config->tau_up_base_ms < 0.01f || config->tau_up_base_ms > TAU_UP_MAX_MS) {
-        fprintf(stderr, "[CONFIG ERROR] tau_up_base_ms must be between 0.01 and %.1f, got %.2f\n",
-                TAU_UP_MAX_MS, config->tau_up_base_ms);
-        errors++;
-    }
-    if (config->tau_down_base_ms < 0.01f || config->tau_down_base_ms > TAU_DOWN_MAX_MS) {
-        fprintf(stderr, "[CONFIG ERROR] tau_down_base_ms must be between 0.01 and %.1f, got %.2f\n",
-                TAU_DOWN_MAX_MS, config->tau_down_base_ms);
-        errors++;
-    }
-    if (config->decay_freq_ref_hz <= 0.0f || config->decay_freq_ref_hz > 20000.0f) {
-        fprintf(stderr, "[CONFIG ERROR] decay_freq_ref_hz must be in (0, 20000], got %.1f\n",
-                config->decay_freq_ref_hz);
-        errors++;
-    }
-    if (config->decay_freq_beta < -8.0f || config->decay_freq_beta > 8.0f) {
-        fprintf(stderr, "[CONFIG ERROR] decay_freq_beta must be between -8.0 and 8.0, got %.2f\n",
-                config->decay_freq_beta);
-        errors++;
-    }
-    if (config->enable_phase_weighted_slew != 0 && config->enable_phase_weighted_slew != 1) {
-        fprintf(stderr, "[CONFIG ERROR] enable_phase_weighted_slew must be 0 or 1, got %d\n",
-                config->enable_phase_weighted_slew);
-        errors++;
-    }
-    if (config->phase_weight_power < 0.5f || config->phase_weight_power > 8.0f) {
-        fprintf(stderr, "[CONFIG ERROR] phase_weight_power must be between 0.5 and 8.0, got %.2f\n",
-                config->phase_weight_power);
-        errors++;
-    }
     
     // Validate stereo processing parameters
     if (config->stereo_mode_enabled != 0 && config->stereo_mode_enabled != 1) {
@@ -339,6 +289,19 @@ void validate_config(const additive_synth_config_t* config) {
     if (config->stereo_temperature_curve_exponent < 0.1f || config->stereo_temperature_curve_exponent > 2.0f) {
         fprintf(stderr, "[CONFIG ERROR] stereo_temperature_curve_exponent must be between 0.1 and 2.0, got %.1f\n", 
                 config->stereo_temperature_curve_exponent);
+        errors++;
+    }
+    
+    // Validate summation normalization parameters
+    if (config->volume_weighting_exponent < 0.01f || config->volume_weighting_exponent > 10.0f) {
+        fprintf(stderr, "[CONFIG ERROR] volume_weighting_exponent must be between 0.01 and 10.0, got %.1f\n",
+                config->volume_weighting_exponent);
+        errors++;
+    }
+    
+    if (config->summation_response_exponent < 0.1f || config->summation_response_exponent > 3.0f) {
+        fprintf(stderr, "[CONFIG ERROR] summation_response_exponent must be between 0.1 and 3.0, got %.1f\n", 
+                config->summation_response_exponent);
         errors++;
     }
     
@@ -488,46 +451,6 @@ int load_additive_config(const char* config_file_path) {
                 fprintf(stderr, "[CONFIG WARNING] Line %d: Unknown parameter '%s' in section '%s'\n", 
                         line_number, key, current_section);
             }
-        } else if (strcmp(current_section, "envelope_slew") == 0) {
-            if (strcmp(key, "decay_mode_exponential") == 0) {
-                if (parse_int(value, &g_additive_config.decay_mode_exponential, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
-            } else if (strcmp(key, "tau_up_base_ms") == 0) {
-                if (parse_float(value, &g_additive_config.tau_up_base_ms, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
-            } else if (strcmp(key, "tau_down_base_ms") == 0) {
-                if (parse_float(value, &g_additive_config.tau_down_base_ms, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
-            } else if (strcmp(key, "decay_freq_ref_hz") == 0) {
-                if (parse_float(value, &g_additive_config.decay_freq_ref_hz, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
-            } else if (strcmp(key, "decay_freq_beta") == 0) {
-                if (parse_float(value, &g_additive_config.decay_freq_beta, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
-            } else if (strcmp(key, "enable_phase_weighted_slew") == 0) {
-                if (parse_int(value, &g_additive_config.enable_phase_weighted_slew, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
-            } else if (strcmp(key, "phase_weight_power") == 0) {
-                if (parse_float(value, &g_additive_config.phase_weight_power, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
-            } else {
-                fprintf(stderr, "[CONFIG WARNING] Line %d: Unknown parameter '%s' in section '%s'\n", 
-                        line_number, key, current_section);
-            }
         } else if (strcmp(current_section, "stereo_processing") == 0) {
             if (strcmp(key, "stereo_mode_enabled") == 0) {
                 if (parse_int(value, &g_additive_config.stereo_mode_enabled, key) != 0) {
@@ -551,6 +474,21 @@ int load_additive_config(const char* config_file_path) {
                 }
             } else if (strcmp(key, "stereo_temperature_curve_exponent") == 0) {
                 if (parse_float(value, &g_additive_config.stereo_temperature_curve_exponent, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else {
+                fprintf(stderr, "[CONFIG WARNING] Line %d: Unknown parameter '%s' in section '%s'\n", 
+                        line_number, key, current_section);
+            }
+        } else if (strcmp(current_section, "summation_normalization") == 0) {
+            if (strcmp(key, "volume_weighting_exponent") == 0) {
+                if (parse_float(value, &g_additive_config.volume_weighting_exponent, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "summation_response_exponent") == 0) {
+                if (parse_float(value, &g_additive_config.summation_response_exponent, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }

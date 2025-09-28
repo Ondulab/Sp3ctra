@@ -25,12 +25,20 @@
 
 // Image Processing and Contrast Modulation
 #define CONTRAST_MIN                 0.01f     // Minimum volume for blurred images (0.0 to 1.0)
-#define CONTRAST_STRIDE              4.0f      // Pixel sampling stride for optimization
-#define CONTRAST_ADJUSTMENT_POWER    0.7f      // Exponent for adjusting the contrast curve
+#define CONTRAST_STRIDE              1.0f      // Pixel sampling stride for optimization
+#define CONTRAST_ADJUSTMENT_POWER    0.5f      // Exponent for adjusting the contrast curve
 
 // Non-Linear Intensity Mapping
 #define ENABLE_NON_LINEAR_MAPPING    1         // Set to 1 to enable non-linear mapping, or 0 to disable
-#define GAMMA_VALUE                  1.8f      // Gamma value for non-linear intensity correction
+#define GAMMA_VALUE                  3.8f      // Gamma value for non-linear intensity correction
+
+/**************************************************************************************
+ * Summation Normalization and Volume Weighting
+ **************************************************************************************/
+// Intelligent volume weighting to prioritize strong oscillators over weak background noise
+#define VOLUME_WEIGHTING_EXPONENT    2.0f      // 1.0=linear, 2.0=quadratic, 3.0=cubic (higher = stronger volumes dominate more)
+#define SUMMATION_RESPONSE_EXPONENT  0.7f      // Final response curve (0.5=anti-compress, 1.0=linear, 2.0=compress)
+#define SUMMATION_BASE_LEVEL        (0.05f * VOLUME_AMP_RESOLUTION)  // Base level to avoid division issues
 
 /**************************************************************************************
  * Gap Limiter Configuration
