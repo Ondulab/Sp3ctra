@@ -40,7 +40,7 @@
 #if SAMPLING_FREQUENCY >= 96000
 #define AUDIO_BUFFER_SIZE            (150)
 #elif SAMPLING_FREQUENCY >= 48000
-#define AUDIO_BUFFER_SIZE            (60)   // restore legacy buffer length for 48 kHz
+#define AUDIO_BUFFER_SIZE            (80)   // restore legacy buffer length for 48 kHz
 #else
 #define AUDIO_BUFFER_SIZE            (208)
 #endif
@@ -48,7 +48,7 @@
 // Automatic cache sizing for smooth volume transitions in audio callback
 // Target: ~2% of buffer size for imperceptible volume steps
 // This ensures smooth volume changes regardless of buffer size
-#define AUDIO_CACHE_UPDATE_FREQUENCY ((AUDIO_BUFFER_SIZE * 2) / 10000) // 2% of buffer size
+#define AUDIO_CACHE_UPDATE_FREQUENCY ((AUDIO_BUFFER_SIZE * 2) / 100) // 2% of buffer size
 
 // Ensure minimum of 4 and maximum of 32 for performance and stability
 #define AUDIO_CACHE_UPDATE_FREQUENCY_CLAMPED \

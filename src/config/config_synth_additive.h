@@ -40,77 +40,35 @@
 /**************************************************************************************
  * Adaptive Slew/Decay Configuration
  **************************************************************************************/
-// Enable phase-weighted slew to minimize gain changes at waveform peaks
-#ifndef ENABLE_PHASE_WEIGHTED_SLEW
-#define ENABLE_PHASE_WEIGHTED_SLEW 1
-#endif
-
 // Select decay mode: 0 = legacy linear ramp, 1 = exponential (recommended)
-#ifndef SLEW_DECAY_MODE_EXPO
 #define SLEW_DECAY_MODE_EXPO 1
-#endif
 
 // Base time constants for envelope slew (multiplied by runtime divisors)
-#ifndef TAU_UP_BASE_MS
-#define TAU_UP_BASE_MS 0.10f     // Base attack time in milliseconds
-#endif
-
-#ifndef TAU_DOWN_BASE_MS
-#define TAU_DOWN_BASE_MS 0.10f   // Base release time in milliseconds
-#endif
-
-// Phase weighting parameters (applied per sample)
-#ifndef PHASE_WEIGHT_POWER
-#define PHASE_WEIGHT_POWER 1.0f // 1.0 = linear, 2.0 = square
-#endif
-
-#ifndef PHASE_WEIGHT_EPS
-#define PHASE_WEIGHT_EPS 1.01f // Prevents zero alpha at peaks
-#endif
+#define TAU_UP_BASE_MS 0.5f     // Base attack time in milliseconds
+#define TAU_DOWN_BASE_MS 0.5f   // Base release time in milliseconds
 
 // Frequency-dependent release weighting (stabilizes highs vs lows)
-#ifndef DECAY_FREQ_REF_HZ
 #define DECAY_FREQ_REF_HZ 440.0f
-#endif
+#define DECAY_FREQ_BETA -1.2f    // >0 slows highs, <0 speeds them
 
-#ifndef DECAY_FREQ_BETA
-#define DECAY_FREQ_BETA -0.8f    // >0 slows highs, <0 speeds them
-#endif
-
-#ifndef DECAY_FREQ_MIN
-#define DECAY_FREQ_MIN 0.7f
-#endif
-
-#ifndef DECAY_FREQ_MAX
-#define DECAY_FREQ_MAX 1.3f
-#endif
+#define DECAY_FREQ_MIN 0.004f
+#define DECAY_FREQ_MAX 200.0f
 
 // Numerical safety and bounds (to avoid underflow/denormals and instability)
-#ifndef TAU_UP_MAX_MS
 #define TAU_UP_MAX_MS 2000.0f     // Cap extremely long attacks
-#endif
-
-#ifndef TAU_DOWN_MAX_MS
 #define TAU_DOWN_MAX_MS 2000.0f   // Cap extremely long releases (per-base before divisor)
-#endif
-
-#ifndef ALPHA_MIN
 #define ALPHA_MIN 1e-5f           // Minimum effective alpha to ensure progress and avoid denormals
-#endif
 
-// If target and current volume are both under this floor, snap to 0 to avoid residual hiss/denormals
-#ifndef RELEASE_FLOOR_VOLUME
-#define RELEASE_FLOOR_VOLUME 1.0f  // in VOLUME_AMP_RESOLUTION units (0..65535). Tune 1..8 if needed.
-#endif
+// Enable phase-weighted slew to minimize gain changes at waveform peaks
+#define ENABLE_PHASE_WEIGHTED_SLEW 1
+
+// Phase weighting parameters (applied per sample)
+#define PHASE_WEIGHT_POWER 2.0f // 1.0 = linear, 2.0 = square
+#define PHASE_WEIGHT_EPS 0.01f // Prevents zero alpha at peaks
 
 // Dynamic phase epsilon bounds (helps when tau is very large)
-#ifndef PHASE_WEIGHT_EPS_MIN
 #define PHASE_WEIGHT_EPS_MIN 0.005f
-#endif
-
-#ifndef PHASE_WEIGHT_EPS_MAX
 #define PHASE_WEIGHT_EPS_MAX 0.05f
-#endif
 
 /**************************************************************************************
  * Debug Configuration
