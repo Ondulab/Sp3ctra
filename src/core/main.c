@@ -568,10 +568,10 @@ int main(int argc, char **argv) {
      adjusts master volume). Instance is stored in auto_volume.c as
      gAutoVolumeInstance. */
   printf("[INIT] Initializing auto-volume controller...\n");
-  printf("[INIT] Auto-volume config: threshold=%.3f, timeout=%ds, fade=%dms\n",
-         g_additive_config.imu_active_threshold_x, g_additive_config.imu_inactivity_timeout_s, g_additive_config.auto_volume_fade_ms);
-  printf("[INIT] Volume levels: active=%.3f, inactive=%.3f\n",
-         g_additive_config.auto_volume_active_level, g_additive_config.auto_volume_inactive_level);
+  printf("[INIT] Auto-volume config: enabled=%d, threshold=%.3f, timeout=%ds, fade=%dms\n",
+         g_additive_config.auto_volume_enabled, IMU_ACTIVE_THRESHOLD_X, g_additive_config.imu_inactivity_timeout_s, g_additive_config.auto_volume_fade_ms);
+  printf("[INIT] Volume levels: active=%.1f, inactive=%.3f\n",
+         1.0f, g_additive_config.auto_volume_inactive_level);
 
   gAutoVolumeInstance = auto_volume_create(&context);
   if (!gAutoVolumeInstance) {

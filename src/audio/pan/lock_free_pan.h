@@ -10,6 +10,7 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include "config.h"
+#include "../../synthesis/additive/synth_additive.h"  // For MAX_NUMBER_OF_NOTES
 
 /* Lock-free pan gains structure using atomic pointers for zero-contention access */
 typedef struct {

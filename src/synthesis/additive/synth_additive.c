@@ -194,11 +194,11 @@ int32_t synth_IfftInit(void) {
       return -1;
   }
 
-#ifdef STEREO_MODE
-  // Initialize lock-free pan gains system
-  lock_free_pan_init();
-  printf("🔧 LOCK_FREE_PAN: System initialized for stereo mode\n");
-#endif
+  if (g_additive_config.stereo_mode_enabled) {
+    // Initialize lock-free pan gains system
+    lock_free_pan_init();
+    printf("🔧 LOCK_FREE_PAN: System initialized for stereo mode\n");
+  }
 
   return 0;
 }
@@ -218,7 +218,6 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     // printf("===== Additive Mode called (optimized) =====\n");
   }
 
-  static int32_t signal_R;
   static int buff_idx;
   static int first_call = 1;
 
@@ -359,7 +358,7 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
 
   // Apply contrast modulation and unified stereo output
   if (synth_pool_initialized && !synth_pool_shutdown) {
-#ifdef STEREO_MODE
+    if (g_additive_config.stereo_mode_enabled) {
     // STEREO MODE: Use actual stereo buffers from threads
     // Combine stereo buffers from all threads
     static float stereoBuffer_L[AUDIO_BUFFER_SIZE];
@@ -430,44 +429,41 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
         printf("[CLIP] pre=0 peakPreL=%.3f peakPreR=%.3f\n", peakPreL, peakPreR);
       }
     }
+    } else {
+      // MONO MODE: Use original simple processing and duplicate output
+      int preClipCount = 0;
+      float peakPre = 0.0f;
 
-    
+      for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+        float mono_pre = tmp_audioData[buff_idx];
+        float a = fabsf(mono_pre);
+        if (a > peakPre) peakPre = a;
+        if (a > 1.0f) preClipCount++;
 
-#else
-    // MONO MODE: Use original simple processing and duplicate output
-    int preClipCount = 0;
-    float peakPre = 0.0f;
+        float mono_sample = mono_pre * contrast_factor;
 
-    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-      float mono_pre = tmp_audioData[buff_idx];
-      float a = fabsf(mono_pre);
-      if (a > peakPre) peakPre = a;
-      if (a > 1.0f) preClipCount++;
+        // Duplicate mono sample to both channels
+        audioDataLeft[buff_idx] = mono_sample;
+        audioDataRight[buff_idx] = mono_sample;
 
-      float mono_sample = mono_pre * contrast_factor;
+        // Apply final hard limiting
+        if (audioDataLeft[buff_idx] > 1.0f) audioDataLeft[buff_idx] = 1.0f;
+        if (audioDataLeft[buff_idx] < -1.0f) audioDataLeft[buff_idx] = -1.0f;
+        if (audioDataRight[buff_idx] > 1.0f) audioDataRight[buff_idx] = 1.0f;
+        if (audioDataRight[buff_idx] < -1.0f) audioDataRight[buff_idx] = -1.0f;
+      }
 
-      // Duplicate mono sample to both channels
-      audioDataLeft[buff_idx] = mono_sample;
-      audioDataRight[buff_idx] = mono_sample;
-
-      // Apply final hard limiting
-      if (audioDataLeft[buff_idx] > 1.0f) audioDataLeft[buff_idx] = 1.0f;
-      if (audioDataLeft[buff_idx] < -1.0f) audioDataLeft[buff_idx] = -1.0f;
-      if (audioDataRight[buff_idx] > 1.0f) audioDataRight[buff_idx] = 1.0f;
-      if (audioDataRight[buff_idx] < -1.0f) audioDataRight[buff_idx] = -1.0f;
-    }
-
-    if (log_counter % LOG_FREQUENCY == 0) {
-      if (preClipCount > 0) {
-        printf("[CLIP] pre=%d/%d (%.1f%%) peakPre=%.3f (mono)\n",
-               preClipCount, AUDIO_BUFFER_SIZE,
-               (preClipCount * 100.0f) / (float)AUDIO_BUFFER_SIZE,
-               peakPre);
-      } else {
-        printf("[CLIP] pre=0 peakPre=%.3f (mono)\n", peakPre);
+      if (log_counter % LOG_FREQUENCY == 0) {
+        if (preClipCount > 0) {
+          printf("[CLIP] pre=%d/%d (%.1f%%) peakPre=%.3f (mono)\n",
+                 preClipCount, AUDIO_BUFFER_SIZE,
+                 (preClipCount * 100.0f) / (float)AUDIO_BUFFER_SIZE,
+                 peakPre);
+        } else {
+          printf("[CLIP] pre=0 peakPre=%.3f (mono)\n", peakPre);
+        }
       }
     }
-#endif
   } else {
     // Error case: fill with silence
     fill_float(0, audioDataLeft, AUDIO_BUFFER_SIZE);
@@ -510,72 +506,72 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // Launch grayscale conversion
   greyScale(buffer_R, buffer_G, buffer_B, g_grayScale_live, CIS_MAX_PIXELS_NB);
 
-#ifdef STEREO_MODE
-  // Calculate color temperature and pan positions for each oscillator
-  // This is done once per image reception for efficiency
-  for (int note = 0; note < get_current_number_of_notes(); note++) {
-    // Calculate average color for this note's pixels
-    uint32_t r_sum = 0, g_sum = 0, b_sum = 0;
-    uint32_t pixel_count = 0;
-    
-    for (int pix = 0; pix < g_additive_config.pixels_per_note; pix++) {
-      uint32_t pixel_idx = note * g_additive_config.pixels_per_note + pix;
-      if (pixel_idx < CIS_MAX_PIXELS_NB) {
-        r_sum += buffer_R[pixel_idx];
-        g_sum += buffer_G[pixel_idx];
-        b_sum += buffer_B[pixel_idx];
-        pixel_count++;
+  if (g_additive_config.stereo_mode_enabled) {
+    // Calculate color temperature and pan positions for each oscillator
+    // This is done once per image reception for efficiency
+    for (int note = 0; note < get_current_number_of_notes(); note++) {
+      // Calculate average color for this note's pixels
+      uint32_t r_sum = 0, g_sum = 0, b_sum = 0;
+      uint32_t pixel_count = 0;
+      
+      for (int pix = 0; pix < g_additive_config.pixels_per_note; pix++) {
+        uint32_t pixel_idx = note * g_additive_config.pixels_per_note + pix;
+        if (pixel_idx < CIS_MAX_PIXELS_NB) {
+          r_sum += buffer_R[pixel_idx];
+          g_sum += buffer_G[pixel_idx];
+          b_sum += buffer_B[pixel_idx];
+          pixel_count++;
+        }
       }
-    }
-    
-    if (pixel_count > 0) {
-      // Calculate average RGB values
-      uint8_t r_avg = r_sum / pixel_count;
-      uint8_t g_avg = g_sum / pixel_count;
-      uint8_t b_avg = b_sum / pixel_count;
       
-      // Calculate color temperature and pan position
-      float temperature = calculate_color_temperature(r_avg, g_avg, b_avg);
-      waves[note].pan_position = temperature;
-      
-      // Use temporary variables to avoid volatile qualifier warnings
-      float temp_left_gain, temp_right_gain;
-      calculate_pan_gains(temperature, &temp_left_gain, &temp_right_gain);
-      waves[note].left_gain = temp_left_gain;
-      waves[note].right_gain = temp_right_gain;
-      
-      // Debug output for first few notes (limited frequency)
-      if (log_counter % (LOG_FREQUENCY * 10) == 0 && note < 5) {
+      if (pixel_count > 0) {
+        // Calculate average RGB values
+        uint8_t r_avg = r_sum / pixel_count;
+        uint8_t g_avg = g_sum / pixel_count;
+        uint8_t b_avg = b_sum / pixel_count;
+        
+        // Calculate color temperature and pan position
+        float temperature = calculate_color_temperature(r_avg, g_avg, b_avg);
+        waves[note].pan_position = temperature;
+        
+        // Use temporary variables to avoid volatile qualifier warnings
+        float temp_left_gain, temp_right_gain;
+        calculate_pan_gains(temperature, &temp_left_gain, &temp_right_gain);
+        waves[note].left_gain = temp_left_gain;
+        waves[note].right_gain = temp_right_gain;
+        
+        // Debug output for first few notes (limited frequency)
+        if (log_counter % (LOG_FREQUENCY * 10) == 0 && note < 5) {
 #ifdef DEBUG_RGB_TEMPERATURE
-        printf("Note %d: RGB(%d,%d,%d) -> Temp=%.2f L=%.2f R=%.2f\n",
-               note, r_avg, g_avg, b_avg, temperature,
-               waves[note].left_gain, waves[note].right_gain);
+          printf("Note %d: RGB(%d,%d,%d) -> Temp=%.2f L=%.2f R=%.2f\n",
+                 note, r_avg, g_avg, b_avg, temperature,
+                 waves[note].left_gain, waves[note].right_gain);
 #endif
+        }
+      } else {
+        // Default to center if no pixels
+        waves[note].pan_position = 0.0f;
+        waves[note].left_gain = 0.707f;
+        waves[note].right_gain = 0.707f;
       }
-    } else {
-      // Default to center if no pixels
-      waves[note].pan_position = 0.0f;
-      waves[note].left_gain = 0.707f;
-      waves[note].right_gain = 0.707f;
     }
+    
+    // Update lock-free pan gains system with calculated values
+    // Prepare arrays for batch update
+    static float left_gains[MAX_NUMBER_OF_NOTES];
+    static float right_gains[MAX_NUMBER_OF_NOTES];
+    static float pan_positions[MAX_NUMBER_OF_NOTES];
+    
+    int current_notes = get_current_number_of_notes();
+    for (int note = 0; note < current_notes; note++) {
+      left_gains[note] = waves[note].left_gain;
+      right_gains[note] = waves[note].right_gain;
+      pan_positions[note] = waves[note].pan_position;
+    }
+    
+    // Atomic update of all pan gains
+    lock_free_pan_update(left_gains, right_gains, pan_positions, current_notes);
   }
-  
-  // Update lock-free pan gains system with calculated values
-  // Prepare arrays for batch update
-  static float left_gains[MAX_NUMBER_OF_NOTES];
-  static float right_gains[MAX_NUMBER_OF_NOTES];
-  static float pan_positions[MAX_NUMBER_OF_NOTES];
-  
-  int current_notes = get_current_number_of_notes();
-  for (int note = 0; note < current_notes; note++) {
-    left_gains[note] = waves[note].left_gain;
-    right_gains[note] = waves[note].right_gain;
-    pan_positions[note] = waves[note].pan_position;
-  }
-  
-  // Atomic update of all pan gains
-  lock_free_pan_update(left_gains, right_gains, pan_positions, current_notes);
-#endif // STEREO_MODE
 
   // Capture raw scanner line for debug visualization
   image_debug_capture_raw_scanner_line(buffer_R, buffer_G, buffer_B);

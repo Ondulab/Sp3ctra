@@ -13,8 +13,12 @@
 /* Includes ------------------------------------------------------------------*/
 #include "../../core/config.h"
 #include "../../config/config_synth_additive.h"
+#include "../../config/config_instrument.h"  // For CIS_MAX_PIXELS_NB
 #include <stdint.h>
 #include <pthread.h>
+
+// Forward declaration for MAX_NUMBER_OF_NOTES before struct definitions
+#define MAX_NUMBER_OF_NOTES          (CIS_MAX_PIXELS_NB)
 
 /* Exported types ------------------------------------------------------------*/
 

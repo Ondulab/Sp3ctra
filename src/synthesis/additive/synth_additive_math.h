@@ -15,6 +15,13 @@
 #include <stddef.h>
 #include "../../config/config_synth_additive.h"
 
+/**************************************************************************************
+ * Core Synthesis Mathematical Constants
+ **************************************************************************************/
+// Resolution constants for amplitude calculations
+#define WAVE_AMP_RESOLUTION          (16777215)             // Decimal value for wave amplitude
+#define VOLUME_AMP_RESOLUTION        (65535)                // Decimal value for volume amplitude
+
 /* Exported function prototypes ----------------------------------------------*/
 
 /* Integer array operations */
