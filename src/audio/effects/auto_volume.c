@@ -63,6 +63,11 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
   if (!av || !av->ctx)
     return;
 
+  /* Check if auto-volume is enabled in configuration */
+  if (!g_additive_config.auto_volume_enabled) {
+    return; // Auto-volume is disabled, do nothing
+  }
+
   Context *ctx = av->ctx;
 
   /* Read IMU state under mutex quickly */
