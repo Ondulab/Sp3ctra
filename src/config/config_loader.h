@@ -30,6 +30,10 @@ typedef struct {
     float stereo_blue_red_weight;              // Weight for blue-red opponent axis
     float stereo_cyan_yellow_weight;           // Weight for cyan-yellow opponent axis
     float stereo_temperature_curve_exponent;   // Exponent for response curve shaping
+    
+    // Summation normalization parameters
+    float volume_weighting_exponent;           // Volume weighting exponent (1.0=linear, 2.0=quadratic, 3.0=cubic)
+    float summation_response_exponent;         // Final response curve exponent (0.5=anti-compress, 1.0=linear, 1.5+=compress)
 } additive_synth_config_t;
 
 /**************************************************************************************

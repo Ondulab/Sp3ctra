@@ -340,14 +340,18 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
   // This restores the original normalization preventing huge pre-limit peaks
   scale_float(sumVolumeBuffer, (float)VOLUME_AMP_RESOLUTION / 2.0f, AUDIO_BUFFER_SIZE);
 
+    // Intelligent normalization with exponential response curve
     // Small-denominator handling WITHOUT injecting noise:
-    // If sum is below threshold, output zero (do not divide by epsilon)
     const float SUM_EPS_FLOAT = 1.0f;   // after scaling (Float path)
     for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
-          float ratio = additiveBuffer[buff_idx] / sumVolumeBuffer[buff_idx];
-          // Float legacy path: divide by WAVE_AMP_RESOLUTION (no extra factor 2)
-          tmp_audioData[buff_idx] = ratio / (float)WAVE_AMP_RESOLUTION;
+          // Apply exponential response curve to reduce compression effects
+          float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
+          float base_level = (0.05f * (float)VOLUME_AMP_RESOLUTION) / (float)VOLUME_AMP_RESOLUTION; // Runtime equivalent of SUMMATION_BASE_LEVEL
+          // CORRECTION: Invert the exponent logic to properly amplify the denominator for compression reduction
+          float response_curve = powf(sum_normalized + base_level, 1.0f / g_additive_config.summation_response_exponent);
+          float ratio = additiveBuffer[buff_idx] / (response_curve * (float)WAVE_AMP_RESOLUTION);
+          tmp_audioData[buff_idx] = ratio;
         } else {
           tmp_audioData[buff_idx] = 0.0f;
         }
@@ -390,11 +394,13 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
       {
         const float SUM_EPS_FLOAT = 1.0f;
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
-          left_signal  = stereoBuffer_L[buff_idx] / sumVolumeBuffer[buff_idx];
-          right_signal = stereoBuffer_R[buff_idx] / sumVolumeBuffer[buff_idx];
-          // Float legacy path: divide by WAVE_AMP_RESOLUTION (no extra factor 2)
-          left_signal  /= (float)WAVE_AMP_RESOLUTION;
-          right_signal /= (float)WAVE_AMP_RESOLUTION;
+          // Apply exponential response curve to reduce compression effects (stereo mode)
+          float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
+          float base_level = (0.05f * (float)VOLUME_AMP_RESOLUTION) / (float)VOLUME_AMP_RESOLUTION; // Runtime equivalent of SUMMATION_BASE_LEVEL
+          // CORRECTION: Invert the exponent logic to properly amplify the denominator for compression reduction
+          float response_curve = powf(sum_normalized + base_level, 1.0f / g_additive_config.summation_response_exponent);
+          left_signal  = stereoBuffer_L[buff_idx] / (response_curve * (float)WAVE_AMP_RESOLUTION);
+          right_signal = stereoBuffer_R[buff_idx] / (response_curve * (float)WAVE_AMP_RESOLUTION);
         } else {
           left_signal = 0.0f;
           right_signal = 0.0f;

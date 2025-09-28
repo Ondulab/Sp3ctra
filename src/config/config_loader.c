@@ -36,7 +36,11 @@ static const additive_synth_config_t DEFAULT_CONFIG = {
     .stereo_temperature_amplification = 2.5f,
     .stereo_blue_red_weight = 0.8f,
     .stereo_cyan_yellow_weight = 0.2f,
-    .stereo_temperature_curve_exponent = 0.6f
+    .stereo_temperature_curve_exponent = 0.6f,
+    
+    // Summation normalization parameters
+    .volume_weighting_exponent = 2.0f,         // Default: quadratic weighting (recommended)
+    .summation_response_exponent = 0.7f        // Default: anti-compression (reduces dust)
 };
 
 /**************************************************************************************
@@ -277,6 +281,19 @@ void validate_config(const additive_synth_config_t* config) {
         errors++;
     }
     
+    // Validate summation normalization parameters
+    if (config->volume_weighting_exponent < 0.5f || config->volume_weighting_exponent > 5.0f) {
+        fprintf(stderr, "[CONFIG ERROR] volume_weighting_exponent must be between 0.5 and 5.0, got %.1f\n", 
+                config->volume_weighting_exponent);
+        errors++;
+    }
+    
+    if (config->summation_response_exponent < 0.1f || config->summation_response_exponent > 3.0f) {
+        fprintf(stderr, "[CONFIG ERROR] summation_response_exponent must be between 0.1 and 3.0, got %.1f\n", 
+                config->summation_response_exponent);
+        errors++;
+    }
+    
     if (errors > 0) {
         fprintf(stderr, "[CONFIG ERROR] Configuration validation failed with %d error(s). Exiting.\n", errors);
         exit(EXIT_FAILURE);
@@ -446,6 +463,21 @@ int load_additive_config(const char* config_file_path) {
                 }
             } else if (strcmp(key, "stereo_temperature_curve_exponent") == 0) {
                 if (parse_float(value, &g_additive_config.stereo_temperature_curve_exponent, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else {
+                fprintf(stderr, "[CONFIG WARNING] Line %d: Unknown parameter '%s' in section '%s'\n", 
+                        line_number, key, current_section);
+            }
+        } else if (strcmp(current_section, "summation_normalization") == 0) {
+            if (strcmp(key, "volume_weighting_exponent") == 0) {
+                if (parse_float(value, &g_additive_config.volume_weighting_exponent, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "summation_response_exponent") == 0) {
+                if (parse_float(value, &g_additive_config.summation_response_exponent, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
