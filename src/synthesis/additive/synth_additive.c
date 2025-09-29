@@ -72,6 +72,25 @@ static int32_t imageRef[MAX_NUMBER_OF_NOTES] = {0};
 struct shared_var shared_var;
 volatile int32_t audioBuff[1]; // legacy placeholder, unused
 
+// Persistent dynamically-sized buffers (allocated on first use; freed in synth_additive_cleanup)
+static float *additiveBuffer   = NULL;
+static float *sumVolumeBuffer  = NULL;
+static float *maxVolumeBuffer  = NULL;
+static float *tmp_audioData    = NULL;
+// Stereo temp accumulation buffers (persistently allocated to avoid per-call alloc)
+static float *stereoBuffer_L   = NULL;
+static float *stereoBuffer_R   = NULL;
+
+// Cleanup function to release persistent buffers (registered via atexit)
+void synth_additive_cleanup(void) {
+  if (additiveBuffer)  { free(additiveBuffer);  additiveBuffer = NULL; }
+  if (sumVolumeBuffer) { free(sumVolumeBuffer); sumVolumeBuffer = NULL; }
+  if (maxVolumeBuffer) { free(maxVolumeBuffer); maxVolumeBuffer = NULL; }
+  if (tmp_audioData)   { free(tmp_audioData);   tmp_audioData = NULL; }
+  if (stereoBuffer_L)  { free(stereoBuffer_L);  stereoBuffer_L = NULL; }
+  if (stereoBuffer_R)  { free(stereoBuffer_R);  stereoBuffer_R = NULL; }
+}
+
 /* Public functions ----------------------------------------------------------*/
 
 int32_t synth_IfftInit(void) {
@@ -82,6 +101,7 @@ int32_t synth_IfftInit(void) {
 
   // Register cleanup function for thread pool
   atexit(synth_shutdown_thread_pool);
+  atexit(synth_additive_cleanup);
 
   // Initialize default parameters
   wavesGeneratorParams.commaPerSemitone = g_sp3ctra_config.comma_per_semitone;
@@ -201,11 +221,7 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
   static int buff_idx;
   static int first_call = 1;
 
-  // Persistent dynamically-sized buffers (allocated on first use)
-  static float *additiveBuffer = NULL;
-  static float *sumVolumeBuffer = NULL;
-  static float *maxVolumeBuffer = NULL;
-  static float *tmp_audioData = NULL;
+  // Persistent dynamically-sized buffers are declared at file scope
 
   // Initialize thread pool if first time
   if (first_call) {
@@ -392,9 +408,7 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
   if (synth_pool_initialized && !synth_pool_shutdown) {
     if (g_sp3ctra_config.stereo_mode_enabled) {
     // STEREO MODE: Use actual stereo buffers from threads
-    // Combine stereo buffers from all threads
-    static float *stereoBuffer_L = NULL;
-    static float *stereoBuffer_R = NULL;
+    // Combine stereo buffers from all threads (declared at file scope)
     
     // Initialize stereo buffers (allocate once)
     if (!stereoBuffer_L) {

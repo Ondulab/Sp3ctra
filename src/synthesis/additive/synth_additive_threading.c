@@ -83,9 +83,13 @@ int synth_init_thread_pool(void) {
       worker->precomputed_wave_data = (float*)calloc(total, sizeof(float));
       worker->captured_current_volume = (float*)calloc(total, sizeof(float));
       worker->captured_target_volume = (float*)calloc(total, sizeof(float));
+      // Persist stereo temp buffers to avoid VLA on worker stack
+      worker->temp_waveBuffer_L = (float*)calloc(buf, sizeof(float));
+      worker->temp_waveBuffer_R = (float*)calloc(buf, sizeof(float));
       if (!worker->thread_additiveBuffer || !worker->thread_sumVolumeBuffer || !worker->thread_maxVolumeBuffer ||
           !worker->thread_additiveBuffer_L || !worker->thread_additiveBuffer_R || !worker->waveBuffer || !worker->volumeBuffer ||
-          !worker->precomputed_new_idx || !worker->precomputed_wave_data || !worker->captured_current_volume || !worker->captured_target_volume) {
+          !worker->precomputed_new_idx || !worker->precomputed_wave_data || !worker->captured_current_volume || !worker->captured_target_volume ||
+          !worker->temp_waveBuffer_L || !worker->temp_waveBuffer_R) {
         printf("Error allocating worker buffers for thread %d\n", i);
         return -1;
       }
@@ -235,9 +239,9 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
       const float end_left    = worker->precomputed_left_gain[local_note_idx];
       const float end_right   = worker->precomputed_right_gain[local_note_idx];
 
-      // Create temporary buffers for L/R channels
-      float waveBuffer_L[g_sp3ctra_config.audio_buffer_size];
-      float waveBuffer_R[g_sp3ctra_config.audio_buffer_size];
+      // Use persistent temporary buffers for L/R channels (no VLA on stack)
+      float *waveBuffer_L = worker->temp_waveBuffer_L;
+      float *waveBuffer_R = worker->temp_waveBuffer_R;
 
       // Linear interpolation across this audio buffer to avoid abrupt pan jumps
       const float step = 1.0f / (float)g_sp3ctra_config.audio_buffer_size;
@@ -412,6 +416,8 @@ void synth_shutdown_thread_pool(void) {
     free(thread_pool[i].precomputed_wave_data);    thread_pool[i].precomputed_wave_data = NULL;
     free(thread_pool[i].captured_current_volume);  thread_pool[i].captured_current_volume = NULL;
     free(thread_pool[i].captured_target_volume);   thread_pool[i].captured_target_volume = NULL;
+    free(thread_pool[i].temp_waveBuffer_L);        thread_pool[i].temp_waveBuffer_L = NULL;
+    free(thread_pool[i].temp_waveBuffer_R);        thread_pool[i].temp_waveBuffer_R = NULL;
 
     pthread_mutex_destroy(&thread_pool[i].work_mutex);
     pthread_cond_destroy(&thread_pool[i].work_cond);

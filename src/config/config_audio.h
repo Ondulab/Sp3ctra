@@ -20,15 +20,6 @@
 #define DEFAULT_REVERB_SEND_ADDITIVE 0.9f    // Default reverb send for additive synthesis (0.0 - 1.0)
 #define DEFAULT_REVERB_SEND_POLYPHONIC 0.3f  // Default reverb send for polyphonic synthesis (0.0 - 1.0)
 
-// Note: Advanced Zita-Rev1 parameters below are not implemented in current algorithm
-// They are kept for potential future implementation but currently unused
-#define DEFAULT_REVERB_RT_LOW        3.0f    // Low frequency reverb time (seconds) [UNUSED]
-#define DEFAULT_REVERB_RT_MID        2.0f    // Mid frequency reverb time (seconds) [UNUSED]
-#define DEFAULT_REVERB_FDAMP         3000.0f // High frequency damping frequency (Hz) [UNUSED]
-#define DEFAULT_REVERB_XOVER         200.0f  // Crossover frequency (Hz) [UNUSED]
-#define DEFAULT_REVERB_OPMIX         0.0f    // Output mix parameter (0.0 - 1.0) [UNUSED]
-#define DEFAULT_REVERB_RGXYZ         0.0f    // Ambisonic parameter (-1.0 - 1.0) [UNUSED]
-
 /**************************************************************************************
  * Audio Buffer Configuration - Hybrid Approach
  **************************************************************************************/

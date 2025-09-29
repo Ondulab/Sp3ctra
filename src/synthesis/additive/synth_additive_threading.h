@@ -48,6 +48,10 @@ typedef struct synth_thread_worker_s {
   float imageBuffer_f32[MAX_NUMBER_OF_NOTES / 3];
   float *waveBuffer;
   float *volumeBuffer;
+
+  // Temporary stereo work buffers (persistently allocated to avoid VLAs)
+  float *temp_waveBuffer_L;
+  float *temp_waveBuffer_R;
   
 
   // Pre-computed waves[] data (read-only)
