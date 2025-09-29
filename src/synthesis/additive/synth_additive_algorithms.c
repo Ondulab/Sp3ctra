@@ -155,39 +155,18 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
             }
         }
 
-if (g_additive_config.decay_mode_exponential) {
         // Exponential approach (recommended): v += alpha_eff * (t - v)
         const int is_attack = (t > v) ? 1 : 0;
         float alpha_base = is_attack ? alpha_up : (alpha_down * g_down);
         float alpha_eff = alpha_base;
-if (g_additive_config.enable_phase_weighted_slew) {
-        alpha_eff *= w_phase;
+        if (g_additive_config.enable_phase_weighted_slew) {
+            alpha_eff *= w_phase;
         }
         // Clamp alpha_eff
         if (alpha_eff < ALPHA_MIN) alpha_eff = ALPHA_MIN;
         if (alpha_eff > 1.0f)      alpha_eff = 1.0f;
 
-        // Debug traces removed to clean up logs
-
         v += alpha_eff * (t - v);
-} else {
-        // Legacy linear ramp compatibility with weighting
-        if (v < t) {
-            float step = waves[note].volume_increment;
-            if (g_additive_config.enable_phase_weighted_slew) {
-            step *= w_phase;
-            }
-            v += step;
-            if (v > t) v = t;
-        } else if (v > t) {
-            float step = waves[note].volume_decrement * g_down;
-            if (g_additive_config.enable_phase_weighted_slew) {
-            step *= w_phase;
-            }
-            v -= step;
-            if (v < t) v = t;
-        }
-}
         // Clamp volume to legal range
         if (v < 0.0f) v = 0.0f;
         if (v > (float)VOLUME_AMP_RESOLUTION) v = (float)VOLUME_AMP_RESOLUTION;
@@ -264,8 +243,9 @@ void apply_relative_mode(int32_t *imageBuffer_q31, int start_note, int end_note)
 void generate_waveform_samples(int note, float *waveBuffer, 
                               float precomputed_wave_data[AUDIO_BUFFER_SIZE]) {
     (void)note; // Mark as unused to suppress warning
-    // Use pre-computed data to avoid concurrent access to waves[]
+    // CRITICAL FIX: Normalize waveform data from integer range to float [-1.0, +1.0]
+    const float normalization_factor = 1.0f / (float)WAVE_AMP_RESOLUTION;
     for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-        waveBuffer[buff_idx] = precomputed_wave_data[buff_idx];
+        waveBuffer[buff_idx] = precomputed_wave_data[buff_idx] * normalization_factor;
     }
 }

@@ -48,17 +48,7 @@
 /**************************************************************************************
  * Adaptive Slew/Decay Configuration
  **************************************************************************************/
-// Select decay mode: 0 = legacy linear ramp, 1 = exponential (recommended)
-#define SLEW_DECAY_MODE_EXPO 1
-
-// Base time constants for envelope slew (multiplied by runtime divisors)
-#define TAU_UP_BASE_MS 0.5f     // Base attack time in milliseconds
-#define TAU_DOWN_BASE_MS 0.5f   // Base release time in milliseconds
-
 // Frequency-dependent release weighting (stabilizes highs vs lows)
-#define DECAY_FREQ_REF_HZ 440.0f
-#define DECAY_FREQ_BETA -1.2f    // >0 slows highs, <0 speeds them
-
 #define DECAY_FREQ_MIN 0.004f
 #define DECAY_FREQ_MAX 200.0f
 
@@ -67,11 +57,7 @@
 #define TAU_DOWN_MAX_MS 2000.0f   // Cap extremely long releases (per-base before divisor)
 #define ALPHA_MIN 1e-5f           // Minimum effective alpha to ensure progress and avoid denormals
 
-// Enable phase-weighted slew to minimize gain changes at waveform peaks
-#define ENABLE_PHASE_WEIGHTED_SLEW 1
-
 // Phase weighting parameters (applied per sample)
-#define PHASE_WEIGHT_POWER 2.0f // 1.0 = linear, 2.0 = square
 #define PHASE_WEIGHT_EPS 0.01f // Prevents zero alpha at peaks
 
 // Dynamic phase epsilon bounds (helps when tau is very large)

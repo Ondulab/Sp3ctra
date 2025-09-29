@@ -85,8 +85,6 @@ int synth_init_thread_pool(void) {
     memset(worker->precomputed_new_idx, 0, sizeof(worker->precomputed_new_idx));
     memset(worker->precomputed_wave_data, 0, sizeof(worker->precomputed_wave_data));
     memset(worker->precomputed_volume, 0, sizeof(worker->precomputed_volume));
-    memset(worker->precomputed_volume_increment, 0, sizeof(worker->precomputed_volume_increment));
-    memset(worker->precomputed_volume_decrement, 0, sizeof(worker->precomputed_volume_decrement));
     
     memset(worker->precomputed_pan_position, 0, sizeof(worker->precomputed_pan_position));
     memset(worker->precomputed_left_gain, 0, sizeof(worker->precomputed_left_gain));
@@ -310,11 +308,7 @@ void synth_precompute_wave_data(int32_t *imageData) {
 
 #ifdef GAP_LIMITER
       // ✅ GAP_LIMITER: Don't pre-compute volume - threads access it directly
-      // The increment/decrement parameters are thread-safe in read-only mode
-      worker->precomputed_volume_increment[local_note_idx] =
-          waves[note].volume_increment;
-      worker->precomputed_volume_decrement[local_note_idx] =
-          waves[note].volume_decrement;
+      // Volume parameters are now handled by tau_up_base_ms/tau_down_base_ms system
 #endif
 
       if (g_additive_config.stereo_mode_enabled) {
