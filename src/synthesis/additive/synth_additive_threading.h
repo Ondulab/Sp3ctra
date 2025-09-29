@@ -15,6 +15,7 @@
 #include "../../config/config_synth_additive.h"
 #include "../../config/config_instrument.h"  // For CIS_MAX_PIXELS_NB
 #include <stdint.h>
+#include <stddef.h>
 #include <pthread.h>
 
 // Forward declaration for MAX_NUMBER_OF_NOTES before struct definitions
@@ -71,6 +72,7 @@ typedef struct synth_thread_worker_s {
   // Debug capture: per-note per-sample volumes (current and target) for this buffer
   float *captured_current_volume; // size: (notes_per_thread * g_sp3ctra_config.audio_buffer_size)
   float *captured_target_volume; // size: (notes_per_thread * g_sp3ctra_config.audio_buffer_size)
+  size_t capture_capacity_elements; // number of elements allocated across capture buffers; 0 when disabled
 
   // Synchronization
   pthread_mutex_t work_mutex;

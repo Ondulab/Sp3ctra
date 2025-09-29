@@ -27,7 +27,6 @@ typedef struct {
     int invert_intensity;         // 0 = white brightest gives loudest sound, 1 = dark pixels give more energy
 
     // Envelope slew parameters (runtime configurable; defaults from compile-time defines)
-    int   decay_mode_exponential;     // 0 = legacy linear ramp, 1 = exponential (recommended)
     float tau_up_base_ms;             // Base attack time in milliseconds
     float tau_down_base_ms;           // Base release time in milliseconds
     float decay_freq_ref_hz;          // Reference frequency in Hz for frequency weighting

@@ -26,6 +26,57 @@
 #include <sched.h>
 #endif
 
+// Runtime-gated capture buffers: lazy allocation only when capture is enabled
+static inline int synth_ensure_capture_buffers(synth_thread_worker_t *worker) {
+  // Fast path: if capture disabled, do nothing
+  if (!image_debug_is_oscillator_capture_enabled()) {
+    return 0;
+  }
+
+  int buf = g_sp3ctra_config.audio_buffer_size;
+  int notes_this = worker->end_note - worker->start_note;
+  if (buf <= 0 || notes_this <= 0) return -1;
+
+  size_t total = (size_t)buf * (size_t)notes_this;
+
+  // If already allocated with the correct capacity, nothing to do
+  if (worker->captured_current_volume && worker->captured_target_volume &&
+      worker->capture_capacity_elements == total) {
+    return 0;
+  }
+
+  // (Re)allocate with new capacity
+  if (worker->captured_current_volume) {
+    free(worker->captured_current_volume);
+    worker->captured_current_volume = NULL;
+  }
+  if (worker->captured_target_volume) {
+    free(worker->captured_target_volume);
+    worker->captured_target_volume = NULL;
+  }
+
+  worker->captured_current_volume = (float *)calloc(total, sizeof(float));
+  worker->captured_target_volume  = (float *)calloc(total, sizeof(float));
+  if (!worker->captured_current_volume || !worker->captured_target_volume) {
+    // Cleanup on partial failure
+    if (worker->captured_current_volume) { free(worker->captured_current_volume); worker->captured_current_volume = NULL; }
+    if (worker->captured_target_volume)  { free(worker->captured_target_volume);  worker->captured_target_volume  = NULL; }
+    worker->capture_capacity_elements = 0;
+    return -1;
+  }
+  worker->capture_capacity_elements = total;
+  return 0;
+}
+
+// If capture is disabled at runtime, immediately release capture buffers to free memory
+static inline void synth_release_capture_buffers_if_disabled(synth_thread_worker_t *worker) {
+  if (worker->capture_capacity_elements && !image_debug_is_oscillator_capture_enabled()) {
+    if (worker->captured_current_volume) { free(worker->captured_current_volume); worker->captured_current_volume = NULL; }
+    if (worker->captured_target_volume)  { free(worker->captured_target_volume);  worker->captured_target_volume  = NULL; }
+    worker->capture_capacity_elements = 0;
+  }
+}
+
 /* External declarations -----------------------------------------------------*/
 #ifdef DEBUG_OSC
 extern debug_additive_osc_config_t g_debug_osc_config;
@@ -81,14 +132,16 @@ int synth_init_thread_pool(void) {
       size_t total = (size_t)notes_this * (size_t)buf;
       worker->precomputed_new_idx = (int32_t*)calloc(total, sizeof(int32_t));
       worker->precomputed_wave_data = (float*)calloc(total, sizeof(float));
-      worker->captured_current_volume = (float*)calloc(total, sizeof(float));
-      worker->captured_target_volume = (float*)calloc(total, sizeof(float));
+      // Capture buffers are now lazy-allocated only when capture is enabled
+      worker->captured_current_volume = NULL;
+      worker->captured_target_volume = NULL;
+      worker->capture_capacity_elements = 0;
       // Persist stereo temp buffers to avoid VLA on worker stack
       worker->temp_waveBuffer_L = (float*)calloc(buf, sizeof(float));
       worker->temp_waveBuffer_R = (float*)calloc(buf, sizeof(float));
       if (!worker->thread_additiveBuffer || !worker->thread_sumVolumeBuffer || !worker->thread_maxVolumeBuffer ||
           !worker->thread_additiveBuffer_L || !worker->thread_additiveBuffer_R || !worker->waveBuffer || !worker->volumeBuffer ||
-          !worker->precomputed_new_idx || !worker->precomputed_wave_data || !worker->captured_current_volume || !worker->captured_target_volume ||
+          !worker->precomputed_new_idx || !worker->precomputed_wave_data ||
           !worker->temp_waveBuffer_L || !worker->temp_waveBuffer_R) {
         printf("Error allocating worker buffers for thread %d\n", i);
         return -1;
@@ -180,6 +233,9 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     f32_logged = 1;
   }
 
+  // Release capture buffers if capture was disabled since last buffer
+  synth_release_capture_buffers_if_disabled(worker);
+
   // Initialize output buffers to zero
   fill_float(0, worker->thread_additiveBuffer, g_sp3ctra_config.audio_buffer_size);
   fill_float(0, worker->thread_sumVolumeBuffer, g_sp3ctra_config.audio_buffer_size);
@@ -216,8 +272,17 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
                                worker->volumeBuffer);
 
         // Debug capture: copy per-sample volumes for this note into worker buffers (fast path)
-        memcpy(worker->captured_current_volume + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size, worker->volumeBuffer, sizeof(float) * g_sp3ctra_config.audio_buffer_size);
-        fill_float(waves[note].target_volume, worker->captured_target_volume + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size, g_sp3ctra_config.audio_buffer_size);
+        // Runtime-gated capture: allocate lazily and copy only if enabled
+        if (image_debug_is_oscillator_capture_enabled()) {
+          if (synth_ensure_capture_buffers(worker) == 0) {
+            memcpy(worker->captured_current_volume + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size,
+                   worker->volumeBuffer,
+                   sizeof(float) * (size_t)g_sp3ctra_config.audio_buffer_size);
+            fill_float(waves[note].target_volume,
+                       worker->captured_target_volume + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size,
+                       (size_t)g_sp3ctra_config.audio_buffer_size);
+          }
+        }
 
     // Apply volume scaling to the current note waveform
     mult_float(worker->waveBuffer, worker->volumeBuffer, worker->waveBuffer,
