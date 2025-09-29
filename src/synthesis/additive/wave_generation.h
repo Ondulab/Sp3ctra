@@ -44,9 +44,7 @@ struct wave {
     // Volume parameters - Float32 (legacy)
     float target_volume;
     float current_volume;
-    float volume_increment;
     float max_volume_increment;
-    float volume_decrement;
     float max_volume_decrement;
     
     

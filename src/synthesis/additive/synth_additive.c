@@ -92,26 +92,7 @@ int32_t synth_IfftInit(void) {
 
   buffer_len = init_waves(unitary_waveform, waves, &wavesGeneratorParams);
 
-  int32_t value = g_additive_config.volume_ramp_up_divisor;
-
-  if (value < 1)
-    value = 1;
-  if (value > 100000)
-    value = 100000;
-  for (int32_t note = 0; note < get_current_number_of_notes(); note++) {
-    waves[note].volume_increment =
-        1.00 / (float)value * waves[note].max_volume_increment;
-  }
-
-  value = g_additive_config.volume_ramp_down_divisor;
-
-  if (value < 1)
-    value = 1;
-  if (value > 100000)
-    value = 100000;
-  for (int32_t note = 0; note < get_current_number_of_notes(); note++) {
-    waves[note].volume_decrement = 1.00 / (float)value * waves[note].max_volume_decrement;
-  }
+  // Volume increments/decrements are no longer used - replaced by tau_up_base_ms/tau_down_base_ms system
 
 
   // Start with random index
@@ -296,7 +277,9 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
       }
     }
 
-        // Float32 version: combine float buffers directly
+    // Thread buffers combination completed
+
+    // Float32 version: combine float buffers directly
     for (int i = 0; i < 3; i++) {
       add_float(thread_pool[i].thread_additiveBuffer, additiveBuffer,
                 additiveBuffer, AUDIO_BUFFER_SIZE);
@@ -334,24 +317,37 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
   }
 
   // === FINAL PHASE (common to both modes) ===
-  mult_float(additiveBuffer, maxVolumeBuffer, additiveBuffer,
-             AUDIO_BUFFER_SIZE);
-  // Float32 version (legacy): scale sum by VOLUME_AMP_RESOLUTION/2 before ratio
-  // This restores the original normalization preventing huge pre-limit peaks
-  scale_float(sumVolumeBuffer, (float)VOLUME_AMP_RESOLUTION / 2.0f, AUDIO_BUFFER_SIZE);
+  // CRITICAL FIX: Remove problematic mult_float that creates explosion with normalized waveforms
+  // mult_float(additiveBuffer, maxVolumeBuffer, additiveBuffer, AUDIO_BUFFER_SIZE);
+  // CRITICAL FIX: Remove the problematic scaling that was creating massive compression
+  // scale_float(sumVolumeBuffer, (float)VOLUME_AMP_RESOLUTION / 2.0f, AUDIO_BUFFER_SIZE);
 
-    // Intelligent normalization with exponential response curve
-    // Small-denominator handling WITHOUT injecting noise:
+    // Final processing phase
+
+    // Intelligent normalization with exponential response curve (REACTIVATED)
+    // ANTI-TAC PROTECTION: Fade-in over first few callbacks to eliminate startup "tac"
     const float SUM_EPS_FLOAT = 1.0f;   // after scaling (Float path)
+    
+    static int startup_callback_count = 0;
+    static const int FADE_IN_CALLBACKS = 10;  // Fade-in over first 10 callbacks (~2-3ms)
+    float fade_in_factor = 1.0f;
+    
+    if (startup_callback_count < FADE_IN_CALLBACKS) {
+      // Smooth exponential fade-in curve (0 -> 1 over FADE_IN_CALLBACKS)
+      fade_in_factor = (float)startup_callback_count / (float)FADE_IN_CALLBACKS;
+      fade_in_factor = fade_in_factor * fade_in_factor; // Quadratic curve for smooth start
+      startup_callback_count++;
+    }
+    
     for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           // Apply exponential response curve to reduce compression effects
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
-          float base_level = (0.05f * (float)VOLUME_AMP_RESOLUTION) / (float)VOLUME_AMP_RESOLUTION; // Runtime equivalent of SUMMATION_BASE_LEVEL
-          // CORRECTION: Invert the exponent logic to properly amplify the denominator for compression reduction
+          float base_level = 0.1f; // INCREASED base level to avoid division by small numbers
+          // CORRECTED: Proper exponent logic for compression reduction with normalized waveforms
           float response_curve = powf(sum_normalized + base_level, 1.0f / g_additive_config.summation_response_exponent);
-          float ratio = additiveBuffer[buff_idx] / (response_curve * (float)WAVE_AMP_RESOLUTION);
-          tmp_audioData[buff_idx] = ratio;
+          float ratio = additiveBuffer[buff_idx] / (response_curve * (float)VOLUME_AMP_RESOLUTION);
+          tmp_audioData[buff_idx] = ratio * fade_in_factor; // Apply anti-tac fade-in
         } else {
           tmp_audioData[buff_idx] = 0.0f;
         }
@@ -379,9 +375,9 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
                 stereoBuffer_R, AUDIO_BUFFER_SIZE);
     }
     
-    // Apply same normalization as mono signal
-    mult_float(stereoBuffer_L, maxVolumeBuffer, stereoBuffer_L, AUDIO_BUFFER_SIZE);
-    mult_float(stereoBuffer_R, maxVolumeBuffer, stereoBuffer_R, AUDIO_BUFFER_SIZE);
+    // CRITICAL FIX: Remove problematic mult_float that creates explosion in stereo mode
+    // mult_float(stereoBuffer_L, maxVolumeBuffer, stereoBuffer_L, AUDIO_BUFFER_SIZE);
+    // mult_float(stereoBuffer_R, maxVolumeBuffer, stereoBuffer_R, AUDIO_BUFFER_SIZE);
     
     // Apply final processing and contrast
     // Pre-limit clipping telemetry (once per second, low overhead)
@@ -396,11 +392,15 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           // Apply exponential response curve to reduce compression effects (stereo mode)
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
-          float base_level = (0.05f * (float)VOLUME_AMP_RESOLUTION) / (float)VOLUME_AMP_RESOLUTION; // Runtime equivalent of SUMMATION_BASE_LEVEL
-          // CORRECTION: Invert the exponent logic to properly amplify the denominator for compression reduction
+          float base_level = 0.1f; // INCREASED base level to avoid division by small numbers (same as mono)
+          // CORRECTED: Proper exponent logic for compression reduction with normalized waveforms
           float response_curve = powf(sum_normalized + base_level, 1.0f / g_additive_config.summation_response_exponent);
-          left_signal  = stereoBuffer_L[buff_idx] / (response_curve * (float)WAVE_AMP_RESOLUTION);
-          right_signal = stereoBuffer_R[buff_idx] / (response_curve * (float)WAVE_AMP_RESOLUTION);
+          left_signal  = stereoBuffer_L[buff_idx] / (response_curve * (float)VOLUME_AMP_RESOLUTION);
+          right_signal = stereoBuffer_R[buff_idx] / (response_curve * (float)VOLUME_AMP_RESOLUTION);
+          
+          // Apply same anti-tac fade-in as mono mode
+          left_signal *= fade_in_factor;
+          right_signal *= fade_in_factor;
         } else {
           left_signal = 0.0f;
           right_signal = 0.0f;
@@ -424,16 +424,17 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
       if (audioDataRight[buff_idx] < -1.0f) audioDataRight[buff_idx] = -1.0f;
     }
 
-    if (log_counter % LOG_FREQUENCY == 0) {
-      if (preClipCount > 0) {
-        printf("[CLIP] pre=%d/%d (%.1f%%) peakPreL=%.3f peakPreR=%.3f\n",
-               preClipCount, AUDIO_BUFFER_SIZE,
-               (preClipCount * 100.0f) / (float)AUDIO_BUFFER_SIZE,
-               peakPreL, peakPreR);
-      } else {
-        printf("[CLIP] pre=0 peakPreL=%.3f peakPreR=%.3f\n", peakPreL, peakPreR);
-      }
-    }
+    // Clipping telemetry disabled in production
+    // if (log_counter % LOG_FREQUENCY == 0) {
+    //   if (preClipCount > 0) {
+    //     printf("[CLIP] pre=%d/%d (%.1f%%) peakPreL=%.3f peakPreR=%.3f\n",
+    //            preClipCount, AUDIO_BUFFER_SIZE,
+    //            (preClipCount * 100.0f) / (float)AUDIO_BUFFER_SIZE,
+    //            peakPreL, peakPreR);
+    //   } else {
+    //     printf("[CLIP] pre=0 peakPreL=%.3f peakPreR=%.3f\n", peakPreL, peakPreR);
+    //   }
+    // }
     } else {
       // MONO MODE: Use original simple processing and duplicate output
       int preClipCount = 0;
@@ -458,16 +459,17 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
         if (audioDataRight[buff_idx] < -1.0f) audioDataRight[buff_idx] = -1.0f;
       }
 
-      if (log_counter % LOG_FREQUENCY == 0) {
-        if (preClipCount > 0) {
-          printf("[CLIP] pre=%d/%d (%.1f%%) peakPre=%.3f (mono)\n",
-                 preClipCount, AUDIO_BUFFER_SIZE,
-                 (preClipCount * 100.0f) / (float)AUDIO_BUFFER_SIZE,
-                 peakPre);
-        } else {
-          printf("[CLIP] pre=0 peakPre=%.3f (mono)\n", peakPre);
-        }
-      }
+      // Clipping telemetry disabled in production (mono mode)
+      // if (log_counter % LOG_FREQUENCY == 0) {
+      //   if (preClipCount > 0) {
+      //     printf("[CLIP] pre=%d/%d (%.1f%%) peakPre=%.3f (mono)\n",
+      //            preClipCount, AUDIO_BUFFER_SIZE,
+      //            (preClipCount * 100.0f) / (float)AUDIO_BUFFER_SIZE,
+      //            peakPre);
+      //   } else {
+      //     printf("[CLIP] pre=0 peakPre=%.3f (mono)\n", peakPre);
+      //   }
+      // }
     }
   } else {
     // Error case: fill with silence

@@ -54,8 +54,6 @@ typedef struct synth_thread_worker_s {
   int32_t precomputed_new_idx[MAX_NUMBER_OF_NOTES / 3][AUDIO_BUFFER_SIZE];
   float precomputed_wave_data[MAX_NUMBER_OF_NOTES / 3][AUDIO_BUFFER_SIZE];
   float precomputed_volume[MAX_NUMBER_OF_NOTES / 3];
-  float precomputed_volume_increment[MAX_NUMBER_OF_NOTES / 3];
-  float precomputed_volume_decrement[MAX_NUMBER_OF_NOTES / 3];
   
   // Pre-computed pan positions and gains for each note
   float precomputed_pan_position[MAX_NUMBER_OF_NOTES / 3];
