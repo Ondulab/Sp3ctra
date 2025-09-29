@@ -16,12 +16,6 @@ typedef uint32_t UInt32;
 extern "C" {
 #endif
 
-typedef enum {
-  AUDIO_BUFFER_OFFSET_NONE = 0,
-  AUDIO_BUFFER_OFFSET_HALF,
-  AUDIO_BUFFER_OFFSET_FULL,
-} BUFFER_AUDIO_StateTypeDef;
-
 typedef struct AudioData {
   Float32 **buffers;
   UInt32 numChannels;
@@ -43,9 +37,6 @@ extern pthread_mutex_t buffer_index_mutex;
 
 // Fonctions C pour la compatibilité
 void resetAudioDataBufferOffset(void);
-int getAudioDataBufferOffset(void);
-void setAudioDataBufferOffsetHALF(void);
-void setAudioDataBufferOffsetFULL(void);
 void initAudioData(AudioData *audioData, UInt32 numChannels, UInt32 bufferSize);
 void audio_Init(void);
 void cleanupAudioData(AudioData *audioData);

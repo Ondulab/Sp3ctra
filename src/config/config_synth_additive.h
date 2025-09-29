@@ -33,13 +33,7 @@
  * Summation Normalization and Volume Weighting
  **************************************************************************************/
 // Intelligent volume weighting to prioritize strong oscillators over weak background noise
-#define VOLUME_WEIGHTING_EXPONENT    2.0f      // 1.0=linear, 2.0=quadratic, 3.0=cubic (higher = stronger volumes dominate more)
-#define SUMMATION_RESPONSE_EXPONENT  2.0f      // Final response curve (0.5=anti-compress, 1.0=linear, 2.0=compress)
 #define SUMMATION_BASE_LEVEL        (0.01f * VOLUME_AMP_RESOLUTION)  // Base level to avoid division issues
-
-// Anti-saturation protection for extreme summation_response_exponent values
-#define SUMMATION_COMPRESSION_FACTOR 1.0f      // Pre-normalization factor to prevent extreme x values
-#define POW_SHIFTED_MAX_OUTPUT       2.0f      // Maximum output limit for pow_shifted_fast to prevent saturation
 
 /**************************************************************************************
  * Gap Limiter Configuration
@@ -50,8 +44,8 @@
  * Adaptive Slew/Decay Configuration
  **************************************************************************************/
 // Frequency-dependent release weighting (stabilizes highs vs lows)
-#define DECAY_FREQ_MIN 0.004f
-#define DECAY_FREQ_MAX 200.0f
+#define DECAY_FREQ_MIN 0.001f
+#define DECAY_FREQ_MAX 1000.0f
 
 // Numerical safety and bounds (to avoid underflow/denormals and instability)
 #define TAU_UP_MAX_MS 2000.0f     // Cap extremely long attacks

@@ -259,35 +259,27 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     polyphonic_readOffset += chunk;
     framesToRender -= chunk;
 
-    // Handle buffer transitions - Additive synthesis (both left and right channels)
+    // Handle buffer transitions - Additive synthesis (RT-SAFE VERSION)
     if (readOffset >= (unsigned int)g_sp3ctra_config.audio_buffer_size) {
-      // Signal completion for both left and right buffers
+      // RT-SAFE: Use atomic store instead of mutex for buffer ready state
       if (buffers_L[localReadIndex].ready == 1) {
-        pthread_mutex_lock(&buffers_L[localReadIndex].mutex);
-        buffers_L[localReadIndex].ready = 0;
-        pthread_cond_signal(&buffers_L[localReadIndex].cond);
-        pthread_mutex_unlock(&buffers_L[localReadIndex].mutex);
+        __atomic_store_n(&buffers_L[localReadIndex].ready, 0, __ATOMIC_RELEASE);
+        // Note: pthread_cond_signal removed - producer thread will poll ready state
       }
       if (buffers_R[localReadIndex].ready == 1) {
-        pthread_mutex_lock(&buffers_R[localReadIndex].mutex);
-        buffers_R[localReadIndex].ready = 0;
-        pthread_cond_signal(&buffers_R[localReadIndex].cond);
-        pthread_mutex_unlock(&buffers_R[localReadIndex].mutex);
+        __atomic_store_n(&buffers_R[localReadIndex].ready, 0, __ATOMIC_RELEASE);
+        // Note: pthread_cond_signal removed - producer thread will poll ready state  
       }
       localReadIndex = (localReadIndex == 0) ? 1 : 0;
       readOffset = 0;
     }
 
-    // Handle buffer transitions - Polyphonic
+    // Handle buffer transitions - Polyphonic (RT-SAFE VERSION)
     if (polyphonic_readOffset >= (unsigned int)g_sp3ctra_config.audio_buffer_size) {
       if (polyphonic_audio_buffers[polyphonic_localReadIndex].ready == 1) {
-        pthread_mutex_lock(
-            &polyphonic_audio_buffers[polyphonic_localReadIndex].mutex);
-        polyphonic_audio_buffers[polyphonic_localReadIndex].ready = 0;
-        pthread_cond_signal(
-            &polyphonic_audio_buffers[polyphonic_localReadIndex].cond);
-        pthread_mutex_unlock(
-            &polyphonic_audio_buffers[polyphonic_localReadIndex].mutex);
+        // RT-SAFE: Use atomic store instead of mutex for buffer ready state
+        __atomic_store_n(&polyphonic_audio_buffers[polyphonic_localReadIndex].ready, 0, __ATOMIC_RELEASE);
+        // Note: pthread_cond_signal removed - producer thread will poll ready state
       }
       polyphonic_localReadIndex = (polyphonic_localReadIndex == 0) ? 1 : 0;
       polyphonic_readOffset = 0;
@@ -1062,19 +1054,6 @@ void resetAudioDataBufferOffset(void) {
   // Mais on la garde pour compatibilité
 }
 
-int getAudioDataBufferOffset(void) {
-  // Cette fonction n'est plus nécessaire avec RtAudio
-  return AUDIO_BUFFER_OFFSET_NONE;
-}
-
-void setAudioDataBufferOffsetHALF(void) {
-  // Cette fonction n'est plus nécessaire avec RtAudio
-}
-
-void setAudioDataBufferOffsetFULL(void) {
-  // Cette fonction n'est plus nécessaire avec RtAudio
-}
-
 // Initialisation et nettoyage des données audio
 void initAudioData(AudioData *audioData, UInt32 numChannels,
                    UInt32 bufferSize) {
@@ -1096,17 +1075,28 @@ void audio_Init(void) {
     pthread_mutex_init(&buffers_R[i].mutex, NULL);
     pthread_cond_init(&buffers_L[i].cond, NULL);
     pthread_cond_init(&buffers_R[i].cond, NULL);
-    buffers_L[i].ready = 0;
-    buffers_R[i].ready = 0;
+    
+    // CRITICAL: Initialize ready state atomically for RT-safe operation
+    __atomic_store_n(&buffers_L[i].ready, 0, __ATOMIC_SEQ_CST);
+    __atomic_store_n(&buffers_R[i].ready, 0, __ATOMIC_SEQ_CST);
 
     // Allocate dynamic audio buffers based on runtime configuration
     if (!buffers_L[i].data) {
       buffers_L[i].data = (float *)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
+      // CRITICAL: Ensure buffers are zeroed (calloc should do this, but make sure)
+      memset(buffers_L[i].data, 0, g_sp3ctra_config.audio_buffer_size * sizeof(float));
     }
     if (!buffers_R[i].data) {
       buffers_R[i].data = (float *)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
+      // CRITICAL: Ensure buffers are zeroed (calloc should do this, but make sure)
+      memset(buffers_R[i].data, 0, g_sp3ctra_config.audio_buffer_size * sizeof(float));
     }
   }
+  
+  // CRITICAL: Initialize buffer index atomically
+  __atomic_store_n(&current_buffer_index, 0, __ATOMIC_SEQ_CST);
+  
+  printf("[RT-SAFE] Audio buffers initialized with zero content and atomic ready states\n");
 
   // Créer et initialiser le système audio RtAudio
   if (!gAudioSystem) {

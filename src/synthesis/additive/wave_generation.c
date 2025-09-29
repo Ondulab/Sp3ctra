@@ -21,8 +21,8 @@
 
 /* Global variables definitions (moved from shared.c) */
 volatile struct waveParams wavesGeneratorParams;
-volatile struct wave waves[MAX_NUMBER_OF_NOTES];
-volatile float unitary_waveform[WAVEFORM_TABLE_SIZE];
+volatile struct wave *waves = NULL;  // Now a pointer (allocated in synth_additive_runtime.c)
+volatile float *unitary_waveform = NULL;  // Now a pointer (allocated in synth_additive_runtime.c)
 
 /* Private includes ----------------------------------------------------------*/
 
