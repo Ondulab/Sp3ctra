@@ -7,6 +7,7 @@
 #include "context.h"
 #include "doublebuffer.h"
 #include "error.h"
+#include "../../config/config_loader.h"
 #include <errno.h>
 #include <math.h>
 #include <pthread.h>
@@ -14,6 +15,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #ifndef M_PI
 #define M_PI (3.14159265358979323846)
@@ -101,8 +103,11 @@ void synth_polyphonicMode_init(void) {
       die("Failed to initialize polyphonic audio buffer condition variable");
     }
     polyphonic_audio_buffers[i].ready = 0;
-    memset(polyphonic_audio_buffers[i].data, 0,
-           AUDIO_BUFFER_SIZE * sizeof(float));
+    if (!polyphonic_audio_buffers[i].data) {
+      polyphonic_audio_buffers[i].data = (float*)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
+    } else {
+      memset(polyphonic_audio_buffers[i].data, 0, g_sp3ctra_config.audio_buffer_size * sizeof(float));
+    }
   }
   if (pthread_mutex_init(&polyphonic_buffer_index_mutex, NULL) != 0) {
     die("Failed to initialize polyphonic buffer index mutex");
@@ -146,7 +151,7 @@ void synth_polyphonicMode_init(void) {
          global_spectral_filter_params.filter_env_depth);
 
   lfo_init(&global_vibrato_lfo, G_LFO_RATE_HZ, G_LFO_DEPTH_SEMITONES,
-           (float)SAMPLING_FREQUENCY);
+           (float)g_sp3ctra_config.sampling_frequency);
   printf("Global Vibrato LFO initialized: Rate=%.2f Hz, Depth=%.2f semitones\n",
          global_vibrato_lfo.rate_hz, global_vibrato_lfo.depth_semitones);
 
@@ -161,10 +166,10 @@ void synth_polyphonicMode_init(void) {
     }
     adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
                        G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-                       G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+                       G_VOLUME_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
     adsr_init_envelope(&poly_voices[i].filter_adsr, G_FILTER_ADSR_ATTACK_S,
                        G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
-                       G_FILTER_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+                       G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
   }
   printf("%d polyphonic voices initialized.\n", NUM_POLY_VOICES);
   printf("synth_polyphonicMode initialized with moving average window of %d "
@@ -236,7 +241,7 @@ void synth_polyphonicMode_process(float *audio_buffer,
           filter_adsr_val * global_spectral_filter_params.filter_env_depth;
       modulated_cutoff_hz =
           fmaxf(20.0f, fminf(modulated_cutoff_hz,
-                             (float)SAMPLING_FREQUENCY / 2.0f - 1.0f));
+                             (float)g_sp3ctra_config.sampling_frequency / 2.0f - 1.0f));
 
       // Apply LFO to fundamental frequency
       float base_freq = current_voice->fundamental_frequency;
@@ -269,7 +274,7 @@ void synth_polyphonicMode_process(float *audio_buffer,
 
         // Nyquist check: if harmonic frequency is too high, stop adding
         // harmonics
-        if (osc_freq >= (float)SAMPLING_FREQUENCY / 2.0f) {
+        if (osc_freq >= (float)g_sp3ctra_config.sampling_frequency / 2.0f) {
           break;
         }
 
@@ -278,7 +283,7 @@ void synth_polyphonicMode_process(float *audio_buffer,
         // CPU optimization: Skip harmonics with very low amplitude
         if (smoothed_amplitude < MIN_AUDIBLE_AMPLITUDE) {
           // Still update phase to maintain continuity
-          float phase_increment = TWO_PI * osc_freq / (float)SAMPLING_FREQUENCY;
+          float phase_increment = TWO_PI * osc_freq / (float)g_sp3ctra_config.sampling_frequency;
           current_voice->oscillators[osc_idx].phase += phase_increment;
           if (current_voice->oscillators[osc_idx].phase >= TWO_PI) {
             current_voice->oscillators[osc_idx].phase -= TWO_PI;
@@ -286,7 +291,7 @@ void synth_polyphonicMode_process(float *audio_buffer,
           continue;
         }
 
-        float phase_increment = TWO_PI * osc_freq / (float)SAMPLING_FREQUENCY;
+        float phase_increment = TWO_PI * osc_freq / (float)g_sp3ctra_config.sampling_frequency;
 
         float amplitude_after_gamma = powf(smoothed_amplitude, AMPLITUDE_GAMMA);
         if (smoothed_amplitude < 0.0f &&
@@ -475,7 +480,7 @@ void *synth_polyphonicMode_thread_func(void *arg) {
       }
     }
     synth_polyphonicMode_process(
-        polyphonic_audio_buffers[local_producer_idx].data, AUDIO_BUFFER_SIZE);
+        polyphonic_audio_buffers[local_producer_idx].data, g_sp3ctra_config.audio_buffer_size);
     polyphonic_audio_buffers[local_producer_idx].ready = 1;
     pthread_cond_signal(&polyphonic_audio_buffers[local_producer_idx].cond);
     pthread_mutex_unlock(&polyphonic_audio_buffers[local_producer_idx].mutex);
@@ -790,10 +795,10 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
   // This ensures it starts fresh, respecting the latest global parameters.
   adsr_init_envelope(&voice->volume_adsr, G_VOLUME_ADSR_ATTACK_S,
                      G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-                     G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+                     G_VOLUME_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
   adsr_init_envelope(&voice->filter_adsr, G_FILTER_ADSR_ATTACK_S,
                      G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
-                     G_FILTER_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+                     G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
 
   voice->fundamental_frequency = midi_note_to_frequency(noteNumber);
   voice->midi_note_number = noteNumber;
@@ -870,7 +875,7 @@ void synth_polyphonic_set_volume_adsr_attack(float attack_s) {
     adsr_update_settings_and_recalculate_rates(
         &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
         G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-        G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+        G_VOLUME_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
     // Update filter ADSR similarly if desired
     // adsr_update_settings_and_recalculate_rates(&poly_voices[i].filter_adsr,
     // G_FILTER_ADSR_ATTACK_S, ...);
@@ -886,7 +891,7 @@ void synth_polyphonic_set_volume_adsr_decay(float decay_s) {
     adsr_update_settings_and_recalculate_rates(
         &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
         G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-        G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+        G_VOLUME_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
   }
 }
 
@@ -902,7 +907,7 @@ void synth_polyphonic_set_volume_adsr_sustain(float sustain_level) {
     adsr_update_settings_and_recalculate_rates(
         &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
         G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-        G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+        G_VOLUME_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
   }
 }
 
@@ -916,7 +921,7 @@ void synth_polyphonic_set_volume_adsr_release(float release_s) {
     adsr_update_settings_and_recalculate_rates(
         &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
         G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-        G_VOLUME_ADSR_RELEASE_S, (float)SAMPLING_FREQUENCY);
+        G_VOLUME_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
   }
 }
 
@@ -927,7 +932,7 @@ void synth_polyphonic_set_vibrato_rate(float rate_hz) {
   // Potentially add a max rate limit, e.g., 20Hz or 30Hz
   global_vibrato_lfo.rate_hz = rate_hz;
   global_vibrato_lfo.phase_increment =
-      TWO_PI * rate_hz / (float)SAMPLING_FREQUENCY;
+      TWO_PI * rate_hz / (float)g_sp3ctra_config.sampling_frequency;
   // printf("SYNTH_FFT: Global Vibrato LFO Rate set to: %.2f Hz\n", rate_hz);
 }
 

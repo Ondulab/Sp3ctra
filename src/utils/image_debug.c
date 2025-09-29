@@ -26,7 +26,7 @@ static int debug_image_runtime_enabled = 0; // Runtime control for image debug
 static int raw_scanner_runtime_enabled = 0; // Runtime control for raw scanner capture
 static int raw_scanner_capture_lines = 1000; // Default number of lines to capture
 static int oscillator_runtime_enabled = 0; // Runtime control for oscillator capture
-static int oscillator_capture_samples = SAMPLING_FREQUENCY; // Default number of samples to capture (1 second at 48kHz)
+static int oscillator_capture_samples = MAX_SAMPLING_FREQUENCY; // Default number of samples to capture (1 second at max freq)
 static int oscillator_markers_enabled = 0; // Runtime control for oscillator markers
 static char output_dir[256];
 

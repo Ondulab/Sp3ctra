@@ -71,7 +71,6 @@ void apply_relative_mode(int32_t *imageBuffer_q31, int start_note, int end_note)
  * @param precomputed_wave_data Precomputed waveform data
  * @retval None
  */
-void generate_waveform_samples(int note, float *waveBuffer, 
-                              float precomputed_wave_data[AUDIO_BUFFER_SIZE]);
+void generate_waveform_samples(int note, float *waveBuffer, const float *precomputed_wave_data);
 
 #endif /* SYNTH_ADDITIVE_ALGORITHMS_H */

@@ -106,7 +106,7 @@ typedef struct {
 
 /* Exported types ------------------------------------------------------------*/
 typedef struct {
-  float data[AUDIO_BUFFER_SIZE];
+  float *data; // dynamically allocated with size = g_sp3ctra_config.audio_buffer_size
   volatile int ready; // 0 = not ready, 1 = ready for consumption
   pthread_mutex_t mutex;
   pthread_cond_t cond;

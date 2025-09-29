@@ -90,7 +90,7 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
     if (tau_up_ms   > TAU_UP_MAX_MS)   tau_up_ms   = TAU_UP_MAX_MS;
     if (tau_down_ms > TAU_DOWN_MAX_MS) tau_down_ms = TAU_DOWN_MAX_MS;
 
-    const float Fs = (float)SAMPLING_FREQUENCY;
+    const float Fs = (float)g_sp3ctra_config.sampling_frequency;
     const float tau_up_s   = tau_up_ms   * 0.001f;
     const float tau_down_s = tau_down_ms * 0.001f;
 
@@ -132,7 +132,7 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
 
     // Debug counters removed to clean up logs
     
-    for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+    for (int buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
         // Phase weighting using precomputed waveform sample
         float s_norm = 0.0f;
         if (pre_wave) {
@@ -178,7 +178,7 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
     waves[note].current_volume = v;
 #else
     // Without GAP_LIMITER, just fill with constant volume
-    fill_float(target_volume, volumeBuffer, AUDIO_BUFFER_SIZE);
+    fill_float(target_volume, volumeBuffer, g_sp3ctra_config.audio_buffer_size);
 
     // Keep state consistent
     waves[note].current_volume = target_volume;
@@ -241,11 +241,11 @@ void apply_relative_mode(int32_t *imageBuffer_q31, int start_note, int end_note)
  * @retval None
  */
 void generate_waveform_samples(int note, float *waveBuffer, 
-                              float precomputed_wave_data[AUDIO_BUFFER_SIZE]) {
+                              const float *precomputed_wave_data) {
     (void)note; // Mark as unused to suppress warning
     // CRITICAL FIX: Normalize waveform data from integer range to float [-1.0, +1.0]
     const float normalization_factor = 1.0f / (float)WAVE_AMP_RESOLUTION;
-    for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+    for (int buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
         waveBuffer[buff_idx] = precomputed_wave_data[buff_idx] * normalization_factor;
     }
 }

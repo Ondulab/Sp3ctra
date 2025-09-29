@@ -20,6 +20,7 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <stdlib.h>
 
 #ifdef __linux__
 #include <sched.h>
@@ -65,25 +66,40 @@ int synth_init_thread_pool(void) {
     worker->work_done = 0;
 
     // CRITICAL FIX: Initialize all buffers to zero to prevent garbage values
-    memset(worker->thread_additiveBuffer, 0, sizeof(worker->thread_additiveBuffer));
-    memset(worker->thread_sumVolumeBuffer, 0, sizeof(worker->thread_sumVolumeBuffer));
-    memset(worker->thread_maxVolumeBuffer, 0, sizeof(worker->thread_maxVolumeBuffer));
+    {
+      int buf = g_sp3ctra_config.audio_buffer_size;
+      int notes_this = worker->end_note - worker->start_note;
+      // Allocate dynamic buffers
+      worker->thread_additiveBuffer = (float*)calloc(buf, sizeof(float));
+      worker->thread_sumVolumeBuffer = (float*)calloc(buf, sizeof(float));
+      worker->thread_maxVolumeBuffer = (float*)calloc(buf, sizeof(float));
+      worker->thread_additiveBuffer_L = (float*)calloc(buf, sizeof(float));
+      worker->thread_additiveBuffer_R = (float*)calloc(buf, sizeof(float));
+      worker->waveBuffer = (float*)calloc(buf, sizeof(float));
+      worker->volumeBuffer = (float*)calloc(buf, sizeof(float));
+      // Precomputed arrays per note x per sample
+      size_t total = (size_t)notes_this * (size_t)buf;
+      worker->precomputed_new_idx = (int32_t*)calloc(total, sizeof(int32_t));
+      worker->precomputed_wave_data = (float*)calloc(total, sizeof(float));
+      worker->captured_current_volume = (float*)calloc(total, sizeof(float));
+      worker->captured_target_volume = (float*)calloc(total, sizeof(float));
+      if (!worker->thread_additiveBuffer || !worker->thread_sumVolumeBuffer || !worker->thread_maxVolumeBuffer ||
+          !worker->thread_additiveBuffer_L || !worker->thread_additiveBuffer_R || !worker->waveBuffer || !worker->volumeBuffer ||
+          !worker->precomputed_new_idx || !worker->precomputed_wave_data || !worker->captured_current_volume || !worker->captured_target_volume) {
+        printf("Error allocating worker buffers for thread %d\n", i);
+        return -1;
+      }
+    }
     
     // CRITICAL FIX: Initialize stereo buffers to zero (always present)
-    memset(worker->thread_additiveBuffer_L, 0, sizeof(worker->thread_additiveBuffer_L));
-    memset(worker->thread_additiveBuffer_R, 0, sizeof(worker->thread_additiveBuffer_R));
     
 
     // Initialize work buffers
     memset(worker->imageBuffer_q31, 0, sizeof(worker->imageBuffer_q31));
     memset(worker->imageBuffer_f32, 0, sizeof(worker->imageBuffer_f32));
-    memset(worker->waveBuffer, 0, sizeof(worker->waveBuffer));
-    memset(worker->volumeBuffer, 0, sizeof(worker->volumeBuffer));
     
     
     // Initialize precomputed data arrays
-    memset(worker->precomputed_new_idx, 0, sizeof(worker->precomputed_new_idx));
-    memset(worker->precomputed_wave_data, 0, sizeof(worker->precomputed_wave_data));
     memset(worker->precomputed_volume, 0, sizeof(worker->precomputed_volume));
     
     memset(worker->precomputed_pan_position, 0, sizeof(worker->precomputed_pan_position));
@@ -91,9 +107,12 @@ int synth_init_thread_pool(void) {
     memset(worker->precomputed_right_gain, 0, sizeof(worker->precomputed_right_gain));
 
     // Initialize last pan gains for per-buffer ramping (center equal-power)
-    for (int idx = 0; idx < (MAX_NUMBER_OF_NOTES / 3 + 100); idx++) {
-      worker->last_left_gain[idx] = 0.707f;
-      worker->last_right_gain[idx] = 0.707f;
+    {
+      int notes_count = worker->end_note - worker->start_note;
+      for (int idx = 0; idx < notes_count; idx++) {
+        worker->last_left_gain[idx] = 0.707f;
+        worker->last_right_gain[idx] = 0.707f;
+      }
     }
 
     // Initialize synchronization
@@ -158,13 +177,13 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
   }
 
   // Initialize output buffers to zero
-  fill_float(0, worker->thread_additiveBuffer, AUDIO_BUFFER_SIZE);
-  fill_float(0, worker->thread_sumVolumeBuffer, AUDIO_BUFFER_SIZE);
-  fill_float(0, worker->thread_maxVolumeBuffer, AUDIO_BUFFER_SIZE);
-  
+  fill_float(0, worker->thread_additiveBuffer, g_sp3ctra_config.audio_buffer_size);
+  fill_float(0, worker->thread_sumVolumeBuffer, g_sp3ctra_config.audio_buffer_size);
+  fill_float(0, worker->thread_maxVolumeBuffer, g_sp3ctra_config.audio_buffer_size);
+
   // Initialize stereo buffers - CRITICAL FIX: must zero these buffers! (always present)
-  fill_float(0, worker->thread_additiveBuffer_L, AUDIO_BUFFER_SIZE);
-  fill_float(0, worker->thread_additiveBuffer_R, AUDIO_BUFFER_SIZE);
+  fill_float(0, worker->thread_additiveBuffer_L, g_sp3ctra_config.audio_buffer_size);
+  fill_float(0, worker->thread_additiveBuffer_R, g_sp3ctra_config.audio_buffer_size);
 
   // Use centralized preprocessing algorithm
   process_image_preprocessing(worker->imageData, worker->imageBuffer_q31, 
@@ -183,24 +202,24 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
         apply_gamma_mapping(&worker->imageBuffer_f32[local_note_idx], 1);
 
         // Use centralized waveform generation algorithm
-        generate_waveform_samples(note, worker->waveBuffer, 
-                                 worker->precomputed_wave_data[local_note_idx]);
+        const float* pre_wave = worker->precomputed_wave_data + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size;
+        generate_waveform_samples(note, worker->waveBuffer, pre_wave);
 
         // Use centralized GAP_LIMITER algorithm (phase-weighted; pass precomputed waveform)
         apply_gap_limiter_ramp(note,
                                worker->imageBuffer_f32[local_note_idx],
-                               worker->precomputed_wave_data[local_note_idx],
+                               pre_wave,
                                worker->volumeBuffer);
 
         // Debug capture: copy per-sample volumes for this note into worker buffers (fast path)
-        memcpy(&worker->captured_current_volume[local_note_idx][0], worker->volumeBuffer, sizeof(float) * AUDIO_BUFFER_SIZE);
-        fill_float(waves[note].target_volume, &worker->captured_target_volume[local_note_idx][0], AUDIO_BUFFER_SIZE);
+        memcpy(worker->captured_current_volume + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size, worker->volumeBuffer, sizeof(float) * g_sp3ctra_config.audio_buffer_size);
+        fill_float(waves[note].target_volume, worker->captured_target_volume + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size, g_sp3ctra_config.audio_buffer_size);
 
     // Apply volume scaling to the current note waveform
     mult_float(worker->waveBuffer, worker->volumeBuffer, worker->waveBuffer,
-               AUDIO_BUFFER_SIZE);
+               g_sp3ctra_config.audio_buffer_size);
 
-    for (buff_idx = AUDIO_BUFFER_SIZE; --buff_idx >= 0;) {
+    for (buff_idx = g_sp3ctra_config.audio_buffer_size; --buff_idx >= 0;) {
       if (worker->volumeBuffer[buff_idx] >
           worker->thread_maxVolumeBuffer[buff_idx]) {
         worker->thread_maxVolumeBuffer[buff_idx] =
@@ -217,13 +236,13 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
       const float end_right   = worker->precomputed_right_gain[local_note_idx];
 
       // Create temporary buffers for L/R channels
-      float waveBuffer_L[AUDIO_BUFFER_SIZE];
-      float waveBuffer_R[AUDIO_BUFFER_SIZE];
+      float waveBuffer_L[g_sp3ctra_config.audio_buffer_size];
+      float waveBuffer_R[g_sp3ctra_config.audio_buffer_size];
 
       // Linear interpolation across this audio buffer to avoid abrupt pan jumps
-      const float step = 1.0f / (float)AUDIO_BUFFER_SIZE;
+      const float step = 1.0f / (float)g_sp3ctra_config.audio_buffer_size;
       float t = 0.0f;
-      for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+      for (buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
         t += step; // ramp from start -> end across the buffer
         float gl = start_left  + (end_left  - start_left)  * t;
         float gr = start_right + (end_right - start_right) * t;
@@ -239,23 +258,23 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
 
       // Accumulate to stereo buffers
       add_float(waveBuffer_L, worker->thread_additiveBuffer_L,
-                worker->thread_additiveBuffer_L, AUDIO_BUFFER_SIZE);
+                worker->thread_additiveBuffer_L, g_sp3ctra_config.audio_buffer_size);
       add_float(waveBuffer_R, worker->thread_additiveBuffer_R,
-                worker->thread_additiveBuffer_R, AUDIO_BUFFER_SIZE);
+                worker->thread_additiveBuffer_R, g_sp3ctra_config.audio_buffer_size);
     } else {
       // Mono mode: Duplicate mono signal to both L/R channels (center panning)
       // This creates a unified architecture where stereo buffers are always filled
       add_float(worker->waveBuffer, worker->thread_additiveBuffer_L,
-                worker->thread_additiveBuffer_L, AUDIO_BUFFER_SIZE);
+                worker->thread_additiveBuffer_L, g_sp3ctra_config.audio_buffer_size);
       add_float(worker->waveBuffer, worker->thread_additiveBuffer_R,
-                worker->thread_additiveBuffer_R, AUDIO_BUFFER_SIZE);
+                worker->thread_additiveBuffer_R, g_sp3ctra_config.audio_buffer_size);
     }
 
     // Additive summation for mono or combined processing
     add_float(worker->waveBuffer, worker->thread_additiveBuffer,
-              worker->thread_additiveBuffer, AUDIO_BUFFER_SIZE);
+              worker->thread_additiveBuffer, g_sp3ctra_config.audio_buffer_size);
     // Intelligent volume weighting: strong oscillators dominate over weak background noise
-    for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+    for (int buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
         float current_volume = worker->volumeBuffer[buff_idx];
         float volume_normalized = current_volume / (float)VOLUME_AMP_RESOLUTION;
         float weighted_volume = powf(volume_normalized, g_sp3ctra_config.volume_weighting_exponent) * (float)VOLUME_AMP_RESOLUTION;
@@ -263,7 +282,7 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     }
 
     // Commit phase continuity: set waves[note].current_idx to the last precomputed index for this buffer
-    waves[note].current_idx = worker->precomputed_new_idx[local_note_idx][AUDIO_BUFFER_SIZE - 1];
+    waves[note].current_idx = *(worker->precomputed_new_idx + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size + (g_sp3ctra_config.audio_buffer_size - 1));
   }
 }
 
@@ -289,18 +308,20 @@ void synth_precompute_wave_data(int32_t *imageData) {
 
     for (int note = worker->start_note; note < worker->end_note; note++) {
       int local_note_idx = note - worker->start_note;
+      int32_t* pre_idx_base = worker->precomputed_new_idx + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size;
+      float* pre_wave_base = worker->precomputed_wave_data + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size;
 
       // Pre-compute waveform data
       // Preserve phase continuity: compute indices locally, do not write back to waves[].current_idx here
       uint32_t cur_idx = waves[note].current_idx;
-      for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+      for (int buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
         int32_t new_idx = (cur_idx + waves[note].octave_coeff);
         if ((uint32_t)new_idx >= waves[note].area_size) {
           new_idx -= waves[note].area_size;
         }
 
-        worker->precomputed_new_idx[local_note_idx][buff_idx] = new_idx;
-        worker->precomputed_wave_data[local_note_idx][buff_idx] =
+        pre_idx_base[buff_idx] = new_idx;
+        pre_wave_base[buff_idx] =
             (*(waves[note].start_ptr + new_idx));
         cur_idx = (uint32_t)new_idx;
       }
@@ -378,6 +399,20 @@ void synth_shutdown_thread_pool(void) {
   // Wait for all threads to terminate
   for (int i = 0; i < 3; i++) {
     pthread_join(worker_threads[i], NULL);
+
+    // Free dynamically allocated worker buffers
+    free(thread_pool[i].thread_additiveBuffer);    thread_pool[i].thread_additiveBuffer = NULL;
+    free(thread_pool[i].thread_sumVolumeBuffer);   thread_pool[i].thread_sumVolumeBuffer = NULL;
+    free(thread_pool[i].thread_maxVolumeBuffer);   thread_pool[i].thread_maxVolumeBuffer = NULL;
+    free(thread_pool[i].thread_additiveBuffer_L);  thread_pool[i].thread_additiveBuffer_L = NULL;
+    free(thread_pool[i].thread_additiveBuffer_R);  thread_pool[i].thread_additiveBuffer_R = NULL;
+    free(thread_pool[i].waveBuffer);               thread_pool[i].waveBuffer = NULL;
+    free(thread_pool[i].volumeBuffer);             thread_pool[i].volumeBuffer = NULL;
+    free(thread_pool[i].precomputed_new_idx);      thread_pool[i].precomputed_new_idx = NULL;
+    free(thread_pool[i].precomputed_wave_data);    thread_pool[i].precomputed_wave_data = NULL;
+    free(thread_pool[i].captured_current_volume);  thread_pool[i].captured_current_volume = NULL;
+    free(thread_pool[i].captured_target_volume);   thread_pool[i].captured_target_volume = NULL;
+
     pthread_mutex_destroy(&thread_pool[i].work_mutex);
     pthread_cond_destroy(&thread_pool[i].work_cond);
   }

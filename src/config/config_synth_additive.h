@@ -4,6 +4,7 @@
 #define __CONFIG_SYNTH_ADDITIVE_H__
 
 #include "config_loader.h"  // For g_additive_config
+#include "config_audio.h"   // For AUDIO_BUFFER_SIZE and SAMPLING_FREQUENCY
 #include "config_instrument.h"  // For CIS_MAX_PIXELS_NB
 
 /**************************************************************************************
@@ -71,7 +72,7 @@
 #define DEBUG_OSC
 
 // Logging Parameters
-#define LOG_FREQUENCY                (SAMPLING_FREQUENCY / AUDIO_BUFFER_SIZE) // Approximate logging frequency in Hz
+#define LOG_FREQUENCY                100  // Approximate logging interval (in callbacks), decoupled from buffer size
 
 /**************************************************************************************
  * Auto-volume Configuration
