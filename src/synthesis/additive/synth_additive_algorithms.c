@@ -39,14 +39,14 @@ void process_image_preprocessing(int32_t *imageData, int32_t *imageBuffer_q31,
         int local_note_idx = idx - start_note;
         imageBuffer_q31[local_note_idx] = 0;
         
-        for (acc = 0; acc < g_additive_config.pixels_per_note; acc++) {
-            imageBuffer_q31[local_note_idx] += (imageData[idx * g_additive_config.pixels_per_note + acc]);
+        for (acc = 0; acc < g_sp3ctra_config.pixels_per_note; acc++) {
+            imageBuffer_q31[local_note_idx] += (imageData[idx * g_sp3ctra_config.pixels_per_note + acc]);
         }
         // Average the accumulated values
-        imageBuffer_q31[local_note_idx] /= g_additive_config.pixels_per_note;
-        
+        imageBuffer_q31[local_note_idx] /= g_sp3ctra_config.pixels_per_note;
+
         // Apply optional color inversion based on runtime config
-        if (g_additive_config.invert_intensity) {
+        if (g_sp3ctra_config.invert_intensity) {
             imageBuffer_q31[local_note_idx] = VOLUME_AMP_RESOLUTION - imageBuffer_q31[local_note_idx];
         }
         // Clamp to valid range
@@ -80,8 +80,8 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
 
     // Compute per-buffer base time constants from runtime config
     // tau_ms are directly provided by configuration; alpha = 1 - exp(-1/(tau_s * Fs))
-    float tau_up_ms   = g_additive_config.tau_up_base_ms;
-    float tau_down_ms = g_additive_config.tau_down_base_ms;
+    float tau_up_ms   = g_sp3ctra_config.tau_up_base_ms;
+    float tau_down_ms = g_sp3ctra_config.tau_down_base_ms;
 
     // Clamp taus to avoid division by zero or denormals
     if (tau_up_ms   < 0.01f) tau_up_ms   = 0.01f;
@@ -109,9 +109,9 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
     {
         float f = waves[note].frequency;
         if (f < 1.0f) f = 1.0f;
-        float ratio = f / g_additive_config.decay_freq_ref_hz;
+        float ratio = f / g_sp3ctra_config.decay_freq_ref_hz;
         // powf is used once per buffer (acceptable). If performance becomes critical, approximate.
-        float w = powf(ratio, -g_additive_config.decay_freq_beta);
+        float w = powf(ratio, -g_sp3ctra_config.decay_freq_beta);
         if (w < DECAY_FREQ_MIN) w = DECAY_FREQ_MIN;
         if (w > DECAY_FREQ_MAX) w = DECAY_FREQ_MAX;
         g_down = w;
@@ -147,7 +147,7 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
         float w_phase;
         // Avoid powf in hot path: support common p = 1 or 2 fast, else fallback linear
         {
-            float p = g_additive_config.phase_weight_power;
+            float p = g_sp3ctra_config.phase_weight_power;
             if (p >= 1.9f && p <= 2.1f) {
                 w_phase = one_minus_s2 * one_minus_s2; // p = 2
             } else {
@@ -159,7 +159,7 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
         const int is_attack = (t > v) ? 1 : 0;
         float alpha_base = is_attack ? alpha_up : (alpha_down * g_down);
         float alpha_eff = alpha_base;
-        if (g_additive_config.enable_phase_weighted_slew) {
+        if (g_sp3ctra_config.enable_phase_weighted_slew) {
             alpha_eff *= w_phase;
         }
         // Clamp alpha_eff

@@ -64,7 +64,7 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
     return;
 
   /* Check if auto-volume is enabled in configuration */
-  if (!g_additive_config.auto_volume_enabled) {
+  if (!g_sp3ctra_config.auto_volume_enabled) {
     return; // Auto-volume is disabled, do nothing
   }
 
@@ -109,7 +109,7 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
       pthread_mutex_lock(&ctx->imu_mutex);
       ctx->auto_last_activity_time = current_time;
       pthread_mutex_unlock(&ctx->imu_mutex);
-    } else if (seconds_since_activity > g_additive_config.imu_inactivity_timeout_s) {
+    } else if (seconds_since_activity > g_sp3ctra_config.imu_inactivity_timeout_s) {
       // Been inactive for more than timeout, set to inactive
       active = 0;
     } else {
@@ -128,11 +128,11 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
   /* TODO: Add C interface for MIDI controller status */
 #endif
 
-  float target = active ? 1.0f : g_additive_config.auto_volume_inactive_level;
+  float target = active ? 1.0f : g_sp3ctra_config.auto_volume_inactive_level;
 
   /* Exponential smoothing towards target using time constant tau =
    * AUTO_VOLUME_FADE_MS */
-  float tau = (float)g_additive_config.auto_volume_fade_ms;
+  float tau = (float)g_sp3ctra_config.auto_volume_fade_ms;
   float alpha;
   if (dt_ms == 0)
     alpha = 1.0f;

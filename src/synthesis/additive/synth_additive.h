@@ -13,7 +13,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "../../config/config_instrument.h"  // For CIS_MAX_PIXELS_NB
-#include "../../config/config_loader.h"      // For additive_synth_config_t
+#include "../../config/config_loader.h"      // For sp3ctra_config_t
 
 /**************************************************************************************
  * Buffer Management Configuration
@@ -23,8 +23,8 @@
 
 // Helper function to get current number of notes based on runtime configuration
 static inline int get_current_number_of_notes(void) {
-    extern additive_synth_config_t g_additive_config;
-    return CIS_MAX_PIXELS_NB / g_additive_config.pixels_per_note;
+    extern sp3ctra_config_t g_sp3ctra_config;
+    return CIS_MAX_PIXELS_NB / g_sp3ctra_config.pixels_per_note;
 }
 
 /**************************************************************************************

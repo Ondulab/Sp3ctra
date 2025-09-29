@@ -84,8 +84,8 @@ int32_t synth_IfftInit(void) {
   atexit(synth_shutdown_thread_pool);
 
   // Initialize default parameters
-  wavesGeneratorParams.commaPerSemitone = g_additive_config.comma_per_semitone;
-  wavesGeneratorParams.startFrequency = (uint32_t)g_additive_config.start_frequency; // Cast to uint32_t
+  wavesGeneratorParams.commaPerSemitone = g_sp3ctra_config.comma_per_semitone;
+  wavesGeneratorParams.startFrequency = (uint32_t)g_sp3ctra_config.start_frequency; // Cast to uint32_t
   wavesGeneratorParams.harmonization = MAJOR;
   wavesGeneratorParams.harmonizationLevel = 100;
   wavesGeneratorParams.waveformOrder = 1;
@@ -174,7 +174,7 @@ int32_t synth_IfftInit(void) {
       return -1;
   }
 
-  if (g_additive_config.stereo_mode_enabled) {
+  if (g_sp3ctra_config.stereo_mode_enabled) {
     // Initialize lock-free pan gains system
     lock_free_pan_init();
     printf("🔧 LOCK_FREE_PAN: System initialized for stereo mode\n");
@@ -345,7 +345,7 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
           float base_level = 0.1f; // INCREASED base level to avoid division by small numbers
           // CORRECTED: Proper exponent logic for compression reduction with normalized waveforms
-          float response_curve = powf(sum_normalized + base_level, 1.0f / g_additive_config.summation_response_exponent);
+          float response_curve = powf(sum_normalized + base_level, 1.0f / g_sp3ctra_config.summation_response_exponent);
           float ratio = additiveBuffer[buff_idx] / (response_curve * (float)VOLUME_AMP_RESOLUTION);
           tmp_audioData[buff_idx] = ratio * fade_in_factor; // Apply anti-tac fade-in
         } else {
@@ -357,7 +357,7 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
 
   // Apply contrast modulation and unified stereo output
   if (synth_pool_initialized && !synth_pool_shutdown) {
-    if (g_additive_config.stereo_mode_enabled) {
+    if (g_sp3ctra_config.stereo_mode_enabled) {
     // STEREO MODE: Use actual stereo buffers from threads
     // Combine stereo buffers from all threads
     static float stereoBuffer_L[AUDIO_BUFFER_SIZE];
@@ -394,7 +394,7 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
           float base_level = 0.1f; // INCREASED base level to avoid division by small numbers (same as mono)
           // CORRECTED: Proper exponent logic for compression reduction with normalized waveforms
-          float response_curve = powf(sum_normalized + base_level, 1.0f / g_additive_config.summation_response_exponent);
+          float response_curve = powf(sum_normalized + base_level, 1.0f / g_sp3ctra_config.summation_response_exponent);
           left_signal  = stereoBuffer_L[buff_idx] / (response_curve * (float)VOLUME_AMP_RESOLUTION);
           right_signal = stereoBuffer_R[buff_idx] / (response_curve * (float)VOLUME_AMP_RESOLUTION);
           
@@ -528,7 +528,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   }
 #endif
 
-  if (g_additive_config.stereo_mode_enabled) {
+  if (g_sp3ctra_config.stereo_mode_enabled) {
     // Calculate color temperature and pan positions for each oscillator
     // This is done once per image reception for efficiency
     for (int note = 0; note < get_current_number_of_notes(); note++) {
@@ -536,8 +536,8 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
       uint32_t r_sum = 0, g_sum = 0, b_sum = 0;
       uint32_t pixel_count = 0;
       
-      for (int pix = 0; pix < g_additive_config.pixels_per_note; pix++) {
-        uint32_t pixel_idx = note * g_additive_config.pixels_per_note + pix;
+      for (int pix = 0; pix < g_sp3ctra_config.pixels_per_note; pix++) {
+        uint32_t pixel_idx = note * g_sp3ctra_config.pixels_per_note + pix;
         if (pixel_idx < CIS_MAX_PIXELS_NB) {
           r_sum += buffer_R[pixel_idx];
           g_sum += buffer_G[pixel_idx];
