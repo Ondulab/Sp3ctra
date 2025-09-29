@@ -34,8 +34,12 @@
  **************************************************************************************/
 // Intelligent volume weighting to prioritize strong oscillators over weak background noise
 #define VOLUME_WEIGHTING_EXPONENT    2.0f      // 1.0=linear, 2.0=quadratic, 3.0=cubic (higher = stronger volumes dominate more)
-#define SUMMATION_RESPONSE_EXPONENT  0.7f      // Final response curve (0.5=anti-compress, 1.0=linear, 2.0=compress)
-#define SUMMATION_BASE_LEVEL        (0.05f * VOLUME_AMP_RESOLUTION)  // Base level to avoid division issues
+#define SUMMATION_RESPONSE_EXPONENT  2.0f      // Final response curve (0.5=anti-compress, 1.0=linear, 2.0=compress)
+#define SUMMATION_BASE_LEVEL        (0.01f * VOLUME_AMP_RESOLUTION)  // Base level to avoid division issues
+
+// Anti-saturation protection for extreme summation_response_exponent values
+#define SUMMATION_COMPRESSION_FACTOR 1.0f      // Pre-normalization factor to prevent extreme x values
+#define POW_SHIFTED_MAX_OUTPUT       2.0f      // Maximum output limit for pow_shifted_fast to prevent saturation
 
 /**************************************************************************************
  * Gap Limiter Configuration
