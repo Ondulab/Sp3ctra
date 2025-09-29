@@ -34,7 +34,6 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     .invert_intensity = 1,
 
     // Envelope slew parameters (runtime configurable; defaults)
-    .decay_mode_exponential = 1,
     .tau_up_base_ms = 0.5f,
     .tau_down_base_ms = 0.5f,
     .decay_freq_ref_hz = 440.0f,
@@ -129,12 +128,11 @@ int create_default_config_file(const char* config_file_path) {
     
     fprintf(file, "[audio]\n");
     fprintf(file, "# Audio system configuration - optimized for real-time synthesis\n");
-    fprintf(file, "# Sampling frequency in Hz (22050, 44100, 48000, 96000)\n");
+    fprintf(file, "# Sampling frequency in Hz (48000, 96000)\n");
     fprintf(file, "sampling_frequency = %d\n", DEFAULT_CONFIG.sampling_frequency);
     fprintf(file, "\n");
     fprintf(file, "# Audio buffer size in frames - affects latency and stability\n");
     fprintf(file, "# Smaller values = lower latency, larger values = more stable\n");
-    fprintf(file, "# 48kHz: 80 frames = 1.67ms latency (legacy optimized)\n");
     fprintf(file, "audio_buffer_size = %d\n", DEFAULT_CONFIG.audio_buffer_size);
     fprintf(file, "\n");
     
@@ -167,10 +165,6 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "\n");
 
     fprintf(file, "[envelope_slew]\n");
-    fprintf(file, "# Select decay mode: 0 = legacy linear ramp, 1 = exponential (recommended)\n");
-    fprintf(file, "# Exponential mode provides more natural sounding volume transitions\n");
-    fprintf(file, "decay_mode_exponential = %d\n", DEFAULT_CONFIG.decay_mode_exponential);
-    fprintf(file, "\n");
     fprintf(file, "# Base time constants for envelope slew (multiplied by runtime divisors)\n");
     fprintf(file, "# These values control how quickly volume changes occur\n");
     fprintf(file, "tau_up_base_ms = %.3f\n", DEFAULT_CONFIG.tau_up_base_ms);
@@ -306,11 +300,6 @@ void validate_config(const sp3ctra_config_t* config) {
     }
 
     // Validate envelope slew parameters
-    if (config->decay_mode_exponential != 0 && config->decay_mode_exponential != 1) {
-        fprintf(stderr, "[CONFIG ERROR] decay_mode_exponential must be 0 or 1, got %d\n",
-                config->decay_mode_exponential);
-        errors++;
-    }
     if (config->tau_up_base_ms <= 0.0f || config->tau_up_base_ms > TAU_UP_MAX_MS) {
         fprintf(stderr, "[CONFIG ERROR] tau_up_base_ms must be > 0 and <= %.1f, got %.3f\n",
                 TAU_UP_MAX_MS, config->tau_up_base_ms);
@@ -541,12 +530,7 @@ int load_additive_config(const char* config_file_path) {
                     line_number, key, current_section);
         }
     } else if (strcmp(current_section, "envelope_slew") == 0) {
-            if (strcmp(key, "decay_mode_exponential") == 0) {
-                if (parse_int(value, &g_sp3ctra_config.decay_mode_exponential, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
-            } else if (strcmp(key, "tau_up_base_ms") == 0) {
+            if (strcmp(key, "tau_up_base_ms") == 0) {
                 if (parse_float(value, &g_sp3ctra_config.tau_up_base_ms, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
