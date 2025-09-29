@@ -94,6 +94,11 @@ volatile int synth_pool_shutdown = 0;
 // Global mutex to protect access to waves[] data during pre-computation
 static pthread_mutex_t waves_global_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+/* RT-safe double buffering system */
+rt_safe_buffer_t g_rt_additive_buffer = {0};
+rt_safe_buffer_t g_rt_stereo_L_buffer = {0};  
+rt_safe_buffer_t g_rt_stereo_R_buffer = {0};
+
 /* Private function implementations ------------------------------------------*/
 
 /**
@@ -121,6 +126,7 @@ int synth_init_thread_pool(void) {
     {
       int buf = g_sp3ctra_config.audio_buffer_size;
       int notes_this = worker->end_note - worker->start_note;
+      
       // Allocate dynamic buffers
       worker->thread_additiveBuffer = (float*)calloc(buf, sizeof(float));
       worker->thread_sumVolumeBuffer = (float*)calloc(buf, sizeof(float));
@@ -129,45 +135,49 @@ int synth_init_thread_pool(void) {
       worker->thread_additiveBuffer_R = (float*)calloc(buf, sizeof(float));
       worker->waveBuffer = (float*)calloc(buf, sizeof(float));
       worker->volumeBuffer = (float*)calloc(buf, sizeof(float));
+      
+      // Work buffers (dynamically sized based on notes_per_thread)
+      worker->imageBuffer_q31 = (int32_t*)calloc(notes_this, sizeof(int32_t));
+      worker->imageBuffer_f32 = (float*)calloc(notes_this, sizeof(float));
+      
       // Precomputed arrays per note x per sample
       size_t total = (size_t)notes_this * (size_t)buf;
       worker->precomputed_new_idx = (int32_t*)calloc(total, sizeof(int32_t));
       worker->precomputed_wave_data = (float*)calloc(total, sizeof(float));
+      
+      // Precomputed volume and pan data (per note)
+      worker->precomputed_volume = (float*)calloc(notes_this, sizeof(float));
+      worker->precomputed_pan_position = (float*)calloc(notes_this, sizeof(float));
+      worker->precomputed_left_gain = (float*)calloc(notes_this, sizeof(float));
+      worker->precomputed_right_gain = (float*)calloc(notes_this, sizeof(float));
+      
+      // Last applied gains for ramping (per note)
+      worker->last_left_gain = (float*)calloc(notes_this, sizeof(float));
+      worker->last_right_gain = (float*)calloc(notes_this, sizeof(float));
+      
       // Capture buffers are now lazy-allocated only when capture is enabled
       worker->captured_current_volume = NULL;
       worker->captured_target_volume = NULL;
       worker->capture_capacity_elements = 0;
+      
       // Persist stereo temp buffers to avoid VLA on worker stack
       worker->temp_waveBuffer_L = (float*)calloc(buf, sizeof(float));
       worker->temp_waveBuffer_R = (float*)calloc(buf, sizeof(float));
+      
+      // Check all allocations
       if (!worker->thread_additiveBuffer || !worker->thread_sumVolumeBuffer || !worker->thread_maxVolumeBuffer ||
           !worker->thread_additiveBuffer_L || !worker->thread_additiveBuffer_R || !worker->waveBuffer || !worker->volumeBuffer ||
-          !worker->precomputed_new_idx || !worker->precomputed_wave_data ||
+          !worker->imageBuffer_q31 || !worker->imageBuffer_f32 ||
+          !worker->precomputed_new_idx || !worker->precomputed_wave_data || !worker->precomputed_volume ||
+          !worker->precomputed_pan_position || !worker->precomputed_left_gain || !worker->precomputed_right_gain ||
+          !worker->last_left_gain || !worker->last_right_gain ||
           !worker->temp_waveBuffer_L || !worker->temp_waveBuffer_R) {
         printf("Error allocating worker buffers for thread %d\n", i);
         return -1;
       }
-    }
-    
-    // CRITICAL FIX: Initialize stereo buffers to zero (always present)
-    
-
-    // Initialize work buffers
-    memset(worker->imageBuffer_q31, 0, sizeof(worker->imageBuffer_q31));
-    memset(worker->imageBuffer_f32, 0, sizeof(worker->imageBuffer_f32));
-    
-    
-    // Initialize precomputed data arrays
-    memset(worker->precomputed_volume, 0, sizeof(worker->precomputed_volume));
-    
-    memset(worker->precomputed_pan_position, 0, sizeof(worker->precomputed_pan_position));
-    memset(worker->precomputed_left_gain, 0, sizeof(worker->precomputed_left_gain));
-    memset(worker->precomputed_right_gain, 0, sizeof(worker->precomputed_right_gain));
-
-    // Initialize last pan gains for per-buffer ramping (center equal-power)
-    {
-      int notes_count = worker->end_note - worker->start_note;
-      for (int idx = 0; idx < notes_count; idx++) {
+      
+      // Initialize last pan gains for per-buffer ramping (center equal-power)
+      for (int idx = 0; idx < notes_this; idx++) {
         worker->last_left_gain[idx] = 0.707f;
         worker->last_right_gain[idx] = 0.707f;
       }
@@ -354,6 +364,9 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     // Commit phase continuity: set waves[note].current_idx to the last precomputed index for this buffer
     waves[note].current_idx = *(worker->precomputed_new_idx + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size + (g_sp3ctra_config.audio_buffer_size - 1));
   }
+
+  // NOTE: RT-safe buffer writing removed - causes audio corruption
+  // Workers only write to their local buffers, main thread combines them
 }
 
 /**
@@ -478,8 +491,16 @@ void synth_shutdown_thread_pool(void) {
     free(thread_pool[i].thread_additiveBuffer_R);  thread_pool[i].thread_additiveBuffer_R = NULL;
     free(thread_pool[i].waveBuffer);               thread_pool[i].waveBuffer = NULL;
     free(thread_pool[i].volumeBuffer);             thread_pool[i].volumeBuffer = NULL;
+    free(thread_pool[i].imageBuffer_q31);          thread_pool[i].imageBuffer_q31 = NULL;
+    free(thread_pool[i].imageBuffer_f32);          thread_pool[i].imageBuffer_f32 = NULL;
     free(thread_pool[i].precomputed_new_idx);      thread_pool[i].precomputed_new_idx = NULL;
     free(thread_pool[i].precomputed_wave_data);    thread_pool[i].precomputed_wave_data = NULL;
+    free(thread_pool[i].precomputed_volume);       thread_pool[i].precomputed_volume = NULL;
+    free(thread_pool[i].precomputed_pan_position); thread_pool[i].precomputed_pan_position = NULL;
+    free(thread_pool[i].precomputed_left_gain);    thread_pool[i].precomputed_left_gain = NULL;
+    free(thread_pool[i].precomputed_right_gain);   thread_pool[i].precomputed_right_gain = NULL;
+    free(thread_pool[i].last_left_gain);           thread_pool[i].last_left_gain = NULL;
+    free(thread_pool[i].last_right_gain);          thread_pool[i].last_right_gain = NULL;
     free(thread_pool[i].captured_current_volume);  thread_pool[i].captured_current_volume = NULL;
     free(thread_pool[i].captured_target_volume);   thread_pool[i].captured_target_volume = NULL;
     free(thread_pool[i].temp_waveBuffer_L);        thread_pool[i].temp_waveBuffer_L = NULL;
@@ -496,4 +517,98 @@ void synth_shutdown_thread_pool(void) {
   }
 
   synth_pool_initialized = 0;
+}
+
+/**
+ * @brief  Initialize RT-safe double buffering system
+ * @retval 0 on success, -1 on error
+ */
+int init_rt_safe_buffers(void) {
+  int buffer_size = g_sp3ctra_config.audio_buffer_size;
+  
+  // Initialize additive buffer
+  g_rt_additive_buffer.buffers[0] = (float*)calloc(buffer_size, sizeof(float));
+  g_rt_additive_buffer.buffers[1] = (float*)calloc(buffer_size, sizeof(float));
+  if (!g_rt_additive_buffer.buffers[0] || !g_rt_additive_buffer.buffers[1]) {
+    printf("ERROR: Failed to allocate RT additive buffers\n");
+    return -1;
+  }
+  g_rt_additive_buffer.ready_buffer = 0;  // RT reads from buffer 0 initially
+  g_rt_additive_buffer.worker_buffer = 1; // Workers write to buffer 1 initially
+  pthread_mutex_init(&g_rt_additive_buffer.swap_mutex, NULL);
+
+  // Initialize stereo L buffer  
+  g_rt_stereo_L_buffer.buffers[0] = (float*)calloc(buffer_size, sizeof(float));
+  g_rt_stereo_L_buffer.buffers[1] = (float*)calloc(buffer_size, sizeof(float));
+  if (!g_rt_stereo_L_buffer.buffers[0] || !g_rt_stereo_L_buffer.buffers[1]) {
+    printf("ERROR: Failed to allocate RT stereo L buffers\n");
+    return -1;
+  }
+  g_rt_stereo_L_buffer.ready_buffer = 0;
+  g_rt_stereo_L_buffer.worker_buffer = 1;
+  pthread_mutex_init(&g_rt_stereo_L_buffer.swap_mutex, NULL);
+
+  // Initialize stereo R buffer
+  g_rt_stereo_R_buffer.buffers[0] = (float*)calloc(buffer_size, sizeof(float));
+  g_rt_stereo_R_buffer.buffers[1] = (float*)calloc(buffer_size, sizeof(float));
+  if (!g_rt_stereo_R_buffer.buffers[0] || !g_rt_stereo_R_buffer.buffers[1]) {
+    printf("ERROR: Failed to allocate RT stereo R buffers\n");
+    return -1;
+  }
+  g_rt_stereo_R_buffer.ready_buffer = 0;
+  g_rt_stereo_R_buffer.worker_buffer = 1;
+  pthread_mutex_init(&g_rt_stereo_R_buffer.swap_mutex, NULL);
+
+  printf("[RT-SAFE] Double buffering system initialized\n");
+  return 0;
+}
+
+/**
+ * @brief  Cleanup RT-safe double buffering system
+ * @retval None
+ */
+void cleanup_rt_safe_buffers(void) {
+  // Cleanup additive buffer
+  if (g_rt_additive_buffer.buffers[0]) { free(g_rt_additive_buffer.buffers[0]); g_rt_additive_buffer.buffers[0] = NULL; }
+  if (g_rt_additive_buffer.buffers[1]) { free(g_rt_additive_buffer.buffers[1]); g_rt_additive_buffer.buffers[1] = NULL; }
+  pthread_mutex_destroy(&g_rt_additive_buffer.swap_mutex);
+
+  // Cleanup stereo L buffer
+  if (g_rt_stereo_L_buffer.buffers[0]) { free(g_rt_stereo_L_buffer.buffers[0]); g_rt_stereo_L_buffer.buffers[0] = NULL; }
+  if (g_rt_stereo_L_buffer.buffers[1]) { free(g_rt_stereo_L_buffer.buffers[1]); g_rt_stereo_L_buffer.buffers[1] = NULL; }
+  pthread_mutex_destroy(&g_rt_stereo_L_buffer.swap_mutex);
+
+  // Cleanup stereo R buffer
+  if (g_rt_stereo_R_buffer.buffers[0]) { free(g_rt_stereo_R_buffer.buffers[0]); g_rt_stereo_R_buffer.buffers[0] = NULL; }
+  if (g_rt_stereo_R_buffer.buffers[1]) { free(g_rt_stereo_R_buffer.buffers[1]); g_rt_stereo_R_buffer.buffers[1] = NULL; }
+  pthread_mutex_destroy(&g_rt_stereo_R_buffer.swap_mutex);
+
+  printf("[RT-SAFE] Double buffering system cleaned up\n");
+}
+
+/**
+ * @brief  Swap RT-safe buffers when workers are done (called from non-RT thread)
+ * @retval None
+ */
+void rt_safe_swap_buffers(void) {
+  // Swap additive buffer (non-blocking for non-RT thread)
+  pthread_mutex_lock(&g_rt_additive_buffer.swap_mutex);
+  int old_ready = g_rt_additive_buffer.ready_buffer;
+  g_rt_additive_buffer.ready_buffer = g_rt_additive_buffer.worker_buffer;
+  g_rt_additive_buffer.worker_buffer = old_ready;
+  pthread_mutex_unlock(&g_rt_additive_buffer.swap_mutex);
+
+  // Swap stereo L buffer  
+  pthread_mutex_lock(&g_rt_stereo_L_buffer.swap_mutex);
+  old_ready = g_rt_stereo_L_buffer.ready_buffer;
+  g_rt_stereo_L_buffer.ready_buffer = g_rt_stereo_L_buffer.worker_buffer;
+  g_rt_stereo_L_buffer.worker_buffer = old_ready;
+  pthread_mutex_unlock(&g_rt_stereo_L_buffer.swap_mutex);
+
+  // Swap stereo R buffer
+  pthread_mutex_lock(&g_rt_stereo_R_buffer.swap_mutex);
+  old_ready = g_rt_stereo_R_buffer.ready_buffer;
+  g_rt_stereo_R_buffer.ready_buffer = g_rt_stereo_R_buffer.worker_buffer;
+  g_rt_stereo_R_buffer.worker_buffer = old_ready;
+  pthread_mutex_unlock(&g_rt_stereo_R_buffer.swap_mutex);
 }

@@ -18,9 +18,6 @@
 #include <stddef.h>
 #include <pthread.h>
 
-// Forward declaration for MAX_NUMBER_OF_NOTES before struct definitions
-#define MAX_NUMBER_OF_NOTES          (CIS_MAX_PIXELS_NB)
-
 /* Exported types ------------------------------------------------------------*/
 
 /**
@@ -44,9 +41,9 @@ typedef struct synth_thread_worker_s {
   float *thread_additiveBuffer_R;
 
 
-  // Local work buffers (avoids VLA on stack) - Float32
-  int32_t imageBuffer_q31[MAX_NUMBER_OF_NOTES / 3]; // +100 for safety
-  float imageBuffer_f32[MAX_NUMBER_OF_NOTES / 3];
+  // Local work buffers (avoids VLA on stack) - Float32 (dynamically allocated)
+  int32_t *imageBuffer_q31; // Dynamically allocated based on notes_per_thread
+  float *imageBuffer_f32;   // Dynamically allocated based on notes_per_thread
   float *waveBuffer;
   float *volumeBuffer;
 
@@ -58,16 +55,16 @@ typedef struct synth_thread_worker_s {
   // Pre-computed waves[] data (read-only)
   int32_t *precomputed_new_idx; // size: (notes_per_thread * g_sp3ctra_config.audio_buffer_size)
   float *precomputed_wave_data; // size: (notes_per_thread * g_sp3ctra_config.audio_buffer_size)
-  float precomputed_volume[MAX_NUMBER_OF_NOTES / 3];
+  float *precomputed_volume;    // Dynamically allocated based on notes_per_thread
   
-  // Pre-computed pan positions and gains for each note
-  float precomputed_pan_position[MAX_NUMBER_OF_NOTES / 3];
-  float precomputed_left_gain[MAX_NUMBER_OF_NOTES / 3];
-  float precomputed_right_gain[MAX_NUMBER_OF_NOTES / 3];
+  // Pre-computed pan positions and gains for each note (dynamically allocated)
+  float *precomputed_pan_position;
+  float *precomputed_left_gain;
+  float *precomputed_right_gain;
 
   // Persistent last applied gains for per-buffer ramping (zipper-noise mitigation)
-  float last_left_gain[MAX_NUMBER_OF_NOTES / 3];
-  float last_right_gain[MAX_NUMBER_OF_NOTES / 3];
+  float *last_left_gain;
+  float *last_right_gain;
 
   // Debug capture: per-note per-sample volumes (current and target) for this buffer
   float *captured_current_volume; // size: (notes_per_thread * g_sp3ctra_config.audio_buffer_size)
@@ -98,5 +95,23 @@ void synth_precompute_wave_data(int32_t *imageData);
 extern synth_thread_worker_t thread_pool[3];
 extern volatile int synth_pool_initialized;
 extern volatile int synth_pool_shutdown;
+
+/* RT-safe double buffering system */
+typedef struct {
+  // Double buffers for RT-safe access
+  float *buffers[2]; // [0] = current RT reads, [1] = workers write
+  volatile int ready_buffer; // Which buffer is ready for RT (atomic read)
+  volatile int worker_buffer; // Which buffer workers are writing to
+  pthread_mutex_t swap_mutex; // Protects buffer swapping (non-RT thread only)
+} rt_safe_buffer_t;
+
+extern rt_safe_buffer_t g_rt_additive_buffer;
+extern rt_safe_buffer_t g_rt_stereo_L_buffer;  
+extern rt_safe_buffer_t g_rt_stereo_R_buffer;
+
+/* RT-safe buffer management */
+int init_rt_safe_buffers(void);
+void cleanup_rt_safe_buffers(void);
+void rt_safe_swap_buffers(void); // Called by workers when done (non-RT)
 
 #endif /* __SYNTH_ADDITIVE_THREADING_H__ */

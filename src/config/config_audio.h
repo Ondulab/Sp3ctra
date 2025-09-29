@@ -30,16 +30,6 @@
  **************************************************************************************/
 #define AUDIO_CHANNEL                (2)
 
-// Automatic cache sizing for smooth volume transitions in audio callback
-// Target: ~2% of buffer size for imperceptible volume steps
-// This ensures smooth volume changes regardless of buffer size
-#define AUDIO_CACHE_UPDATE_FREQUENCY_BASE 2  // 2% of buffer size base
-
-// Ensure minimum of 4 and maximum of 32 for performance and stability
-// Note: This is calculated at runtime in audio callback using g_sp3ctra_config.audio_buffer_size
-#define AUDIO_CACHE_UPDATE_FREQUENCY_MIN  4
-#define AUDIO_CACHE_UPDATE_FREQUENCY_MAX  32
-
 /**************************************************************************************
  * RtAudio Format Configuration - Optimized FLOAT32 Pipeline
  **************************************************************************************/

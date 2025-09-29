@@ -62,8 +62,8 @@ struct wave {
 #define WAVEFORM_TABLE_SIZE        (10000000)
 
 extern volatile struct waveParams wavesGeneratorParams;
-extern volatile struct wave waves[MAX_NUMBER_OF_NOTES];
-extern volatile float unitary_waveform[WAVEFORM_TABLE_SIZE];
+extern volatile struct wave *waves;  // Now a pointer to dynamically allocated array
+extern volatile float *unitary_waveform;  // Now a pointer to dynamically allocated array
 
 /* Exported macro ------------------------------------------------------------*/
 

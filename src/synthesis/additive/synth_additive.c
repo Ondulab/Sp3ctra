@@ -23,6 +23,7 @@
 #include "synth_additive_stereo.h"
 #include "synth_additive_state.h"
 #include "synth_additive_threading.h"
+#include "synth_additive_runtime.h"
 
 // Main header
 #include "synth_additive.h"
@@ -67,7 +68,7 @@ static pthread_mutex_t g_synth_process_mutex;
 // Variables pour la limitation des logs (affichage périodique)
 static uint32_t log_counter = 0;
 
-static int32_t imageRef[MAX_NUMBER_OF_NOTES] = {0};
+static int32_t *imageRef = NULL; // Dynamically allocated
 
 /* Global context variables (moved from shared.c) */
 struct shared_var shared_var;
@@ -90,6 +91,7 @@ void synth_additive_cleanup(void) {
   if (tmp_audioData)   { free(tmp_audioData);   tmp_audioData = NULL; }
   if (stereoBuffer_L)  { free(stereoBuffer_L);  stereoBuffer_L = NULL; }
   if (stereoBuffer_R)  { free(stereoBuffer_R);  stereoBuffer_R = NULL; }
+  if (imageRef)        { free(imageRef);        imageRef = NULL; }
 }
 
 /* Public functions ----------------------------------------------------------*/
@@ -100,7 +102,24 @@ int32_t synth_IfftInit(void) {
   printf("---------- SYNTH INIT ---------\n");
   printf("-------------------------------\n");
 
-  // Register cleanup function for thread pool
+  // Initialize runtime configuration
+  if (synth_runtime_init(CIS_MAX_PIXELS_NB, g_sp3ctra_config.pixels_per_note) != 0) {
+    fprintf(stderr, "Failed to initialize runtime configuration\n");
+    return -1;
+  }
+
+  // Allocate dynamic buffers
+  if (synth_runtime_allocate_buffers() != 0) {
+    fprintf(stderr, "Failed to allocate dynamic buffers\n");
+    return -1;
+  }
+
+  // Set global pointers to dynamically allocated arrays
+  waves = synth_runtime_get_waves();
+  unitary_waveform = synth_runtime_get_unitary_waveform();
+
+  // Register cleanup functions
+  atexit(synth_runtime_free_buffers);
   atexit(synth_shutdown_thread_pool);
   atexit(synth_additive_cleanup);
 
@@ -183,7 +202,13 @@ int32_t synth_IfftInit(void) {
 
   printf("Note number  = %d\n", (int)get_current_number_of_notes());
 
-  fill_int32(65535, (int32_t *)imageRef, get_current_number_of_notes());
+  // Allocate imageRef dynamically
+  imageRef = (int32_t*)calloc(get_current_number_of_notes(), sizeof(int32_t));
+  if (!imageRef) {
+    fprintf(stderr, "ERROR: Failed to allocate imageRef\n");
+    return -1;
+  }
+  fill_int32(65535, imageRef, get_current_number_of_notes());
 
   // Initialize image debug system
   image_debug_init();
@@ -224,13 +249,18 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
 
   // Persistent dynamically-sized buffers are declared at file scope
 
-  // Initialize thread pool if first time
+  // Initialize thread pool and RT-safe buffers on first call only
   if (first_call) {
     if (synth_init_thread_pool() == 0) {
-      if (synth_start_worker_threads() == 0) {
-        printf("Optimized thread pool initialized successfully\n");
+      if (init_rt_safe_buffers() == 0) {
+        if (synth_start_worker_threads() == 0) {
+          printf("RT-safe synthesis system initialized successfully\n");
+        } else {
+          printf("Error starting threads, synthesis will fail\n");
+          synth_pool_initialized = 0;
+        }
       } else {
-        printf("Error starting threads, synthesis will fail\n");
+        printf("Error initializing RT-safe buffers, synthesis will fail\n");
         synth_pool_initialized = 0;
       }
     } else {
@@ -280,14 +310,14 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
       pthread_mutex_unlock(&thread_pool[i].work_mutex);
     }
 
-    // Phase 3: Wait for all workers to finish (optimized for Pi5)
+    // Phase 3: Wait for all workers to finish (optimized latency)
     for (int i = 0; i < 3; i++) {
       pthread_mutex_lock(&thread_pool[i].work_mutex);
       while (!thread_pool[i].work_done) {
-        // ✅ OPTIMIZATION Pi5: Passive wait to reduce CPU load
-        struct timespec sleep_time = {0, 100000}; // 100 microseconds
+        // Very short sleep for better responsiveness
+        struct timespec sleep_time = {0, 5000}; // 5 microseconds (reduced from 100µs)
         pthread_mutex_unlock(&thread_pool[i].work_mutex);
-        nanosleep(&sleep_time, NULL); // Sleep instead of busy wait
+        nanosleep(&sleep_time, NULL);
         pthread_mutex_lock(&thread_pool[i].work_mutex);
       }
       pthread_mutex_unlock(&thread_pool[i].work_mutex);
@@ -566,12 +596,17 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   int32_t processed_grayScale[CIS_MAX_PIXELS_NB]; // Buffer for data to be
                                                   // passed to synth_IfftMode
 
-  // Wait for destination buffer to be free
-  pthread_mutex_lock(&buffers_R[index].mutex);
-  while (buffers_R[index].ready != 0) {
-    pthread_cond_wait(&buffers_R[index].cond, &buffers_R[index].mutex);
+  // RT-SAFE: Poll buffer ready state atomically (no mutex/cond needed)
+  // Increased sleep time to reduce CPU contention and improve startup stability
+  while (__atomic_load_n(&buffers_R[index].ready, __ATOMIC_ACQUIRE) != 0) {
+    struct timespec sleep_time = {0, 10000}; // 10 microseconds (more stable)
+    nanosleep(&sleep_time, NULL);
   }
-  pthread_mutex_unlock(&buffers_R[index].mutex);
+  // Also wait for L buffer to be ready
+  while (__atomic_load_n(&buffers_L[index].ready, __ATOMIC_ACQUIRE) != 0) {
+    struct timespec sleep_time = {0, 10000}; // 10 microseconds (more stable)
+    nanosleep(&sleep_time, NULL);
+  }
 
   // Launch grayscale conversion
   greyScale(buffer_R, buffer_G, buffer_B, g_grayScale_live, CIS_MAX_PIXELS_NB);
@@ -642,20 +677,32 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     }
     
     // Update lock-free pan gains system with calculated values
-    // Prepare arrays for batch update
-    static float left_gains[MAX_NUMBER_OF_NOTES];
-    static float right_gains[MAX_NUMBER_OF_NOTES];
-    static float pan_positions[MAX_NUMBER_OF_NOTES];
+    // Prepare arrays for batch update (allocated once on first use)
+    static float *left_gains = NULL;
+    static float *right_gains = NULL;
+    static float *pan_positions = NULL;
     
-    int current_notes = get_current_number_of_notes();
-    for (int note = 0; note < current_notes; note++) {
+    // Allocate once on first use
+    if (!left_gains) {
+      int num_notes = get_current_number_of_notes();
+      left_gains = (float*)calloc(num_notes, sizeof(float));
+      right_gains = (float*)calloc(num_notes, sizeof(float));
+      pan_positions = (float*)calloc(num_notes, sizeof(float));
+      
+      if (!left_gains || !right_gains || !pan_positions) {
+        fprintf(stderr, "ERROR: Failed to allocate pan gain buffers\n");
+        return;
+      }
+    }
+    
+    for (int note = 0; note < get_current_number_of_notes(); note++) {
       left_gains[note] = waves[note].left_gain;
       right_gains[note] = waves[note].right_gain;
       pan_positions[note] = waves[note].pan_position;
     }
     
     // Atomic update of all pan gains
-    lock_free_pan_update(left_gains, right_gains, pan_positions, current_notes);
+    lock_free_pan_update(left_gains, right_gains, pan_positions, get_current_number_of_notes());
   }
 
   // Capture raw scanner line for debug visualization
@@ -736,16 +783,10 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   pthread_mutex_unlock(&g_displayable_synth_mutex);
   // Additive synthesis finished
 
-  // Mark buffers as ready
-  pthread_mutex_lock(&buffers_L[index].mutex);
-  buffers_L[index].ready = 1;
-  pthread_cond_signal(&buffers_L[index].cond);
-  pthread_mutex_unlock(&buffers_L[index].mutex);
-
-  pthread_mutex_lock(&buffers_R[index].mutex);
-  buffers_R[index].ready = 1;
-  pthread_cond_signal(&buffers_R[index].cond);
-  pthread_mutex_unlock(&buffers_R[index].mutex);
+  // RT-SAFE: Mark buffers as ready using atomic stores (no mutex needed)
+  __atomic_store_n(&buffers_L[index].ready, 1, __ATOMIC_RELEASE);
+  __atomic_store_n(&buffers_R[index].ready, 1, __ATOMIC_RELEASE);
+  // pthread_cond_signal removed - RT callback polls atomically
 
   // Change index so callback reads the filled buffer and next write goes to other buffer
   __atomic_store_n(&current_buffer_index, 1 - index, __ATOMIC_RELEASE);

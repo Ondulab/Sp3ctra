@@ -5,12 +5,13 @@
 
 #include "lock_free_pan.h"
 #include "../../config/config_debug.h"    // For debug configuration macros
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
 
 /* Global instance */
-LockFreePanGains g_lock_free_pan_gains;
+LockFreePanGains g_lock_free_pan_gains = {0};
 
 /* Static write buffers tracking */
 static int current_write_buffer = 0; /* 0 = A, 1 = B */
@@ -20,10 +21,35 @@ static int current_write_buffer = 0; /* 0 = A, 1 = B */
  * Sets up double buffers and atomic pointers
  */
 void lock_free_pan_init(void) {
+    /* Get runtime number of notes */
+    extern int get_current_number_of_notes(void);
+    uint32_t num_notes = (uint32_t)get_current_number_of_notes();
+    
+    /* Allocate double buffers dynamically */
+    g_lock_free_pan_gains.left_gain_buffer_A = (float*)calloc(num_notes, sizeof(float));
+    g_lock_free_pan_gains.right_gain_buffer_A = (float*)calloc(num_notes, sizeof(float));
+    g_lock_free_pan_gains.pan_position_buffer_A = (float*)calloc(num_notes, sizeof(float));
+    
+    g_lock_free_pan_gains.left_gain_buffer_B = (float*)calloc(num_notes, sizeof(float));
+    g_lock_free_pan_gains.right_gain_buffer_B = (float*)calloc(num_notes, sizeof(float));
+    g_lock_free_pan_gains.pan_position_buffer_B = (float*)calloc(num_notes, sizeof(float));
+    
+    /* Check allocation success */
+    if (!g_lock_free_pan_gains.left_gain_buffer_A || !g_lock_free_pan_gains.right_gain_buffer_A ||
+        !g_lock_free_pan_gains.pan_position_buffer_A || !g_lock_free_pan_gains.left_gain_buffer_B ||
+        !g_lock_free_pan_gains.right_gain_buffer_B || !g_lock_free_pan_gains.pan_position_buffer_B) {
+        fprintf(stderr, "ERROR: Failed to allocate lock-free pan buffers\n");
+        lock_free_pan_cleanup(); /* Cleanup any partial allocations */
+        return;
+    }
+    
+    /* Store buffer size */
+    g_lock_free_pan_gains.buffer_size = num_notes;
+    
     /* Initialize all buffers with center pan (0.707 for equal power) */
     const float center_gain = 0.707f; /* -3dB for center position */
     
-    for (uint32_t i = 0; i < MAX_NUMBER_OF_NOTES; i++) {
+    for (uint32_t i = 0; i < num_notes; i++) {
         /* Buffer A initialization */
         g_lock_free_pan_gains.left_gain_buffer_A[i] = center_gain;
         g_lock_free_pan_gains.right_gain_buffer_A[i] = center_gain;
@@ -60,10 +86,37 @@ void lock_free_pan_init(void) {
 }
 
 /**
- * @brief Cleanup resources (currently no dynamic allocation)
+ * @brief Cleanup resources - free dynamically allocated buffers
  */
 void lock_free_pan_cleanup(void) {
-    /* No dynamic memory to free in current implementation */
+    /* Free dynamically allocated buffers */
+    if (g_lock_free_pan_gains.left_gain_buffer_A) {
+        free(g_lock_free_pan_gains.left_gain_buffer_A);
+        g_lock_free_pan_gains.left_gain_buffer_A = NULL;
+    }
+    if (g_lock_free_pan_gains.right_gain_buffer_A) {
+        free(g_lock_free_pan_gains.right_gain_buffer_A);
+        g_lock_free_pan_gains.right_gain_buffer_A = NULL;
+    }
+    if (g_lock_free_pan_gains.pan_position_buffer_A) {
+        free(g_lock_free_pan_gains.pan_position_buffer_A);
+        g_lock_free_pan_gains.pan_position_buffer_A = NULL;
+    }
+    if (g_lock_free_pan_gains.left_gain_buffer_B) {
+        free(g_lock_free_pan_gains.left_gain_buffer_B);
+        g_lock_free_pan_gains.left_gain_buffer_B = NULL;
+    }
+    if (g_lock_free_pan_gains.right_gain_buffer_B) {
+        free(g_lock_free_pan_gains.right_gain_buffer_B);
+        g_lock_free_pan_gains.right_gain_buffer_B = NULL;
+    }
+    if (g_lock_free_pan_gains.pan_position_buffer_B) {
+        free(g_lock_free_pan_gains.pan_position_buffer_B);
+        g_lock_free_pan_gains.pan_position_buffer_B = NULL;
+    }
+    
+    g_lock_free_pan_gains.buffer_size = 0;
+    
 #ifdef DEBUG_LOCK_FREE_PAN
     printf("🔧 LOCK_FREE_PAN: Cleanup complete\n");
 #endif
@@ -88,9 +141,9 @@ void lock_free_pan_update(const float* new_left_gains,
         return;
     }
     
-    /* Clamp to maximum notes */
-    if (num_notes > MAX_NUMBER_OF_NOTES) {
-        num_notes = MAX_NUMBER_OF_NOTES;
+    /* Clamp to allocated buffer size */
+    if (num_notes > g_lock_free_pan_gains.buffer_size) {
+        num_notes = g_lock_free_pan_gains.buffer_size;
     }
     
     /* Select write buffers based on current state */

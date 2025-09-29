@@ -14,14 +14,17 @@
 
 /* Lock-free pan gains structure using atomic pointers for zero-contention access */
 typedef struct {
-    /* Double buffers for panning gains */
-    float left_gain_buffer_A[MAX_NUMBER_OF_NOTES];
-    float right_gain_buffer_A[MAX_NUMBER_OF_NOTES];
-    float pan_position_buffer_A[MAX_NUMBER_OF_NOTES];
+    /* Double buffers for panning gains (dynamically allocated) */
+    float *left_gain_buffer_A;
+    float *right_gain_buffer_A;
+    float *pan_position_buffer_A;
     
-    float left_gain_buffer_B[MAX_NUMBER_OF_NOTES];
-    float right_gain_buffer_B[MAX_NUMBER_OF_NOTES];
-    float pan_position_buffer_B[MAX_NUMBER_OF_NOTES];
+    float *left_gain_buffer_B;
+    float *right_gain_buffer_B;
+    float *pan_position_buffer_B;
+    
+    /* Allocated buffer size */
+    uint32_t buffer_size;
     
     /* Atomic pointers for lock-free swapping */
     _Atomic(float*) read_left_ptr;

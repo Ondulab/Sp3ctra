@@ -18,8 +18,6 @@
 /**************************************************************************************
  * Buffer Management Configuration
  **************************************************************************************/
-// Maximum number of notes for static buffer allocation (when pixels_per_note = 1)
-#define MAX_NUMBER_OF_NOTES          (CIS_MAX_PIXELS_NB)
 
 // Helper function to get current number of notes based on runtime configuration
 static inline int get_current_number_of_notes(void) {
