@@ -115,9 +115,9 @@ void signalHandler(int signal) {
 }
 
 int main(int argc, char **argv) {
-  /* Load additive synthesis configuration */
-  printf("[CONFIG] Loading additive synthesis configuration...\n");
-  if (load_additive_config("additive_synth.ini") != 0) {
+  /* Load Sp3ctra configuration */
+  printf("[CONFIG] Loading Sp3ctra configuration...\n");
+  if (load_additive_config("sp3ctra.ini") != 0) {
     printf("[CONFIG] Failed to load configuration. Exiting.\n");
     return EXIT_FAILURE;
   }
@@ -569,9 +569,9 @@ int main(int argc, char **argv) {
      gAutoVolumeInstance. */
   printf("[INIT] Initializing auto-volume controller...\n");
   printf("[INIT] Auto-volume config: enabled=%d, threshold=%.3f, timeout=%ds, fade=%dms\n",
-         g_additive_config.auto_volume_enabled, IMU_ACTIVE_THRESHOLD_X, g_additive_config.imu_inactivity_timeout_s, g_additive_config.auto_volume_fade_ms);
+         g_sp3ctra_config.auto_volume_enabled, IMU_ACTIVE_THRESHOLD_X, g_sp3ctra_config.imu_inactivity_timeout_s, g_sp3ctra_config.auto_volume_fade_ms);
   printf("[INIT] Volume levels: active=%.1f, inactive=%.3f\n",
-         1.0f, g_additive_config.auto_volume_inactive_level);
+         1.0f, g_sp3ctra_config.auto_volume_inactive_level);
 
   gAutoVolumeInstance = auto_volume_create(&context);
   if (!gAutoVolumeInstance) {

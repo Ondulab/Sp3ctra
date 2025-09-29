@@ -131,16 +131,16 @@ float calculate_color_temperature(uint8_t r, uint8_t g, uint8_t b) {
   float cyan_yellow_diff = cyan_strength - yellow_strength;
   
   // Combine with configurable weight on blue-red axis
-  float temperature = blue_red_diff * g_additive_config.stereo_blue_red_weight + cyan_yellow_diff * g_additive_config.stereo_cyan_yellow_weight;
+  float temperature = blue_red_diff * g_sp3ctra_config.stereo_blue_red_weight + cyan_yellow_diff * g_sp3ctra_config.stereo_cyan_yellow_weight;
   
   // Configurable amplification: Make the effect adjustable
-  temperature *= g_additive_config.stereo_temperature_amplification;  // Amplify the base signal
+  temperature *= g_sp3ctra_config.stereo_temperature_amplification;  // Amplify the base signal
   
   // Apply configurable non-linear curve to push values toward extremes
   if (temperature > 0) {
-    temperature = powf(temperature, g_additive_config.stereo_temperature_curve_exponent);  // Configurable curve exponent
+    temperature = powf(temperature, g_sp3ctra_config.stereo_temperature_curve_exponent);  // Configurable curve exponent
   } else {
-    temperature = -powf(-temperature, g_additive_config.stereo_temperature_curve_exponent);
+    temperature = -powf(-temperature, g_sp3ctra_config.stereo_temperature_curve_exponent);
   }
   
   // Hard clamp to [-1, 1] range

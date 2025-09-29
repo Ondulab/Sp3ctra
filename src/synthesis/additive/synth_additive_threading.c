@@ -209,7 +209,7 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     }
 
     // Always fill stereo buffers (unified approach)
-    if (g_additive_config.stereo_mode_enabled) {
+    if (g_sp3ctra_config.stereo_mode_enabled) {
       // Stereo mode: Apply per-oscillator panning with per-buffer ramp (zipper-noise mitigation)
       const float start_left  = worker->last_left_gain[local_note_idx];
       const float start_right = worker->last_right_gain[local_note_idx];
@@ -258,7 +258,7 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     for (int buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
         float current_volume = worker->volumeBuffer[buff_idx];
         float volume_normalized = current_volume / (float)VOLUME_AMP_RESOLUTION;
-        float weighted_volume = powf(volume_normalized, g_additive_config.volume_weighting_exponent) * (float)VOLUME_AMP_RESOLUTION;
+        float weighted_volume = powf(volume_normalized, g_sp3ctra_config.volume_weighting_exponent) * (float)VOLUME_AMP_RESOLUTION;
         worker->thread_sumVolumeBuffer[buff_idx] += weighted_volume;
     }
 
@@ -311,7 +311,7 @@ void synth_precompute_wave_data(int32_t *imageData) {
       // Volume parameters are now handled by tau_up_base_ms/tau_down_base_ms system
 #endif
 
-      if (g_additive_config.stereo_mode_enabled) {
+      if (g_sp3ctra_config.stereo_mode_enabled) {
         // Use lock-free pan system to get current gains
         float left_gain, right_gain, pan_position;
         lock_free_pan_read(note, &left_gain, &right_gain, &pan_position);
@@ -382,7 +382,7 @@ void synth_shutdown_thread_pool(void) {
     pthread_cond_destroy(&thread_pool[i].work_cond);
   }
 
-  if (g_additive_config.stereo_mode_enabled) {
+  if (g_sp3ctra_config.stereo_mode_enabled) {
     // Cleanup lock-free pan gains system
     lock_free_pan_cleanup();
     printf("🔧 LOCK_FREE_PAN: System cleaned up\n");

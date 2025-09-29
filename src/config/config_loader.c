@@ -10,12 +10,16 @@
 /**************************************************************************************
  * Global Configuration Instance
  **************************************************************************************/
-additive_synth_config_t g_additive_config;
+sp3ctra_config_t g_sp3ctra_config;
 
 /**************************************************************************************
  * Default Values (from original #define values)
  **************************************************************************************/
-static const additive_synth_config_t DEFAULT_CONFIG = {
+static const sp3ctra_config_t DEFAULT_CONFIG = {
+    // Audio system parameters (from config_audio.h)
+    .sampling_frequency = 48000,         // Default: 48kHz
+    .audio_buffer_size = 80,             // Default: 80 frames (legacy buffer length for 48 kHz)
+    
     // Auto-volume parameters (runtime configurable)
     .auto_volume_enabled = 0,            // Default: auto-volume disabled
     .imu_inactivity_timeout_s = 5,
@@ -119,9 +123,20 @@ int create_default_config_file(const char* config_file_path) {
         return -1;
     }
     
-    fprintf(file, "# Sp3ctra Additive Synthesis Configuration\n");
+    fprintf(file, "# Sp3ctra Configuration\n");
     fprintf(file, "# This file was automatically generated with default values\n");
     fprintf(file, "# Modify these values as needed - the program will validate them on startup\n\n");
+    
+    fprintf(file, "[audio]\n");
+    fprintf(file, "# Audio system configuration - optimized for real-time synthesis\n");
+    fprintf(file, "# Sampling frequency in Hz (22050, 44100, 48000, 96000)\n");
+    fprintf(file, "sampling_frequency = %d\n", DEFAULT_CONFIG.sampling_frequency);
+    fprintf(file, "\n");
+    fprintf(file, "# Audio buffer size in frames - affects latency and stability\n");
+    fprintf(file, "# Smaller values = lower latency, larger values = more stable\n");
+    fprintf(file, "# 48kHz: 80 frames = 1.67ms latency (legacy optimized)\n");
+    fprintf(file, "audio_buffer_size = %d\n", DEFAULT_CONFIG.audio_buffer_size);
+    fprintf(file, "\n");
     
     fprintf(file, "[auto_volume]\n");
     fprintf(file, "# Enable/disable IMU-based auto-volume (0=disabled, 1=enabled)\n");
@@ -210,8 +225,22 @@ int create_default_config_file(const char* config_file_path) {
  * Configuration Validation
  **************************************************************************************/
 
-void validate_config(const additive_synth_config_t* config) {
+void validate_config(const sp3ctra_config_t* config) {
     int errors = 0;
+    
+    // Validate audio system parameters
+    if (config->sampling_frequency != 22050 && config->sampling_frequency != 44100 && 
+        config->sampling_frequency != 48000 && config->sampling_frequency != 96000) {
+        fprintf(stderr, "[CONFIG ERROR] sampling_frequency must be 22050, 44100, 48000, or 96000, got %d\n",
+                config->sampling_frequency);
+        errors++;
+    }
+    
+    if (config->audio_buffer_size < 16 || config->audio_buffer_size > 2048) {
+        fprintf(stderr, "[CONFIG ERROR] audio_buffer_size must be between 16 and 2048, got %d\n",
+                config->audio_buffer_size);
+        errors++;
+    }
     
     // Validate auto-volume parameters (runtime configurable)
     if (config->auto_volume_enabled != 0 && config->auto_volume_enabled != 1) {
@@ -379,13 +408,13 @@ int load_additive_config(const char* config_file_path) {
             return -1;
         }
         // Load the default values
-        g_additive_config = DEFAULT_CONFIG;
-        validate_config(&g_additive_config);
+        g_sp3ctra_config = DEFAULT_CONFIG;
+        validate_config(&g_sp3ctra_config);
         return 0;
     }
     
     // Initialize with default values
-    g_additive_config = DEFAULT_CONFIG;
+    g_sp3ctra_config = DEFAULT_CONFIG;
     
     char line[256];
     char current_section[64] = "";
@@ -429,24 +458,39 @@ int load_additive_config(const char* config_file_path) {
         char* value = trim_whitespace(equals + 1);
         
         // Parse parameters based on section and key
-        if (strcmp(current_section, "auto_volume") == 0) {
+        if (strcmp(current_section, "audio") == 0) {
+            if (strcmp(key, "sampling_frequency") == 0) {
+                if (parse_int(value, &g_sp3ctra_config.sampling_frequency, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "audio_buffer_size") == 0) {
+                if (parse_int(value, &g_sp3ctra_config.audio_buffer_size, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else {
+                fprintf(stderr, "[CONFIG WARNING] Line %d: Unknown parameter '%s' in section '%s'\n", 
+                        line_number, key, current_section);
+            }
+        } else if (strcmp(current_section, "auto_volume") == 0) {
             if (strcmp(key, "auto_volume_enabled") == 0) {
-                if (parse_int(value, &g_additive_config.auto_volume_enabled, key) != 0) {
+                if (parse_int(value, &g_sp3ctra_config.auto_volume_enabled, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "imu_inactivity_timeout_s") == 0) {
-                if (parse_int(value, &g_additive_config.imu_inactivity_timeout_s, key) != 0) {
+                if (parse_int(value, &g_sp3ctra_config.imu_inactivity_timeout_s, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "auto_volume_inactive_level") == 0) {
-                if (parse_float(value, &g_additive_config.auto_volume_inactive_level, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.auto_volume_inactive_level, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "auto_volume_fade_ms") == 0) {
-                if (parse_int(value, &g_additive_config.auto_volume_fade_ms, key) != 0) {
+                if (parse_int(value, &g_sp3ctra_config.auto_volume_fade_ms, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
@@ -463,17 +507,17 @@ int load_additive_config(const char* config_file_path) {
             }
         } else if (strcmp(current_section, "synthesis") == 0) {
             if (strcmp(key, "start_frequency") == 0) {
-                if (parse_float(value, &g_additive_config.start_frequency, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.start_frequency, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "semitone_per_octave") == 0) {
-                if (parse_int(value, &g_additive_config.semitone_per_octave, key) != 0) {
+                if (parse_int(value, &g_sp3ctra_config.semitone_per_octave, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "comma_per_semitone") == 0) {
-                if (parse_int(value, &g_additive_config.comma_per_semitone, key) != 0) {
+                if (parse_int(value, &g_sp3ctra_config.comma_per_semitone, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
@@ -483,12 +527,12 @@ int load_additive_config(const char* config_file_path) {
                 fprintf(stderr, "[CONFIG INFO] Line %d: Parameter '%s' is deprecated (replaced by tau_up_base_ms/tau_down_base_ms), ignoring\n", 
                         line_number, key);
             } else if (strcmp(key, "pixels_per_note") == 0) {
-                if (parse_int(value, &g_additive_config.pixels_per_note, key) != 0) {
+                if (parse_int(value, &g_sp3ctra_config.pixels_per_note, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "invert_intensity") == 0) {
-                if (parse_int(value, &g_additive_config.invert_intensity, key) != 0) {
+                if (parse_int(value, &g_sp3ctra_config.invert_intensity, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
@@ -498,37 +542,37 @@ int load_additive_config(const char* config_file_path) {
         }
     } else if (strcmp(current_section, "envelope_slew") == 0) {
             if (strcmp(key, "decay_mode_exponential") == 0) {
-                if (parse_int(value, &g_additive_config.decay_mode_exponential, key) != 0) {
+                if (parse_int(value, &g_sp3ctra_config.decay_mode_exponential, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "tau_up_base_ms") == 0) {
-                if (parse_float(value, &g_additive_config.tau_up_base_ms, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.tau_up_base_ms, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "tau_down_base_ms") == 0) {
-                if (parse_float(value, &g_additive_config.tau_down_base_ms, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.tau_down_base_ms, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "decay_freq_ref_hz") == 0) {
-                if (parse_float(value, &g_additive_config.decay_freq_ref_hz, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.decay_freq_ref_hz, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "decay_freq_beta") == 0) {
-                if (parse_float(value, &g_additive_config.decay_freq_beta, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.decay_freq_beta, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "enable_phase_weighted_slew") == 0) {
-                if (parse_int(value, &g_additive_config.enable_phase_weighted_slew, key) != 0) {
+                if (parse_int(value, &g_sp3ctra_config.enable_phase_weighted_slew, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "phase_weight_power") == 0) {
-                if (parse_float(value, &g_additive_config.phase_weight_power, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.phase_weight_power, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
@@ -538,27 +582,27 @@ int load_additive_config(const char* config_file_path) {
             }
     } else if (strcmp(current_section, "stereo_processing") == 0) {
             if (strcmp(key, "stereo_mode_enabled") == 0) {
-                if (parse_int(value, &g_additive_config.stereo_mode_enabled, key) != 0) {
+                if (parse_int(value, &g_sp3ctra_config.stereo_mode_enabled, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "stereo_temperature_amplification") == 0) {
-                if (parse_float(value, &g_additive_config.stereo_temperature_amplification, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.stereo_temperature_amplification, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "stereo_blue_red_weight") == 0) {
-                if (parse_float(value, &g_additive_config.stereo_blue_red_weight, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.stereo_blue_red_weight, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "stereo_cyan_yellow_weight") == 0) {
-                if (parse_float(value, &g_additive_config.stereo_cyan_yellow_weight, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.stereo_cyan_yellow_weight, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "stereo_temperature_curve_exponent") == 0) {
-                if (parse_float(value, &g_additive_config.stereo_temperature_curve_exponent, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.stereo_temperature_curve_exponent, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
@@ -568,12 +612,12 @@ int load_additive_config(const char* config_file_path) {
             }
         } else if (strcmp(current_section, "summation_normalization") == 0) {
             if (strcmp(key, "volume_weighting_exponent") == 0) {
-                if (parse_float(value, &g_additive_config.volume_weighting_exponent, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.volume_weighting_exponent, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
             } else if (strcmp(key, "summation_response_exponent") == 0) {
-                if (parse_float(value, &g_additive_config.summation_response_exponent, key) != 0) {
+                if (parse_float(value, &g_sp3ctra_config.summation_response_exponent, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
@@ -589,7 +633,7 @@ int load_additive_config(const char* config_file_path) {
     fclose(file);
     
     // Validate the loaded configuration
-    validate_config(&g_additive_config);
+    validate_config(&g_sp3ctra_config);
     
     printf("[CONFIG] Configuration loaded successfully\n");
     return 0;

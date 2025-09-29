@@ -6,9 +6,13 @@
 #include <stdint.h>
 
 /**************************************************************************************
- * Additive Synthesis Runtime Configuration Structure
+ * Sp3ctra Runtime Configuration Structure
  **************************************************************************************/
 typedef struct {
+    // Audio system parameters (runtime configurable)
+    int sampling_frequency;              // Sampling frequency in Hz (22050, 44100, 48000, 96000)
+    int audio_buffer_size;               // Audio buffer size in frames
+    
     // Auto-volume parameters (runtime configurable)
     int auto_volume_enabled;             // Enable/disable IMU-based auto-volume (0/1)
     int imu_inactivity_timeout_s;        // Timeout before switching to inactive mode (seconds)
@@ -41,12 +45,12 @@ typedef struct {
     // Summation normalization parameters
     float volume_weighting_exponent;           // Volume weighting exponent (1.0=linear, 2.0=quadratic, 3.0=cubic)
     float summation_response_exponent;         // Final response curve exponent (0.5=anti-compress, 1.0=linear, 1.5+=compress)
-} additive_synth_config_t;
+} sp3ctra_config_t;
 
 /**************************************************************************************
  * Global Configuration Instance
  **************************************************************************************/
-extern additive_synth_config_t g_additive_config;
+extern sp3ctra_config_t g_sp3ctra_config;
 
 /**************************************************************************************
  * Configuration Loading Functions
@@ -76,6 +80,6 @@ int create_default_config_file(const char* config_file_path);
  * 
  * @param config Configuration structure to validate
  */
-void validate_config(const additive_synth_config_t* config);
+void validate_config(const sp3ctra_config_t* config);
 
 #endif // CONFIG_LOADER_H
