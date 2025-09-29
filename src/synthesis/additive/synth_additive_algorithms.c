@@ -186,7 +186,6 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
 #endif
 }
 
-
 /**
  * @brief Apply non-linear gamma mapping to image buffer
  * @param imageBuffer_f32 Input/output float buffer

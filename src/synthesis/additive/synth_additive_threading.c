@@ -11,6 +11,7 @@
 #include "synth_additive_threading.h"
 #include "synth_additive_algorithms.h"
 #include "synth_additive_math.h"
+#include "pow_approx.h"
 #include "wave_generation.h"
 #include "../../audio/pan/lock_free_pan.h"
 #include "../../config/config_debug.h"
@@ -346,7 +347,7 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     for (int buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
         float current_volume = worker->volumeBuffer[buff_idx];
         float volume_normalized = current_volume / (float)VOLUME_AMP_RESOLUTION;
-        float weighted_volume = powf(volume_normalized, g_sp3ctra_config.volume_weighting_exponent) * (float)VOLUME_AMP_RESOLUTION;
+        float weighted_volume = pow_unit_fast(volume_normalized, g_sp3ctra_config.volume_weighting_exponent) * (float)VOLUME_AMP_RESOLUTION;
         worker->thread_sumVolumeBuffer[buff_idx] += weighted_volume;
     }
 

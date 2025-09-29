@@ -19,6 +19,7 @@
 // Include all the specialized modules
 #include "synth_additive_algorithms.h"
 #include "synth_additive_math.h"
+#include "pow_approx.h"
 #include "synth_additive_stereo.h"
 #include "synth_additive_state.h"
 #include "synth_additive_threading.h"
@@ -392,9 +393,12 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           // Apply exponential response curve to reduce compression effects
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
-          float base_level = 0.1f; // INCREASED base level to avoid division by small numbers
+          float base_level = (float)SUMMATION_BASE_LEVEL / (float)VOLUME_AMP_RESOLUTION; // Use configured base level (normalized)
           // CORRECTED: Proper exponent logic for compression reduction with normalized waveforms
-          float response_curve = powf(sum_normalized + base_level, 1.0f / g_sp3ctra_config.summation_response_exponent);
+          float expo = 1.0f / g_sp3ctra_config.summation_response_exponent;
+          float x = sum_normalized + base_level;
+          float response_curve = (fabsf(expo - 0.5f) <= 1e-3f) ? sqrtf(x < 0.0f ? 0.0f : x)
+                                  : pow_shifted_fast(x, base_level, expo);
           float ratio = additiveBuffer[buff_idx] / (response_curve * (float)VOLUME_AMP_RESOLUTION);
           tmp_audioData[buff_idx] = ratio * fade_in_factor; // Apply anti-tac fade-in
         } else {
@@ -445,9 +449,12 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           // Apply exponential response curve to reduce compression effects (stereo mode)
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
-          float base_level = 0.1f; // INCREASED base level to avoid division by small numbers (same as mono)
+          float base_level = (float)SUMMATION_BASE_LEVEL / (float)VOLUME_AMP_RESOLUTION; // Use configured base level (normalized)
           // CORRECTED: Proper exponent logic for compression reduction with normalized waveforms
-          float response_curve = powf(sum_normalized + base_level, 1.0f / g_sp3ctra_config.summation_response_exponent);
+          float expo = 1.0f / g_sp3ctra_config.summation_response_exponent;
+          float x = sum_normalized + base_level;
+          float response_curve = (fabsf(expo - 0.5f) <= 1e-3f) ? sqrtf(x < 0.0f ? 0.0f : x)
+                                  : pow_shifted_fast(x, base_level, expo);
           left_signal  = stereoBuffer_L[buff_idx] / (response_curve * (float)VOLUME_AMP_RESOLUTION);
           right_signal = stereoBuffer_R[buff_idx] / (response_curve * (float)VOLUME_AMP_RESOLUTION);
           
@@ -705,11 +712,8 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // Calculate contrast factor based on the processed grayscale image
   // This optimization moves the contrast calculation from synth_IfftMode to here
   // for better performance (calculated once per image instead of per audio buffer)
-#ifdef DISABLE_CONTRAST_MODULATION
-  float contrast_factor = 1.0f; // Disable contrast modulation - constant volume
-#else
+
   float contrast_factor = calculate_contrast(processed_grayScale, CIS_MAX_PIXELS_NB);
-#endif
 
   // Launch synthesis with potentially frozen/faded data
   // Unified mode: always pass both left and right buffers
