@@ -46,7 +46,6 @@ void process_image_preprocessing(int32_t *imageData, int32_t *imageBuffer_q31,
  */
 void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave, float *volumeBuffer);
 
-
 /**
  * @brief Apply non-linear gamma mapping to image buffer
  * @param imageBuffer_f32 Input/output float buffer

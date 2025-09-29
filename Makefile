@@ -10,8 +10,8 @@ CC = gcc
 CXX = g++
 
 # Base compiler flags
-BASE_CFLAGS = -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -Wno-deprecated-declarations
-BASE_CXXFLAGS = -std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -Wno-unused-but-set-variable -Wno-deprecated-declarations
+BASE_CFLAGS = -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DUSE_POW_APPROX -Wno-deprecated-declarations
+BASE_CXXFLAGS = -std=c++17 -O3 -ffast-math -Wall -Wextra -fPIC -DUSE_RTAUDIO -DUSE_POW_APPROX -Wno-unused-but-set-variable -Wno-deprecated-declarations
 
 # OS-specific flags and libraries
 ifeq ($(UNAME_S),Darwin)
@@ -71,7 +71,7 @@ AUDIO_EFFECTS_SOURCES = src/audio/effects/auto_volume.c src/audio/effects/pareq.
 SYNTHESIS_ADDITIVE_SOURCES = src/synthesis/additive/synth_additive.c src/synthesis/additive/wave_generation.c \
                              src/synthesis/additive/synth_additive_math.c src/synthesis/additive/synth_additive_stereo.c \
                              src/synthesis/additive/synth_additive_state.c src/synthesis/additive/synth_additive_threading.c \
-                             src/synthesis/additive/synth_additive_algorithms.c
+                             src/synthesis/additive/synth_additive_algorithms.c src/synthesis/additive/pow_approx.c
 SYNTHESIS_POLYPHONIC_SOURCES = src/synthesis/polyphonic/synth_polyphonic.c \
                                src/synthesis/polyphonic/kissfft/kiss_fft.c \
                                src/synthesis/polyphonic/kissfft/kiss_fftr.c
