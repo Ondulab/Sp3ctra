@@ -393,6 +393,9 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           // Apply exponential response curve to reduce compression effects
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
+          
+          // Pre-normalization removed - was compressing dynamics too much
+          
           float base_level = (float)SUMMATION_BASE_LEVEL / (float)VOLUME_AMP_RESOLUTION; // Use configured base level (normalized)
           // CORRECTED: Proper exponent logic for compression reduction with normalized waveforms
           float expo = 1.0f / g_sp3ctra_config.summation_response_exponent;
@@ -449,6 +452,9 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           // Apply exponential response curve to reduce compression effects (stereo mode)
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
+          
+          // Pre-normalization removed - was compressing dynamics too much  
+          
           float base_level = (float)SUMMATION_BASE_LEVEL / (float)VOLUME_AMP_RESOLUTION; // Use configured base level (normalized)
           // CORRECTED: Proper exponent logic for compression reduction with normalized waveforms
           float expo = 1.0f / g_sp3ctra_config.summation_response_exponent;

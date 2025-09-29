@@ -8,6 +8,7 @@
  */
 
 #include "pow_approx.h"
+#include "../../config/config_synth_additive.h"
 
 #include <math.h>
 #include <stdint.h>
