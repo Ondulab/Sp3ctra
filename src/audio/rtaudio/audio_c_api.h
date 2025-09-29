@@ -29,7 +29,7 @@ typedef struct AudioData {
 } AudioData;
 
 typedef struct {
-  float data[AUDIO_BUFFER_SIZE];
+  float *data; // dynamically allocated with size = g_sp3ctra_config.audio_buffer_size
   int ready; // 0: libre, 1: rempli et en attente de lecture
   pthread_mutex_t mutex;
   pthread_cond_t cond;

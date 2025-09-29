@@ -7,6 +7,7 @@
 
 #include "three_band_eq.h"
 #include "config.h"
+#include "../../config/config_loader.h"
 #include <cstdio>
 #include <cstring>
 #include <iostream>
@@ -17,7 +18,7 @@ ThreeBandEQ *gEqualizer = nullptr;
 ThreeBandEQ::ThreeBandEQ()
     : lowGain(0.0f), midGain(0.0f), highGain(0.0f), midFreq(DEFAULT_MID_FREQ),
       tempBuffer(nullptr), tempBufferSize(0), enabled(false),
-      sampleRate(SAMPLING_FREQUENCY) {}
+      sampleRate(g_sp3ctra_config.sampling_frequency) {}
 
 ThreeBandEQ::~ThreeBandEQ() { freeTempBuffer(); }
 

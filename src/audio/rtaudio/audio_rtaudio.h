@@ -109,8 +109,8 @@ private:
                               float &outputR);
 
 public:
-  AudioSystem(unsigned int sampleRate = SAMPLING_FREQUENCY,
-              unsigned int bufferSize = AUDIO_BUFFER_SIZE,
+  AudioSystem(unsigned int sampleRate = 48000,
+              unsigned int bufferSize = 100,
               unsigned int channels = AUDIO_CHANNEL);
   ~AudioSystem();
 

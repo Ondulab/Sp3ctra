@@ -70,7 +70,7 @@ static int32_t imageRef[MAX_NUMBER_OF_NOTES] = {0};
 
 /* Global context variables (moved from shared.c) */
 struct shared_var shared_var;
-volatile int32_t audioBuff[AUDIO_BUFFER_SIZE * 4];
+volatile int32_t audioBuff[1]; // legacy placeholder, unused
 
 /* Public functions ----------------------------------------------------------*/
 
@@ -201,6 +201,12 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
   static int buff_idx;
   static int first_call = 1;
 
+  // Persistent dynamically-sized buffers (allocated on first use)
+  static float *additiveBuffer = NULL;
+  static float *sumVolumeBuffer = NULL;
+  static float *maxVolumeBuffer = NULL;
+  static float *tmp_audioData = NULL;
+
   // Initialize thread pool if first time
   if (first_call) {
     if (synth_init_thread_pool() == 0) {
@@ -217,20 +223,30 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     first_call = 0;
   }
 
+  // Allocate persistent buffers once based on runtime audio buffer size
+  if (!additiveBuffer) {
+    int bs = g_sp3ctra_config.audio_buffer_size;
+    additiveBuffer   = (float*)calloc(bs, sizeof(float));
+    sumVolumeBuffer  = (float*)calloc(bs, sizeof(float));
+    maxVolumeBuffer  = (float*)calloc(bs, sizeof(float));
+    tmp_audioData    = (float*)calloc(bs, sizeof(float));
+    if (!additiveBuffer || !sumVolumeBuffer || !maxVolumeBuffer || !tmp_audioData) {
+      printf("ERROR: Failed to allocate additive persistent buffers\n");
+      return;
+    }
+  }
+
   // Debug marker: start of new image (yellow line)
   image_debug_mark_new_image_boundary();
 
   // Final buffers for combined results
-  static float additiveBuffer[AUDIO_BUFFER_SIZE];
-  static float sumVolumeBuffer[AUDIO_BUFFER_SIZE];
-  static float maxVolumeBuffer[AUDIO_BUFFER_SIZE];
+  // buffers allocated at first call above
 
   // Reset final buffers
-  fill_float(0, additiveBuffer, AUDIO_BUFFER_SIZE);
-  fill_float(0, sumVolumeBuffer, AUDIO_BUFFER_SIZE);
-  fill_float(0, maxVolumeBuffer, AUDIO_BUFFER_SIZE);
+  fill_float(0, additiveBuffer, g_sp3ctra_config.audio_buffer_size);
+  fill_float(0, sumVolumeBuffer, g_sp3ctra_config.audio_buffer_size);
+  fill_float(0, maxVolumeBuffer, g_sp3ctra_config.audio_buffer_size);
 
-  float tmp_audioData[AUDIO_BUFFER_SIZE];
 
   if (synth_pool_initialized && !synth_pool_shutdown) {
     // === OPTIMIZED VERSION WITH THREAD POOL ===
@@ -261,37 +277,54 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     }
 
     // Capture per-sample (per buffer) volumes across all notes to ensure 1 image line = 1 audio sample
-    if (image_debug_is_oscillator_capture_enabled()) {
-      // Iterate over each sample inside this audio buffer
-      for (int s = 0; s < AUDIO_BUFFER_SIZE; s++) {
-        // Visit notes in ascending order across workers to keep strict note order
-        for (int wi = 0; wi < 3; wi++) {
-          synth_thread_worker_t *w = &thread_pool[wi];
-          for (int note = w->start_note; note < w->end_note; note++) {
-            int local_note_idx = note - w->start_note;
-            float cur = w->captured_current_volume[local_note_idx][s];
-            float tgt = w->captured_target_volume[local_note_idx][s];
-            image_debug_capture_volume_sample_fast(note, cur, tgt);
-          }
+  if (image_debug_is_oscillator_capture_enabled()) {
+    // Iterate over each sample inside this audio buffer
+    for (int s = 0; s < g_sp3ctra_config.audio_buffer_size; s++) {
+      // Visit notes in ascending order across workers to keep strict note order
+      for (int wi = 0; wi < 3; wi++) {
+        synth_thread_worker_t *w = &thread_pool[wi];
+        // Safety: ensure captured buffers are allocated for this worker
+        if (!w->captured_current_volume || !w->captured_target_volume) {
+          continue;
+        }
+        int notes_this = w->end_note - w->start_note;
+        if (notes_this <= 0) continue;
+
+        for (int note = w->start_note; note < w->end_note; note++) {
+          int local_note_idx = note - w->start_note;
+          if (local_note_idx < 0 || local_note_idx >= notes_this) continue;
+
+          size_t base = (size_t)local_note_idx * (size_t)g_sp3ctra_config.audio_buffer_size;
+          float cur = w->captured_current_volume[base + (size_t)s];
+          float tgt = w->captured_target_volume[base + (size_t)s];
+          image_debug_capture_volume_sample_fast(note, cur, tgt);
         }
       }
     }
+  }
 
     // Thread buffers combination completed
 
     // Float32 version: combine float buffers directly
     for (int i = 0; i < 3; i++) {
-      add_float(thread_pool[i].thread_additiveBuffer, additiveBuffer,
-                additiveBuffer, AUDIO_BUFFER_SIZE);
-      add_float(thread_pool[i].thread_sumVolumeBuffer, sumVolumeBuffer,
-                sumVolumeBuffer, AUDIO_BUFFER_SIZE);
+      synth_thread_worker_t *w = &thread_pool[i];
+      if (w->thread_additiveBuffer) {
+        add_float(w->thread_additiveBuffer, additiveBuffer,
+                  additiveBuffer, g_sp3ctra_config.audio_buffer_size);
+      }
+      if (w->thread_sumVolumeBuffer) {
+        add_float(w->thread_sumVolumeBuffer, sumVolumeBuffer,
+                  sumVolumeBuffer, g_sp3ctra_config.audio_buffer_size);
+      }
 
       // For maxVolumeBuffer, take the maximum
-      for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
-        if (thread_pool[i].thread_maxVolumeBuffer[buff_idx] >
-            maxVolumeBuffer[buff_idx]) {
-          maxVolumeBuffer[buff_idx] =
-              thread_pool[i].thread_maxVolumeBuffer[buff_idx];
+      if (w->thread_maxVolumeBuffer) {
+        for (buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
+          if (w->thread_maxVolumeBuffer[buff_idx] >
+              maxVolumeBuffer[buff_idx]) {
+            maxVolumeBuffer[buff_idx] =
+                w->thread_maxVolumeBuffer[buff_idx];
+          }
         }
       }
     }
@@ -299,9 +332,9 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     // CORRECTION: Conditional normalization by platform
 #ifdef __linux__
     // Pi/Linux: Divide by 3 (BossDAC/ALSA amplifies naturally)
-    scale_float(additiveBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
-    scale_float(sumVolumeBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
-    scale_float(maxVolumeBuffer, 1.0f / 3.0f, AUDIO_BUFFER_SIZE);
+    scale_float(additiveBuffer, 1.0f / 3.0f, g_sp3ctra_config.audio_buffer_size);
+    scale_float(sumVolumeBuffer, 1.0f / 3.0f, g_sp3ctra_config.audio_buffer_size);
+    scale_float(maxVolumeBuffer, 1.0f / 3.0f, g_sp3ctra_config.audio_buffer_size);
 #else
     // Mac: No division (CoreAudio doesn't compensate automatically)
     // Signal kept at full amplitude for normal volume
@@ -311,8 +344,8 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     // === ERROR: Thread pool not available ===
     printf("ERROR: Thread pool not available\n");
     // Fill buffers with silence
-    fill_float(0, audioDataLeft, AUDIO_BUFFER_SIZE);
-    fill_float(0, audioDataRight, AUDIO_BUFFER_SIZE);
+    fill_float(0, audioDataLeft, g_sp3ctra_config.audio_buffer_size);
+    fill_float(0, audioDataRight, g_sp3ctra_config.audio_buffer_size);
     return;
   }
 
@@ -339,7 +372,7 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
       startup_callback_count++;
     }
     
-    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+    for (buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           // Apply exponential response curve to reduce compression effects
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
@@ -360,19 +393,26 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     if (g_sp3ctra_config.stereo_mode_enabled) {
     // STEREO MODE: Use actual stereo buffers from threads
     // Combine stereo buffers from all threads
-    static float stereoBuffer_L[AUDIO_BUFFER_SIZE];
-    static float stereoBuffer_R[AUDIO_BUFFER_SIZE];
+    static float *stereoBuffer_L = NULL;
+    static float *stereoBuffer_R = NULL;
     
-    // Initialize stereo buffers
-    fill_float(0, stereoBuffer_L, AUDIO_BUFFER_SIZE);
-    fill_float(0, stereoBuffer_R, AUDIO_BUFFER_SIZE);
+    // Initialize stereo buffers (allocate once)
+    if (!stereoBuffer_L) {
+      stereoBuffer_L = (float*)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
+      stereoBuffer_R = (float*)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
+      if (!stereoBuffer_L || !stereoBuffer_R) {
+        printf("ERROR: Failed to allocate stereo buffers\n");
+      }
+    }
+    fill_float(0, stereoBuffer_L, g_sp3ctra_config.audio_buffer_size);
+    fill_float(0, stereoBuffer_R, g_sp3ctra_config.audio_buffer_size);
     
     // Float32 version: combine float stereo buffers directly
     for (int i = 0; i < 3; i++) {
       add_float(thread_pool[i].thread_additiveBuffer_L, stereoBuffer_L,
-                stereoBuffer_L, AUDIO_BUFFER_SIZE);
+                stereoBuffer_L, g_sp3ctra_config.audio_buffer_size);
       add_float(thread_pool[i].thread_additiveBuffer_R, stereoBuffer_R,
-                stereoBuffer_R, AUDIO_BUFFER_SIZE);
+                stereoBuffer_R, g_sp3ctra_config.audio_buffer_size);
     }
     
     // CRITICAL FIX: Remove problematic mult_float that creates explosion in stereo mode
@@ -381,10 +421,9 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     
     // Apply final processing and contrast
     // Pre-limit clipping telemetry (once per second, low overhead)
-    int preClipCount = 0;
     float peakPreL = 0.0f, peakPreR = 0.0f;
 
-    for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+    for (buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
       float left_signal, right_signal;
 
       {
@@ -407,11 +446,10 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
         }
       }
 
-      // Track pre-limit peaks and clipping count
+      // Track pre-limit peaks
       float aL = fabsf(left_signal), aR = fabsf(right_signal);
       if (aL > peakPreL) peakPreL = aL;
       if (aR > peakPreR) peakPreR = aR;
-      if (aL > 1.0f || aR > 1.0f) preClipCount++;
 
       // Apply contrast factor
       audioDataLeft[buff_idx] = left_signal * contrast_factor;
@@ -437,14 +475,12 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     // }
     } else {
       // MONO MODE: Use original simple processing and duplicate output
-      int preClipCount = 0;
       float peakPre = 0.0f;
 
-      for (buff_idx = 0; buff_idx < AUDIO_BUFFER_SIZE; buff_idx++) {
+      for (buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
         float mono_pre = tmp_audioData[buff_idx];
         float a = fabsf(mono_pre);
         if (a > peakPre) peakPre = a;
-        if (a > 1.0f) preClipCount++;
 
         float mono_sample = mono_pre * contrast_factor;
 
@@ -463,8 +499,8 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
       // if (log_counter % LOG_FREQUENCY == 0) {
       //   if (preClipCount > 0) {
       //     printf("[CLIP] pre=%d/%d (%.1f%%) peakPre=%.3f (mono)\n",
-      //            preClipCount, AUDIO_BUFFER_SIZE,
-      //            (preClipCount * 100.0f) / (float)AUDIO_BUFFER_SIZE,
+      //            preClipCount, g_sp3ctra_config.audio_buffer_size,
+      //            (preClipCount * 100.0f) / (float)g_sp3ctra_config.audio_buffer_size,
       //            peakPre);
       //   } else {
       //     printf("[CLIP] pre=0 peakPre=%.3f (mono)\n", peakPre);
@@ -473,14 +509,14 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     }
   } else {
     // Error case: fill with silence
-    fill_float(0, audioDataLeft, AUDIO_BUFFER_SIZE);
-    fill_float(0, audioDataRight, AUDIO_BUFFER_SIZE);
+    fill_float(0, audioDataLeft, g_sp3ctra_config.audio_buffer_size);
+    fill_float(0, audioDataRight, g_sp3ctra_config.audio_buffer_size);
   }
 
   // Increment global counter for log frequency limitation
   log_counter++;
 
-  shared_var.synth_process_cnt += AUDIO_BUFFER_SIZE;
+  shared_var.synth_process_cnt += g_sp3ctra_config.audio_buffer_size;
 }
 
 // Synth process function

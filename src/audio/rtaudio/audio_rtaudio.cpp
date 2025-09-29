@@ -6,6 +6,7 @@
 #include "synth_polyphonic.h" // For polyphonic_audio_buffers and related variables
 #include "../../config/config_debug.h"    // For debug configuration macros
 #include "../../config/config_audio.h"    // For HDMI format configuration
+#include "../../config/config_loader.h"   // For runtime configuration access
 #include "../../utils/image_debug.h"      // For continuous volume capture
 #include "../../synthesis/additive/wave_generation.h"  // For waves[] access
 #include <algorithm>         // For std::transform
@@ -14,6 +15,7 @@
 #include <rtaudio/RtAudio.h> // Explicitly include RtAudio.h
 #include <stdexcept>         // For std::exception
 #include <set>               // For std::set
+#include <cstdlib>           // For malloc/calloc/free
 
 // Global format selection variables for dynamic audio format
 static RtAudioFormat g_selected_audio_format = RTAUDIO_FLOAT32;
@@ -58,7 +60,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     // Simple test tone generation - no complex processing
     static float phase = 0.0f;
     static const float frequency = 440.0f; // A4 note
-    static const float sample_rate = SAMPLING_FREQUENCY;
+    static const float sample_rate = g_sp3ctra_config.sampling_frequency;
     static const float phase_increment = 2.0f * M_PI * frequency / sample_rate;
 
     for (unsigned int i = 0; i < nFrames; i++) {
@@ -94,7 +96,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 
   // Update cache automatically based on buffer size for smooth volume
   // transitions
-  if (++cache_counter >= AUDIO_CACHE_UPDATE_FREQUENCY_CLAMPED) {
+  if (++cache_counter >= 8) {  // Static value instead of dynamic macro
     cache_counter = 0;
     cached_volume = this->masterVolume;
     if (gMidiController && gMidiController->isAnyControllerConnected()) {
@@ -108,7 +110,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   // Process frames using multiple buffers if needed
   while (framesToRender > 0) {
     // How many frames available in current buffer?
-    unsigned int framesAvailable = AUDIO_BUFFER_SIZE - readOffset;
+    unsigned int framesAvailable = g_sp3ctra_config.audio_buffer_size - readOffset;
     unsigned int chunk =
         (framesToRender < framesAvailable) ? framesToRender : framesAvailable;
 
@@ -127,7 +129,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 
     if (polyphonic_audio_buffers[polyphonic_localReadIndex].ready == 1) {
       unsigned int polyphonic_framesAvailable =
-          AUDIO_BUFFER_SIZE - polyphonic_readOffset;
+          g_sp3ctra_config.audio_buffer_size - polyphonic_readOffset;
       if (polyphonic_framesAvailable >= chunk) {
         source_fft = &polyphonic_audio_buffers[polyphonic_localReadIndex]
                           .data[polyphonic_readOffset];
@@ -258,7 +260,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     framesToRender -= chunk;
 
     // Handle buffer transitions - Additive synthesis (both left and right channels)
-    if (readOffset >= AUDIO_BUFFER_SIZE) {
+    if (readOffset >= (unsigned int)g_sp3ctra_config.audio_buffer_size) {
       // Signal completion for both left and right buffers
       if (buffers_L[localReadIndex].ready == 1) {
         pthread_mutex_lock(&buffers_L[localReadIndex].mutex);
@@ -277,7 +279,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     }
 
     // Handle buffer transitions - Polyphonic
-    if (polyphonic_readOffset >= AUDIO_BUFFER_SIZE) {
+    if (polyphonic_readOffset >= (unsigned int)g_sp3ctra_config.audio_buffer_size) {
       if (polyphonic_audio_buffers[polyphonic_localReadIndex].ready == 1) {
         pthread_mutex_lock(
             &polyphonic_audio_buffers[polyphonic_localReadIndex].mutex);
@@ -300,7 +302,7 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
                          unsigned int channels)
     : audio(nullptr), isRunning(false), // Moved isRunning before members that
                                         // might use it implicitly or explicitly
-      sampleRate(sampleRate), bufferSize(bufferSize), channels(channels),
+      sampleRate(g_sp3ctra_config.sampling_frequency), bufferSize(g_sp3ctra_config.audio_buffer_size), channels(channels),
       requestedDeviceId(g_requested_audio_device_id), // Use global variable if
                                                       // set, otherwise -1
       masterVolume(1.0f), reverbBuffer(nullptr), reverbMix(DEFAULT_REVERB_MIX),
@@ -755,7 +757,7 @@ bool AudioSystem::initialize() {
 
     // Check if configured frequency is supported
     bool supportsConfigRate = false;
-    unsigned int configRate = SAMPLING_FREQUENCY;
+    unsigned int configRate = g_sp3ctra_config.sampling_frequency;
     for (unsigned int rate : deviceInfo.sampleRates) {
       if (rate == configRate) {
         supportsConfigRate = true;
@@ -773,7 +775,7 @@ bool AudioSystem::initialize() {
   }
 
   // Use SAMPLING_FREQUENCY from config.h instead of hard-coding 96kHz
-  unsigned int configSampleRate = SAMPLING_FREQUENCY;
+  unsigned int configSampleRate = g_sp3ctra_config.sampling_frequency;
   if (sampleRate != configSampleRate) {
     std::cout << "CONFIGURATION: Change from " << sampleRate << "Hz to "
               << configSampleRate << "Hz (defined in config.h)" << std::endl;
@@ -790,10 +792,10 @@ bool AudioSystem::initialize() {
       unsigned int actualSampleRate = audio->getStreamSampleRate();
       
       // Check for critical mismatches only
-      if (bufferSize != AUDIO_BUFFER_SIZE) {
-        std::cerr << "ERROR: Buffer size mismatch - Config: " << AUDIO_BUFFER_SIZE 
+      if (bufferSize != (unsigned int)g_sp3ctra_config.audio_buffer_size) {
+        std::cerr << "ERROR: Buffer size mismatch - Config: " << g_sp3ctra_config.audio_buffer_size 
                   << " frames, Hardware: " << bufferSize << " frames" << std::endl;
-        std::cerr << "Change AUDIO_BUFFER_SIZE to " << bufferSize << " in config.h" << std::endl;
+        std::cerr << "Change audio_buffer_size to " << bufferSize << " in sp3ctra.ini" << std::endl;
         return false;
       }
 
@@ -1096,6 +1098,14 @@ void audio_Init(void) {
     pthread_cond_init(&buffers_R[i].cond, NULL);
     buffers_L[i].ready = 0;
     buffers_R[i].ready = 0;
+
+    // Allocate dynamic audio buffers based on runtime configuration
+    if (!buffers_L[i].data) {
+      buffers_L[i].data = (float *)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
+    }
+    if (!buffers_R[i].data) {
+      buffers_R[i].data = (float *)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
+    }
   }
 
   // Créer et initialiser le système audio RtAudio
@@ -1108,7 +1118,7 @@ void audio_Init(void) {
 
   // Initialiser l'égaliseur à 3 bandes
   if (!gEqualizer) {
-    float sampleRate = (gAudioSystem) ? SAMPLING_FREQUENCY : 44100.0f;
+    float sampleRate = (gAudioSystem) ? g_sp3ctra_config.sampling_frequency : 44100.0f;
     eq_Init(sampleRate);
     std::cout
         << "\033[1;32m[ThreeBandEQ] Three-band equalizer initialized\033[0m"
@@ -1131,6 +1141,15 @@ void cleanupAudioData(AudioData *audioData) {
 void audio_Cleanup() {
   // Nettoyage des mutex et conditions
   for (int i = 0; i < 2; i++) {
+    // Free dynamically allocated audio buffers
+    if (buffers_L[i].data) {
+      free(buffers_L[i].data);
+      buffers_L[i].data = nullptr;
+    }
+    if (buffers_R[i].data) {
+      free(buffers_R[i].data);
+      buffers_R[i].data = nullptr;
+    }
     pthread_mutex_destroy(&buffers_L[i].mutex);
     pthread_mutex_destroy(&buffers_R[i].mutex);
     pthread_cond_destroy(&buffers_L[i].cond);

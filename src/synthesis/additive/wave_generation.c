@@ -96,7 +96,7 @@ uint32_t init_waves(volatile float *unitary_waveform,
        comma_cnt++) {
     // store only first octave_coeff frequencies ---- logarithmic distribution
     float frequency = calculate_frequency(comma_cnt, parameters);
-    buffer_len += (uint32_t)(SAMPLING_FREQUENCY / frequency);
+    buffer_len += (uint32_t)(g_sp3ctra_config.sampling_frequency / frequency);
   }
 
   // todo add check buffer_len size
@@ -111,7 +111,7 @@ uint32_t init_waves(volatile float *unitary_waveform,
 
     // current aera size is the number of char cell for storage a waveform at
     // the current frequency (one pixel per frequency oscillator)
-    uint32_t current_aera_size = (uint32_t)((SAMPLING_FREQUENCY / frequency));
+    uint32_t current_aera_size = (uint32_t)((g_sp3ctra_config.sampling_frequency / frequency));
 
     current_unitary_waveform_cell =
         calculate_waveform(current_aera_size, current_unitary_waveform_cell,

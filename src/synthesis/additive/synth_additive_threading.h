@@ -32,27 +32,27 @@ typedef struct synth_thread_worker_s {
   int32_t *imageData; // Input image data (shared)
 
   // Local output buffers per thread - Float32 (legacy)
-  float thread_additiveBuffer[AUDIO_BUFFER_SIZE];
-  float thread_sumVolumeBuffer[AUDIO_BUFFER_SIZE];
-  float thread_maxVolumeBuffer[AUDIO_BUFFER_SIZE];
+  float *thread_additiveBuffer;
+  float *thread_sumVolumeBuffer;
+  float *thread_maxVolumeBuffer;
   
   // Stereo buffers for direct L/R accumulation (always present) - Float32
   // In mono mode: L = R = duplicated signal
   // In stereo mode: L and R with per-oscillator panning
-  float thread_additiveBuffer_L[AUDIO_BUFFER_SIZE];
-  float thread_additiveBuffer_R[AUDIO_BUFFER_SIZE];
+  float *thread_additiveBuffer_L;
+  float *thread_additiveBuffer_R;
 
 
   // Local work buffers (avoids VLA on stack) - Float32
   int32_t imageBuffer_q31[MAX_NUMBER_OF_NOTES / 3]; // +100 for safety
   float imageBuffer_f32[MAX_NUMBER_OF_NOTES / 3];
-  float waveBuffer[AUDIO_BUFFER_SIZE];
-  float volumeBuffer[AUDIO_BUFFER_SIZE];
+  float *waveBuffer;
+  float *volumeBuffer;
   
 
   // Pre-computed waves[] data (read-only)
-  int32_t precomputed_new_idx[MAX_NUMBER_OF_NOTES / 3][AUDIO_BUFFER_SIZE];
-  float precomputed_wave_data[MAX_NUMBER_OF_NOTES / 3][AUDIO_BUFFER_SIZE];
+  int32_t *precomputed_new_idx; // size: (notes_per_thread * g_sp3ctra_config.audio_buffer_size)
+  float *precomputed_wave_data; // size: (notes_per_thread * g_sp3ctra_config.audio_buffer_size)
   float precomputed_volume[MAX_NUMBER_OF_NOTES / 3];
   
   // Pre-computed pan positions and gains for each note
@@ -65,8 +65,8 @@ typedef struct synth_thread_worker_s {
   float last_right_gain[MAX_NUMBER_OF_NOTES / 3];
 
   // Debug capture: per-note per-sample volumes (current and target) for this buffer
-  float captured_current_volume[MAX_NUMBER_OF_NOTES / 3][AUDIO_BUFFER_SIZE];
-  float captured_target_volume[MAX_NUMBER_OF_NOTES / 3][AUDIO_BUFFER_SIZE];
+  float *captured_current_volume; // size: (notes_per_thread * g_sp3ctra_config.audio_buffer_size)
+  float *captured_target_volume; // size: (notes_per_thread * g_sp3ctra_config.audio_buffer_size)
 
   // Synchronization
   pthread_mutex_t work_mutex;
