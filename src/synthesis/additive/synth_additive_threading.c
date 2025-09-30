@@ -317,26 +317,20 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
       const float end_left    = worker->precomputed_left_gain[local_note_idx];
       const float end_right   = worker->precomputed_right_gain[local_note_idx];
 
-      // Use persistent temporary buffers for L/R channels (no VLA on stack)
-      float *waveBuffer_L = worker->temp_waveBuffer_L;
-      float *waveBuffer_R = worker->temp_waveBuffer_R;
-
-      // Linear interpolation across this audio buffer to avoid abrupt pan jumps
-      const float step = 1.0f / (float)g_sp3ctra_config.audio_buffer_size;
-      float t = 0.0f;
-      for (buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
-        t += step; // ramp from start -> end across the buffer
-        float gl = start_left  + (end_left  - start_left)  * t;
-        float gr = start_right + (end_right - start_right) * t;
-
-        // Apply interpolated panning gains
-        waveBuffer_L[buff_idx] = worker->waveBuffer[buff_idx] * gl;
-        waveBuffer_R[buff_idx] = worker->waveBuffer[buff_idx] * gr;
-      }
+      // Use optimized stereo panning function (NEON-accelerated on ARM)
+      apply_stereo_pan_ramp(worker->waveBuffer, 
+                           worker->temp_waveBuffer_L, 
+                           worker->temp_waveBuffer_R,
+                           start_left, start_right, end_left, end_right,
+                           g_sp3ctra_config.audio_buffer_size);
 
       // Persist end-gains for next buffer ramp
       worker->last_left_gain[local_note_idx]  = end_left;
       worker->last_right_gain[local_note_idx] = end_right;
+      
+      // Use persistent temporary buffers for L/R channels
+      float *waveBuffer_L = worker->temp_waveBuffer_L;
+      float *waveBuffer_R = worker->temp_waveBuffer_R;
 
       // Accumulate to stereo buffers
       add_float(waveBuffer_L, worker->thread_additiveBuffer_L,
