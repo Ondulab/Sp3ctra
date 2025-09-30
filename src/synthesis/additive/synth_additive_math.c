@@ -63,6 +63,9 @@ void fill_int32(int32_t value, int32_t *array, size_t length) {
   }
 }
 
+#ifndef __ARM_NEON
+// Standard C implementation (used on non-ARM platforms)
+// On ARM with NEON, the optimized version from synth_additive_math_neon.c is used instead
 void apply_volume_weighting(float *sum_buffer, const float *volume_buffer, 
                            float exponent, size_t length) {
   // Import pow_unit_fast for power calculation
@@ -75,6 +78,7 @@ void apply_volume_weighting(float *sum_buffer, const float *volume_buffer,
     sum_buffer[i] += weighted_volume;
   }
 }
+#endif /* __ARM_NEON */
 
 uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
                    int32_t *gray, uint32_t size) {
