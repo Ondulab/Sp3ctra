@@ -75,12 +75,13 @@ SYNTHESIS_ADDITIVE_BASE_SOURCES = src/synthesis/additive/synth_additive.c src/sy
                                   src/synthesis/additive/synth_additive_algorithms.c src/synthesis/additive/pow_approx.c \
                                   src/synthesis/additive/synth_additive_runtime.c
 
-# Math sources: use NEON version on ARM, standard version on other architectures
+# Math sources: on ARM, compile both standard (for base functions) and NEON (for optimized apply_volume_weighting)
 ifeq ($(UNAME_S),Linux)
-    # Linux/Raspberry Pi: Use NEON-optimized version
-    SYNTHESIS_ADDITIVE_MATH_SOURCES = src/synthesis/additive/synth_additive_math_neon.c
+    # Linux/Raspberry Pi: Use both standard (base functions) and NEON-optimized version
+    SYNTHESIS_ADDITIVE_MATH_SOURCES = src/synthesis/additive/synth_additive_math.c \
+                                      src/synthesis/additive/synth_additive_math_neon.c
 else
-    # macOS and others: Use standard C version
+    # macOS and others: Use standard C version only
     SYNTHESIS_ADDITIVE_MATH_SOURCES = src/synthesis/additive/synth_additive_math.c
 endif
 
