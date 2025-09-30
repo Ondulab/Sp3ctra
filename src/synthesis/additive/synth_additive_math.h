@@ -35,6 +35,10 @@ void add_float(const float *a, const float *b, float *result, size_t length);
 void scale_float(float *array, float scale, size_t length);
 void fill_float(float value, float *array, size_t length);
 
+/* Volume weighting with power function (optimized with NEON on ARM) */
+void apply_volume_weighting(float *sum_buffer, const float *volume_buffer, 
+                           float exponent, size_t length);
+
 /* Color conversion utilities */
 uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
                    int32_t *gray, uint32_t size);
