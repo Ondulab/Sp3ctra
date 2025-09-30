@@ -39,6 +39,11 @@ extern "C" {
 #define POW_FAST_PATH_EPS 1e-3f
 #endif
 
+/* Shifted domain configuration: domain is [base, base+POW_SHIFTED_DOMAIN_SIZE] */
+#ifndef POW_SHIFTED_DOMAIN_SIZE
+#define POW_SHIFTED_DOMAIN_SIZE 3.0f
+#endif
+
 /* API (float-only) */
 
 /**
@@ -49,9 +54,10 @@ extern "C" {
 float pow_unit_fast(float x, float expo);
 
 /**
- * Compute x^expo for x in [base, base+1] with fast paths and a thread-local LUT.
+ * Compute x^expo for x in [base, base+POW_SHIFTED_DOMAIN_SIZE] with fast paths and a thread-local LUT.
  * - Fast paths: expo≈1 (identity), expo≈0.5 (sqrt), expo≈2 (square)
- * - Otherwise: LUT with linear interpolation over [base, base+1]
+ * - Otherwise: LUT with linear interpolation over [base, base+POW_SHIFTED_DOMAIN_SIZE]
+ * - Domain size is configurable via POW_SHIFTED_DOMAIN_SIZE (default: 3.0)
  */
 float pow_shifted_fast(float x, float base, float expo);
 
