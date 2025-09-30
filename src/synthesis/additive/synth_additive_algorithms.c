@@ -31,34 +31,47 @@ void update_gap_limiter_coefficients(void) {
 #ifdef GAP_LIMITER
     const float Fs = (float)g_sp3ctra_config.sampling_frequency;
     
-    // Get runtime tau parameters
+#if !INSTANT_ATTACK
+    // Get runtime tau parameter for attack (only if not instant attack)
     float tau_up_ms = g_sp3ctra_config.tau_up_base_ms;
-    float tau_down_ms = g_sp3ctra_config.tau_down_base_ms;
     
-    // Clamp taus to avoid division by zero or denormals
+    // Clamp tau to avoid division by zero or denormals
     if (tau_up_ms < 0.01f) tau_up_ms = 0.01f;
-    if (tau_down_ms < 0.01f) tau_down_ms = 0.01f;
     if (tau_up_ms > TAU_UP_MAX_MS) tau_up_ms = TAU_UP_MAX_MS;
-    if (tau_down_ms > TAU_DOWN_MAX_MS) tau_down_ms = TAU_DOWN_MAX_MS;
     
     const float tau_up_s = tau_up_ms * 0.001f;
+    
+    // Compute attack alpha (exponential envelope coefficient)
+    float alpha_up = 1.0f - expf(-1.0f / (tau_up_s * Fs));
+    
+    // Clamp alpha to reasonable bounds
+    if (alpha_up < ALPHA_MIN) alpha_up = ALPHA_MIN;
+    if (alpha_up > 1.0f) alpha_up = 1.0f;
+#endif
+    
+    // Get runtime tau parameter for release
+    float tau_down_ms = g_sp3ctra_config.tau_down_base_ms;
+    
+    // Clamp tau to avoid division by zero or denormals
+    if (tau_down_ms < 0.01f) tau_down_ms = 0.01f;
+    if (tau_down_ms > TAU_DOWN_MAX_MS) tau_down_ms = TAU_DOWN_MAX_MS;
+    
     const float tau_down_s = tau_down_ms * 0.001f;
     
-    // Compute base alphas (exponential envelope coefficients)
-    float alpha_up = 1.0f - expf(-1.0f / (tau_up_s * Fs));
+    // Compute release alpha (exponential envelope coefficient)
     float alpha_down = 1.0f - expf(-1.0f / (tau_down_s * Fs));
     
-    // Clamp alphas to reasonable bounds
-    if (alpha_up < ALPHA_MIN) alpha_up = ALPHA_MIN;
+    // Clamp alpha to reasonable bounds
     if (alpha_down < ALPHA_MIN) alpha_down = ALPHA_MIN;
-    if (alpha_up > 1.0f) alpha_up = 1.0f;
     if (alpha_down > 1.0f) alpha_down = 1.0f;
     
     // Precompute for each oscillator
     const int num_notes = get_current_number_of_notes();
     for (int note = 0; note < num_notes; note++) {
-        // Store attack coefficient (frequency-independent)
+#if !INSTANT_ATTACK
+        // Store attack coefficient (frequency-independent) - only if not instant
         waves[note].alpha_up = alpha_up;
+#endif
         
         // Compute frequency-dependent release weighting
         float f = waves[note].frequency;
@@ -121,6 +134,7 @@ void process_image_preprocessing(int32_t *imageData, int32_t *imageBuffer_q31,
  * @brief Apply GAP_LIMITER volume ramp for a single note
  * @param note Note index
  * @param target_volume Target volume for the note
+ * @param pre_wave Precomputed waveform data (unused)
  * @param volumeBuffer Output volume buffer for audio samples
  * @retval None
  */
@@ -135,6 +149,23 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
     float v = waves[note].current_volume;
     const float t = waves[note].target_volume;
 
+#if INSTANT_ATTACK
+    // ✅ INSTANT ATTACK MODE: Maximum performance optimization
+    // Attack is instantaneous, only release is progressive
+    if (t > v) {
+        // Attack phase: instant transition to target volume
+        fill_float(t, volumeBuffer, g_sp3ctra_config.audio_buffer_size);
+        waves[note].current_volume = t;
+    } else {
+        // Release phase: progressive decay to avoid clicks
+        const float alpha_down = waves[note].alpha_down_weighted;
+        float final_volume = apply_envelope_ramp(volumeBuffer, v, t, alpha_down,
+                                                g_sp3ctra_config.audio_buffer_size,
+                                                0.0f, (float)VOLUME_AMP_RESOLUTION);
+        waves[note].current_volume = final_volume;
+    }
+#else
+    // PROGRESSIVE ATTACK MODE: Traditional envelope with attack and release
     // Use precomputed envelope coefficients (no complex calculations in RT path!)
     const float alpha = (t > v) ? waves[note].alpha_up : waves[note].alpha_down_weighted;
     
@@ -145,6 +176,8 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
     
     // Write back current volume once per buffer
     waves[note].current_volume = final_volume;
+#endif
+
 #else
     // Without GAP_LIMITER, just fill with constant volume
     fill_float(target_volume, volumeBuffer, g_sp3ctra_config.audio_buffer_size);

@@ -97,17 +97,30 @@ void apply_volume_weighting(float *sum_buffer, const float *volume_buffer,
       vst1q_f32(&sum_buffer[i], v_sum);
     }
   } else {
-    // General case: use pow_unit_fast for each sample
-    // Note: Vectorizing the LUT interpolation is complex, so we use scalar fallback
-    // This is still faster than the original inline loop due to better code organization
+    // General case: use NEON-vectorized pow_unit_fast
+    // This processes 4 samples at a time using LUT interpolation
+    float32x4_t v_norm = vdupq_n_f32(norm_factor);
+    float32x4_t v_denorm = vdupq_n_f32(denorm_factor);
+    
     for (i = 0; i < vec_length; i += 4) {
-      for (size_t j = 0; j < 4; j++) {
-        size_t idx = i + j;
-        float current_volume = volume_buffer[idx];
-        float volume_normalized = current_volume * norm_factor;
-        float weighted_volume = pow_unit_fast(volume_normalized, exponent) * denorm_factor;
-        sum_buffer[idx] += weighted_volume;
-      }
+      // Load 4 volume samples
+      float32x4_t v_vol = vld1q_f32(&volume_buffer[i]);
+      float32x4_t v_sum = vld1q_f32(&sum_buffer[i]);
+      
+      // Normalize: v_vol / VOLUME_AMP_RESOLUTION
+      float32x4_t v_normalized = vmulq_f32(v_vol, v_norm);
+      
+      // Apply power function (vectorized LUT interpolation)
+      float32x4_t v_powered = pow_unit_fast_neon_v4(v_normalized, exponent);
+      
+      // Denormalize: v_powered * VOLUME_AMP_RESOLUTION
+      float32x4_t v_weighted = vmulq_f32(v_powered, v_denorm);
+      
+      // Accumulate
+      v_sum = vaddq_f32(v_sum, v_weighted);
+      
+      // Store result
+      vst1q_f32(&sum_buffer[i], v_sum);
     }
   }
   

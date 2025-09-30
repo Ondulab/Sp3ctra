@@ -94,6 +94,89 @@ float pow_unit_fast(float x, float expo) {
 #endif
 }
 
+#ifdef __ARM_NEON
+/**
+ * @brief NEON-vectorized pow_unit_fast for 4 values simultaneously
+ * @param v_x NEON vector of 4 input values (will be clamped to [0,1])
+ * @param expo Exponent value
+ * @return NEON vector of 4 output values (x^expo for each element)
+ * 
+ * This function uses the same LUT as pow_unit_fast but processes 4 values
+ * in parallel using NEON SIMD instructions.
+ */
+float32x4_t pow_unit_fast_neon_v4(float32x4_t v_x, float expo) {
+#ifndef USE_POW_APPROX
+  // Fallback: scalar powf for each element (slow but functional)
+  float x[4];
+  vst1q_f32(x, v_x);
+  float result[4];
+  for (int i = 0; i < 4; i++) {
+    float val = clampf(x[i], 0.0f, 1.0f);
+    result[i] = powf(val, expo);
+  }
+  return vld1q_f32(result);
+#else
+  // Clamp domain to [0,1]
+  float32x4_t v_zero = vdupq_n_f32(0.0f);
+  float32x4_t v_one = vdupq_n_f32(1.0f);
+  v_x = vmaxq_f32(v_x, v_zero);  // max(x, 0)
+  v_x = vminq_f32(v_x, v_one);   // min(x, 1)
+  
+  // Fast path detection for common exponents
+  int is_linear = approx_eq(expo, 1.0f, POW_FAST_PATH_EPS);
+  int is_square = approx_eq(expo, 2.0f, POW_FAST_PATH_EPS);
+  int is_cubic = approx_eq(expo, 3.0f, POW_FAST_PATH_EPS);
+  int is_quartic = approx_eq(expo, 4.0f, POW_FAST_PATH_EPS);
+  
+  if (is_linear) {
+    return v_x;
+  }
+  if (is_square) {
+    return vmulq_f32(v_x, v_x);
+  }
+  if (is_cubic) {
+    float32x4_t v_x2 = vmulq_f32(v_x, v_x);
+    return vmulq_f32(v_x2, v_x);
+  }
+  if (is_quartic) {
+    float32x4_t v_x2 = vmulq_f32(v_x, v_x);
+    return vmulq_f32(v_x2, v_x2);
+  }
+  
+  // Ensure LUT is built for this exponent
+  if (!g_unit_cache.valid || !approx_eq(expo, g_unit_cache.last_expo, POW_APPROX_EPS)) {
+    build_unit_lut(expo);
+  }
+  
+  // LUT interpolation (vectorized)
+  // Compute fractional index: f = x * (POW_LUT_SIZE - 1)
+  float32x4_t v_scale = vdupq_n_f32((float)(POW_LUT_SIZE - 1));
+  float32x4_t v_f = vmulq_f32(v_x, v_scale);
+  
+  // Convert to integer indices (NEON doesn't have direct float-to-int vector conversion for indices)
+  // We need to extract values and do scalar LUT lookups
+  // This is still faster than scalar loop due to reduced overhead
+  float f[4];
+  vst1q_f32(f, v_f);
+  
+  float result[4];
+  for (int i = 0; i < 4; i++) {
+    int idx = (int)f[i];
+    if (idx >= POW_LUT_SIZE - 1) {
+      result[i] = g_unit_cache.lut[POW_LUT_SIZE - 1];
+    } else {
+      float t = f[i] - (float)idx;
+      float y0 = g_unit_cache.lut[idx];
+      float y1 = g_unit_cache.lut[idx + 1];
+      result[i] = y0 + (y1 - y0) * t;
+    }
+  }
+  
+  return vld1q_f32(result);
+#endif
+}
+#endif /* __ARM_NEON */
+
 /* =================================
  *  Shifted-domain cache [base, base+1]
  * ================================= */
