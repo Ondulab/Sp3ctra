@@ -37,8 +37,8 @@ ifeq ($(UNAME_S),Darwin)
            -lcsfml-graphics -lcsfml-window -lcsfml-system
 else
     # Linux/Raspberry Pi specific settings
-    CFLAGS = $(BASE_CFLAGS) -DNO_SFML -D__LINUX__ -march=native -mtune=native
-    CXXFLAGS = $(BASE_CXXFLAGS) -DNO_SFML -D__LINUX__ -march=native -mtune=native
+    CFLAGS = $(BASE_CFLAGS) -DNO_SFML -D__LINUX__ -D_GNU_SOURCE -march=native -mtune=native
+    CXXFLAGS = $(BASE_CXXFLAGS) -DNO_SFML -D__LINUX__ -D_GNU_SOURCE -march=native -mtune=native
     
     # Get libftdi1 flags from pkg-config
     LIBFTDI_CFLAGS := $(shell pkg-config --cflags libftdi1 2>/dev/null)
