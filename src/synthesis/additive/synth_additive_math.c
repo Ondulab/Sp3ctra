@@ -63,6 +63,19 @@ void fill_int32(int32_t value, int32_t *array, size_t length) {
   }
 }
 
+void apply_volume_weighting(float *sum_buffer, const float *volume_buffer, 
+                           float exponent, size_t length) {
+  // Import pow_unit_fast for power calculation
+  extern float pow_unit_fast(float x, float expo);
+  
+  for (size_t i = 0; i < length; ++i) {
+    float current_volume = volume_buffer[i];
+    float volume_normalized = current_volume / (float)VOLUME_AMP_RESOLUTION;
+    float weighted_volume = pow_unit_fast(volume_normalized, exponent) * (float)VOLUME_AMP_RESOLUTION;
+    sum_buffer[i] += weighted_volume;
+  }
+}
+
 uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
                    int32_t *gray, uint32_t size) {
   uint32_t i = 0;

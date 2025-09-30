@@ -355,13 +355,12 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     // Additive summation for mono or combined processing
     add_float(worker->waveBuffer, worker->thread_additiveBuffer,
               worker->thread_additiveBuffer, g_sp3ctra_config.audio_buffer_size);
+    
     // Intelligent volume weighting: strong oscillators dominate over weak background noise
-    for (int buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
-        float current_volume = worker->volumeBuffer[buff_idx];
-        float volume_normalized = current_volume / (float)VOLUME_AMP_RESOLUTION;
-        float weighted_volume = pow_unit_fast(volume_normalized, g_sp3ctra_config.volume_weighting_exponent) * (float)VOLUME_AMP_RESOLUTION;
-        worker->thread_sumVolumeBuffer[buff_idx] += weighted_volume;
-    }
+    // Use optimized function (NEON-accelerated on ARM)
+    apply_volume_weighting(worker->thread_sumVolumeBuffer, worker->volumeBuffer,
+                          g_sp3ctra_config.volume_weighting_exponent,
+                          g_sp3ctra_config.audio_buffer_size);
 
     // Commit phase continuity: set waves[note].current_idx to the last precomputed index for this buffer
     waves[note].current_idx = *(worker->precomputed_new_idx + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size + (g_sp3ctra_config.audio_buffer_size - 1));

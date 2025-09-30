@@ -68,11 +68,24 @@ AUDIO_BUFFERS_SOURCES = src/audio/buffers/audio_image_buffers.c
 AUDIO_PAN_SOURCES = src/audio/pan/lock_free_pan.c
 AUDIO_EFFECTS_SOURCES = src/audio/effects/auto_volume.c src/audio/effects/pareq.cpp \
                         src/audio/effects/three_band_eq.cpp src/audio/effects/ZitaRev1.cpp
-SYNTHESIS_ADDITIVE_SOURCES = src/synthesis/additive/synth_additive.c src/synthesis/additive/wave_generation.c \
-                             src/synthesis/additive/synth_additive_math.c src/synthesis/additive/synth_additive_stereo.c \
-                             src/synthesis/additive/synth_additive_state.c src/synthesis/additive/synth_additive_threading.c \
-                             src/synthesis/additive/synth_additive_algorithms.c src/synthesis/additive/pow_approx.c \
-                             src/synthesis/additive/synth_additive_runtime.c
+# Additive synthesis sources (base)
+SYNTHESIS_ADDITIVE_BASE_SOURCES = src/synthesis/additive/synth_additive.c src/synthesis/additive/wave_generation.c \
+                                  src/synthesis/additive/synth_additive_stereo.c \
+                                  src/synthesis/additive/synth_additive_state.c src/synthesis/additive/synth_additive_threading.c \
+                                  src/synthesis/additive/synth_additive_algorithms.c src/synthesis/additive/pow_approx.c \
+                                  src/synthesis/additive/synth_additive_runtime.c
+
+# Math sources: use NEON version on ARM, standard version on other architectures
+ifeq ($(UNAME_S),Linux)
+    # Linux/Raspberry Pi: Use NEON-optimized version
+    SYNTHESIS_ADDITIVE_MATH_SOURCES = src/synthesis/additive/synth_additive_math_neon.c
+else
+    # macOS and others: Use standard C version
+    SYNTHESIS_ADDITIVE_MATH_SOURCES = src/synthesis/additive/synth_additive_math.c
+endif
+
+# Combine additive synthesis sources
+SYNTHESIS_ADDITIVE_SOURCES = $(SYNTHESIS_ADDITIVE_BASE_SOURCES) $(SYNTHESIS_ADDITIVE_MATH_SOURCES)
 SYNTHESIS_POLYPHONIC_SOURCES = src/synthesis/polyphonic/synth_polyphonic.c \
                                src/synthesis/polyphonic/kissfft/kiss_fft.c \
                                src/synthesis/polyphonic/kissfft/kiss_fftr.c
