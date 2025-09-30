@@ -33,8 +33,8 @@ float calculate_contrast(int32_t *imageData, size_t size) {
     return 1.0f; // Default value = maximum volume
   }
 
-  // Sampling - don't process all pixels to optimize performance
-  const size_t sample_stride = (size_t)CONTRAST_STRIDE > 0 ? (size_t)CONTRAST_STRIDE : 1;
+  // Sampling - don't process all pixels to optimize performance  
+  const size_t sample_stride = (size_t)g_sp3ctra_config.contrast_stride > 0 ? (size_t)g_sp3ctra_config.contrast_stride : 1;
   const size_t sample_count = size / sample_stride;
 
   if (sample_count == 0) {
@@ -89,14 +89,14 @@ float calculate_contrast(int32_t *imageData, size_t size) {
   }
 
   // Apply response curve for better perception
-  float adjusted_contrast = powf(contrast_ratio, CONTRAST_ADJUSTMENT_POWER);
+  float adjusted_contrast = powf(contrast_ratio, g_sp3ctra_config.contrast_adjustment_power);
 
   // Limit between min value and 1.0 (maximum)
-  float result = CONTRAST_MIN + (1.0f - CONTRAST_MIN) * adjusted_contrast;
+  float result = g_sp3ctra_config.contrast_min + (1.0f - g_sp3ctra_config.contrast_min) * adjusted_contrast;
   if (result > 1.0f)
     result = 1.0f;
-  if (result < CONTRAST_MIN)
-    result = CONTRAST_MIN;
+  if (result < g_sp3ctra_config.contrast_min)
+    result = g_sp3ctra_config.contrast_min;
 
   // Limited logs to improve performance
   if (log_counter % LOG_FREQUENCY == 0) {

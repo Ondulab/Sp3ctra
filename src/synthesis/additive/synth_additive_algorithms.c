@@ -168,14 +168,14 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
  * @retval None
  */
 void apply_gamma_mapping(float *imageBuffer_f32, int count) {
-#if ENABLE_NON_LINEAR_MAPPING
-    for (int i = 0; i < count; i++) {
-        float normalizedIntensity = imageBuffer_f32[i] / (float)VOLUME_AMP_RESOLUTION;
-        float gamma = GAMMA_VALUE;
-        normalizedIntensity = powf(normalizedIntensity, gamma);
-        imageBuffer_f32[i] = normalizedIntensity * VOLUME_AMP_RESOLUTION;
+    if (g_sp3ctra_config.enable_non_linear_mapping) {
+        for (int i = 0; i < count; i++) {
+            float normalizedIntensity = imageBuffer_f32[i] / (float)VOLUME_AMP_RESOLUTION;
+            float gamma = g_sp3ctra_config.gamma_value;
+            normalizedIntensity = powf(normalizedIntensity, gamma);
+            imageBuffer_f32[i] = normalizedIntensity * VOLUME_AMP_RESOLUTION;
+        }
     }
-#endif
 }
 
 /**

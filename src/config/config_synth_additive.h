@@ -27,13 +27,22 @@
 
 // Non-Linear Intensity Mapping
 #define ENABLE_NON_LINEAR_MAPPING    1         // Set to 1 to enable non-linear mapping, or 0 to disable
-#define GAMMA_VALUE                  3.8f      // Gamma value for non-linear intensity correction
+#define GAMMA_VALUE                  4.8f      // Gamma value for non-linear intensity correction
 
 /**************************************************************************************
  * Summation Normalization and Volume Weighting
  **************************************************************************************/
 // Intelligent volume weighting to prioritize strong oscillators over weak background noise
 #define SUMMATION_BASE_LEVEL        (0.01f * VOLUME_AMP_RESOLUTION)  // Base level to avoid division issues
+
+// Noise Gate Configuration (suppresses weak signals like dust on background)
+// Runtime configurable values are loaded from sp3ctra.ini via g_sp3ctra_config
+#define NOISE_GATE_THRESHOLD_DEFAULT  0.05f   // Default: 5% of VOLUME_AMP_RESOLUTION
+
+// Soft Limiter Configuration (prevents hard clipping while preserving dynamics)
+// Runtime configurable values are loaded from sp3ctra.ini via g_sp3ctra_config
+#define SOFT_LIMIT_THRESHOLD_DEFAULT  0.8f    // Default: 80% before soft compression
+#define SOFT_LIMIT_KNEE_DEFAULT       0.1f    // Default: knee width for smooth transition
 
 /**************************************************************************************
  * Gap Limiter Configuration
