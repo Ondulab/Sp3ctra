@@ -19,7 +19,7 @@
 
 /* Synth Data Freeze Feature */
 extern volatile int g_is_synth_data_frozen;
-extern int32_t g_frozen_grayscale_buffer[CIS_MAX_PIXELS_NB];
+extern float g_frozen_grayscale_buffer[CIS_MAX_PIXELS_NB];
 extern volatile int g_is_synth_data_fading_out;
 extern double g_synth_data_fade_start_time;
 extern const double G_SYNTH_DATA_FADE_DURATION_SECONDS;

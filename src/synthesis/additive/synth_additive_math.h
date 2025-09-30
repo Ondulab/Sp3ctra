@@ -19,8 +19,9 @@
  * Core Synthesis Mathematical Constants
  **************************************************************************************/
 // Resolution constants for amplitude calculations
-#define WAVE_AMP_RESOLUTION          (16777215)             // Decimal value for wave amplitude
-#define VOLUME_AMP_RESOLUTION        (65535)                // Decimal value for volume amplitude
+// REFACTORED: Normalized to 1.0 for float operations (waveforms already in [-1,+1], volumes in [0,1])
+#define WAVE_AMP_RESOLUTION          (1.0f)                  // Normalized to 1.0 (waveforms in [-1,+1])
+#define VOLUME_AMP_RESOLUTION        (1.0f)                  // Normalized to 1.0 (volumes in [0,1])
 
 /* Exported function prototypes ----------------------------------------------*/
 
@@ -50,7 +51,7 @@ float apply_envelope_ramp(float *volumeBuffer, float start_volume, float target_
 
 /* Color conversion utilities */
 uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
-                   int32_t *gray, uint32_t size);
+                   float *gray, uint32_t size);
 
 
 #endif /* __SYNTH_ADDITIVE_MATH_H__ */

@@ -26,7 +26,7 @@ static uint32_t log_counter = 0;
  * Optimized for performance with sampling
  * Returns a value between 0.2 (low contrast) and 1.0 (high contrast)
  */
-float calculate_contrast(int32_t *imageData, size_t size) {
+float calculate_contrast(float *imageData, size_t size) {
   // Protection against invalid inputs
   if (imageData == NULL || size == 0) {
     printf("ERROR: Invalid image data in calculate_contrast\n");

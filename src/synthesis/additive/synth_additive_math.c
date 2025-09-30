@@ -9,6 +9,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "synth_additive_math.h"
+#include <stdio.h>
 
 /* Private user code ---------------------------------------------------------*/
 
@@ -77,10 +78,11 @@ void apply_volume_weighting(float *sum_buffer, const float *volume_buffer,
   // Import pow_unit_fast for power calculation
   extern float pow_unit_fast(float x, float expo);
   
+  // REFACTORED: Volumes are already normalized to [0, 1] with VOLUME_AMP_RESOLUTION = 1.0
+  // No need to divide/multiply - just apply the power function directly
   for (size_t i = 0; i < length; ++i) {
-    float current_volume = volume_buffer[i];
-    float volume_normalized = current_volume / (float)VOLUME_AMP_RESOLUTION;
-    float weighted_volume = pow_unit_fast(volume_normalized, exponent) * (float)VOLUME_AMP_RESOLUTION;
+    float current_volume = volume_buffer[i];  // Already in [0, 1]
+    float weighted_volume = pow_unit_fast(current_volume, exponent);
     sum_buffer[i] += weighted_volume;
   }
 }
@@ -130,7 +132,7 @@ float apply_envelope_ramp(float *volumeBuffer, float start_volume, float target_
 #endif /* !__LINUX__ || !__ARM_NEON */
 
 uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
-                   int32_t *gray, uint32_t size) {
+                   float *gray, uint32_t size) {
   uint32_t i = 0;
 
   for (i = 0; i < size; i++) {
@@ -139,8 +141,8 @@ uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
     uint32_t b = (uint32_t)buffer_B[i];
 
     uint32_t weighted = (r * 299 + g * 587 + b * 114);
-    // Normalization to 16 bits (0 - 65535)
-    gray[i] = (int32_t)((weighted * 65535UL) / 255000UL);
+    // REFACTORED: Direct normalization to float [0, 1] for consistency with new audio pipeline
+    gray[i] = (float)weighted / 255000.0f;
   }
 
   return 0;

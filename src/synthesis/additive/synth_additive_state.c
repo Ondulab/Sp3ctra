@@ -17,7 +17,7 @@
 
 /* Synth Data Freeze Feature - Definitions */
 volatile int g_is_synth_data_frozen = 0;
-int32_t g_frozen_grayscale_buffer[CIS_MAX_PIXELS_NB];
+float g_frozen_grayscale_buffer[CIS_MAX_PIXELS_NB];
 volatile int g_is_synth_data_fading_out = 0;
 double g_synth_data_fade_start_time = 0.0;
 const double G_SYNTH_DATA_FADE_DURATION_SECONDS = 5.0; // Corresponds to visual fade

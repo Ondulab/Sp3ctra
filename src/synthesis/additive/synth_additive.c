@@ -208,7 +208,9 @@ int32_t synth_IfftInit(void) {
     fprintf(stderr, "ERROR: Failed to allocate imageRef\n");
     return -1;
   }
-  fill_int32(65535, imageRef, get_current_number_of_notes());
+  // REFACTORED: Initialize with 1.0 in micros scale (normalized amplitude)
+  // This matches the new preprocessing that stores values as (normalized * 1000000)
+  fill_int32(1000000, imageRef, get_current_number_of_notes());
 
   // Initialize image debug system
   image_debug_init();
@@ -237,7 +239,7 @@ int32_t synth_IfftInit(void) {
  * @param  contrast_factor Contrast factor for volume modulation
  * @retval None
  */
-void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRight, float contrast_factor) {
+void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRight, float contrast_factor) {
 
   // Additive mode (limited logs)
   if (log_counter % LOG_FREQUENCY == 0) {
@@ -376,6 +378,11 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
       }
     }
 
+    // SATURATION PREVENTION: Apply moderate pre-scaling to prevent overflow
+    // Fixed conservative factor that maintains good volume while preventing saturation
+    const float safety_scale = 0.35f;  // Conservative but not excessive
+    scale_float(additiveBuffer, safety_scale, g_sp3ctra_config.audio_buffer_size);
+
     // CORRECTION: Conditional normalization by platform
 #ifdef __linux__
     // Pi/Linux: Divide by 3 (BossDAC/ALSA amplifies naturally)
@@ -488,6 +495,11 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
       add_float(thread_pool[i].thread_additiveBuffer_R, stereoBuffer_R,
                 stereoBuffer_R, g_sp3ctra_config.audio_buffer_size);
     }
+    
+    // SATURATION PREVENTION: Apply same safety scaling to stereo buffers
+    const float safety_scale_stereo = 0.35f;  // Same as mono for consistency
+    scale_float(stereoBuffer_L, safety_scale_stereo, g_sp3ctra_config.audio_buffer_size);
+    scale_float(stereoBuffer_R, safety_scale_stereo, g_sp3ctra_config.audio_buffer_size);
     
     // CRITICAL FIX: Remove problematic mult_float that creates explosion in stereo mode
     // mult_float(stereoBuffer_L, maxVolumeBuffer, stereoBuffer_L, AUDIO_BUFFER_SIZE);
@@ -614,10 +626,10 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     return;
   }
   int index = __atomic_load_n(&current_buffer_index, __ATOMIC_RELAXED);
-  static int32_t
-      g_grayScale_live[CIS_MAX_PIXELS_NB]; // Buffer for live grayscale data
-  int32_t processed_grayScale[CIS_MAX_PIXELS_NB]; // Buffer for data to be
-                                                  // passed to synth_IfftMode
+  static float
+      g_grayScale_live[CIS_MAX_PIXELS_NB]; // Buffer for live grayscale data (normalized float [0, 1])
+  float processed_grayScale[CIS_MAX_PIXELS_NB]; // Buffer for data to be
+                                                  // passed to synth_IfftMode (normalized float [0, 1])
 
   // RT-SAFE: Poll buffer ready state atomically (no mutex/cond needed)
   // Increased sleep time to reduce CPU contention and improve startup stability
@@ -772,8 +784,8 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
                         : ((alpha_blend > 1.0f) ? 1.0f : alpha_blend);
       for (int i = 0; i < CIS_MAX_PIXELS_NB; ++i) {
         processed_grayScale[i] =
-            (int32_t)(g_frozen_grayscale_buffer[i] * (1.0f - alpha_blend) +
-                      g_grayScale_live[i] * alpha_blend);
+            g_frozen_grayscale_buffer[i] * (1.0f - alpha_blend) +
+            g_grayScale_live[i] * alpha_blend;
       }
     }
   } else if (local_is_frozen) {

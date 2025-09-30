@@ -125,10 +125,11 @@ void apply_volume_weighting(float *sum_buffer, const float *volume_buffer,
   }
   
   // Process remaining samples (scalar tail)
+  // REFACTORED: Volumes are already normalized to [0, 1] with VOLUME_AMP_RESOLUTION = 1.0
+  // No need to normalize/denormalize
   for (; i < length; i++) {
-    float current_volume = volume_buffer[i];
-    float volume_normalized = current_volume * norm_factor;
-    float weighted_volume = pow_unit_fast(volume_normalized, exponent) * denorm_factor;
+    float current_volume = volume_buffer[i];  // Already in [0, 1]
+    float weighted_volume = pow_unit_fast(current_volume, exponent);
     sum_buffer[i] += weighted_volume;
   }
 }
