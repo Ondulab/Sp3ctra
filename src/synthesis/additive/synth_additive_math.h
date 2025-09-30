@@ -39,6 +39,15 @@ void fill_float(float value, float *array, size_t length);
 void apply_volume_weighting(float *sum_buffer, const float *volume_buffer, 
                            float exponent, size_t length);
 
+/* Stereo panning with linear interpolation (optimized with NEON on ARM) */
+void apply_stereo_pan_ramp(const float *mono_buffer, float *left_buffer, float *right_buffer,
+                           float start_left, float start_right, float end_left, float end_right,
+                           size_t length);
+
+/* Exponential envelope generation (optimized with NEON on ARM) */
+float apply_envelope_ramp(float *volumeBuffer, float start_volume, float target_volume,
+                          float alpha, size_t length, float min_vol, float max_vol);
+
 /* Color conversion utilities */
 uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
                    int32_t *gray, uint32_t size);

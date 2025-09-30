@@ -138,19 +138,13 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
     // Use precomputed envelope coefficients (no complex calculations in RT path!)
     const float alpha = (t > v) ? waves[note].alpha_up : waves[note].alpha_down_weighted;
     
-    // RT-optimized envelope loop (exponential approach: v += alpha * (t - v))
-    for (int buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
-        v += alpha * (t - v);
-        
-        // Clamp volume to valid range
-        if (v < 0.0f) v = 0.0f;
-        if (v > (float)VOLUME_AMP_RESOLUTION) v = (float)VOLUME_AMP_RESOLUTION;
-        
-        volumeBuffer[buff_idx] = v;
-    }
+    // Use optimized envelope function (NEON-accelerated on ARM)
+    float final_volume = apply_envelope_ramp(volumeBuffer, v, t, alpha,
+                                            g_sp3ctra_config.audio_buffer_size,
+                                            0.0f, (float)VOLUME_AMP_RESOLUTION);
     
     // Write back current volume once per buffer
-    waves[note].current_volume = v;
+    waves[note].current_volume = final_volume;
 #else
     // Without GAP_LIMITER, just fill with constant volume
     fill_float(target_volume, volumeBuffer, g_sp3ctra_config.audio_buffer_size);
