@@ -104,27 +104,16 @@ all: $(TARGET)
 
 # Create build directories
 $(OBJ_DIR):
-	@mkdir -p $(OBJ_DIR)/core
-	@mkdir -p $(OBJ_DIR)/config
-	@mkdir -p $(OBJ_DIR)/audio/rtaudio
-	@mkdir -p $(OBJ_DIR)/audio/buffers
-	@mkdir -p $(OBJ_DIR)/audio/pan
-	@mkdir -p $(OBJ_DIR)/audio/effects
-	@mkdir -p $(OBJ_DIR)/synthesis/additive
-	@mkdir -p $(OBJ_DIR)/synthesis/polyphonic/kissfft
-	@mkdir -p $(OBJ_DIR)/communication/network
-	@mkdir -p $(OBJ_DIR)/communication/midi
-	@mkdir -p $(OBJ_DIR)/communication/dmx
-	@mkdir -p $(OBJ_DIR)/display
-	@mkdir -p $(OBJ_DIR)/threading
-	@mkdir -p $(OBJ_DIR)/utils
+	@mkdir -p $(OBJ_DIR)
 
 # Compile C files
-$(OBJ_DIR)/%.o: src/%.c | $(OBJ_DIR)
+$(OBJ_DIR)/%.o: src/%.c
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 # Compile C++ files
-$(OBJ_DIR)/%.o: src/%.cpp | $(OBJ_DIR)
+$(OBJ_DIR)/%.o: src/%.cpp
+	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
 # Link target
