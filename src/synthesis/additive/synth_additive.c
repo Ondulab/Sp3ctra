@@ -379,12 +379,13 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
     // CORRECTION: Conditional normalization by platform
 #ifdef __linux__
     // Pi/Linux: Divide by 3 (BossDAC/ALSA amplifies naturally)
-    scale_float(additiveBuffer, 1.0f / 3.0f, g_sp3ctra_config.audio_buffer_size);
-    scale_float(sumVolumeBuffer, 1.0f / 3.0f, g_sp3ctra_config.audio_buffer_size);
-    scale_float(maxVolumeBuffer, 1.0f / 3.0f, g_sp3ctra_config.audio_buffer_size);
+    //scale_float(additiveBuffer, 1.0f / 3.0f, g_sp3ctra_config.audio_buffer_size);
+    //scale_float(sumVolumeBuffer, 1.0f / 3.0f, g_sp3ctra_config.audio_buffer_size);
+    //scale_float(maxVolumeBuffer, 1.0f / 3.0f, g_sp3ctra_config.audio_buffer_size);
 #else
-    // Mac: No division (CoreAudio doesn't compensate automatically)
-    // Signal kept at full amplitude for normal volume
+    //scale_float(additiveBuffer, 1.0f / 3.0f, g_sp3ctra_config.audio_buffer_size);
+    //scale_float(sumVolumeBuffer, 1.0f / 3.0f, g_sp3ctra_config.audio_buffer_size);
+    //scale_float(maxVolumeBuffer, 1.0f / 3.0f, g_sp3ctra_config.audio_buffer_size);
 #endif
 
   } else {
@@ -419,7 +420,18 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
       startup_callback_count++;
     }
     
+    // NOISE GATE: Suppress weak signals (dust, background noise) BEFORE compression
+    const float noise_gate_threshold_absolute = g_sp3ctra_config.noise_gate_threshold * (float)VOLUME_AMP_RESOLUTION;
+    
     for (buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
+        // Apply noise gate to suppress weak signals
+        if (sumVolumeBuffer[buff_idx] < noise_gate_threshold_absolute) {
+          sumVolumeBuffer[buff_idx] = 0.0f;  // Complete suppression below threshold
+          tmp_audioData[buff_idx] = 0.0f;
+          continue;
+        }
+        
+        // Compression ONLY applied to signals above gate threshold
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           // Apply exponential response curve to reduce compression effects
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
@@ -436,6 +448,17 @@ void synth_IfftMode(int32_t *imageData, float *audioDataLeft, float *audioDataRi
           tmp_audioData[buff_idx] = ratio * fade_in_factor; // Apply anti-tac fade-in
         } else {
           tmp_audioData[buff_idx] = 0.0f;
+        }
+    }
+    
+    // SOFT LIMITER: Prevent hard clipping while preserving dynamics (applied AFTER normalization)
+    for (buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
+        float abs_signal = fabsf(tmp_audioData[buff_idx]);
+        if (abs_signal > g_sp3ctra_config.soft_limit_threshold) {
+          // Soft compression using tanh for smooth saturation
+          float excess = abs_signal - g_sp3ctra_config.soft_limit_threshold;
+          float compressed = tanhf(excess / g_sp3ctra_config.soft_limit_knee) * g_sp3ctra_config.soft_limit_knee;
+          tmp_audioData[buff_idx] = copysignf(g_sp3ctra_config.soft_limit_threshold + compressed, tmp_audioData[buff_idx]);
         }
     }
 

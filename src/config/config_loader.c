@@ -48,7 +48,19 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     
     // Summation normalization parameters
     .volume_weighting_exponent = 0.1f,         // Default: strong domination of strong oscillators
-    .summation_response_exponent = 2.0f        // Default: compression (good sound quality)
+    .summation_response_exponent = 2.0f,       // Default: compression (good sound quality)
+    
+    // Noise gate and soft limiter parameters
+    .noise_gate_threshold = NOISE_GATE_THRESHOLD_DEFAULT,
+    .soft_limit_threshold = SOFT_LIMIT_THRESHOLD_DEFAULT,
+    .soft_limit_knee = SOFT_LIMIT_KNEE_DEFAULT,
+    
+    // Image processing and contrast parameters
+    .contrast_min = CONTRAST_MIN,
+    .contrast_stride = CONTRAST_STRIDE,
+    .contrast_adjustment_power = CONTRAST_ADJUSTMENT_POWER,
+    .enable_non_linear_mapping = ENABLE_NON_LINEAR_MAPPING,
+    .gamma_value = GAMMA_VALUE
 };
 
 /**************************************************************************************
@@ -576,6 +588,51 @@ int load_additive_config(const char* config_file_path) {
                 }
             } else if (strcmp(key, "summation_response_exponent") == 0) {
                 if (parse_float(value, &g_sp3ctra_config.summation_response_exponent, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "noise_gate_threshold") == 0) {
+                if (parse_float(value, &g_sp3ctra_config.noise_gate_threshold, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "soft_limit_threshold") == 0) {
+                if (parse_float(value, &g_sp3ctra_config.soft_limit_threshold, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "soft_limit_knee") == 0) {
+                if (parse_float(value, &g_sp3ctra_config.soft_limit_knee, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "contrast_min") == 0) {
+                if (parse_float(value, &g_sp3ctra_config.contrast_min, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "contrast_stride") == 0) {
+                if (parse_float(value, &g_sp3ctra_config.contrast_stride, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "contrast_adjustment_power") == 0) {
+                if (parse_float(value, &g_sp3ctra_config.contrast_adjustment_power, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else {
+                fprintf(stderr, "[CONFIG WARNING] Line %d: Unknown parameter '%s' in section '%s'\n", 
+                        line_number, key, current_section);
+            }
+        } else if (strcmp(current_section, "image_processing") == 0) {
+            if (strcmp(key, "enable_non_linear_mapping") == 0) {
+                if (parse_int(value, &g_sp3ctra_config.enable_non_linear_mapping, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "gamma_value") == 0) {
+                if (parse_float(value, &g_sp3ctra_config.gamma_value, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }

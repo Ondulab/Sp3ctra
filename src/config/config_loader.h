@@ -42,6 +42,18 @@ typedef struct {
     // Summation normalization parameters
     float volume_weighting_exponent;           // Volume weighting exponent (1.0=linear, 2.0=quadratic, 3.0=cubic)
     float summation_response_exponent;         // Final response curve exponent (0.5=anti-compress, 1.0=linear, 1.5+=compress)
+    
+    // Noise gate and soft limiter parameters
+    float noise_gate_threshold;                // Noise gate threshold (0.0-1.0, relative to VOLUME_AMP_RESOLUTION)
+    float soft_limit_threshold;                // Soft limiter threshold (0.0-1.0)
+    float soft_limit_knee;                     // Soft limiter knee width (0.0-1.0)
+    
+    // Image processing and contrast parameters
+    float contrast_min;                        // Minimum volume for blurred images (0.0-1.0)
+    float contrast_stride;                     // Pixel sampling stride for optimization
+    float contrast_adjustment_power;           // Exponent for adjusting the contrast curve
+    int enable_non_linear_mapping;             // Enable/disable non-linear gamma mapping (0/1)
+    float gamma_value;                         // Gamma value for non-linear intensity correction
 } sp3ctra_config_t;
 
 /**************************************************************************************
