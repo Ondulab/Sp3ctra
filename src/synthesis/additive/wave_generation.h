@@ -41,11 +41,13 @@ struct wave {
     uint32_t octave_coeff;
     uint32_t octave_divider;
     
-    // Volume parameters - Float32 (legacy)
+    // Volume parameters - Float32
     float target_volume;
     float current_volume;
-    float max_volume_increment;
-    float max_volume_decrement;
+    
+    // GAP_LIMITER: Precomputed envelope coefficients (RT-optimized)
+    float alpha_up;                         // Attack coefficient (precomputed)
+    float alpha_down_weighted;              // Release coefficient with frequency weighting (precomputed)
     
     
     // Frequency (keep as float for initialization calculations)

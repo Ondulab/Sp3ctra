@@ -49,15 +49,8 @@
 
 // Numerical safety and bounds (to avoid underflow/denormals and instability)
 #define TAU_UP_MAX_MS 2000.0f     // Cap extremely long attacks
-#define TAU_DOWN_MAX_MS 2000.0f   // Cap extremely long releases (per-base before divisor)
+#define TAU_DOWN_MAX_MS 2000.0f   // Cap extremely long releases
 #define ALPHA_MIN 1e-5f           // Minimum effective alpha to ensure progress and avoid denormals
-
-// Phase weighting parameters (applied per sample)
-#define PHASE_WEIGHT_EPS 0.01f // Prevents zero alpha at peaks
-
-// Dynamic phase epsilon bounds (helps when tau is very large)
-#define PHASE_WEIGHT_EPS_MIN 0.005f
-#define PHASE_WEIGHT_EPS_MAX 0.05f
 
 /**************************************************************************************
  * Debug Configuration

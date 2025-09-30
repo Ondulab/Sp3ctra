@@ -38,8 +38,6 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     .tau_down_base_ms = 0.5f,
     .decay_freq_ref_hz = 440.0f,
     .decay_freq_beta = -1.2f,
-    .enable_phase_weighted_slew = 1,
-    .phase_weight_power = 2.0f,
     
     // Stereo processing parameters
     .stereo_mode_enabled = 0,                  // Default: stereo disabled in config
@@ -174,14 +172,6 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "# Helps balance volume transitions across different frequency ranges\n");
     fprintf(file, "decay_freq_ref_hz = %.1f\n", DEFAULT_CONFIG.decay_freq_ref_hz);
     fprintf(file, "decay_freq_beta = %.1f\n", DEFAULT_CONFIG.decay_freq_beta);
-    fprintf(file, "\n");
-    fprintf(file, "# Enable phase-weighted slew to minimize gain changes at waveform peaks\n");
-    fprintf(file, "# This reduces audio artifacts by timing volume changes with the audio waveform\n");
-    fprintf(file, "enable_phase_weighted_slew = %d\n", DEFAULT_CONFIG.enable_phase_weighted_slew);
-    fprintf(file, "\n");
-    fprintf(file, "# Phase weighting parameters (applied per sample)\n");
-    fprintf(file, "# Control how the phase weighting affects the slew behavior\n");
-    fprintf(file, "phase_weight_power = %.1f\n", DEFAULT_CONFIG.phase_weight_power);
     fprintf(file, "\n");
     
     fprintf(file, "[stereo_processing]\n");
@@ -318,16 +308,6 @@ void validate_config(const sp3ctra_config_t* config) {
     if (config->decay_freq_beta < -10.0f || config->decay_freq_beta > 10.0f) {
         fprintf(stderr, "[CONFIG ERROR] decay_freq_beta must be between -10.0 and 10.0, got %.2f\n",
                 config->decay_freq_beta);
-        errors++;
-    }
-    if (config->enable_phase_weighted_slew != 0 && config->enable_phase_weighted_slew != 1) {
-        fprintf(stderr, "[CONFIG ERROR] enable_phase_weighted_slew must be 0 or 1, got %d\n",
-                config->enable_phase_weighted_slew);
-        errors++;
-    }
-    if (config->phase_weight_power < 0.1f || config->phase_weight_power > 4.0f) {
-        fprintf(stderr, "[CONFIG ERROR] phase_weight_power must be between 0.1 and 4.0, got %.2f\n",
-                config->phase_weight_power);
         errors++;
     }
     
@@ -550,16 +530,10 @@ int load_additive_config(const char* config_file_path) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
-            } else if (strcmp(key, "enable_phase_weighted_slew") == 0) {
-                if (parse_int(value, &g_sp3ctra_config.enable_phase_weighted_slew, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
-            } else if (strcmp(key, "phase_weight_power") == 0) {
-                if (parse_float(value, &g_sp3ctra_config.phase_weight_power, key) != 0) {
-                    fclose(file);
-                    exit(EXIT_FAILURE);
-                }
+            } else if (strcmp(key, "enable_phase_weighted_slew") == 0 || strcmp(key, "phase_weight_power") == 0) {
+                // Ignore deprecated phase weighting parameters (replaced by precomputed coefficients)
+                fprintf(stderr, "[CONFIG INFO] Line %d: Parameter '%s' is deprecated (phase weighting removed), ignoring\n", 
+                        line_number, key);
             } else {
                 fprintf(stderr, "[CONFIG WARNING] Line %d: Unknown parameter '%s' in section '%s'\n", 
                         line_number, key, current_section);

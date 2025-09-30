@@ -47,6 +47,13 @@ void process_image_preprocessing(int32_t *imageData, int32_t *imageBuffer_q31,
 void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave, float *volumeBuffer);
 
 /**
+ * @brief Precompute GAP_LIMITER envelope coefficients for all oscillators
+ * Called at startup and when tau parameters change at runtime
+ * @retval None
+ */
+void update_gap_limiter_coefficients(void);
+
+/**
  * @brief Apply non-linear gamma mapping to image buffer
  * @param imageBuffer_f32 Input/output float buffer
  * @param count Number of elements to process

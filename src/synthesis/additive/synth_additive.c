@@ -132,8 +132,8 @@ int32_t synth_IfftInit(void) {
 
   buffer_len = init_waves(unitary_waveform, waves, &wavesGeneratorParams);
 
-  // Volume increments/decrements are no longer used - replaced by tau_up_base_ms/tau_down_base_ms system
-
+  // Precompute GAP_LIMITER envelope coefficients for all oscillators
+  update_gap_limiter_coefficients();
 
   // Start with random index
   for (int i = 0; i < get_current_number_of_notes(); i++) {

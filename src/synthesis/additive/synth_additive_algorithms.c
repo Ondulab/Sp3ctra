@@ -23,6 +23,61 @@
 /* Function implementations --------------------------------------------------*/
 
 /**
+ * @brief Precompute GAP_LIMITER envelope coefficients for all oscillators
+ * Called at startup and when tau parameters change at runtime
+ * @retval None
+ */
+void update_gap_limiter_coefficients(void) {
+#ifdef GAP_LIMITER
+    const float Fs = (float)g_sp3ctra_config.sampling_frequency;
+    
+    // Get runtime tau parameters
+    float tau_up_ms = g_sp3ctra_config.tau_up_base_ms;
+    float tau_down_ms = g_sp3ctra_config.tau_down_base_ms;
+    
+    // Clamp taus to avoid division by zero or denormals
+    if (tau_up_ms < 0.01f) tau_up_ms = 0.01f;
+    if (tau_down_ms < 0.01f) tau_down_ms = 0.01f;
+    if (tau_up_ms > TAU_UP_MAX_MS) tau_up_ms = TAU_UP_MAX_MS;
+    if (tau_down_ms > TAU_DOWN_MAX_MS) tau_down_ms = TAU_DOWN_MAX_MS;
+    
+    const float tau_up_s = tau_up_ms * 0.001f;
+    const float tau_down_s = tau_down_ms * 0.001f;
+    
+    // Compute base alphas (exponential envelope coefficients)
+    float alpha_up = 1.0f - expf(-1.0f / (tau_up_s * Fs));
+    float alpha_down = 1.0f - expf(-1.0f / (tau_down_s * Fs));
+    
+    // Clamp alphas to reasonable bounds
+    if (alpha_up < ALPHA_MIN) alpha_up = ALPHA_MIN;
+    if (alpha_down < ALPHA_MIN) alpha_down = ALPHA_MIN;
+    if (alpha_up > 1.0f) alpha_up = 1.0f;
+    if (alpha_down > 1.0f) alpha_down = 1.0f;
+    
+    // Precompute for each oscillator
+    const int num_notes = get_current_number_of_notes();
+    for (int note = 0; note < num_notes; note++) {
+        // Store attack coefficient (frequency-independent)
+        waves[note].alpha_up = alpha_up;
+        
+        // Compute frequency-dependent release weighting
+        float f = waves[note].frequency;
+        if (f < 1.0f) f = 1.0f;
+        
+        float ratio = f / g_sp3ctra_config.decay_freq_ref_hz;
+        float g_down = powf(ratio, -g_sp3ctra_config.decay_freq_beta);
+        
+        // Clamp frequency weight
+        if (g_down < DECAY_FREQ_MIN) g_down = DECAY_FREQ_MIN;
+        if (g_down > DECAY_FREQ_MAX) g_down = DECAY_FREQ_MAX;
+        
+        // Store weighted release coefficient
+        waves[note].alpha_down_weighted = alpha_down * g_down;
+    }
+#endif
+}
+
+/**
  * @brief Process image preprocessing (averaging and color inversion)
  * @param imageData Input image data
  * @param imageBuffer_q31 Output processed buffer
@@ -70,107 +125,27 @@ void process_image_preprocessing(int32_t *imageData, int32_t *imageBuffer_q31,
  * @retval None
  */
 void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave, float *volumeBuffer) {
+    (void)pre_wave; // No longer used (phase weighting removed)
+    
 #ifdef GAP_LIMITER
-    // Set the target volume for the oscillator (per-buffer constant)
+    // Set the target volume for the oscillator
     waves[note].target_volume = target_volume;
 
     // Local copies (avoid repeated volatile access)
     float v = waves[note].current_volume;
     const float t = waves[note].target_volume;
 
-    // Compute per-buffer base time constants from runtime config
-    // tau_ms are directly provided by configuration; alpha = 1 - exp(-1/(tau_s * Fs))
-    float tau_up_ms   = g_sp3ctra_config.tau_up_base_ms;
-    float tau_down_ms = g_sp3ctra_config.tau_down_base_ms;
-
-    // Clamp taus to avoid division by zero or denormals
-    if (tau_up_ms   < 0.01f) tau_up_ms   = 0.01f;
-    if (tau_down_ms < 0.01f) tau_down_ms = 0.01f;
-    // Cap extremely long time constants to avoid underflow/denormals and residual hiss
-    if (tau_up_ms   > TAU_UP_MAX_MS)   tau_up_ms   = TAU_UP_MAX_MS;
-    if (tau_down_ms > TAU_DOWN_MAX_MS) tau_down_ms = TAU_DOWN_MAX_MS;
-
-    const float Fs = (float)g_sp3ctra_config.sampling_frequency;
-    const float tau_up_s   = tau_up_ms   * 0.001f;
-    const float tau_down_s = tau_down_ms * 0.001f;
-
-    // Compute base alphas once per buffer
-    float alpha_up   = 1.0f - expf(-1.0f / (tau_up_s   * Fs));
-    float alpha_down = 1.0f - expf(-1.0f / (tau_down_s * Fs));
-
-    // Clamp alphas to reasonable bounds
-    if (alpha_up   < ALPHA_MIN) alpha_up   = ALPHA_MIN;
-    if (alpha_down < ALPHA_MIN) alpha_down = ALPHA_MIN;
-    if (alpha_up   > 1.0f)      alpha_up   = 1.0f;
-    if (alpha_down > 1.0f)      alpha_down = 1.0f;
-
-    // Frequency-dependent release weighting (applied only when t < v)
-    float g_down = 1.0f;
-    {
-        float f = waves[note].frequency;
-        if (f < 1.0f) f = 1.0f;
-        float ratio = f / g_sp3ctra_config.decay_freq_ref_hz;
-        // powf is used once per buffer (acceptable). If performance becomes critical, approximate.
-        float w = powf(ratio, -g_sp3ctra_config.decay_freq_beta);
-        if (w < DECAY_FREQ_MIN) w = DECAY_FREQ_MIN;
-        if (w > DECAY_FREQ_MAX) w = DECAY_FREQ_MAX;
-        g_down = w;
-    }
-
-    // Constants for phase weighting
-    const float half_wave = (float)WAVE_AMP_RESOLUTION * 0.5f;
-    const float inv_half  = (half_wave > 0.0f) ? (1.0f / half_wave) : 0.0f;
-
-    // Adaptive phase epsilon for very long releases to avoid ultra-small alpha_eff
-    float phase_eps = PHASE_WEIGHT_EPS;
-    if (tau_down_ms > 500.0f) {
-        float k = (tau_down_ms - 500.0f) / (TAU_DOWN_MAX_MS - 500.0f);
-        if (k < 0.0f) k = 0.0f;
-        if (k > 1.0f) k = 1.0f;
-        phase_eps = PHASE_WEIGHT_EPS_MIN + k * (PHASE_WEIGHT_EPS_MAX - PHASE_WEIGHT_EPS_MIN);
-    }
-
-    // Debug counters removed to clean up logs
+    // Use precomputed envelope coefficients (no complex calculations in RT path!)
+    const float alpha = (t > v) ? waves[note].alpha_up : waves[note].alpha_down_weighted;
     
+    // RT-optimized envelope loop (exponential approach: v += alpha * (t - v))
     for (int buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
-        // Phase weighting using precomputed waveform sample
-        float s_norm = 0.0f;
-        if (pre_wave) {
-            // Normalize to [-1, 1]
-            s_norm = pre_wave[buff_idx] * inv_half;
-            if (s_norm >  1.0f) s_norm =  1.0f;
-            if (s_norm < -1.0f) s_norm = -1.0f;
-        }
-        float one_minus_s2 = 1.0f - (s_norm * s_norm);  // in [0,1]
-        if (one_minus_s2 < phase_eps) one_minus_s2 = phase_eps;
-
-        float w_phase;
-        // Avoid powf in hot path: support common p = 1 or 2 fast, else fallback linear
-        {
-            float p = g_sp3ctra_config.phase_weight_power;
-            if (p >= 1.9f && p <= 2.1f) {
-                w_phase = one_minus_s2 * one_minus_s2; // p = 2
-            } else {
-                w_phase = one_minus_s2; // p ≈ 1 (default)
-            }
-        }
-
-        // Exponential approach (recommended): v += alpha_eff * (t - v)
-        const int is_attack = (t > v) ? 1 : 0;
-        float alpha_base = is_attack ? alpha_up : (alpha_down * g_down);
-        float alpha_eff = alpha_base;
-        if (g_sp3ctra_config.enable_phase_weighted_slew) {
-            alpha_eff *= w_phase;
-        }
-        // Clamp alpha_eff
-        if (alpha_eff < ALPHA_MIN) alpha_eff = ALPHA_MIN;
-        if (alpha_eff > 1.0f)      alpha_eff = 1.0f;
-
-        v += alpha_eff * (t - v);
-        // Clamp volume to legal range
+        v += alpha * (t - v);
+        
+        // Clamp volume to valid range
         if (v < 0.0f) v = 0.0f;
         if (v > (float)VOLUME_AMP_RESOLUTION) v = (float)VOLUME_AMP_RESOLUTION;
-
+        
         volumeBuffer[buff_idx] = v;
     }
     
