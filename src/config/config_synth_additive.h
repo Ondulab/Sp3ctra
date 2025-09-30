@@ -33,7 +33,9 @@
  * Summation Normalization and Volume Weighting
  **************************************************************************************/
 // Intelligent volume weighting to prioritize strong oscillators over weak background noise
-#define SUMMATION_BASE_LEVEL        (0.01f * VOLUME_AMP_RESOLUTION)  // Base level to avoid division issues
+// INCREASED: Higher base level provides more headroom for compression without saturation
+// REFACTORED: With VOLUME_AMP_RESOLUTION = 1.0, simply use the normalized value directly
+#define SUMMATION_BASE_LEVEL        (0.2f)  // Base level to avoid division issues (normalized scale)
 
 // Noise Gate Configuration (suppresses weak signals like dust on background)
 // Runtime configurable values are loaded from sp3ctra.ini via g_sp3ctra_config
@@ -53,7 +55,7 @@
 // This provides maximum performance by eliminating attack envelope calculations
 // Release (decay) is still progressive to avoid audio clicks
 // Set to 1 for instant attack, 0 for progressive attack (tau_up_base_ms)
-#define INSTANT_ATTACK 1
+#define INSTANT_ATTACK 0
 
 /**************************************************************************************
  * Adaptive Slew/Decay Configuration

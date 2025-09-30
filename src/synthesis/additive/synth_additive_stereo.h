@@ -17,7 +17,7 @@
 /* Exported function prototypes ----------------------------------------------*/
 
 /* Contrast and image analysis */
-float calculate_contrast(int32_t *imageData, size_t size);
+float calculate_contrast(float *imageData, size_t size);
 
 /* Color temperature and stereo panning */
 float calculate_color_temperature(uint8_t r, uint8_t g, uint8_t b);

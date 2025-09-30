@@ -27,7 +27,7 @@ typedef struct synth_thread_worker_s {
   int thread_id;      // Thread ID (0, 1, 2)
   int start_note;     // Start note for this thread
   int end_note;       // End note for this thread
-  int32_t *imageData; // Input image data (shared)
+  float *imageData;   // Input image data (shared, normalized float [0, 1])
 
   // Local output buffers per thread - Float32 (legacy)
   float *thread_additiveBuffer;
@@ -89,7 +89,7 @@ void synth_shutdown_thread_pool(void);
 /* Thread processing functions */
 void *synth_persistent_worker_thread(void *arg);
 void synth_process_worker_range(synth_thread_worker_t *worker);
-void synth_precompute_wave_data(int32_t *imageData);
+void synth_precompute_wave_data(float *imageData);
 
 /* Thread pool access for synthesis core */
 extern synth_thread_worker_t thread_pool[3];

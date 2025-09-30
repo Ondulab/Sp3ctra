@@ -26,8 +26,8 @@
  * @param end_note Ending note index (exclusive)
  * @retval None
  */
-void process_image_preprocessing(int32_t *imageData, int32_t *imageBuffer_q31, 
-                                int start_note, int end_note);
+void process_image_preprocessing(float *imageData, int32_t *imageBuffer_q31, 
+                                 int start_note, int end_note);
 
 /**
  * @brief Apply GAP_LIMITER volume ramp for a single note

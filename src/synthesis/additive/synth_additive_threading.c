@@ -278,8 +278,8 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
       __builtin_prefetch(&worker->precomputed_wave_data[(size_t)(local_note_idx + 1) * audio_buffer_size], 0, 3);
     }
     
-    // Convert and apply gamma mapping
-    worker->imageBuffer_f32[local_note_idx] = (float)worker->imageBuffer_q31[local_note_idx];
+    // Convert from stored micros back to normalized [0, 1] range
+    worker->imageBuffer_f32[local_note_idx] = (float)worker->imageBuffer_q31[local_note_idx] / 1000000.0f;
     apply_gamma_mapping(&worker->imageBuffer_f32[local_note_idx], 1);
 
     // ✅ OPTIMIZATION: Compute pointers once (avoid repeated address calculations)
@@ -369,7 +369,7 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
  * @param  imageData Input image data
  * @retval None
  */
-void synth_precompute_wave_data(int32_t *imageData) {
+void synth_precompute_wave_data(float *imageData) {
   // ✅ OPTIMIZATION: Lock-free parallel pre-computation for maximum performance
   
   // Phase 1: Image data assignment (thread-safe, read-only)

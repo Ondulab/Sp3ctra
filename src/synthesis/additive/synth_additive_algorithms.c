@@ -98,30 +98,35 @@ void update_gap_limiter_coefficients(void) {
  * @param end_note Ending note index (exclusive)
  * @retval None
  */
-void process_image_preprocessing(int32_t *imageData, int32_t *imageBuffer_q31, 
+void process_image_preprocessing(float *imageData, int32_t *imageBuffer_q31, 
                                 int start_note, int end_note) {
     int32_t idx, acc;
     
     // Calculate averages for each note
     for (idx = start_note; idx < end_note; idx++) {
         int local_note_idx = idx - start_note;
-        imageBuffer_q31[local_note_idx] = 0;
+        float sum = 0.0f;
         
         for (acc = 0; acc < g_sp3ctra_config.pixels_per_note; acc++) {
-            imageBuffer_q31[local_note_idx] += (imageData[idx * g_sp3ctra_config.pixels_per_note + acc]);
+            sum += imageData[idx * g_sp3ctra_config.pixels_per_note + acc];
         }
         // Average the accumulated values
-        imageBuffer_q31[local_note_idx] /= g_sp3ctra_config.pixels_per_note;
-
+        float normalized = sum / (float)g_sp3ctra_config.pixels_per_note;
+        
         // Apply optional color inversion based on runtime config
         if (g_sp3ctra_config.invert_intensity) {
-            imageBuffer_q31[local_note_idx] = VOLUME_AMP_RESOLUTION - imageBuffer_q31[local_note_idx];
+            normalized = 1.0f - normalized;
         }
-        // Clamp to valid range
-        if (imageBuffer_q31[local_note_idx] < 0)
-            imageBuffer_q31[local_note_idx] = 0;
-        if (imageBuffer_q31[local_note_idx] > VOLUME_AMP_RESOLUTION)
-            imageBuffer_q31[local_note_idx] = VOLUME_AMP_RESOLUTION;
+        
+        // Clamp to valid range [0, 1]
+        if (normalized < 0.0f)
+            normalized = 0.0f;
+        if (normalized > 1.0f)
+            normalized = 1.0f;
+            
+        // Store normalized value directly (scale to [0, 1] for new VOLUME_AMP_RESOLUTION = 1.0)
+        // Cast to int32 for storage, will be cast back to float in worker threads
+        imageBuffer_q31[local_note_idx] = (int32_t)(normalized * 1000000.0f);  // Store as micros for precision
     }
     
     // Bug correction - only for the range that processes note 0
@@ -190,17 +195,16 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
 
 /**
  * @brief Apply non-linear gamma mapping to image buffer
- * @param imageBuffer_f32 Input/output float buffer
+ * @param imageBuffer_f32 Input/output float buffer (already in [0, 1] range)
  * @param count Number of elements to process
  * @retval None
  */
 void apply_gamma_mapping(float *imageBuffer_f32, int count) {
     if (g_sp3ctra_config.enable_non_linear_mapping) {
+        // Values are already normalized to [0, 1], apply gamma directly
+        float gamma = g_sp3ctra_config.gamma_value;
         for (int i = 0; i < count; i++) {
-            float normalizedIntensity = imageBuffer_f32[i] / (float)VOLUME_AMP_RESOLUTION;
-            float gamma = g_sp3ctra_config.gamma_value;
-            normalizedIntensity = powf(normalizedIntensity, gamma);
-            imageBuffer_f32[i] = normalizedIntensity * VOLUME_AMP_RESOLUTION;
+            imageBuffer_f32[i] = powf(imageBuffer_f32[i], gamma);
         }
     }
 }
