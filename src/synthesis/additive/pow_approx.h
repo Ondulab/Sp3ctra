@@ -16,11 +16,15 @@
 #ifndef POW_APPROX_H
 #define POW_APPROX_H
 
+#include <stddef.h>
+
+#ifdef __ARM_NEON
+#include <arm_neon.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <stddef.h>
 
 /* Configuration */
 #ifndef POW_LUT_SIZE
@@ -50,6 +54,17 @@ float pow_unit_fast(float x, float expo);
  * - Otherwise: LUT with linear interpolation over [base, base+1]
  */
 float pow_shifted_fast(float x, float base, float expo);
+
+#ifdef __ARM_NEON
+/**
+ * NEON-vectorized version of pow_unit_fast for 4 values simultaneously.
+ * Computes x^expo for 4 values of x in [0,1] using LUT interpolation.
+ * @param v_x NEON vector of 4 input values (will be clamped to [0,1])
+ * @param expo Exponent value
+ * @return NEON vector of 4 output values
+ */
+float32x4_t pow_unit_fast_neon_v4(float32x4_t v_x, float expo);
+#endif /* __ARM_NEON */
 
 #ifdef __cplusplus
 }

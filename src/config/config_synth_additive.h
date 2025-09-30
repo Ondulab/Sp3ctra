@@ -49,6 +49,12 @@
  **************************************************************************************/
 #define GAP_LIMITER
 
+// Instant Attack Mode: When enabled, attack phase is instantaneous (no ramp-up)
+// This provides maximum performance by eliminating attack envelope calculations
+// Release (decay) is still progressive to avoid audio clicks
+// Set to 1 for instant attack, 0 for progressive attack (tau_up_base_ms)
+#define INSTANT_ATTACK 1
+
 /**************************************************************************************
  * Adaptive Slew/Decay Configuration
  **************************************************************************************/
