@@ -31,8 +31,6 @@ typedef struct {
     float tau_down_base_ms;           // Base release time in milliseconds
     float decay_freq_ref_hz;          // Reference frequency in Hz for frequency weighting
     float decay_freq_beta;            // >0 slows highs, <0 speeds highs
-    int   enable_phase_weighted_slew; // 0/1: enable phase-weighted slew
-    float phase_weight_power;         // 1.0 = linear, 2.0 = square
 
     // Stereo processing parameters
     int stereo_mode_enabled;                   // Enable/disable stereo mode (0/1)
