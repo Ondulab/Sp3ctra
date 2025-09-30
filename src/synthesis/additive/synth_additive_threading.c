@@ -7,6 +7,8 @@
  * Author: zhonx
  */
 
+#define _GNU_SOURCE  // Required for CPU_ZERO, CPU_SET, pthread_setaffinity_np
+
 /* Includes ------------------------------------------------------------------*/
 #include "synth_additive_threading.h"
 #include "synth_additive_algorithms.h"
