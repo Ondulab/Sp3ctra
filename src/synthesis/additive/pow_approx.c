@@ -197,10 +197,10 @@ static shifted_cache_t g_shifted_cache;
 static void build_shifted_lut(float base, float expo) {
   const int N = POW_LUT_SIZE;
   const float invN = 1.0f / (float)(N - 1);
-  /* Domain is [base, base+1] */
+  /* Domain is [base, base+POW_SHIFTED_DOMAIN_SIZE] */
   for (int i = 0; i < N; ++i) {
     float t01 = (float)i * invN;        /* [0,1] */
-    float x = base + t01;               /* [base, base+1] */
+    float x = base + t01 * POW_SHIFTED_DOMAIN_SIZE;  /* [base, base+POW_SHIFTED_DOMAIN_SIZE] */
     g_shifted_cache.lut[i] = powf(x, expo);
   }
   g_shifted_cache.last_base = base;
@@ -226,7 +226,7 @@ float pow_shifted_fast(float x, float base, float expo) {
 
   /* Domain handling and fallback to powf if x exceeds LUT range */
   const float lo = base;
-  const float hi = base + 1.0f;
+  const float hi = base + POW_SHIFTED_DOMAIN_SIZE;
   if (x < lo) {
     x = lo;
   } else if (x > hi) {
@@ -246,7 +246,7 @@ float pow_shifted_fast(float x, float base, float expo) {
   }
 
   /* Map x to [0,1] for interpolation */
-  const float t01 = (x - base); /* since hi - lo = 1.0 */
+  const float t01 = (x - base) / POW_SHIFTED_DOMAIN_SIZE;
   const float f = t01 * (float)(POW_LUT_SIZE - 1);
   int idx = (int)f;
   if (idx >= POW_LUT_SIZE - 1) {
