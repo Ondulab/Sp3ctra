@@ -100,7 +100,6 @@ void apply_volume_weighting(float *sum_buffer, const float *volume_buffer,
     // General case: use NEON-vectorized pow_unit_fast
     // This processes 4 samples at a time using LUT interpolation
     float32x4_t v_norm = vdupq_n_f32(norm_factor);
-    float32x4_t v_denorm = vdupq_n_f32(denorm_factor);
     
     for (i = 0; i < vec_length; i += 4) {
       // Load 4 volume samples
@@ -113,8 +112,8 @@ void apply_volume_weighting(float *sum_buffer, const float *volume_buffer,
       // Apply power function (vectorized LUT interpolation)
       float32x4_t v_powered = pow_unit_fast_neon_v4(v_normalized, exponent);
       
-      // Denormalize: v_powered * VOLUME_AMP_RESOLUTION
-      float32x4_t v_weighted = vmulq_f32(v_powered, v_denorm);
+      // Denormalize: v_powered * VOLUME_AMP_RESOLUTION (already at correct scale)
+      float32x4_t v_weighted = v_powered;
       
       // Accumulate
       v_sum = vaddq_f32(v_sum, v_weighted);
@@ -324,12 +323,6 @@ float apply_envelope_ramp(float *volumeBuffer, float start_volume, float target_
                           float alpha, size_t length, float min_vol, float max_vol) {
   float v = start_volume;
   const float t = target_volume;
-  
-  // Broadcast constants
-  float32x4_t v_alpha = vdupq_n_f32(alpha);
-  float32x4_t v_target = vdupq_n_f32(t);
-  float32x4_t v_min = vdupq_n_f32(min_vol);
-  float32x4_t v_max = vdupq_n_f32(max_vol);
   
   size_t i = 0;
   size_t vec_length = (length / 4) * 4;
