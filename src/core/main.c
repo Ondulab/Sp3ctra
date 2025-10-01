@@ -583,10 +583,10 @@ int main(int argc, char **argv) {
   /* Create textures and sprites for rendering in main thread */
   sfTexture *backgroundTexture = NULL;
   sfTexture *foregroundTexture = NULL;
-  sfSprite *backgroundSprite = NULL;
-  sfSprite *foregroundSprite = NULL;
 
 #ifndef NO_SFML
+  sfSprite *backgroundSprite = NULL;
+  sfSprite *foregroundSprite = NULL;
   // Ce bloc ne s'exécute que si SFML est activé
   // Créer les textures uniquement si la fenêtre SFML est demandée
   if (use_sfml_window) {
@@ -665,8 +665,8 @@ int main(int argc, char **argv) {
 
   /* Main loop (gestion des événements et rendu) */
   // sfEvent event; // Unused variable
-  sfClock *clock = NULL;
 #ifndef NO_SFML
+  sfClock *clock = NULL;
   // Créer l'horloge uniquement si SFML est utilisé
   clock = sfClock_create();
 #endif // NO_SFML
