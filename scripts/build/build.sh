@@ -236,3 +236,4 @@ if [ "$UNAME_S" = "Linux" ]; then
     echo -e "   2. Run realtime setup: ${YELLOW}sudo ./scripts/raspberry/fix_pi_realtime_audio.sh${NC}"
     echo -e "   3. For DMX support: ${YELLOW}./scripts/raspberry/install_dmx_udev.sh${NC}"
 fi
+
