@@ -53,18 +53,12 @@ void apply_volume_weighting(float *sum_buffer, const float *volume_buffer,
   
   if (is_linear) {
     // Optimized path for exponent = 1.0 (linear, no power calculation needed)
-    float32x4_t v_norm = vdupq_n_f32(norm_factor);
-    float32x4_t v_denorm = vdupq_n_f32(denorm_factor);
-    
     for (i = 0; i < vec_length; i += 4) {
       // Load 4 samples
       float32x4_t v_vol = vld1q_f32(&volume_buffer[i]);
       float32x4_t v_sum = vld1q_f32(&sum_buffer[i]);
       
-      // Normalize: v_vol / VOLUME_AMP_RESOLUTION
-      float32x4_t v_normalized = vmulq_f32(v_vol, v_norm);
-      
-      // For linear case, weighted_volume = normalized * VOLUME_AMP_RESOLUTION = v_vol
+      // For linear case, weighted_volume = volume (no transformation needed)
       // So we just add directly
       v_sum = vaddq_f32(v_sum, v_vol);
       

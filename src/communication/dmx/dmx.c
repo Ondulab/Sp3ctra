@@ -16,7 +16,6 @@
 #include <unistd.h>
 
 #ifdef __linux__
-#define _GNU_SOURCE
 #include <linux/serial.h>
 
 // Manual termios2 definitions to avoid header conflicts
