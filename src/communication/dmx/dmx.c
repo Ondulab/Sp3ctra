@@ -522,17 +522,18 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
     double intensity = 1.0 - (luminance / 255.0);
     double response_factor = 0.0;
 
+    /**
     // La zone est-elle sombre ET uniforme? (surface noire sans variations
     // significatives)
     bool isDarkUniform = (intensity > DMX_LOW_INTENSITY_THRESHOLD &&
                           avgStdDev < DMX_UNIFORM_THRESHOLD);
-
     // Si c'est une zone noire uniforme, réduire très fortement l'intensité
     if (isDarkUniform) {
       // Surface noire uniforme - atténuer fortement l'intensité pour éviter les
       // clignotements
       response_factor = 0.0; // Éteindre complètement
-    }
+    };
+    **/
     // Sinon, traitement normal
     else if (intensity > DMX_BLACK_THRESHOLD) {
       double normalized =
