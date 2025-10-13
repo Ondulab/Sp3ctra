@@ -11,22 +11,22 @@
 #include <ftdi.h>
 #endif
 
-// Structure pour représenter un blob (groupe de pixels similaires)
+// Structure representing a blob (group of similar pixels)
 typedef struct {
-  uint16_t startIdx;        // Index de début du blob dans la zone
-  uint16_t count;           // Nombre de pixels dans le blob
-  uint8_t avgR, avgG, avgB; // Couleur moyenne du blob
-  double significance;      // Significativité moyenne du blob
+  uint16_t startIdx;        // Start index of the blob in the zone
+  uint16_t count;           // Number of pixels in the blob
+  uint8_t avgR, avgG, avgB; // Average color of the blob
+  double significance;      // Average significance of the blob
 } Blob;
 
-// Structure pour spots RGB (3 canaux)
+// Structure for RGB spots (3 channels)
 typedef struct {
     uint8_t red;
     uint8_t green;
     uint8_t blue;
 } DMXSpotRGB;
 
-// Structure pour spots RGBW (4 canaux) - pour extension future
+// Structure for RGBW spots (4 channels) - for future extension
 typedef struct {
     uint8_t red;
     uint8_t green;
@@ -34,20 +34,20 @@ typedef struct {
     uint8_t white;
 } DMXSpotRGBW;
 
-// Union pour supporter différents types de spots (extensible)
+// Union to support different spot types (extensible)
 typedef union {
     DMXSpotRGB rgb;
-    DMXSpotRGBW rgbw;  // Pour plus tard
+    DMXSpotRGBW rgbw;  // For future use
 } DMXSpotData;
 
-// Structure principale du spot avec type et canal de départ
+// Main spot structure with type and start channel
 typedef struct {
     DMXSpotType type;
-    uint8_t start_channel;  // Canal DMX de départ pour ce spot
+    uint8_t start_channel;  // DMX start channel for this spot
     DMXSpotData data;
 } DMXSpot;
 
-// Structure de compatibilité avec l'ancien système (deprecated)
+// Compatibility structure with legacy system (deprecated)
 typedef struct {
   uint8_t red;
   uint8_t green;
@@ -60,7 +60,7 @@ extern volatile sig_atomic_t keepRunning;
 // Function prototypes
 void intHandler(int dummy);
 
-// Fonctions pour la détection des blobs
+// Functions for blob detection
 bool isSignificant(uint8_t r, uint8_t g, uint8_t b);
 bool isColorSimilar(uint8_t r1, uint8_t g1, uint8_t b1, uint8_t r2, uint8_t g2,
                     uint8_t b2);
@@ -71,11 +71,11 @@ int detectBlobs(const uint8_t *buffer_R, const uint8_t *buffer_G,
                 const uint8_t *buffer_B, size_t start, size_t end, Blob *blobs,
                 double *pixelSignificance);
 
-// Nouvelles fonctions d'initialisation flexible
+// New flexible initialization functions
 int dmx_init_configuration(int num_spots, DMXSpotType spot_type, int start_channel);
 void dmx_generate_channel_mapping(DMXSpot spots[], int num_spots, DMXSpotType spot_type, int start_channel);
 
-// Fonctions de traitement DMX
+// DMX processing functions
 void computeAverageColorPerZone(const uint8_t *buffer_R,
                                 const uint8_t *buffer_G,
                                 const uint8_t *buffer_B, size_t numPixels,
