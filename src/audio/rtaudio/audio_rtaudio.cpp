@@ -246,9 +246,14 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
                     : (final_right < -1.0f) ? -1.0f
                                             : final_right;
 
-      // Output
-      outLeft[i] = final_left;
-      outRight[i] = final_right;
+      // Output (with optional L/R swap)
+#if SWAP_LEFT_RIGHT_CHANNELS
+      outLeft[i] = final_right;   // Swap: left gets right
+      outRight[i] = final_left;   // Swap: right gets left
+#else
+      outLeft[i] = final_left;    // Normal: left gets left
+      outRight[i] = final_right;  // Normal: right gets right
+#endif
       
     }
 

@@ -31,6 +31,11 @@
 #define AUDIO_CHANNEL                (2)
 
 /**************************************************************************************
+ * Audio Channel Configuration
+ **************************************************************************************/
+#define SWAP_LEFT_RIGHT_CHANNELS     1       // Set to 1 to swap left/right channels, 0 for normal
+
+/**************************************************************************************
  * RtAudio Format Configuration - Optimized FLOAT32 Pipeline
  **************************************************************************************/
 // Use RTAUDIO_FLOAT32 exclusively for optimal real-time performance
