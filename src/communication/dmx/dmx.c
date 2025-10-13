@@ -507,11 +507,6 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
       // avgB = 255.0;
     }
 
-    // Calculate standard deviation to determine if zone is uniform
-    double stdDevR = calculateStandardDeviation(buffer_R, start, end);
-    double stdDevG = calculateStandardDeviation(buffer_G, start, end);
-    double stdDevB = calculateStandardDeviation(buffer_B, start, end);
-
     // Calculate intensity (black=1, white=0)
     double intensity = 1.0 - (luminance / 255.0);
     double response_factor = 0.0;
