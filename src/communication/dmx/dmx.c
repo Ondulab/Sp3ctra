@@ -6,7 +6,7 @@
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
-#include <stdint.h> // Pour uint8_t, uint32_t et autres types entiers de taille fixe
+#include <stdint.h> // For uint8_t, uint32_t and other fixed-size integer types
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,9 +71,9 @@
 #include "context.h"
 #include <math.h>
 
-// Fonction pour déterminer si un pixel est significatif
+// Function to determine if a pixel is significant
 bool isSignificant(uint8_t r, uint8_t g, uint8_t b) {
-  // Calculer saturation (0-1, 0=gris, 1=couleur pure)
+  // Calculate saturation (0-1, 0=gray, 1=pure color)
   uint8_t maxVal = r;
   if (g > maxVal)
     maxVal = g;
@@ -88,72 +88,70 @@ bool isSignificant(uint8_t r, uint8_t g, uint8_t b) {
 
   double saturation = (maxVal > 0) ? (double)(maxVal - minVal) / maxVal : 0;
 
-  // Calculer la "non-blancheur" (0=blanc, 1=noir/sombre)
+  // Calculate "non-whiteness" (0=white, 1=black/dark)
   double brightness = (r + g + b) / 3.0;
   double nonWhiteness = 1.0 - brightness / 255.0;
 
-  // Combinaison pour obtenir la "significativité" du pixel
+  // Combination to obtain pixel "significance"
   double significance = saturation * 0.7 + nonWhiteness * 0.3;
 
-  // Retourner vrai si suffisamment significatif
+  // Return true if sufficiently significant
   return significance > 0.1;
 }
 
-// Fonction pour déterminer si deux couleurs sont similaires
+// Function to determine if two colors are similar
 bool isColorSimilar(uint8_t r1, uint8_t g1, uint8_t b1, uint8_t r2, uint8_t g2,
                     uint8_t b2) {
-  // Distance euclidienne dans l'espace RGB
+  // Euclidean distance in RGB space
   int dr = r1 - r2;
   int dg = g1 - g2;
   int db = b1 - b2;
   int distanceSquared = dr * dr + dg * dg + db * db;
 
-  // Vérifier si la distance est inférieure au seuil
+  // Check if distance is below threshold
   return distanceSquared < DMX_COLOR_SIMILARITY_THRESHOLD;
 }
 
-// Fonction pour faire croître un blob en ajoutant des pixels adjacents
-// similaires
+// Function to grow a blob by adding adjacent similar pixels
 void growBlob(const uint8_t *buffer_R, const uint8_t *buffer_G,
               const uint8_t *buffer_B, bool *processed, Blob *blob,
               size_t start, size_t end) {
 
-  // File d'attente pour les pixels à examiner
+  // Queue for pixels to examine
   uint16_t queue[DMX_MAX_ZONE_SIZE];
   int queueFront = 0, queueBack = 0;
 
-  // Ajouter le pixel initial à la file
+  // Add initial pixel to queue
   queue[queueBack++] = blob->startIdx;
 
-  // Tant qu'il reste des pixels à examiner dans la file
+  // While there are still pixels to examine in the queue
   while (queueFront < queueBack) {
     uint16_t currentIdx = queue[queueFront++];
     size_t j = start + currentIdx;
 
-    // Examiner les voisins (gauche et droite pour une ligne 1D)
-    // Dans une image 1D (ligne), seuls les pixels adjacents sont considérés
-    // comme voisins
-    const int neighbors[] = {-1, 1}; // Indices relatifs des voisins
+    // Examine neighbors (left and right for a 1D line)
+    // In a 1D image (line), only adjacent pixels are considered neighbors
+    const int neighbors[] = {-1, 1}; // Relative neighbor indices
 
     for (int n = 0; n < 2; n++) {
       uint16_t neighborIdx = currentIdx + neighbors[n];
       size_t neighborJ = start + neighborIdx;
 
-      // Vérifier si le voisin est dans les limites et n'a pas été traité
+      // Check if neighbor is within bounds and has not been processed
       if (neighborJ >= start && neighborJ < end && !processed[neighborIdx]) {
-        // Vérifier si le voisin est significatif
+        // Check if neighbor is significant
         if (isSignificant(buffer_R[neighborJ], buffer_G[neighborJ],
                           buffer_B[neighborJ])) {
-          // Vérifier si le voisin est similaire en couleur
+          // Check if neighbor is similar in color
           if (isColorSimilar(buffer_R[j], buffer_G[j], buffer_B[j],
                              buffer_R[neighborJ], buffer_G[neighborJ],
                              buffer_B[neighborJ])) {
 
-            // Ajouter le voisin au blob et à la file
+            // Add neighbor to blob and queue
             processed[neighborIdx] = true;
             queue[queueBack++] = neighborIdx;
 
-            // Mettre à jour la couleur moyenne du blob
+            // Update blob average color
             blob->avgR = (blob->avgR * blob->count + buffer_R[neighborJ]) /
                          (blob->count + 1);
             blob->avgG = (blob->avgG * blob->count + buffer_G[neighborJ]) /
@@ -168,20 +166,20 @@ void growBlob(const uint8_t *buffer_R, const uint8_t *buffer_G,
   }
 }
 
-// Fonction pour détecter les blobs dans une zone
+// Function to detect blobs in a zone
 int detectBlobs(const uint8_t *buffer_R, const uint8_t *buffer_G,
                 const uint8_t *buffer_B, size_t start, size_t end, Blob *blobs,
                 double *pixelSignificance) {
 
-  // Tableau temporaire pour marquer les pixels déjà traités
+  // Temporary array to mark already processed pixels
   bool pixelProcessed[DMX_MAX_ZONE_SIZE] = {false};
   int blobCount = 0;
 
-  // Calculer d'abord la significativité de chaque pixel
+  // First calculate significance of each pixel
   for (size_t j = start; j < end; j++) {
     uint16_t localIdx = j - start;
 
-    // Calculer saturation (0-1, 0=gris, 1=couleur pure)
+    // Calculate saturation (0-1, 0=gray, 1=pure color)
     uint8_t maxVal = buffer_R[j];
     if (buffer_G[j] > maxVal)
       maxVal = buffer_G[j];
@@ -196,28 +194,28 @@ int detectBlobs(const uint8_t *buffer_R, const uint8_t *buffer_G,
 
     double saturation = (maxVal > 0) ? (double)(maxVal - minVal) / maxVal : 0;
 
-    // Calculer la "non-blancheur" (0=blanc, 1=noir/sombre)
+    // Calculate "non-whiteness" (0=white, 1=black/dark)
     double brightness = (buffer_R[j] + buffer_G[j] + buffer_B[j]) / 3.0;
     double nonWhiteness = 1.0 - brightness / 255.0;
 
-    // Combinaison pour obtenir la "significativité" du pixel
+    // Combination to obtain pixel "significance"
     pixelSignificance[localIdx] = saturation * 0.7 + nonWhiteness * 0.3;
 
-    // Marquer comme non traité si suffisamment significatif
+    // Mark as not processed if sufficiently significant
     pixelProcessed[localIdx] = pixelSignificance[localIdx] <= 0.1;
   }
 
-  // Pour chaque pixel significatif non encore traité, créer un nouveau blob
+  // For each significant unprocessed pixel, create a new blob
   for (size_t j = start; j < end; j++) {
     uint16_t localIdx = j - start;
 
     if (!pixelProcessed[localIdx]) {
-      // Vérifier si on peut ajouter plus de blobs
+      // Check if we can add more blobs
       if (blobCount >= DMX_MAX_BLOBS_PER_ZONE) {
         break;
       }
 
-      // Créer un nouveau blob commençant à l'indice j
+      // Create a new blob starting at index j
       Blob newBlob = {.startIdx = localIdx,
                       .count = 1,
                       .avgR = buffer_R[j],
@@ -227,11 +225,11 @@ int detectBlobs(const uint8_t *buffer_R, const uint8_t *buffer_G,
 
       pixelProcessed[localIdx] = true;
 
-      // Faire croître le blob en ajoutant les pixels adjacents similaires
+      // Grow the blob by adding adjacent similar pixels
       growBlob(buffer_R, buffer_G, buffer_B, pixelProcessed, &newBlob, start,
                end);
 
-      // Ajouter ce blob à la liste s'il est suffisamment grand
+      // Add this blob to list if it's large enough
       if (newBlob.count >= DMX_MIN_BLOB_SIZE) {
         blobs[blobCount++] = newBlob;
       }
@@ -241,19 +239,19 @@ int detectBlobs(const uint8_t *buffer_R, const uint8_t *buffer_G,
   return blobCount;
 }
 
-// Fonction pour appliquer une courbe sigmoïde à la luminosité
+// Function to apply sigmoid curve to luminosity
 double sigmoid_response(double x, double center, double steepness) {
   return 1.0 / (1.0 + exp(-(x - center) * steepness));
 }
 
-// Fonction pour appliquer un seuil avec rampe logarithmique
+// Function to apply threshold with logarithmic ramp
 double threshold_response(double x, double threshold, double curve) {
   if (x < threshold) {
     return 0.0;
   } else {
-    // Normaliser la valeur entre 0 et 1 après le seuil
+    // Normalize value between 0 and 1 after threshold
     double normalized = (x - threshold) / (1.0 - threshold);
-    // Appliquer une courbe exponentielle pour une progression plus douce
+    // Apply exponential curve for smoother progression
     return pow(normalized, curve);
   }
 }
@@ -272,8 +270,8 @@ DMXContext dmx_ctx = {0};
 static DMXSpot *global_dmx_spots = NULL;
 static int global_num_spots = 0;
 
-// Cette fonction est maintenant déclarée externe pour éviter la duplication
-// avec le gestionnaire principal dans main.c
+// This function is now declared external to avoid duplication
+// with the main handler in main.c
 extern void signalHandler(int signal);
 
 // Initialize flexible DMX configuration
@@ -354,11 +352,11 @@ void dmx_generate_channel_mapping(DMXSpot spots[], int num_spots, DMXSpotType sp
 void intHandler(int dummy) {
   (void)dummy;
   keepRunning = 0;
-  // Appel au gestionnaire principal pour assurer une terminaison complète
+  // Call main handler to ensure complete termination
   signalHandler(dummy);
 }
 
-// Structure pour stocker les couleurs d'un spot
+// Structure to store spot colors
 typedef struct {
   double red;
   double green;
@@ -367,38 +365,38 @@ typedef struct {
   double intensity;
 } SpotColor;
 
-// Calcule l'écart-type d'un ensemble de valeurs
+// Calculate standard deviation of a set of values
 double calculateStandardDeviation(const uint8_t *values, size_t start,
                                   size_t end) {
   if (end <= start)
     return 0.0;
 
-  // Calculer la moyenne
+  // Calculate mean
   double sum = 0.0;
   for (size_t i = start; i < end; i++) {
     sum += values[i];
   }
   double mean = sum / (end - start);
 
-  // Calculer la somme des carrés des écarts
+  // Calculate sum of squared differences
   double sumSquaredDiff = 0.0;
   for (size_t i = start; i < end; i++) {
     double diff = values[i] - mean;
     sumSquaredDiff += diff * diff;
   }
 
-  // Calculer l'écart-type
+  // Calculate standard deviation
   return sqrt(sumSquaredDiff / (end - start));
 }
 
-// Approche hybride : détection des blobs pour filtrer les poussières +
-// transition douce + stabilisation des zones sombres
+// Hybrid approach: blob detection to filter noise +
+// smooth transition + stabilization of dark zones
 void computeAverageColorPerZone(const uint8_t *buffer_R,
                                 const uint8_t *buffer_G,
                                 const uint8_t *buffer_B, size_t numPixels,
                                 DMXSpot spots[], int num_spots) {
   size_t zoneSize = numPixels / num_spots;
-  double overlap = DMX_ZONE_OVERLAP; // Facteur de chevauchement entre zones
+  double overlap = DMX_ZONE_OVERLAP; // Overlap factor between zones
   
   // Static arrays sized for maximum spots for backward compatibility
   static int initialized[DMX_NUM_SPOTS] = {0};
@@ -413,25 +411,24 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
   double greenFactor = DMX_GREEN_FACTOR;
   double blueFactor = DMX_BLUE_FACTOR;
 
-  // Buffer pour stocker les couleurs calculées par zone (via détection de
-  // blobs)
+  // Buffer to store calculated colors per zone (via blob detection)
   SpotColor zoneColors[DMX_NUM_SPOTS] = {0};
 
-  // Buffer pour stocker les couleurs après application des transitions
+  // Buffer to store colors after transition application
   SpotColor finalColors[DMX_NUM_SPOTS] = {0};
 
-  // PHASE 1: Détection des blobs et calcul des couleurs par zone
+  // PHASE 1: Blob detection and color calculation per zone
   for (int i = 0; i < num_spots; i++) {
-    // Calcul des limites de la zone avec chevauchement
+    // Calculate zone boundaries with overlap
     size_t zoneCenter = i * zoneSize + zoneSize / 2;
     size_t extendedZoneSize = (size_t)(zoneSize * (1.0 + overlap));
 
-    // Limiter la taille pour éviter les débordements
+    // Limit size to avoid overflows
     if (extendedZoneSize > DMX_MAX_ZONE_SIZE) {
       extendedZoneSize = DMX_MAX_ZONE_SIZE;
     }
 
-    // Calculer start et end avec débordement contrôlé
+    // Calculate start and end with controlled overflow
     size_t start = (zoneCenter > extendedZoneSize / 2)
                        ? zoneCenter - extendedZoneSize / 2
                        : 0;
@@ -440,40 +437,40 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
       end = numPixels;
     }
 
-    // Variables pour le calcul normal
+    // Variables for normal calculation
     unsigned long sumR = 0, sumG = 0, sumB = 0;
     size_t count = end - start;
 
-    // Variables pour la détection des blobs
+    // Variables for blob detection
     Blob blobs[DMX_MAX_BLOBS_PER_ZONE];
     double pixelSignificance[DMX_MAX_ZONE_SIZE];
 
-    // Somme des couleurs pour la moyenne standard
+    // Sum of colors for standard average
     for (size_t j = start; j < end; j++) {
       sumR += buffer_R[j];
       sumG += buffer_G[j];
       sumB += buffer_B[j];
     }
 
-    // Détecter les blobs significatifs dans la zone
+    // Detect significant blobs in the zone
     int blobCount = detectBlobs(buffer_R, buffer_G, buffer_B, start, end, blobs,
                                 pixelSignificance);
 
-    // Calculer la couleur à utiliser
+    // Calculate color to use
     double avgR, avgG, avgB;
 
-    // Si aucun blob significatif trouvé, moyenne standard
+    // If no significant blob found, use standard average
     if (blobCount == 0) {
       avgR = (double)sumR / count;
       avgG = (double)sumG / count;
       avgB = (double)sumB / count;
     } else {
-      // Contribution pondérée de chaque blob
+      // Weighted contribution of each blob
       double totalWeight = 0.0;
       double weightedSumR = 0.0, weightedSumG = 0.0, weightedSumB = 0.0;
 
       for (int b = 0; b < blobCount; b++) {
-        // Poids = taille du blob × significativité²
+        // Weight = blob size × significance²
         double blobWeight =
             blobs[b].count * blobs[b].significance * blobs[b].significance;
 
@@ -483,9 +480,9 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
         totalWeight += blobWeight;
       }
 
-      // Gros blob unique = plus d'importance
+      // Large single blob = more importance
       if (blobCount == 1 && blobs[0].count > DMX_MIN_BLOB_SIZE * 3) {
-        double blendFactor = 0.8; // 80% blob, 20% moyenne
+        double blendFactor = 0.8; // 80% blob, 20% average
 
         avgR = (weightedSumR / totalWeight) * blendFactor +
                ((double)sumR / count) * (1.0 - blendFactor);
@@ -494,58 +491,42 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
         avgB = (weightedSumB / totalWeight) * blendFactor +
                ((double)sumB / count) * (1.0 - blendFactor);
       } else {
-        // Mélange des blobs significatifs
+        // Blend of significant blobs
         avgR = weightedSumR / totalWeight;
         avgG = weightedSumG / totalWeight;
         avgB = weightedSumB / totalWeight;
       }
     }
 
-    // Traitement zones noires (inverser en blanc si nécessaire)
+    // Black zone processing (invert to white if necessary)
     double luminance = (0.299 * avgR + 0.587 * avgG + 0.114 * avgB);
     if (luminance < 10.0) {
-      // Si activé: convertir en blanc
+      // If enabled: convert to white
       // avgR = 255.0;
       // avgG = 255.0;
       // avgB = 255.0;
     }
 
-    // Calculer l'écart-type pour déterminer si la zone est uniforme
+    // Calculate standard deviation to determine if zone is uniform
     double stdDevR = calculateStandardDeviation(buffer_R, start, end);
     double stdDevG = calculateStandardDeviation(buffer_G, start, end);
     double stdDevB = calculateStandardDeviation(buffer_B, start, end);
 
-    // Écart-type global RGB
-    double avgStdDev = (stdDevR + stdDevG + stdDevB) / 3.0;
-
-    // Calcul intensité (noir=1, blanc=0)
+    // Calculate intensity (black=1, white=0)
     double intensity = 1.0 - (luminance / 255.0);
     double response_factor = 0.0;
 
-    /**
-    // La zone est-elle sombre ET uniforme? (surface noire sans variations
-    // significatives)
-    bool isDarkUniform = (intensity > DMX_LOW_INTENSITY_THRESHOLD &&
-                          avgStdDev < DMX_UNIFORM_THRESHOLD);
-    // Si c'est une zone noire uniforme, réduire très fortement l'intensité
-    if (isDarkUniform) {
-      // Surface noire uniforme - atténuer fortement l'intensité pour éviter les
-      // clignotements
-      response_factor = 0.0; // Éteindre complètement
-    };
-    **/
-    // Sinon, traitement normal
-    else if (intensity > DMX_BLACK_THRESHOLD) {
+    if (intensity > DMX_BLACK_THRESHOLD) {
       double normalized =
           (intensity - DMX_BLACK_THRESHOLD) / (1.0 - DMX_BLACK_THRESHOLD);
       response_factor = pow(normalized, DMX_RESPONSE_CURVE);
     }
-
-    // Correction gamma
+    
+    // Gamma correction
     double gamma = DMX_GAMMA;
     double I_spots_corr = pow(response_factor, gamma);
 
-    // Appliquer l'intensité aux valeurs RGB
+    // Apply intensity to RGB values
     zoneColors[i].red = avgR * I_spots_corr;
     zoneColors[i].green = avgG * I_spots_corr;
     zoneColors[i].blue = avgB * I_spots_corr;
@@ -554,37 +535,37 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
     zoneColors[i].intensity = I_spots_corr;
   }
 
-  // PHASE 2: Application des transitions douces entre zones
+  // PHASE 2: Apply smooth transitions between zones
   for (int i = 0; i < num_spots; i++) {
-    // Initialiser avec la couleur de la zone elle-même
+    // Initialize with zone's own color
     finalColors[i] = zoneColors[i];
 
-    // Distance max d'influence entre zones
+    // Maximum influence distance between zones
     double maxInfluenceDistance = zoneSize * (1.0 + overlap);
 
-    // Réinitialiser ces valeurs pour pouvoir normaliser après
+    // Reset these values to enable normalization later
     finalColors[i].red = 0;
     finalColors[i].green = 0;
     finalColors[i].blue = 0;
     finalColors[i].intensity = 0;
     double totalWeight = 0;
 
-    // Pour chaque zone, calculer l'influence de toutes les autres
+    // For each zone, calculate influence of all others
     for (int j = 0; j < num_spots; j++) {
-      // Distance entre les centres des zones i et j
+      // Distance between centers of zones i and j
       double distance = fabs((double)(i - j) * zoneSize);
 
-      // Si la distance est inférieure à maxInfluenceDistance
+      // If distance is less than maxInfluenceDistance
       if (distance < maxInfluenceDistance) {
-        // Facteur de transition = 1 au centre, décroit linéairement
+        // Transition factor = 1 at center, decreases linearly
         double transitionFactor = 1.0 - (distance / maxInfluenceDistance);
 
-        // Améliorer la forme de la transition avec exposant
+        // Improve transition shape with exponent
         transitionFactor = pow(transitionFactor, 1.5);
 
-        // Seuil minimal d'influence
+        // Minimum influence threshold
         if (transitionFactor > 0.05) {
-          // Pondérer la couleur de la zone j selon son influence
+          // Weight zone j color according to its influence
           finalColors[i].red += zoneColors[j].red * transitionFactor;
           finalColors[i].green += zoneColors[j].green * transitionFactor;
           finalColors[i].blue += zoneColors[j].blue * transitionFactor;
@@ -595,7 +576,7 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
       }
     }
 
-    // Normaliser les valeurs finales
+    // Normalize final values
     if (totalWeight > 0) {
       finalColors[i].red /= totalWeight;
       finalColors[i].green /= totalWeight;
@@ -606,7 +587,7 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
       finalColors[i].intensity /= totalWeight;
     }
 
-    // Lissage temporel (exponential moving average)
+    // Temporal smoothing (exponential moving average)
     if (!initialized[i]) {
       smoothR[i] = finalColors[i].red;
       smoothG[i] = finalColors[i].green;
@@ -620,13 +601,13 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
       smoothW[i] = alpha * smoothW[i] + (1.0 - alpha) * finalColors[i].white;
     }
 
-    // Conversion en uint8_t pour les spots avec nouvelle structure union
+    // Convert to uint8_t for spots with new union structure
     spots[i].data.rgb.red = (uint8_t)smoothR[i];
     spots[i].data.rgb.green = (uint8_t)smoothG[i];
     spots[i].data.rgb.blue = (uint8_t)smoothB[i];
     // Note: RGB spots don't have white channel, so we skip spots[i].white
 
-    // Application de la correction du profil couleur sur RGB
+    // Apply color profile correction on RGB
     applyColorProfile(&spots[i].data.rgb.red, &spots[i].data.rgb.green, &spots[i].data.rgb.blue, redFactor,
                       greenFactor, blueFactor);
   }
@@ -635,7 +616,7 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
 void applyColorProfile(uint8_t *red, uint8_t *green, uint8_t *blue,
                        double redFactor, double greenFactor,
                        double blueFactor) {
-  // Appliquer les facteurs de correction RGB
+  // Apply RGB correction factors
   double newRed = (*red) * redFactor;
   double newGreen = (*green) * greenFactor;
   double newBlue = (*blue) * blueFactor;
@@ -651,17 +632,16 @@ void applyColorProfile(uint8_t *red, uint8_t *green, uint8_t *blue,
     newBlue = 255.0;
   }
 
-  // Amplification de la saturation
+  // Saturation amplification
   double saturationFactor = DMX_SATURATION_FACTOR;
   double avg = (newRed + newGreen + newBlue) / 3.0;
 
-  // Augmenter l'écart entre chaque composante et la moyenne (augmente la
-  // saturation)
+  // Increase gap between each component and average (increases saturation)
   newRed = avg + (newRed - avg) * saturationFactor;
   newGreen = avg + (newGreen - avg) * saturationFactor;
   newBlue = avg + (newBlue - avg) * saturationFactor;
 
-  // Limiter à nouveau les valeurs entre 0 et 255
+  // Clamp values again between 0 and 255
   if (newRed > 255.0)
     newRed = 255.0;
   if (newRed < 0.0)
