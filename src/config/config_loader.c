@@ -26,6 +26,10 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     .auto_volume_inactive_level = 0.01f,
     .auto_volume_fade_ms = 600,
     
+    // Anti-vibrations acoustiques
+    .imu_sensitivity = 1.0f,             // Default: normal sensitivity
+    .vibration_protection_factor = 3.0f, // Default: moderate protection
+    
     // Synthesis parameters
     .start_frequency = 65.41f,
     .semitone_per_octave = 12,
@@ -263,6 +267,19 @@ void validate_config(const sp3ctra_config_t* config) {
         errors++;
     }
     
+    // Validate anti-vibrations parameters
+    if (config->imu_sensitivity < 0.1f || config->imu_sensitivity > 10.0f) {
+        fprintf(stderr, "[CONFIG ERROR] imu_sensitivity must be between 0.1 and 10.0, got %.1f\n", 
+                config->imu_sensitivity);
+        errors++;
+    }
+    
+    if (config->vibration_protection_factor < 1.0f || config->vibration_protection_factor > 5.0f) {
+        fprintf(stderr, "[CONFIG ERROR] vibration_protection_factor must be between 1.0 and 5.0, got %.1f\n", 
+                config->vibration_protection_factor);
+        errors++;
+    }
+    
     // Validate synthesis parameters
     if (config->start_frequency < 20.0f || config->start_frequency > 20000.0f) {
         fprintf(stderr, "[CONFIG ERROR] start_frequency must be between 20.0 and 20000.0, got %.2f\n", 
@@ -475,7 +492,17 @@ int load_additive_config(const char* config_file_path) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
-            } else if (strcmp(key, "imu_active_threshold_x") == 0 || 
+            } else if (strcmp(key, "imu_sensitivity") == 0) {
+                if (parse_float(value, &g_sp3ctra_config.imu_sensitivity, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "vibration_protection_factor") == 0) {
+                if (parse_float(value, &g_sp3ctra_config.vibration_protection_factor, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "imu_active_threshold_x") == 0 ||
                        strcmp(key, "imu_filter_alpha_x") == 0 ||
                        strcmp(key, "auto_volume_active_level") == 0 ||
                        strcmp(key, "auto_volume_poll_ms") == 0) {
