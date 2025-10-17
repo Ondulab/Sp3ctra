@@ -94,7 +94,7 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
 
   /* ADAPTIVE THRESHOLD: Anti-vibrations acoustiques
    * Base threshold is adjusted by user-configurable sensitivity.
-   * When audio is loud (high contrast), threshold is hardened to reject
+   * When audio is VERY loud (high contrast), threshold is hardened to reject
    * low-frequency acoustic vibrations (bass frequencies causing IMU drift).
    */
   float base_threshold = 0.010f / g_sp3ctra_config.imu_sensitivity;
@@ -102,10 +102,11 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
   // Get current audio intensity via contrast factor (thread-safe)
   float contrast = synth_get_last_contrast_factor();
   
-  // Adaptive threshold: harden when audio is loud
+  // Adaptive threshold: harden ONLY when audio is VERY loud
   float adaptive_threshold = base_threshold;
-  if (contrast > 0.3f) {
-    // Audio is loud: apply vibration protection factor
+  if (contrast > 0.6f) {
+    // Audio is VERY loud: apply vibration protection factor
+    // More selective threshold - only activates during strong bass/rich masses
     adaptive_threshold *= g_sp3ctra_config.vibration_protection_factor;
   }
 
