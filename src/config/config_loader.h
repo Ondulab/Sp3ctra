@@ -19,6 +19,10 @@ typedef struct {
     float auto_volume_inactive_level;    // Volume level when inactive (0.0-1.0)
     int auto_volume_fade_ms;             // Fade duration for volume transitions (ms)
     
+    // Anti-vibrations acoustiques (runtime configurable)
+    float imu_sensitivity;               // IMU sensitivity (0.1-10.0, default 1.0)
+    float vibration_protection_factor;   // Threshold hardening factor when audio loud (1.0-5.0, default 3.0)
+    
     // Synthesis parameters
     float start_frequency;
     int semitone_per_octave;
