@@ -22,6 +22,7 @@ typedef struct {
     // Anti-vibrations acoustiques (runtime configurable)
     float imu_sensitivity;               // IMU sensitivity (0.1-10.0, default 1.0)
     float vibration_protection_factor;   // Threshold hardening factor when audio loud (1.0-5.0, default 3.0)
+    float contrast_change_threshold;     // Minimum contrast change to validate activity (0.01-0.5, default 0.05)
     
     // Synthesis parameters
     float start_frequency;

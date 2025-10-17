@@ -92,26 +92,36 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
   last_activity_time = ctx->auto_last_activity_time;
   pthread_mutex_unlock(&ctx->imu_mutex);
 
-  /* ADAPTIVE THRESHOLD: Anti-vibrations acoustiques
-   * Base threshold is adjusted by user-configurable sensitivity.
-   * When audio is VERY loud (high contrast), threshold is hardened to reject
-   * low-frequency acoustic vibrations (bass frequencies causing IMU drift).
+  /* CONTRAST CHANGE DETECTION: Real motion vs pure vibrations
+   * Real motion = IMU movement + image contrast changes
+   * Pure vibrations = IMU movement + stable contrast (fixed image)
    */
   float base_threshold = 0.010f / g_sp3ctra_config.imu_sensitivity;
   
   // Get current audio intensity via contrast factor (thread-safe)
+  static float last_contrast = 0.0f;
   float contrast = synth_get_last_contrast_factor();
+  float contrast_change = fabsf(contrast - last_contrast);
+  last_contrast = contrast;
   
-  // Adaptive threshold: harden ONLY when audio is VERY loud
-  float adaptive_threshold = base_threshold;
-  if (contrast > 0.6f) {
-    // Audio is VERY loud: apply vibration protection factor
-    // More selective threshold - only activates during strong bass/rich masses
-    adaptive_threshold *= g_sp3ctra_config.vibration_protection_factor;
+  // Detect activity: IMU above threshold
+  int imu_active = (has && fabsf(imu_x) >= base_threshold);
+  
+  // Validate activity: check if contrast changed (image moving) OR sound is weak
+  int activity_validated = 0;
+  if (imu_active) {
+    if (contrast < 0.3f) {
+      // Sound is weak/moderate: trust IMU alone
+      activity_validated = 1;
+    } else if (contrast_change > g_sp3ctra_config.contrast_change_threshold) {
+      // Sound is loud BUT contrast changed: real motion detected
+      activity_validated = 1;
+    }
+    // else: IMU triggered but no contrast change + loud sound = vibration rejected
   }
 
-  if (has && fabsf(imu_x) >= adaptive_threshold) {
-    // Activity detected (above adaptive threshold), definitely active
+  if (activity_validated) {
+    // Real activity detected
     active = 1;
     // Update last activity time in context
     pthread_mutex_lock(&ctx->imu_mutex);
