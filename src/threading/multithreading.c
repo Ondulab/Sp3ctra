@@ -253,12 +253,11 @@ void *udpThread(void *arg) {
       
       /* High-pass filter to reject low-frequency acoustic vibrations (bass).
          This filter removes DC offset and slow drifts while preserving
-         actual motion gestures. The cutoff frequency is ~2 Hz, which rejects
-         typical bass frequencies (20-200 Hz harmonics show as DC drift in IMU)
-         while keeping gesture frequencies (2-10 Hz). */
+         actual motion gestures. Adjusted alpha to allow slower movements
+         on the rail while still rejecting bass vibrations. */
       static float imu_x_prev = 0.0f;
       static float filtered_hp = 0.0f;
-      const float alpha_hp = 0.98f;  // High-pass filter coefficient
+      const float alpha_hp = 0.90f;  // High-pass filter coefficient (relaxed for rail movements)
       
       if (!ctx->imu_has_value) {
         // First packet: initialize all filters
