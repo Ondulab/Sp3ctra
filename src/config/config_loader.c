@@ -29,6 +29,7 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     // Anti-vibrations acoustiques
     .imu_sensitivity = 1.0f,             // Default: normal sensitivity
     .vibration_protection_factor = 3.0f, // Default: moderate protection
+    .contrast_change_threshold = 0.05f,  // Default: moderate contrast change detection
     
     // Synthesis parameters
     .start_frequency = 65.41f,
@@ -280,6 +281,12 @@ void validate_config(const sp3ctra_config_t* config) {
         errors++;
     }
     
+    if (config->contrast_change_threshold < 0.01f || config->contrast_change_threshold > 0.5f) {
+        fprintf(stderr, "[CONFIG ERROR] contrast_change_threshold must be between 0.01 and 0.5, got %.2f\n", 
+                config->contrast_change_threshold);
+        errors++;
+    }
+    
     // Validate synthesis parameters
     if (config->start_frequency < 20.0f || config->start_frequency > 20000.0f) {
         fprintf(stderr, "[CONFIG ERROR] start_frequency must be between 20.0 and 20000.0, got %.2f\n", 
@@ -499,6 +506,11 @@ int load_additive_config(const char* config_file_path) {
                 }
             } else if (strcmp(key, "vibration_protection_factor") == 0) {
                 if (parse_float(value, &g_sp3ctra_config.vibration_protection_factor, key) != 0) {
+                    fclose(file);
+                    exit(EXIT_FAILURE);
+                }
+            } else if (strcmp(key, "contrast_change_threshold") == 0) {
+                if (parse_float(value, &g_sp3ctra_config.contrast_change_threshold, key) != 0) {
                     fclose(file);
                     exit(EXIT_FAILURE);
                 }
