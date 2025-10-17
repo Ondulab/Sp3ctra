@@ -9,6 +9,7 @@
 #include "audio_c_interface.h" /* C interface for audio operations */
 #include "config_loader.h"     /* Runtime configuration */
 #include "config_synth_additive.h" /* For IMU_ACTIVE_THRESHOLD_X */
+#include "../../synthesis/additive/synth_additive.h"    /* For synth_get_last_contrast_factor() */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,8 +92,25 @@ void auto_volume_step(AutoVolume *av, unsigned int dt_ms) {
   last_activity_time = ctx->auto_last_activity_time;
   pthread_mutex_unlock(&ctx->imu_mutex);
 
-  if (has && fabsf(imu_x) >= IMU_ACTIVE_THRESHOLD_X) {
-    // Activity detected, definitely active
+  /* ADAPTIVE THRESHOLD: Anti-vibrations acoustiques
+   * Base threshold is adjusted by user-configurable sensitivity.
+   * When audio is loud (high contrast), threshold is hardened to reject
+   * low-frequency acoustic vibrations (bass frequencies causing IMU drift).
+   */
+  float base_threshold = 0.010f / g_sp3ctra_config.imu_sensitivity;
+  
+  // Get current audio intensity via contrast factor (thread-safe)
+  float contrast = synth_get_last_contrast_factor();
+  
+  // Adaptive threshold: harden when audio is loud
+  float adaptive_threshold = base_threshold;
+  if (contrast > 0.3f) {
+    // Audio is loud: apply vibration protection factor
+    adaptive_threshold *= g_sp3ctra_config.vibration_protection_factor;
+  }
+
+  if (has && fabsf(imu_x) >= adaptive_threshold) {
+    // Activity detected (above adaptive threshold), definitely active
     active = 1;
     // Update last activity time in context
     pthread_mutex_lock(&ctx->imu_mutex);

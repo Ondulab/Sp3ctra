@@ -70,6 +70,9 @@ static uint32_t log_counter = 0;
 
 static int32_t *imageRef = NULL; // Dynamically allocated
 
+// Last calculated contrast factor (atomic for thread-safe access by auto-volume)
+static _Atomic float g_last_contrast_factor = 0.0f;
+
 /* Global context variables (moved from shared.c) */
 struct shared_var shared_var;
 volatile int32_t audioBuff[1]; // legacy placeholder, unused
@@ -802,6 +805,10 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // for better performance (calculated once per image instead of per audio buffer)
 
   float contrast_factor = calculate_contrast(processed_grayScale, CIS_MAX_PIXELS_NB);
+  
+  // Store contrast factor atomically for auto-volume system (using memcpy for float)
+  // Note: Single float write is atomic on most platforms, but we use explicit atomic for clarity
+  g_last_contrast_factor = contrast_factor;
 
   // Launch synthesis with potentially frozen/faded data
   // Unified mode: always pass both left and right buffers
@@ -825,4 +832,13 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
 
   // Change index so callback reads the filled buffer and next write goes to other buffer
   __atomic_store_n(&current_buffer_index, 1 - index, __ATOMIC_RELEASE);
+}
+
+/**
+ * @brief Get the last calculated contrast factor (thread-safe)
+ * @return Last contrast factor value (0.0-1.0 range typically)
+ * @note Used by auto-volume system to detect audio intensity for adaptive thresholding
+ */
+float synth_get_last_contrast_factor(void) {
+  return g_last_contrast_factor;
 }

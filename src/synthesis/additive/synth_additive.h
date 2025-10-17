@@ -69,4 +69,11 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B)
 void synth_IfftMode(float *imageData, float *audioLeft, float *audioRight, float contrast);
 void synth_additive_cleanup(void);
 
+/**
+ * @brief Get the last calculated contrast factor (thread-safe)
+ * @return Last contrast factor value (0.0-1.0 range typically)
+ * @note Used by auto-volume system to detect audio intensity for adaptive thresholding
+ */
+float synth_get_last_contrast_factor(void);
+
 #endif /* __SYNTH_ADDITIVE_H */
