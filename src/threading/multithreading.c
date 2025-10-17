@@ -250,14 +250,32 @@ void *udpThread(void *arg) {
       struct packet_IMU *imu = (struct packet_IMU *)&packet;
       pthread_mutex_lock(&ctx->imu_mutex);
       float raw_x = imu->acc[0]; // X axis accelerometer
+      
+      /* High-pass filter to reject low-frequency acoustic vibrations (bass).
+         This filter removes DC offset and slow drifts while preserving
+         actual motion gestures. The cutoff frequency is ~2 Hz, which rejects
+         typical bass frequencies (20-200 Hz harmonics show as DC drift in IMU)
+         while keeping gesture frequencies (2-10 Hz). */
+      static float imu_x_prev = 0.0f;
+      static float filtered_hp = 0.0f;
+      const float alpha_hp = 0.98f;  // High-pass filter coefficient
+      
       if (!ctx->imu_has_value) {
+        // First packet: initialize all filters
         ctx->imu_x_filtered = raw_x;
+        imu_x_prev = raw_x;
+        filtered_hp = 0.0f;
         ctx->imu_has_value = 1;
 #ifdef DEBUG_IMU_PACKETS
         printf("[IMU] First IMU packet received! raw_x=%.6f\n", raw_x);
 #endif
       } else {
-        ctx->imu_x_filtered = IMU_FILTER_ALPHA_X * raw_x +
+        // High-pass filter: rejects low frequencies (acoustic vibrations)
+        filtered_hp = alpha_hp * (filtered_hp + raw_x - imu_x_prev);
+        imu_x_prev = raw_x;
+        
+        // Low-pass filter on high-passed signal to smooth noise
+        ctx->imu_x_filtered = IMU_FILTER_ALPHA_X * filtered_hp +
                               (1.0f - IMU_FILTER_ALPHA_X) * ctx->imu_x_filtered;
       }
       ctx->last_imu_time = time(NULL);
