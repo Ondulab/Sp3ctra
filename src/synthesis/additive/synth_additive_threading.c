@@ -14,6 +14,7 @@
 #include "pow_approx.h"
 #include "wave_generation.h"
 #include "../../audio/pan/lock_free_pan.h"
+#include "../../audio/buffers/doublebuffer.h"
 #include "../../config/config_debug.h"
 #include "../../config/config_loader.h"
 #include "../../utils/image_debug.h"
@@ -365,9 +366,10 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
 /**
  * @brief  Pre-compute waves[] data in parallel to avoid contention
  * @param  imageData Input image data
+ * @param  db DoubleBuffer for accessing preprocessed stereo data
  * @retval None
  */
-void synth_precompute_wave_data(float *imageData) {
+void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
   // ✅ OPTIMIZATION: Lock-free parallel pre-computation for maximum performance
   
   // Phase 1: Image data assignment (thread-safe, read-only)
@@ -419,13 +421,13 @@ void synth_precompute_wave_data(float *imageData) {
 #endif
 
       if (g_sp3ctra_config.stereo_mode_enabled) {
-        // ✅ LOCK-FREE: Use lock-free pan system (atomic operations)
-        float left_gain, right_gain, pan_position;
-        lock_free_pan_read(note, &left_gain, &right_gain, &pan_position);
-        
-        worker->precomputed_pan_position[local_note_idx] = pan_position;
-        worker->precomputed_left_gain[local_note_idx] = left_gain;
-        worker->precomputed_right_gain[local_note_idx] = right_gain;
+        // 🎯 OPTIMIZATION: Use preprocessed stereo data (calculated 1x at 50Hz instead of at 96kHz!)
+        // This is a MAJOR performance gain - we read data calculated once per image instead of recalculating
+        pthread_mutex_lock(&db->mutex);
+        worker->precomputed_pan_position[local_note_idx] = db->preprocessed_data.stereo.pan_positions[note];
+        worker->precomputed_left_gain[local_note_idx] = db->preprocessed_data.stereo.left_gains[note];
+        worker->precomputed_right_gain[local_note_idx] = db->preprocessed_data.stereo.right_gains[note];
+        pthread_mutex_unlock(&db->mutex);
       }
     }
   }

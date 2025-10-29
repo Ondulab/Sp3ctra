@@ -68,7 +68,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
  * @param audioRight Output right channel audio buffer
  * @param contrast Contrast adjustment parameter
  */
-void synth_IfftMode(float *imageData, float *audioLeft, float *audioRight, float contrast);
+void synth_IfftMode(float *imageData, float *audioLeft, float *audioRight, float contrast, struct DoubleBuffer *db);
 void synth_additive_cleanup(void);
 
 /**
