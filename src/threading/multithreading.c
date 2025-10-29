@@ -13,6 +13,7 @@
 #include "synth_additive.h"
 #include "udp.h"
 #include "image_debug.h"
+#include "../processing/image_preprocessor.h"
 #include <time.h>
 
 #ifndef NO_SFML
@@ -382,10 +383,27 @@ void *udpThread(void *arg) {
         audio_write_started = 0;
       }
 
-      // Handle legacy double buffer (for display)
+      // 🎯 NEW: Preprocess the complete image (grayscale, contrast, stereo, DMX)
+      // This is done ONCE per received image in the UDP thread
+      PreprocessedImageData preprocessed_temp;
+      if (image_preprocess_frame(db->activeBuffer_R, db->activeBuffer_G, 
+                                 db->activeBuffer_B, &preprocessed_temp) == 0) {
+#ifdef DEBUG_UDP
+        printf("[UDP] Preprocessing complete: contrast=%.3f, timestamp=%llu\n",
+               preprocessed_temp.contrast_factor, preprocessed_temp.timestamp_us);
+#endif
+      } else {
+        printf("[UDP] ERROR: Image preprocessing failed\n");
+      }
+
+      // Handle legacy double buffer (for display) and preprocessed data
       pthread_mutex_lock(&db->mutex);
       swapBuffers(db);
       updateLastValidImage(db); // Save image for audio persistence
+      
+      // Store preprocessed data in the processing buffer (will be swapped to active)
+      db->preprocessed_processing = preprocessed_temp;
+      
       db->dataReady = 1;
       pthread_cond_signal(&db->cond);
       pthread_mutex_unlock(&db->mutex);
