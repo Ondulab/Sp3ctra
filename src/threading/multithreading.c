@@ -87,6 +87,25 @@ void initDoubleBuffer(DoubleBuffer *db) {
   db->udp_frames_received = 0;
   db->audio_frames_processed = 0;
   db->last_udp_frame_time = time(NULL);
+  
+  // 🔧 BUGFIX: Initialize preprocessed_data with safe default values
+  // This prevents bus errors when audio thread starts before first UDP frame
+  memset(db->preprocessed_data.grayscale, 0, sizeof(db->preprocessed_data.grayscale));
+  db->preprocessed_data.contrast_factor = 1.0f;
+  
+  // Initialize stereo with center panning (equal-power law)
+  for (int i = 0; i < PREPROCESS_MAX_NOTES; i++) {
+    db->preprocessed_data.stereo.pan_positions[i] = 0.0f;  // Center
+    db->preprocessed_data.stereo.left_gains[i] = 0.707f;   // -3dB (equal power)
+    db->preprocessed_data.stereo.right_gains[i] = 0.707f;  // -3dB (equal power)
+  }
+  
+  // Initialize DMX with black
+  memset(&db->preprocessed_data.dmx, 0, sizeof(db->preprocessed_data.dmx));
+  
+  db->preprocessed_data.timestamp_us = 0;
+  
+  printf("[INIT] DoubleBuffer preprocessed_data initialized with safe defaults\n");
 }
 
 void cleanupDoubleBuffer(DoubleBuffer *db) {
