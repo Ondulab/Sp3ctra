@@ -14,6 +14,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "../../config/config_instrument.h"  // For CIS_MAX_PIXELS_NB
 #include "../../config/config_loader.h"      // For sp3ctra_config_t
+#include "../../audio/buffers/doublebuffer.h" // For DoubleBuffer type
 
 /**************************************************************************************
  * Buffer Management Configuration
@@ -56,8 +57,9 @@ int32_t synth_IfftInit(void);
  * @param buffer_R Red channel buffer
  * @param buffer_G Green channel buffer  
  * @param buffer_B Blue channel buffer
+ * @param db DoubleBuffer pointer for accessing preprocessed data
  */
-void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B);
+void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B, struct DoubleBuffer *db);
 
 /**
  * @brief Main synthesis processing function

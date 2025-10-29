@@ -616,7 +616,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
 
 // Synth process function
 void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
-                        uint8_t *buffer_B) {
+                        uint8_t *buffer_B, DoubleBuffer *db) {
   // Audio processing (limited logs)
   if (log_counter % LOG_FREQUENCY == 0) {
     // printf("===== Audio Process called =====\n"); // Removed or commented
@@ -646,12 +646,10 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     nanosleep(&sleep_time, NULL);
   }
 
-  // 🎯 REMOVED: greyScale conversion - now done in preprocessing (image_preprocessor.c)
-  // The preprocessed grayscale data is available in the double buffer
-  
-  // ⚠️ TEMPORARY: Keep grayscale conversion for freeze/fade system until we use preprocessed data
-  // This will be removed once we properly integrate preprocessed grayscale from DoubleBuffer
-  greyScale(buffer_R, buffer_G, buffer_B, g_grayScale_live, CIS_MAX_PIXELS_NB);
+  // 🎯 USE PREPROCESSED DATA: Get grayscale from DoubleBuffer (calculated once in UDP thread)
+  pthread_mutex_lock(&db->mutex);
+  memcpy(g_grayScale_live, db->preprocessed_processing.grayscale, CIS_MAX_PIXELS_NB * sizeof(float));
+  pthread_mutex_unlock(&db->mutex);
 
   // Debug auto-freeze after N images: keep reception active but freeze synth data
 #if ADDITIVE_DEBUG_AUTOFREEZE_ENABLE
@@ -729,9 +727,10 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   }
   // --- End Synth Data Freeze/Fade Logic ---
 
-  // 🎯 REMOVED: Contrast calculation - now done in preprocessing (image_preprocessor.c)
-  // TODO: Get contrast from db->preprocessed_active.contrast_factor
-  float contrast_factor = 1.0f; // TEMPORARY: Use preprocessed value once data flow is implemented
+  // 🎯 USE PREPROCESSED DATA: Get contrast from DoubleBuffer (calculated once in UDP thread)
+  pthread_mutex_lock(&db->mutex);
+  float contrast_factor = db->preprocessed_processing.contrast_factor;
+  pthread_mutex_unlock(&db->mutex);
   
   // Store contrast factor atomically for auto-volume system (using memcpy for float)
   // Note: Single float write is atomic on most platforms, but we use explicit atomic for clarity
