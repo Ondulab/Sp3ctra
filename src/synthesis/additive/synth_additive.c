@@ -242,7 +242,7 @@ int32_t synth_IfftInit(void) {
  * @param  contrast_factor Contrast factor for volume modulation
  * @retval None
  */
-void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRight, float contrast_factor) {
+void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRight, float contrast_factor, DoubleBuffer *db) {
 
   // Additive mode (limited logs)
   if (log_counter % LOG_FREQUENCY == 0) {
@@ -304,7 +304,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     // === OPTIMIZED VERSION WITH THREAD POOL ===
 
     // Phase 1: Pre-compute data in single-thread (avoids contention)
-    synth_precompute_wave_data(imageData);
+    synth_precompute_wave_data(imageData, db);
 
     // Phase 2: Start workers in parallel
     for (int i = 0; i < 3; i++) {
@@ -616,7 +616,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
 
 // Synth process function
 void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
-                        uint8_t *buffer_B) {
+                        uint8_t *buffer_B, DoubleBuffer *db) {
   // Audio processing (limited logs)
   if (log_counter % LOG_FREQUENCY == 0) {
     // printf("===== Audio Process called =====\n"); // Removed or commented
@@ -646,8 +646,12 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     nanosleep(&sleep_time, NULL);
   }
 
-  // Launch grayscale conversion
-  greyScale(buffer_R, buffer_G, buffer_B, g_grayScale_live, CIS_MAX_PIXELS_NB);
+  // 🎯 USE PREPROCESSED DATA: Get all preprocessed data in single mutex lock (optimized)
+  float contrast_factor;
+  pthread_mutex_lock(&db->mutex);
+  memcpy(g_grayScale_live, db->preprocessed_data.grayscale, CIS_MAX_PIXELS_NB * sizeof(float));
+  contrast_factor = db->preprocessed_data.contrast_factor;
+  pthread_mutex_unlock(&db->mutex);
 
   // Debug auto-freeze after N images: keep reception active but freeze synth data
 #if ADDITIVE_DEBUG_AUTOFREEZE_ENABLE
@@ -664,84 +668,9 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   }
 #endif
 
-  if (g_sp3ctra_config.stereo_mode_enabled) {
-    // Calculate color temperature and pan positions for each oscillator
-    // This is done once per image reception for efficiency
-    for (int note = 0; note < get_current_number_of_notes(); note++) {
-      // Calculate average color for this note's pixels
-      uint32_t r_sum = 0, g_sum = 0, b_sum = 0;
-      uint32_t pixel_count = 0;
-      
-      for (int pix = 0; pix < g_sp3ctra_config.pixels_per_note; pix++) {
-        uint32_t pixel_idx = note * g_sp3ctra_config.pixels_per_note + pix;
-        if (pixel_idx < CIS_MAX_PIXELS_NB) {
-          r_sum += buffer_R[pixel_idx];
-          g_sum += buffer_G[pixel_idx];
-          b_sum += buffer_B[pixel_idx];
-          pixel_count++;
-        }
-      }
-      
-      if (pixel_count > 0) {
-        // Calculate average RGB values
-        uint8_t r_avg = r_sum / pixel_count;
-        uint8_t g_avg = g_sum / pixel_count;
-        uint8_t b_avg = b_sum / pixel_count;
-        
-        // Calculate color temperature and pan position
-        float temperature = calculate_color_temperature(r_avg, g_avg, b_avg);
-        waves[note].pan_position = temperature;
-        
-        // Use temporary variables to avoid volatile qualifier warnings
-        float temp_left_gain, temp_right_gain;
-        calculate_pan_gains(temperature, &temp_left_gain, &temp_right_gain);
-        waves[note].left_gain = temp_left_gain;
-        waves[note].right_gain = temp_right_gain;
-        
-        // Debug output for first few notes (limited frequency)
-        if (log_counter % (LOG_FREQUENCY * 10) == 0 && note < 5) {
-#ifdef DEBUG_RGB_TEMPERATURE
-          printf("Note %d: RGB(%d,%d,%d) -> Temp=%.2f L=%.2f R=%.2f\n",
-                 note, r_avg, g_avg, b_avg, temperature,
-                 waves[note].left_gain, waves[note].right_gain);
-#endif
-        }
-      } else {
-        // Default to center if no pixels
-        waves[note].pan_position = 0.0f;
-        waves[note].left_gain = 0.707f;
-        waves[note].right_gain = 0.707f;
-      }
-    }
-    
-    // Update lock-free pan gains system with calculated values
-    // Prepare arrays for batch update (allocated once on first use)
-    static float *left_gains = NULL;
-    static float *right_gains = NULL;
-    static float *pan_positions = NULL;
-    
-    // Allocate once on first use
-    if (!left_gains) {
-      int num_notes = get_current_number_of_notes();
-      left_gains = (float*)calloc(num_notes, sizeof(float));
-      right_gains = (float*)calloc(num_notes, sizeof(float));
-      pan_positions = (float*)calloc(num_notes, sizeof(float));
-      
-      if (!left_gains || !right_gains || !pan_positions) {
-        fprintf(stderr, "ERROR: Failed to allocate pan gain buffers\n");
-        return;
-      }
-    }
-    
-    for (int note = 0; note < get_current_number_of_notes(); note++) {
-      left_gains[note] = waves[note].left_gain;
-      right_gains[note] = waves[note].right_gain;
-      pan_positions[note] = waves[note].pan_position;
-    }
-    
-    // Atomic update of all pan gains
-    lock_free_pan_update(left_gains, right_gains, pan_positions, get_current_number_of_notes());
-  }
+  // 🎯 REMOVED: Color temperature calculation - now done in preprocessing (image_preprocessor.c)
+  // The stereo pan positions and gains are already calculated and stored in preprocessed data
+  // TODO: Use db->preprocessed_active.stereo.pan_positions[] and gains[] when implementing preprocessed data usage
 
   // Capture raw scanner line for debug visualization
   image_debug_capture_raw_scanner_line(buffer_R, buffer_G, buffer_B);
@@ -800,12 +729,6 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   }
   // --- End Synth Data Freeze/Fade Logic ---
 
-  // Calculate contrast factor based on the processed grayscale image
-  // This optimization moves the contrast calculation from synth_IfftMode to here
-  // for better performance (calculated once per image instead of per audio buffer)
-
-  float contrast_factor = calculate_contrast(processed_grayScale, CIS_MAX_PIXELS_NB);
-  
   // Store contrast factor atomically for auto-volume system (using memcpy for float)
   // Note: Single float write is atomic on most platforms, but we use explicit atomic for clarity
   g_last_contrast_factor = contrast_factor;
@@ -815,7 +738,8 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   synth_IfftMode(processed_grayScale,
                  buffers_L[index].data,
                  buffers_R[index].data,
-                 contrast_factor);
+                 contrast_factor,
+                 db);
 
   // Update global display buffers with original color data
   pthread_mutex_lock(&g_displayable_synth_mutex);

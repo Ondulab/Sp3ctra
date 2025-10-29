@@ -60,6 +60,7 @@ void sfClock_restart(sfClock *clock) { (void)clock; }
 #include "synth_additive.h"
 #include "synth_polyphonic.h" // Added for the new FFT synth mode
 #include "udp.h"
+#include "../processing/image_preprocessor.h"
 
 // External MIDI function declarations (C-compatible)
 extern void midi_Init(void);
@@ -506,6 +507,9 @@ int main(int argc, char **argv) {
   }
   printf("============================================\n");
 
+  // Initialize image preprocessor module
+  image_preprocess_init();
+  
   synth_IfftInit();
   synth_polyphonicMode_init(); // Initialize the polyphonic synth mode
   display_Init(window);

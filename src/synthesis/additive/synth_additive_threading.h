@@ -18,6 +18,9 @@
 #include <stddef.h>
 #include <pthread.h>
 
+/* Forward declarations ------------------------------------------------------*/
+struct DoubleBuffer;
+
 /* Exported types ------------------------------------------------------------*/
 
 /**
@@ -89,7 +92,7 @@ void synth_shutdown_thread_pool(void);
 /* Thread processing functions */
 void *synth_persistent_worker_thread(void *arg);
 void synth_process_worker_range(synth_thread_worker_t *worker);
-void synth_precompute_wave_data(float *imageData);
+void synth_precompute_wave_data(float *imageData, struct DoubleBuffer *db);
 
 /* Thread pool access for synthesis core */
 extern synth_thread_worker_t thread_pool[3];
