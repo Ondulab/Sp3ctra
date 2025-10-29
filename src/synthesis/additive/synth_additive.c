@@ -242,7 +242,7 @@ int32_t synth_IfftInit(void) {
  * @param  contrast_factor Contrast factor for volume modulation
  * @retval None
  */
-void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRight, float contrast_factor) {
+void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRight, float contrast_factor, DoubleBuffer *db) {
 
   // Additive mode (limited logs)
   if (log_counter % LOG_FREQUENCY == 0) {
@@ -304,7 +304,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     // === OPTIMIZED VERSION WITH THREAD POOL ===
 
     // Phase 1: Pre-compute data in single-thread (avoids contention)
-    synth_precompute_wave_data(imageData);
+    synth_precompute_wave_data(imageData, db);
 
     // Phase 2: Start workers in parallel
     for (int i = 0; i < 3; i++) {
@@ -738,7 +738,8 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   synth_IfftMode(processed_grayScale,
                  buffers_L[index].data,
                  buffers_R[index].data,
-                 contrast_factor);
+                 contrast_factor,
+                 db);
 
   // Update global display buffers with original color data
   pthread_mutex_lock(&g_displayable_synth_mutex);
