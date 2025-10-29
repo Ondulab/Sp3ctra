@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include <time.h>
 
+/* Include preprocessor for PreprocessedImageData type */
+#include "../../processing/image_preprocessor.h"
+
 typedef struct DoubleBuffer {
   uint8_t *activeBuffer_R;
   uint8_t *activeBuffer_G;
@@ -19,6 +22,10 @@ typedef struct DoubleBuffer {
   uint8_t *lastValidImage_G;
   uint8_t *lastValidImage_B;
   uint8_t lastValidImageExists; // Flag to indicate if we have a valid image
+
+  // NEW: Preprocessed data double buffer
+  PreprocessedImageData preprocessed_active;
+  PreprocessedImageData preprocessed_processing;
 
   uint8_t dataReady;
   pthread_mutex_t mutex;

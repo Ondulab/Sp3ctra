@@ -93,6 +93,7 @@ SYNTHESIS_POLYPHONIC_SOURCES = src/synthesis/polyphonic/synth_polyphonic.c \
 COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/midi/midi_controller.cpp \
                         src/communication/dmx/dmx.c
+PROCESSING_SOURCES = src/processing/image_preprocessor.c
 THREADING_SOURCES = src/threading/multithreading.c
 UTILS_SOURCES = src/utils/error.c src/utils/image_debug.c
 
@@ -106,7 +107,7 @@ endif
 # All sources
 ALL_SOURCES = $(CORE_SOURCES) $(CONFIG_SOURCES) $(AUDIO_RTAUDIO_SOURCES) $(AUDIO_BUFFERS_SOURCES) \
               $(AUDIO_PAN_SOURCES) $(AUDIO_EFFECTS_SOURCES) $(SYNTHESIS_ADDITIVE_SOURCES) \
-              $(SYNTHESIS_POLYPHONIC_SOURCES) $(COMMUNICATION_SOURCES) \
+              $(SYNTHESIS_POLYPHONIC_SOURCES) $(COMMUNICATION_SOURCES) $(PROCESSING_SOURCES) \
               $(DISPLAY_SOURCES) $(THREADING_SOURCES) $(UTILS_SOURCES)
 
 # Object files
