@@ -23,9 +23,9 @@ typedef struct DoubleBuffer {
   uint8_t *lastValidImage_B;
   uint8_t lastValidImageExists; // Flag to indicate if we have a valid image
 
-  // NEW: Preprocessed data double buffer
-  PreprocessedImageData preprocessed_active;
-  PreprocessedImageData preprocessed_processing;
+  // NEW: Preprocessed data (single buffer, mutex-protected)
+  // No need for double-buffering here - data is small and mutex access is fast
+  PreprocessedImageData preprocessed_data;
 
   uint8_t dataReady;
   pthread_mutex_t mutex;
