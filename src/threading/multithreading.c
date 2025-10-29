@@ -13,6 +13,7 @@
 #include "synth_additive.h"
 #include "udp.h"
 #include "image_debug.h"
+#include "../processing/image_preprocessor.h"
 #include <time.h>
 
 #ifndef NO_SFML
@@ -86,6 +87,25 @@ void initDoubleBuffer(DoubleBuffer *db) {
   db->udp_frames_received = 0;
   db->audio_frames_processed = 0;
   db->last_udp_frame_time = time(NULL);
+  
+  // 🔧 BUGFIX: Initialize preprocessed_data with safe default values
+  // This prevents bus errors when audio thread starts before first UDP frame
+  memset(db->preprocessed_data.grayscale, 0, sizeof(db->preprocessed_data.grayscale));
+  db->preprocessed_data.contrast_factor = 1.0f;
+  
+  // Initialize stereo with center panning (equal-power law)
+  for (int i = 0; i < PREPROCESS_MAX_NOTES; i++) {
+    db->preprocessed_data.stereo.pan_positions[i] = 0.0f;  // Center
+    db->preprocessed_data.stereo.left_gains[i] = 0.707f;   // -3dB (equal power)
+    db->preprocessed_data.stereo.right_gains[i] = 0.707f;  // -3dB (equal power)
+  }
+  
+  // Initialize DMX with black
+  memset(&db->preprocessed_data.dmx, 0, sizeof(db->preprocessed_data.dmx));
+  
+  db->preprocessed_data.timestamp_us = 0;
+  
+  printf("[INIT] DoubleBuffer preprocessed_data initialized with safe defaults\n");
 }
 
 void cleanupDoubleBuffer(DoubleBuffer *db) {
@@ -382,10 +402,27 @@ void *udpThread(void *arg) {
         audio_write_started = 0;
       }
 
-      // Handle legacy double buffer (for display)
+      // 🎯 NEW: Preprocess the complete image (grayscale, contrast, stereo, DMX)
+      // This is done ONCE per received image in the UDP thread
+      PreprocessedImageData preprocessed_temp;
+      if (image_preprocess_frame(db->activeBuffer_R, db->activeBuffer_G, 
+                                 db->activeBuffer_B, &preprocessed_temp) == 0) {
+#ifdef DEBUG_UDP
+        printf("[UDP] Preprocessing complete: contrast=%.3f, timestamp=%llu\n",
+               preprocessed_temp.contrast_factor, preprocessed_temp.timestamp_us);
+#endif
+      } else {
+        printf("[UDP] ERROR: Image preprocessing failed\n");
+      }
+
+      // Handle legacy double buffer (for display) and preprocessed data
       pthread_mutex_lock(&db->mutex);
       swapBuffers(db);
       updateLastValidImage(db); // Save image for audio persistence
+      
+      // Store preprocessed data in single mutex-protected buffer
+      db->preprocessed_data = preprocessed_temp;
+      
       db->dataReady = 1;
       pthread_cond_signal(&db->cond);
       pthread_mutex_unlock(&db->mutex);
@@ -497,7 +534,7 @@ void *audioProcessingThread(void *arg) {
 
     // Call synthesis routine directly with stable image data
     // This will NEVER block, even if scanner disconnects!
-    synth_AudioProcess(audio_read_R, audio_read_G, audio_read_B);
+    synth_AudioProcess(audio_read_R, audio_read_G, audio_read_B, context->doubleBuffer);
 
     /* Auto-volume periodic update (lightweight). Runs in audioProcessingThread
        (non-RT) to avoid doing work in the RtAudio callback. */
