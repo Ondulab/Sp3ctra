@@ -401,8 +401,8 @@ void *udpThread(void *arg) {
       swapBuffers(db);
       updateLastValidImage(db); // Save image for audio persistence
       
-      // Store preprocessed data in the processing buffer (will be swapped to active)
-      db->preprocessed_processing = preprocessed_temp;
+      // Store preprocessed data in single mutex-protected buffer
+      db->preprocessed_data = preprocessed_temp;
       
       db->dataReady = 1;
       pthread_cond_signal(&db->cond);

@@ -646,9 +646,11 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     nanosleep(&sleep_time, NULL);
   }
 
-  // 🎯 USE PREPROCESSED DATA: Get grayscale from DoubleBuffer (calculated once in UDP thread)
+  // 🎯 USE PREPROCESSED DATA: Get all preprocessed data in single mutex lock (optimized)
+  float contrast_factor;
   pthread_mutex_lock(&db->mutex);
-  memcpy(g_grayScale_live, db->preprocessed_processing.grayscale, CIS_MAX_PIXELS_NB * sizeof(float));
+  memcpy(g_grayScale_live, db->preprocessed_data.grayscale, CIS_MAX_PIXELS_NB * sizeof(float));
+  contrast_factor = db->preprocessed_data.contrast_factor;
   pthread_mutex_unlock(&db->mutex);
 
   // Debug auto-freeze after N images: keep reception active but freeze synth data
@@ -727,11 +729,6 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   }
   // --- End Synth Data Freeze/Fade Logic ---
 
-  // 🎯 USE PREPROCESSED DATA: Get contrast from DoubleBuffer (calculated once in UDP thread)
-  pthread_mutex_lock(&db->mutex);
-  float contrast_factor = db->preprocessed_processing.contrast_factor;
-  pthread_mutex_unlock(&db->mutex);
-  
   // Store contrast factor atomically for auto-volume system (using memcpy for float)
   // Note: Single float write is atomic on most platforms, but we use explicit atomic for clarity
   g_last_contrast_factor = contrast_factor;
