@@ -21,10 +21,10 @@
 #include "../../config/config_synth_additive.h"
 #include "../../config/config_dmx.h"
 
-/* Maximum number of notes (conservative estimate for static allocation) */
-/* Based on CIS_MAX_PIXELS_NB / minimum_pixels_per_note */
+/* Maximum number of notes (static allocation) */
+/* Must handle worst case: 1 pixel per note = CIS_MAX_PIXELS_NB notes */
 /* Actual runtime value is obtained via get_current_number_of_notes() */
-#define PREPROCESS_MAX_NOTES (CIS_MAX_PIXELS_NB / 2)  /* Conservative: assumes min 2 pixels per note */
+#define PREPROCESS_MAX_NOTES CIS_MAX_PIXELS_NB  /* Maximum: 1 pixel per note */
 
 /* Preprocessed image data structure */
 typedef struct {
