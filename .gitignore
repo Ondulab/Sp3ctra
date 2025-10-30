@@ -147,6 +147,17 @@ test_device*.log
 *.tmp
 *.temp
 
+# === Python ===
+# Virtual environment
+venv/
+env/
+ENV/
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+
 # === Project specific ===
 # Backup files
 *_back
@@ -155,6 +166,10 @@ test_device*.log
 
 # Personal files directory
 .personalFiles/
+
+# Generated HTML documentation
+docs/*.html
+docs/**/*.html
 
 # CMake (if used)
 CMakeCache.txt
