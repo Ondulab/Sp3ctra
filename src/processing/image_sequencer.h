@@ -5,6 +5,10 @@
 #include <pthread.h>
 #include "../processing/image_preprocessor.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Configuration constants */
 #define MAX_SEQUENCE_DURATION_S 10.0f
 #define MAX_SEQUENCE_FRAMES (int)(MAX_SEQUENCE_DURATION_S * 1000) // 10000 frames max
@@ -180,6 +184,11 @@ void image_sequencer_register_midi_callbacks(ImageSequencer *seq);
 void image_sequencer_get_stats(ImageSequencer *seq, 
                                uint64_t *frames_processed, 
                                float *avg_process_time_us);
+PlayerState image_sequencer_get_player_state(ImageSequencer *seq, int player_id);
 void image_sequencer_print_status(ImageSequencer *seq);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* IMAGE_SEQUENCER_H */

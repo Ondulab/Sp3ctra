@@ -86,6 +86,9 @@ volatile sig_atomic_t app_running = 1;
 Context *global_context =
     NULL; // Global context for signal handler
 
+// Global sequencer instance for MIDI callbacks
+ImageSequencer *g_image_sequencer = NULL;
+
 // Make signal handler visible to other modules (like dmx.c)
 void signalHandler(int signal) {
   static volatile sig_atomic_t already_called = 0;
@@ -551,6 +554,7 @@ int main(int argc, char **argv) {
     printf("[INIT] ERROR: Failed to initialize image sequencer\n");
   } else {
     printf("[INIT] Image sequencer initialized successfully\n");
+    g_image_sequencer = imageSequencer; // Make globally accessible for MIDI
   }
   
   synth_IfftInit();
