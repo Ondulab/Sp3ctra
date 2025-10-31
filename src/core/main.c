@@ -479,7 +479,7 @@ int main(int argc, char **argv) {
   printf("MIDI polling DISABLED by configuration\n");
 #endif
 
-  // Initialize MIDI if enabled
+  // Initialize MIDI if enabled (but don't register callbacks yet)
   if (enable_midi) {
     midi_Init();
     midi_SetupVolumeControl();
@@ -502,14 +502,6 @@ int main(int argc, char **argv) {
       printf("[MIDI] ✅ User mappings loaded\n");
     }
     
-    // Register all callbacks
-    midi_callbacks_register_all();
-    printf("[MIDI] ✅ Callbacks registered\n");
-    
-    // Validate configuration
-    midi_mapping_validate();
-    printf("[MIDI] ✅ Unified MIDI system initialized\n");
-
     // Try to connect to MIDI controller
     midi_connected = midi_Connect();
     if (midi_connected) {
@@ -549,6 +541,7 @@ int main(int argc, char **argv) {
   image_preprocess_init();
   
   // Initialize image sequencer (5 players, 5 seconds max duration)
+  // IMPORTANT: Must be done BEFORE registering MIDI callbacks!
   ImageSequencer *imageSequencer = image_sequencer_create(5, 5.0f);
   if (!imageSequencer) {
     printf("[INIT] ERROR: Failed to initialize image sequencer\n");
@@ -559,6 +552,16 @@ int main(int argc, char **argv) {
     // Enable sequencer by default
     image_sequencer_set_enabled(imageSequencer, 1);
     printf("[INIT] Image sequencer ENABLED\n");
+  }
+  
+  // NOW register all MIDI callbacks (after sequencer is created)
+  if (enable_midi) {
+    midi_callbacks_register_all();
+    printf("[MIDI] ✅ Callbacks registered\n");
+    
+    // Validate configuration
+    midi_mapping_validate();
+    printf("[MIDI] ✅ Unified MIDI system initialized\n");
   }
   
   synth_IfftInit();
