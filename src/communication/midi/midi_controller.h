@@ -21,21 +21,7 @@ typedef enum {
   // Other controllers can be added here
 } MidiControllerType;
 
-// MIDI CC definitions for new controls
-#define MIDI_CC_ADDITIVE_VOLUME 21
-#define MIDI_CC_FFT_VOLUME 22
-#define MIDI_CC_REVERB_WET_DRY_FFT 23
-#define MIDI_CC_REVERB_WET_DRY_ADDITIVE 24
-#define MIDI_CC_LFO_VIBRATO_SPEED 25
-#define MIDI_CC_ENVELOPE_FFT_ATTACK 26
-#define MIDI_CC_ENVELOPE_FFT_DECAY 27
-#define MIDI_CC_ENVELOPE_FFT_RELEASE 28
-
-// Visual Freeze MIDI CC definitions
-#define MIDI_CC_VISUAL_FREEZE 105
-#define MIDI_CC_VISUAL_RESUME 115
-
-// Structure for MIDI CC values
+// Structure for MIDI CC values (reserved for future use)
 typedef struct {
   unsigned char number; // CC number
   unsigned char value;  // Current value (0-127)
@@ -66,20 +52,6 @@ private:
   float convertCCToVolume(unsigned char value);
 
 public:
-  // Variables to store mix levels for the two synths
-  float mix_level_synth_additive;
-  float mix_level_synth_polyphonic;
-
-  // Variables to store reverb send levels for each synth
-  float reverb_send_synth_additive;
-  float reverb_send_synth_polyphonic;
-
-  // Variables for new MIDI controls
-  float lfo_vibrato_speed;
-  float envelope_polyphonic_attack;
-  float envelope_polyphonic_decay;
-  float envelope_polyphonic_release;
-
   MidiController();
   ~MidiController();
 
@@ -110,20 +82,6 @@ public:
   // Get current controller information
   MidiControllerType getCurrentControllerType();
   std::string getCurrentControllerName();
-
-  // Accessors for mix levels
-  float getMixLevelSynthAdditive() const;
-  float getMixLevelSynthPolyphonic() const;
-
-  // Accessors for reverb send levels
-  float getReverbSendSynthAdditive() const;
-  float getReverbSendSynthPolyphonic() const;
-
-  // Accessors for new MIDI controls
-  float getLfoVibratoSpeed() const;
-  float getEnvelopePolyphonicAttack() const;
-  float getEnvelopePolyphonicDecay() const;
-  float getEnvelopePolyphonicRelease() const;
 };
 
 // Global instance for C API compatibility

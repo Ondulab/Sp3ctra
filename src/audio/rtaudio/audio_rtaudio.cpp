@@ -29,6 +29,11 @@ pthread_mutex_t buffer_index_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 AudioSystem *gAudioSystem = nullptr;
 
+// Global variables for synth mix levels (accessed from audio callback)
+// Volatile ensures thread visibility on modern architectures
+static volatile float g_synth_additive_mix_level = 1.0f;
+static volatile float g_synth_polyphonic_mix_level = 0.5f;
+
 // Global variables to store requested audio device before AudioSystem is created
 extern "C" {
 int g_requested_audio_device_id = -1;
@@ -88,22 +93,19 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   static unsigned int polyphonic_readOffset = 0;
   static int polyphonic_localReadIndex = 0;
 
-  // Cache MIDI levels to avoid repeated function calls
-  static float cached_level_additive = 1.0f;
-  static float cached_level_polyphonic = 0.5f;
+  // Cache volume level to avoid repeated access
   static float cached_volume = 1.0f;
   static int cache_counter = 0;
 
-  // Update cache automatically based on buffer size for smooth volume
-  // transitions
+  // Update cache automatically for smooth volume transitions
   if (++cache_counter >= 8) {  // Static value instead of dynamic macro
     cache_counter = 0;
     cached_volume = this->masterVolume;
-    if (gMidiController && gMidiController->isAnyControllerConnected()) {
-      cached_level_additive = gMidiController->getMixLevelSynthAdditive();
-      cached_level_polyphonic = gMidiController->getMixLevelSynthPolyphonic();
-    }
   }
+  
+  // Read mix levels from global variables (controlled via MIDI)
+  float cached_level_additive = g_synth_additive_mix_level;
+  float cached_level_polyphonic = g_synth_polyphonic_mix_level;
 
   unsigned int framesToRender = nFrames;
 
@@ -136,29 +138,32 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       }
     }
 
-    // Get reverb send levels (cached less frequently for performance)
-    static float cached_reverb_send_additive = DEFAULT_REVERB_SEND_ADDITIVE;
-    static float cached_reverb_send_polyphonic = DEFAULT_REVERB_SEND_POLYPHONIC;
-    static int reverb_cache_counter = 0;
+  // Use fixed default reverb send levels (now controlled via unified MIDI system callbacks)
+  static const float cached_reverb_send_additive = DEFAULT_REVERB_SEND_ADDITIVE;
+  static const float cached_reverb_send_polyphonic = DEFAULT_REVERB_SEND_POLYPHONIC;
 
-    // Update reverb cache every 128 calls (~1.33ms at 96kHz)
-    if (++reverb_cache_counter >= 128) {
-      reverb_cache_counter = 0;
-      if (gMidiController && gMidiController->isAnyControllerConnected()) {
-        cached_reverb_send_additive =
-            gMidiController->getReverbSendSynthAdditive();
-        cached_reverb_send_polyphonic =
-            gMidiController->getReverbSendSynthPolyphonic();
-      }
-      // If no MIDI controller connected, use config defaults
-      else {
-        cached_reverb_send_additive = DEFAULT_REVERB_SEND_ADDITIVE;
-        cached_reverb_send_polyphonic = DEFAULT_REVERB_SEND_POLYPHONIC;
-      }
-    }
+  // DIAGNOSTIC: Track buffer ready states
+  static unsigned long long callback_count = 0;
+  static unsigned long long poly_buffer_ready_count = 0;
+  static unsigned long long poly_buffer_not_ready_count = 0;
+  callback_count++;
+  
+  if (source_fft != nullptr) {
+    poly_buffer_ready_count++;
+  } else {
+    poly_buffer_not_ready_count++;
+  }
+  
+  // Print diagnostic every ~1 second (assuming 512 samples @ 44.1kHz = ~86 calls/sec)
+  static int diag_counter = 0;
+  if (++diag_counter >= 86) {
+    diag_counter = 0;
+    printf("\033[1;36m[AUDIO DIAG] Callbacks=%llu, PolyReady=%llu, PolyNotReady=%llu, MixLevel=%.2f\033[0m\n",
+           callback_count, poly_buffer_ready_count, poly_buffer_not_ready_count, cached_level_polyphonic);
+  }
 
-    // OPTIMIZED MIXING - Direct to output with threaded reverb
-    for (unsigned int i = 0; i < chunk; i++) {
+  // OPTIMIZED MIXING - Direct to output with threaded reverb
+  for (unsigned int i = 0; i < chunk; i++) {
       float dry_sample_left = 0.0f;
       float dry_sample_right = 0.0f;
 
@@ -1383,6 +1388,32 @@ void setMinimalTestVolume(float volume) {
                         : (volume > 1.0f) ? 1.0f
                                           : volume;
   printf("🔊 Minimal test volume set to: %.2f\n", minimal_test_volume);
+}
+
+void setSynthAdditiveMixLevel(float level) {
+  // Clamp to valid range
+  if (level < 0.0f) level = 0.0f;
+  if (level > 1.0f) level = 1.0f;
+  
+  // Volatile write (thread-safe for float on modern architectures)
+  g_synth_additive_mix_level = level;
+}
+
+void setSynthPolyphonicMixLevel(float level) {
+  // Clamp to valid range
+  if (level < 0.0f) level = 0.0f;
+  if (level > 1.0f) level = 1.0f;
+  
+  // Volatile write (thread-safe for float on modern architectures)
+  g_synth_polyphonic_mix_level = level;
+}
+
+float getSynthAdditiveMixLevel(void) {
+  return g_synth_additive_mix_level;
+}
+
+float getSynthPolyphonicMixLevel(void) {
+  return g_synth_polyphonic_mix_level;
 }
 
 } // extern "C"

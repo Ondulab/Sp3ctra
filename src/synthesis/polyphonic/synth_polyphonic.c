@@ -45,7 +45,7 @@ static void generate_test_data_for_fft(void);
 // --- Synth Parameters & Globals ---
 #define NORM_FACTOR_BIN0 881280.0f * 1.1f
 #define NORM_FACTOR_HARMONICS 220320.0f * 2.0f
-#define MASTER_VOLUME 0.10f
+#define MASTER_VOLUME 0.20f
 #define AMPLITUDE_SMOOTHING_ALPHA 0.1f // Increased for more responsiveness
 #define AMPLITUDE_GAMMA 2.0f           // Increased to enhance variations
 
@@ -184,6 +184,11 @@ void synth_polyphonicMode_init(void) {
 // AUDIO_BUFFER_SIZE=512 -> ~86 calls/sec)
 #define POLYPHONIC_PRINT_INTERVAL 86
 
+// Diagnostic counters
+static unsigned long long g_polyphonic_process_count = 0;
+static unsigned long long g_polyphonic_active_voices_total = 0;
+static unsigned long long g_polyphonic_samples_generated = 0;
+
 void synth_polyphonicMode_process(float *audio_buffer,
                                   unsigned int buffer_size) {
   if (audio_buffer == NULL) {
@@ -191,6 +196,8 @@ void synth_polyphonicMode_process(float *audio_buffer,
     return;
   }
   memset(audio_buffer, 0, buffer_size * sizeof(float));
+  
+  g_polyphonic_process_count++;
 
   // Calculate smoothed magnitudes (original logic)
   global_smoothed_magnitudes[0] =
@@ -212,8 +219,28 @@ void synth_polyphonicMode_process(float *audio_buffer,
         (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * global_smoothed_magnitudes[i];
   }
 
-  // Polyphonic Debug logging disabled for performance
-  // (was causing audio dropouts due to printf() blocking)
+  // DIAGNOSTIC: Count active voices and check FFT magnitudes
+  int active_voice_count = 0;
+  float max_fft_magnitude = 0.0f;
+  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+    if (poly_voices[i].voice_state != ADSR_STATE_IDLE) {
+      active_voice_count++;
+    }
+  }
+  for (int i = 0; i < MAX_MAPPED_OSCILLATORS; ++i) {
+    if (global_smoothed_magnitudes[i] > max_fft_magnitude) {
+      max_fft_magnitude = global_smoothed_magnitudes[i];
+    }
+  }
+  g_polyphonic_active_voices_total += active_voice_count;
+  
+  // Print diagnostic every second
+  static int diagnostic_print_counter = 0;
+  if (++diagnostic_print_counter >= POLYPHONIC_PRINT_INTERVAL) {
+    diagnostic_print_counter = 0;
+    printf("\033[1;33m[POLY DIAG] Calls=%llu, ActiveVoices=%d, MaxFFT=%.4f, Samples=%llu\033[0m\n",
+           g_polyphonic_process_count, active_voice_count, max_fft_magnitude, g_polyphonic_samples_generated);
+  }
 
   for (unsigned int sample_idx = 0; sample_idx < buffer_size; ++sample_idx) {
     float master_sample_sum = 0.0f;
@@ -327,6 +354,11 @@ void synth_polyphonicMode_process(float *audio_buffer,
       voice_sample_sum *= volume_adsr_val;
       voice_sample_sum *= current_voice->last_velocity;
       master_sample_sum += voice_sample_sum;
+      
+      // Track if we're generating non-zero samples
+      if (fabsf(voice_sample_sum) > 0.00001f) {
+        g_polyphonic_samples_generated++;
+      }
     }
 
     master_sample_sum *= MASTER_VOLUME;
@@ -464,21 +496,17 @@ void *synth_polyphonicMode_thread_func(void *arg) {
     local_producer_idx = polyphonic_current_buffer_index;
     pthread_mutex_unlock(&polyphonic_buffer_index_mutex);
 
-    pthread_mutex_lock(&polyphonic_audio_buffers[local_producer_idx].mutex);
-    while (polyphonic_audio_buffers[local_producer_idx].ready == 1 &&
-           keepRunning) {
-      struct timespec ts;
-      clock_gettime(CLOCK_REALTIME, &ts);
-      ts.tv_sec += 1;
-      int wait_ret = pthread_cond_timedwait(
-          &polyphonic_audio_buffers[local_producer_idx].cond,
-          &polyphonic_audio_buffers[local_producer_idx].mutex, &ts);
-      if (wait_ret == ETIMEDOUT && !keepRunning) {
-        pthread_mutex_unlock(
-            &polyphonic_audio_buffers[local_producer_idx].mutex);
-        goto cleanup_thread;
-      }
+    // RT-SAFE: Use atomic load instead of mutex wait - MUCH FASTER
+    // Busy-wait with short sleep if buffer not consumed yet
+    while (__atomic_load_n(&polyphonic_audio_buffers[local_producer_idx].ready, __ATOMIC_ACQUIRE) == 1 && keepRunning) {
+      usleep(100); // Sleep 100µs to avoid burning CPU
     }
+    
+    if (!keepRunning) {
+      goto cleanup_thread;
+    }
+    
+    pthread_mutex_lock(&polyphonic_audio_buffers[local_producer_idx].mutex);
     synth_polyphonicMode_process(
         polyphonic_audio_buffers[local_producer_idx].data, g_sp3ctra_config.audio_buffer_size);
     polyphonic_audio_buffers[local_producer_idx].ready = 1;
