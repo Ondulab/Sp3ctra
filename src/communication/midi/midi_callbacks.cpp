@@ -287,20 +287,48 @@ void midi_cb_sequencer_player_record_toggle(const MidiParameterValue *param, voi
 }
 
 void midi_cb_sequencer_player_play_stop(const MidiParameterValue *param, void *user_data) {
+    printf("\033[1;31m[DEBUG] SEQUENCER CALLBACK CALLED: play_stop\033[0m\n");
     (void)param;
     
-    if (!g_image_sequencer || !user_data) return;
+    if (!g_image_sequencer) {
+        printf("\033[1;31m[DEBUG] ERROR: g_image_sequencer is NULL!\033[0m\n");
+        return;
+    }
+    
+    if (!user_data) {
+        printf("\033[1;31m[DEBUG] ERROR: user_data is NULL!\033[0m\n");
+        return;
+    }
     
     int player_id = *(int*)user_data;
+    printf("\033[1;32m[DEBUG] Player ID: %d\033[0m\n", player_id);
+    
+    PlayerState state = image_sequencer_get_player_state(g_image_sequencer, player_id);
+    printf("\033[1;32m[DEBUG] Current state: %d, toggling playback...\033[0m\n", state);
+    
     image_sequencer_toggle_playback(g_image_sequencer, player_id);
 }
 
 void midi_cb_sequencer_player_mute_toggle(const MidiParameterValue *param, void *user_data) {
+    printf("\033[1;31m[DEBUG] SEQUENCER CALLBACK CALLED: mute_toggle\033[0m\n");
     (void)param;
     
-    if (!g_image_sequencer || !user_data) return;
+    if (!g_image_sequencer) {
+        printf("\033[1;31m[DEBUG] ERROR: g_image_sequencer is NULL!\033[0m\n");
+        return;
+    }
+    
+    if (!user_data) {
+        printf("\033[1;31m[DEBUG] ERROR: user_data is NULL!\033[0m\n");
+        return;
+    }
     
     int player_id = *(int*)user_data;
+    printf("\033[1;32m[DEBUG] Player ID: %d\033[0m\n", player_id);
+    
+    PlayerState state = image_sequencer_get_player_state(g_image_sequencer, player_id);
+    printf("\033[1;32m[DEBUG] Current state: %d, toggling mute...\033[0m\n", state);
+    
     image_sequencer_toggle_mute(g_image_sequencer, player_id);
 }
 
