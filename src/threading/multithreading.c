@@ -14,7 +14,11 @@
 #include "udp.h"
 #include "image_debug.h"
 #include "../processing/image_preprocessor.h"
+#include "../processing/image_sequencer.h"
 #include <time.h>
+
+/* External sequencer instance */
+extern ImageSequencer *g_image_sequencer;
 
 #ifndef NO_SFML
 #include <SFML/Graphics.h>
@@ -411,6 +415,13 @@ void *udpThread(void *arg) {
         printf("[UDP] Preprocessing complete: contrast=%.3f, timestamp=%llu\n",
                preprocessed_temp.contrast_factor, preprocessed_temp.timestamp_us);
 #endif
+        
+        // 🎬 Process through sequencer (recording/playback/mix)
+        if (g_image_sequencer) {
+          PreprocessedImageData sequenced_output;
+          image_sequencer_process_frame(g_image_sequencer, &preprocessed_temp, &sequenced_output);
+          preprocessed_temp = sequenced_output; // Use sequenced output
+        }
       } else {
         printf("[UDP] ERROR: Image preprocessing failed\n");
       }
