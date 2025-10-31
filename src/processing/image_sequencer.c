@@ -5,14 +5,14 @@
 #include <math.h>
 #include <sys/time.h>
 
-// Forward declarations
-static void copy_frame(PreprocessedImageData *dst, const PreprocessedImageData *src);
-static void blend_frames(PreprocessedImageData *output, const PreprocessedImageData *a, const PreprocessedImageData *b, float blend);
+// Forward declarations for RGB frame operations
+static void blend_rgb_frames(uint8_t *out_R, uint8_t *out_G, uint8_t *out_B,
+                             const uint8_t *a_R, const uint8_t *a_G, const uint8_t *a_B,
+                             const uint8_t *b_R, const uint8_t *b_G, const uint8_t *b_B,
+                             float blend, int num_pixels);
 static float calculate_adsr_level(ADSREnvelope *env, uint64_t current_time);
 static inline float clamp_f(float value, float min, float max);
-
-// Forward declaration for process function
-static void image_sequencer_process_internal(ImageSequencer *seq, PreprocessedImageData *output, const PreprocessedImageData *live_input);
+static inline uint8_t clamp_u8(int value);
 
 // Utility: Get current time in microseconds
 static inline uint64_t get_time_us(void) {
@@ -24,6 +24,20 @@ static inline uint64_t get_time_us(void) {
 // Utility: Linear interpolation
 static inline float lerp(float a, float b, float t) {
     return a + t * (b - a);
+}
+
+// Utility: Clamp float value
+static inline float clamp_f(float value, float min, float max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+}
+
+// Utility: Clamp int to uint8_t range
+static inline uint8_t clamp_u8(int value) {
+    if (value < 0) return 0;
+    if (value > 255) return 255;
+    return (uint8_t)value;
 }
 
 // Calculate ADSR envelope level
@@ -73,50 +87,52 @@ static float calculate_adsr_level(ADSREnvelope *env, uint64_t current_time) {
     return 0.0f;
 }
 
-// Copy preprocessed data
-static void copy_frame(PreprocessedImageData *dst, const PreprocessedImageData *src) {
-    memcpy(dst, src, sizeof(PreprocessedImageData));
-}
-
-// Interpolate between two frames
-static void blend_frames(PreprocessedImageData *output,
-                        const PreprocessedImageData *a,
-                        const PreprocessedImageData *b,
-                        float blend) {
-    for (int i = 0; i < CIS_MAX_PIXELS_NB; i++) {
-        output->grayscale[i] = lerp(a->grayscale[i], b->grayscale[i], blend);
+// Blend two RGB frames
+static void blend_rgb_frames(uint8_t *out_R, uint8_t *out_G, uint8_t *out_B,
+                             const uint8_t *a_R, const uint8_t *a_G, const uint8_t *a_B,
+                             const uint8_t *b_R, const uint8_t *b_G, const uint8_t *b_B,
+                             float blend, int num_pixels) {
+    for (int i = 0; i < num_pixels; i++) {
+        out_R[i] = (uint8_t)(a_R[i] * (1.0f - blend) + b_R[i] * blend);
+        out_G[i] = (uint8_t)(a_G[i] * (1.0f - blend) + b_G[i] * blend);
+        out_B[i] = (uint8_t)(a_B[i] * (1.0f - blend) + b_B[i] * blend);
     }
-    output->contrast_factor = lerp(a->contrast_factor, b->contrast_factor, blend);
 }
 
-// Utility: Clamp float value
-static inline float clamp_f(float value, float min, float max) {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
-}
-
-// Initialize ADSR envelope
+// Initialize ADSR envelope (disabled by default for immediate response)
 static void init_adsr_envelope(ADSREnvelope *env) {
     memset(env, 0, sizeof(ADSREnvelope));
-    env->attack_ms = 100.0f;
-    env->decay_ms = 50.0f;
-    env->sustain_level = 0.7f;
-    env->release_ms = 200.0f;
+    env->attack_ms = 0.0f;      // No attack - immediate volume
+    env->decay_ms = 0.0f;       // No decay
+    env->sustain_level = 1.0f;  // Full sustain level
+    env->release_ms = 0.0f;     // No release - instant stop
     env->is_triggered = 0;
-    env->current_level = 0.0f;
+    env->current_level = 1.0f;  // Start at full level
 }
 
-// Initialize sequence player
+// Initialize sequence player with RGB frame buffers
 static void init_sequence_player(SequencePlayer *player, int buffer_capacity) {
     memset(player, 0, sizeof(SequencePlayer));
     player->state = PLAYER_STATE_IDLE;
     player->buffer_capacity = buffer_capacity;
-    player->frames = (PreprocessedImageData *)calloc(buffer_capacity, sizeof(PreprocessedImageData));
     
+    // Allocate array of RawImageFrame structures
+    player->frames = (RawImageFrame *)calloc(buffer_capacity, sizeof(RawImageFrame));
     if (!player->frames) {
-        fprintf(stderr, "[ERROR] Failed to allocate frame buffer\n");
+        fprintf(stderr, "[ERROR] Failed to allocate frame array\n");
         return;
+    }
+    
+    // Allocate RGB buffers for each frame
+    for (int i = 0; i < buffer_capacity; i++) {
+        player->frames[i].buffer_R = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
+        player->frames[i].buffer_G = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
+        player->frames[i].buffer_B = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
+        
+        if (!player->frames[i].buffer_R || !player->frames[i].buffer_G || !player->frames[i].buffer_B) {
+            fprintf(stderr, "[ERROR] Failed to allocate RGB buffers for frame %d\n", i);
+            return;
+        }
     }
     
     player->playback_speed = 1.0f;
@@ -126,9 +142,27 @@ static void init_sequence_player(SequencePlayer *player, int buffer_capacity) {
     player->trigger_mode = TRIGGER_MODE_MANUAL;
     
     init_adsr_envelope(&player->envelope);
+    
+    printf("[INFO] Player initialized: %d frames capacity (%.1f MB)\n", 
+           buffer_capacity, (buffer_capacity * CIS_MAX_PIXELS_NB * 3) / 1024.0f / 1024.0f);
 }
 
-// Public API Implementation
+// Cleanup sequence player
+static void cleanup_sequence_player(SequencePlayer *player) {
+    if (player->frames) {
+        for (int i = 0; i < player->buffer_capacity; i++) {
+            if (player->frames[i].buffer_R) free(player->frames[i].buffer_R);
+            if (player->frames[i].buffer_G) free(player->frames[i].buffer_G);
+            if (player->frames[i].buffer_B) free(player->frames[i].buffer_B);
+        }
+        free(player->frames);
+        player->frames = NULL;
+    }
+}
+
+/* ============================================================================
+ * PUBLIC API IMPLEMENTATION
+ * ============================================================================ */
 
 ImageSequencer *image_sequencer_create(int num_players, float max_duration_s) {
     if (num_players < 1 || num_players > 10) {
@@ -163,12 +197,27 @@ ImageSequencer *image_sequencer_create(int num_players, float max_duration_s) {
         return NULL;
     }
     
+    // Allocate output frame RGB buffers
+    seq->output_frame.buffer_R = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
+    seq->output_frame.buffer_G = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
+    seq->output_frame.buffer_B = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
+    
+    if (!seq->output_frame.buffer_R || !seq->output_frame.buffer_G || !seq->output_frame.buffer_B) {
+        fprintf(stderr, "[ERROR] Failed to allocate output frame buffers\n");
+        free(seq->players);
+        pthread_mutex_destroy(&seq->mutex);
+        free(seq);
+        return NULL;
+    }
+    
     int buffer_capacity = (int)(max_duration_s * 1000);
     for (int i = 0; i < num_players; i++) {
         init_sequence_player(&seq->players[i], buffer_capacity);
     }
     
-    printf("[INFO] Image Sequencer created: %d players\n", num_players);
+    printf("[INFO] Image Sequencer created: %d players, %.1fs capacity (%.1f MB total)\n", 
+           num_players, max_duration_s,
+           (num_players * buffer_capacity * CIS_MAX_PIXELS_NB * 3) / 1024.0f / 1024.0f);
     return seq;
 }
 
@@ -177,12 +226,14 @@ void image_sequencer_destroy(ImageSequencer *seq) {
     
     if (seq->players) {
         for (int i = 0; i < seq->num_players; i++) {
-            if (seq->players[i].frames) {
-                free(seq->players[i].frames);
-            }
+            cleanup_sequence_player(&seq->players[i]);
         }
         free(seq->players);
     }
+    
+    if (seq->output_frame.buffer_R) free(seq->output_frame.buffer_R);
+    if (seq->output_frame.buffer_G) free(seq->output_frame.buffer_G);
+    if (seq->output_frame.buffer_B) free(seq->output_frame.buffer_B);
     
     pthread_mutex_destroy(&seq->mutex);
     free(seq);
@@ -196,7 +247,6 @@ int image_sequencer_start_recording(ImageSequencer *seq, int player_id) {
     pthread_mutex_lock(&seq->mutex);
     SequencePlayer *player = &seq->players[player_id];
     
-    // Can only start recording from IDLE or READY state
     if (player->state != PLAYER_STATE_IDLE && player->state != PLAYER_STATE_READY) {
         pthread_mutex_unlock(&seq->mutex);
         return -1;
@@ -249,7 +299,6 @@ int image_sequencer_start_playback(ImageSequencer *seq, int player_id) {
     pthread_mutex_lock(&seq->mutex);
     SequencePlayer *player = &seq->players[player_id];
     
-    // Can only start from READY, STOPPED, or MUTED
     if (player->state != PLAYER_STATE_READY && 
         player->state != PLAYER_STATE_STOPPED &&
         player->state != PLAYER_STATE_MUTED) {
@@ -259,13 +308,12 @@ int image_sequencer_start_playback(ImageSequencer *seq, int player_id) {
     
     if (player->recorded_frames == 0) {
         pthread_mutex_unlock(&seq->mutex);
-        return -1; // No frames to play
+        return -1;
     }
     
     player->state = PLAYER_STATE_PLAYING;
     player->playback_position = 0.0f;
     
-    // Trigger envelope
     player->envelope.is_triggered = 1;
     player->envelope.trigger_time_us = get_time_us();
     player->envelope.release_time_us = 0;
@@ -287,8 +335,6 @@ int image_sequencer_stop_playback(ImageSequencer *seq, int player_id) {
     }
     
     player->state = PLAYER_STATE_STOPPED;
-    
-    // Trigger release phase
     player->envelope.release_time_us = get_time_us();
     
     pthread_mutex_unlock(&seq->mutex);
@@ -311,54 +357,59 @@ int image_sequencer_toggle_playback(ImageSequencer *seq, int player_id) {
     }
 }
 
-// Playback Parameters
-void image_sequencer_set_playback_speed(ImageSequencer *seq, int player_id, float speed) {
+// Player Parameters
+void image_sequencer_set_speed(ImageSequencer *seq, int player_id, float speed) {
     if (!seq || player_id < 0 || player_id >= seq->num_players) return;
-    
     speed = clamp_f(speed, 0.1f, 10.0f);
-    
     pthread_mutex_lock(&seq->mutex);
     seq->players[player_id].playback_speed = speed;
     pthread_mutex_unlock(&seq->mutex);
 }
 
-void image_sequencer_set_playback_direction(ImageSequencer *seq, int player_id, int direction) {
+void image_sequencer_set_offset(ImageSequencer *seq, int player_id, int offset_frames) {
     if (!seq || player_id < 0 || player_id >= seq->num_players) return;
     
     pthread_mutex_lock(&seq->mutex);
-    seq->players[player_id].playback_direction = (direction >= 0) ? 1 : -1;
+    SequencePlayer *player = &seq->players[player_id];
+    
+    if (offset_frames >= 0 && offset_frames < player->recorded_frames) {
+        player->playback_offset = offset_frames;
+        player->playback_position = (float)offset_frames;
+    }
+    
     pthread_mutex_unlock(&seq->mutex);
 }
 
 void image_sequencer_set_loop_mode(ImageSequencer *seq, int player_id, LoopMode mode) {
     if (!seq || player_id < 0 || player_id >= seq->num_players) return;
-    
     pthread_mutex_lock(&seq->mutex);
     seq->players[player_id].loop_mode = mode;
     pthread_mutex_unlock(&seq->mutex);
 }
 
-void image_sequencer_set_quantize(ImageSequencer *seq, int player_id, int enabled, int beats) {
-    (void)seq; (void)player_id; (void)enabled; (void)beats;
-    // TODO: Implement quantization (MIDI sync feature)
+void image_sequencer_set_trigger_mode(ImageSequencer *seq, int player_id, TriggerMode mode) {
+    if (!seq || player_id < 0 || player_id >= seq->num_players) return;
+    pthread_mutex_lock(&seq->mutex);
+    seq->players[player_id].trigger_mode = mode;
+    pthread_mutex_unlock(&seq->mutex);
 }
 
 void image_sequencer_set_blend_level(ImageSequencer *seq, int player_id, float level) {
     if (!seq || player_id < 0 || player_id >= seq->num_players) return;
-    
     level = clamp_f(level, 0.0f, 1.0f);
-    
     pthread_mutex_lock(&seq->mutex);
     seq->players[player_id].blend_level = level;
     pthread_mutex_unlock(&seq->mutex);
 }
 
-void image_sequencer_set_auto_play(ImageSequencer *seq, int player_id, int enabled) {
-    (void)seq; (void)player_id; (void)enabled;
-    // Note: auto_play is handled via trigger_mode (TRIGGER_MODE_AUTO)
+void image_sequencer_set_playback_direction(ImageSequencer *seq, int player_id, int direction) {
+    if (!seq || player_id < 0 || player_id >= seq->num_players) return;
+    pthread_mutex_lock(&seq->mutex);
+    seq->players[player_id].playback_direction = (direction >= 0) ? 1 : -1;
+    pthread_mutex_unlock(&seq->mutex);
 }
 
-// Mute Control
+// Player State Control
 int image_sequencer_mute_player(ImageSequencer *seq, int player_id) {
     if (!seq || player_id < 0 || player_id >= seq->num_players) return -1;
     
@@ -367,7 +418,6 @@ int image_sequencer_mute_player(ImageSequencer *seq, int player_id) {
     
     if (player->state == PLAYER_STATE_PLAYING) {
         player->state = PLAYER_STATE_MUTED;
-        // Trigger release
         player->envelope.release_time_us = get_time_us();
         pthread_mutex_unlock(&seq->mutex);
         printf("[SEQ] Player %d: Muted\n", player_id);
@@ -386,7 +436,6 @@ int image_sequencer_unmute_player(ImageSequencer *seq, int player_id) {
     
     if (player->state == PLAYER_STATE_MUTED && player->recorded_frames > 0) {
         player->state = PLAYER_STATE_PLAYING;
-        // Trigger attack
         player->envelope.is_triggered = 1;
         player->envelope.trigger_time_us = get_time_us();
         player->envelope.release_time_us = 0;
@@ -413,11 +462,12 @@ int image_sequencer_toggle_mute(ImageSequencer *seq, int player_id) {
     }
 }
 
-// Envelope Control
-void image_sequencer_set_envelope(ImageSequencer *seq, int player_id, float attack_ms, float decay_ms, float sustain_level, float release_ms) {
+// ADSR Control
+void image_sequencer_set_adsr(ImageSequencer *seq, int player_id, 
+                              float attack_ms, float decay_ms, 
+                              float sustain_level, float release_ms) {
     if (!seq || player_id < 0 || player_id >= seq->num_players) return;
     
-    // Clamp values to reasonable ranges
     attack_ms = clamp_f(attack_ms, 0.0f, 5000.0f);
     decay_ms = clamp_f(decay_ms, 0.0f, 5000.0f);
     sustain_level = clamp_f(sustain_level, 0.0f, 1.0f);
@@ -452,10 +502,18 @@ void image_sequencer_release_envelope(ImageSequencer *seq, int player_id) {
     pthread_mutex_unlock(&seq->mutex);
 }
 
+// Global Control
 void image_sequencer_set_enabled(ImageSequencer *seq, int enabled) {
     if (!seq) return;
     pthread_mutex_lock(&seq->mutex);
     seq->enabled = enabled;
+    pthread_mutex_unlock(&seq->mutex);
+}
+
+void image_sequencer_set_blend_mode(ImageSequencer *seq, BlendMode mode) {
+    if (!seq) return;
+    pthread_mutex_lock(&seq->mutex);
+    seq->blend_mode = mode;
     pthread_mutex_unlock(&seq->mutex);
 }
 
@@ -473,56 +531,19 @@ void image_sequencer_set_bpm(ImageSequencer *seq, float bpm) {
     pthread_mutex_unlock(&seq->mutex);
 }
 
-void image_sequencer_set_midi_sync(ImageSequencer *seq, int enabled) {
+void image_sequencer_enable_midi_sync(ImageSequencer *seq, int enable) {
     if (!seq) return;
     pthread_mutex_lock(&seq->mutex);
-    seq->midi_clock_sync = enabled;
+    seq->midi_clock_sync = enable;
     pthread_mutex_unlock(&seq->mutex);
 }
 
+// MIDI Clock Integration
 void image_sequencer_midi_clock_tick(ImageSequencer *seq) {
     if (!seq) return;
     pthread_mutex_lock(&seq->mutex);
     seq->last_clock_us = get_time_us();
     pthread_mutex_unlock(&seq->mutex);
-}
-
-// Additional API functions to match header
-void image_sequencer_set_speed(ImageSequencer *seq, int player_id, float speed) {
-    image_sequencer_set_playback_speed(seq, player_id, speed);
-}
-
-void image_sequencer_set_offset(ImageSequencer *seq, int player_id, int offset_frames) {
-    if (!seq || player_id < 0 || player_id >= seq->num_players) return;
-    
-    pthread_mutex_lock(&seq->mutex);
-    SequencePlayer *player = &seq->players[player_id];
-    
-    if (offset_frames >= 0 && offset_frames < player->recorded_frames) {
-        player->playback_offset = offset_frames;
-        player->playback_position = (float)offset_frames;
-    }
-    
-    pthread_mutex_unlock(&seq->mutex);
-}
-
-void image_sequencer_set_trigger_mode(ImageSequencer *seq, int player_id, TriggerMode mode) {
-    if (!seq || player_id < 0 || player_id >= seq->num_players) return;
-    
-    pthread_mutex_lock(&seq->mutex);
-    seq->players[player_id].trigger_mode = mode;
-    pthread_mutex_unlock(&seq->mutex);
-}
-
-void image_sequencer_set_blend_mode(ImageSequencer *seq, BlendMode mode) {
-    if (!seq) return;
-    pthread_mutex_lock(&seq->mutex);
-    seq->blend_mode = mode;
-    pthread_mutex_unlock(&seq->mutex);
-}
-
-void image_sequencer_enable_midi_sync(ImageSequencer *seq, int enable) {
-    image_sequencer_set_midi_sync(seq, enable);
 }
 
 void image_sequencer_midi_clock_start(ImageSequencer *seq) {
@@ -537,78 +558,50 @@ void image_sequencer_midi_clock_stop(ImageSequencer *seq) {
     // Could pause all players or reset clock
 }
 
-int image_sequencer_process_frame(ImageSequencer *seq, const PreprocessedImageData *live_input, PreprocessedImageData *output) {
-    if (!seq || !live_input || !output) return -1;
-    image_sequencer_process_internal(seq, output, live_input);
-    return 0;
-}
+/* ============================================================================
+ * MAIN PROCESSING FUNCTION - NEW RGB-BASED IMPLEMENTATION
+ * ============================================================================ */
 
-void image_sequencer_register_midi_callbacks(ImageSequencer *seq) {
-    (void)seq;
-    // TODO: Register MIDI callbacks for transport control
-    // This will be implemented when MIDI integration is needed
-}
-
-void image_sequencer_get_stats(ImageSequencer *seq, uint64_t *frames_processed, float *avg_process_time_us) {
-    if (!seq) return;
+int image_sequencer_process_frame(
+    ImageSequencer *seq,
+    const uint8_t *live_R,
+    const uint8_t *live_G,
+    const uint8_t *live_B,
+    uint8_t *output_R,
+    uint8_t *output_G,
+    uint8_t *output_B
+) {
+    if (!seq || !live_R || !live_G || !live_B || !output_R || !output_G || !output_B) {
+        return -1;
+    }
     
     pthread_mutex_lock(&seq->mutex);
     
-    if (frames_processed) {
-        *frames_processed = seq->frames_processed;
-    }
-    
-    if (avg_process_time_us) {
-        if (seq->frames_processed > 0) {
-            *avg_process_time_us = (float)seq->total_process_time_us / (float)seq->frames_processed;
-        } else {
-            *avg_process_time_us = 0.0f;
-        }
-    }
-    
-    pthread_mutex_unlock(&seq->mutex);
-}
-
-void image_sequencer_set_adsr(ImageSequencer *seq, int player_id, float attack_ms, float decay_ms, float sustain_level, float release_ms) {
-    image_sequencer_set_envelope(seq, player_id, attack_ms, decay_ms, sustain_level, release_ms);
-}
-
-void image_sequencer_clear_player(ImageSequencer *seq, int player_id) {
-    if (!seq || player_id < 0 || player_id >= seq->num_players) return;
-    
-    pthread_mutex_lock(&seq->mutex);
-    SequencePlayer *player = &seq->players[player_id];
-    player->state = PLAYER_STATE_IDLE;
-    player->recorded_frames = 0;
-    player->playback_position = 0.0f;
-    pthread_mutex_unlock(&seq->mutex);
-}
-
-void image_sequencer_clear_all(ImageSequencer *seq) {
-    if (!seq) return;
-    for (int i = 0; i < seq->num_players; i++) {
-        image_sequencer_clear_player(seq, i);
-    }
-}
-
-// Main processing function (internal implementation)
-static void image_sequencer_process_internal(ImageSequencer *seq, PreprocessedImageData *output, const PreprocessedImageData *live_input) {
-    if (!seq || !output || !live_input) return;
-    
-    pthread_mutex_lock(&seq->mutex);
+    uint64_t start_time = get_time_us();
     
     // If disabled, just pass through
     if (!seq->enabled) {
-        copy_frame(output, live_input);
+        memcpy(output_R, live_R, CIS_MAX_PIXELS_NB);
+        memcpy(output_G, live_G, CIS_MAX_PIXELS_NB);
+        memcpy(output_B, live_B, CIS_MAX_PIXELS_NB);
         pthread_mutex_unlock(&seq->mutex);
-        return;
+        return 0;
     }
     
     uint64_t current_time = get_time_us();
     int has_active_players = 0;
     
-    // Initialize output to zeros
-    memset(output, 0, sizeof(PreprocessedImageData));
+    // Initialize output accumulators (float for weighted sum)
+    float *accum_R = (float *)calloc(CIS_MAX_PIXELS_NB, sizeof(float));
+    float *accum_G = (float *)calloc(CIS_MAX_PIXELS_NB, sizeof(float));
+    float *accum_B = (float *)calloc(CIS_MAX_PIXELS_NB, sizeof(float));
+    float total_weight = 0.0f;
+    
+    if (!accum_R || !accum_G || !accum_B) {
+        pthread_mutex_unlock(&seq->mutex);
+        free(accum_R); free(accum_G); free(accum_B);
+        return -1;
+    }
     
     // Process each player
     for (int i = 0; i < seq->num_players; i++) {
@@ -617,7 +610,10 @@ static void image_sequencer_process_internal(ImageSequencer *seq, PreprocessedIm
         // Handle recording
         if (player->state == PLAYER_STATE_RECORDING) {
             if (player->recorded_frames < player->buffer_capacity) {
-                copy_frame(&player->frames[player->recorded_frames], live_input);
+                memcpy(player->frames[player->recorded_frames].buffer_R, live_R, CIS_MAX_PIXELS_NB);
+                memcpy(player->frames[player->recorded_frames].buffer_G, live_G, CIS_MAX_PIXELS_NB);
+                memcpy(player->frames[player->recorded_frames].buffer_B, live_B, CIS_MAX_PIXELS_NB);
+                player->frames[player->recorded_frames].timestamp_us = current_time;
                 player->recorded_frames++;
             } else {
                 // Buffer full, auto-stop recording
@@ -661,26 +657,40 @@ static void image_sequencer_process_internal(ImageSequencer *seq, PreprocessedIm
                 }
             }
             
-            PreprocessedImageData player_frame;
+            // Get player frame RGB (with interpolation if needed)
+            uint8_t *player_R, *player_G, *player_B;
+            uint8_t temp_R[CIS_MAX_PIXELS_NB], temp_G[CIS_MAX_PIXELS_NB], temp_B[CIS_MAX_PIXELS_NB];
             
-            // Interpolate between frames if needed
             if (frac > 0.001f && frame_idx + 1 < player->recorded_frames) {
-                blend_frames(&player_frame, 
-                           &player->frames[frame_idx],
-                           &player->frames[frame_idx + 1],
-                           frac);
+                // Interpolate between two frames
+                blend_rgb_frames(temp_R, temp_G, temp_B,
+                               player->frames[frame_idx].buffer_R,
+                               player->frames[frame_idx].buffer_G,
+                               player->frames[frame_idx].buffer_B,
+                               player->frames[frame_idx + 1].buffer_R,
+                               player->frames[frame_idx + 1].buffer_G,
+                               player->frames[frame_idx + 1].buffer_B,
+                               frac, CIS_MAX_PIXELS_NB);
+                player_R = temp_R;
+                player_G = temp_G;
+                player_B = temp_B;
             } else {
-                copy_frame(&player_frame, &player->frames[frame_idx]);
+                // Use current frame directly
+                player_R = player->frames[frame_idx].buffer_R;
+                player_G = player->frames[frame_idx].buffer_G;
+                player_B = player->frames[frame_idx].buffer_B;
             }
             
             // Apply envelope and blend level
             float total_level = env_level * player->blend_level;
             
-            // Mix into output
+            // Accumulate into output
             for (int p = 0; p < CIS_MAX_PIXELS_NB; p++) {
-                output->grayscale[p] += player_frame.grayscale[p] * total_level;
+                accum_R[p] += player_R[p] * total_level;
+                accum_G[p] += player_G[p] * total_level;
+                accum_B[p] += player_B[p] * total_level;
             }
-            output->contrast_factor += player_frame.contrast_factor * total_level;
+            total_weight += total_level;
             
             has_active_players = 1;
             
@@ -689,25 +699,83 @@ static void image_sequencer_process_internal(ImageSequencer *seq, PreprocessedIm
         }
     }
     
-    // Mix with live input
+    // Mix with live input and write output
     if (has_active_players) {
-        // Normalize and blend with live
+        // Normalize accumulated values and blend with live
         float seq_weight = 1.0f - seq->live_mix_level;
         float live_weight = seq->live_mix_level;
         
-        for (int p = 0; p < CIS_MAX_PIXELS_NB; p++) {
-            output->grayscale[p] = output->grayscale[p] * seq_weight + 
-                                   live_input->grayscale[p] * live_weight;
-            output->grayscale[p] = clamp_f(output->grayscale[p], 0.0f, 255.0f);
+        // If we have active players, normalize and blend
+        if (total_weight > 0.0f) {
+            for (int p = 0; p < CIS_MAX_PIXELS_NB; p++) {
+                // Normalize sequencer output
+                float norm_R = accum_R[p] / total_weight;
+                float norm_G = accum_G[p] / total_weight;
+                float norm_B = accum_B[p] / total_weight;
+                
+                // Mix with live
+                float mixed_R = norm_R * seq_weight + live_R[p] * live_weight;
+                float mixed_G = norm_G * seq_weight + live_G[p] * live_weight;
+                float mixed_B = norm_B * seq_weight + live_B[p] * live_weight;
+                
+                // Clamp and write output
+                output_R[p] = clamp_u8((int)mixed_R);
+                output_G[p] = clamp_u8((int)mixed_G);
+                output_B[p] = clamp_u8((int)mixed_B);
+            }
+        } else {
+            // No weight, just pass through live
+            memcpy(output_R, live_R, CIS_MAX_PIXELS_NB);
+            memcpy(output_G, live_G, CIS_MAX_PIXELS_NB);
+            memcpy(output_B, live_B, CIS_MAX_PIXELS_NB);
         }
-        output->contrast_factor = output->contrast_factor * seq_weight + 
-                                  live_input->contrast_factor * live_weight;
     } else {
         // No active players, just pass through live
-        copy_frame(output, live_input);
+        memcpy(output_R, live_R, CIS_MAX_PIXELS_NB);
+        memcpy(output_G, live_G, CIS_MAX_PIXELS_NB);
+        memcpy(output_B, live_B, CIS_MAX_PIXELS_NB);
     }
     
+    // Cleanup
+    free(accum_R);
+    free(accum_G);
+    free(accum_B);
+    
+    // Update statistics
     seq->frames_processed++;
+    uint64_t process_time = get_time_us() - start_time;
+    seq->total_process_time_us += process_time;
+    
+    pthread_mutex_unlock(&seq->mutex);
+    return 0;
+}
+
+// MIDI callback registration
+void image_sequencer_register_midi_callbacks(ImageSequencer *seq) {
+    (void)seq;
+    // TODO: Register MIDI callbacks for transport control
+}
+
+// Statistics and debugging
+void image_sequencer_get_stats(ImageSequencer *seq, 
+                               uint64_t *frames_processed, 
+                               float *avg_process_time_us) {
+    if (!seq) return;
+    
+    pthread_mutex_lock(&seq->mutex);
+    
+    if (frames_processed) {
+        *frames_processed = seq->frames_processed;
+    }
+    
+    if (avg_process_time_us) {
+        if (seq->frames_processed > 0) {
+            *avg_process_time_us = (float)seq->total_process_time_us / (float)seq->frames_processed;
+        } else {
+            *avg_process_time_us = 0.0f;
+        }
+    }
+    
     pthread_mutex_unlock(&seq->mutex);
 }
 

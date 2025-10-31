@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <pthread.h>
-#include "../processing/image_preprocessor.h"
+#include "../core/config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -13,6 +13,14 @@ extern "C" {
 #define MAX_SEQUENCE_DURATION_S 10.0f
 #define MAX_SEQUENCE_FRAMES (int)(MAX_SEQUENCE_DURATION_S * 1000) // 10000 frames max
 #define DEFAULT_NUM_PLAYERS 5
+
+/* Raw RGB image frame structure - lightweight storage (10.4 KB/frame) */
+typedef struct {
+    uint8_t *buffer_R;       // Red channel [CIS_MAX_PIXELS_NB] pixels
+    uint8_t *buffer_G;       // Green channel [CIS_MAX_PIXELS_NB] pixels
+    uint8_t *buffer_B;       // Blue channel [CIS_MAX_PIXELS_NB] pixels
+    uint64_t timestamp_us;   // Microsecond timestamp
+} RawImageFrame;
 
 /* Player state machine */
 typedef enum {
@@ -67,8 +75,8 @@ typedef struct {
 
 /* Sequence player (one per sequence) */
 typedef struct {
-    /* Sequence storage (ring buffer) */
-    PreprocessedImageData *frames;  // Statically allocated at init
+    /* Sequence storage (ring buffer) - NOW STORES RGB RAW DATA */
+    RawImageFrame *frames;           // Statically allocated at init (10.4 KB/frame)
     int buffer_capacity;             // Max frames (e.g., 5000 for 5s @ 1000fps)
     int recorded_frames;             // Actual recorded frames
     
@@ -106,8 +114,8 @@ typedef struct {
     int midi_clock_sync;             // 1 = sync to MIDI clock, 0 = free-running
     uint64_t last_clock_us;          // Last MIDI clock tick timestamp
     
-    /* Output buffer (reused every frame) */
-    PreprocessedImageData output_frame;
+    /* Output buffer (reused every frame) - MIXED RGB OUTPUT */
+    RawImageFrame output_frame;      // Holds the mixed RGB result
     
     /* Thread safety */
     pthread_mutex_t mutex;           // Protects all state (lightweight, < 10us)
@@ -171,11 +179,26 @@ void image_sequencer_midi_clock_tick(ImageSequencer *seq);
 void image_sequencer_midi_clock_start(ImageSequencer *seq);
 void image_sequencer_midi_clock_stop(ImageSequencer *seq);
 
-/* Main processing function (called from UDP thread or dedicated thread) */
+/* Main processing function (called from UDP thread)
+ * 
+ * NEW BEHAVIOR: Takes RGB raw input, mixes with sequences, outputs RGB raw
+ * The output RGB will then be preprocessed (grayscale, pan, DMX calculation)
+ * 
+ * Parameters:
+ *   seq: The sequencer instance
+ *   live_R/G/B: Live RGB input from UDP (CIS_MAX_PIXELS_NB pixels each)
+ *   output_R/G/B: Mixed RGB output (CIS_MAX_PIXELS_NB pixels each)
+ *   
+ * Returns: 0 on success, -1 on error
+ */
 int image_sequencer_process_frame(
     ImageSequencer *seq,
-    const PreprocessedImageData *live_input,
-    PreprocessedImageData *output
+    const uint8_t *live_R,
+    const uint8_t *live_G,
+    const uint8_t *live_B,
+    uint8_t *output_R,
+    uint8_t *output_G,
+    uint8_t *output_B
 );
 
 /* MIDI callback registration */

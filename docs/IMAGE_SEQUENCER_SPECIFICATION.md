@@ -12,16 +12,35 @@
 
 ### 1.1 Position dans l'architecture
 
-Le module s'insère entre `image_preprocessor` et les consommateurs (synthèses/DMX/affichage) :
+Le module s'insère entre la réception UDP et le prétraitement des images :
 
 ```
-[UDP Thread] → [Image Preprocessor] → [IMAGE SEQUENCER] → [Synthèses/DMX/Display]
-                PreprocessedImageData     NEW MODULE         Ligne unifiée
+[UDP Thread] → [IMAGE SEQUENCER] → [Image Preprocessor] → [Synthèses/DMX/Display]
+     RGB raw      Mix RGB + Live       RGB → Grayscale         Ligne unifiée
+                                        + Calcul Pan/DMX
 ```
+
+**Architecture correcte** :
+1. Le séquenceur reçoit et stocke les données RGB brutes (3 × 3456 pixels)
+2. Le mixage se fait sur les données RGB (pas sur les données prétraitées)
+3. Le preprocessing (grayscale, pan, contrast, DMX) s'applique APRÈS le mixage
+4. Cela garantit que le calcul du pan stéréo est basé sur la température de couleur du résultat mixé
+
+**Pourquoi cette architecture** :
+- Le pan stéréo est calculé à partir de la température de couleur (couleurs chaudes → droite, froides → gauche)
+- Mixer des pans précalculés donnerait un résultat incorrect : moyenne(pan_rouge, pan_bleu) ≠ pan(rouge + bleu)
+- Exemple : Rouge (pan droite) + Bleu (pan gauche) = Violet (pan centre) ✓
+- Mais : average(pan_droite, pan_gauche) = centre ✗ (fonctionne par hasard mais conceptuellement faux)
 
 ### 1.2 Fonction principale
 
-Enregistrer, manipuler temporellement et mixer des séquences de lignes d'images prétraitées avant de les transmettre aux consommateurs.
+Enregistrer, manipuler temporellement et mixer des séquences de lignes RGB brutes, puis transmettre le résultat mixé au module de prétraitement.
+
+**Flux détaillé** :
+1. **Enregistrement** : Capture des RGB bruts depuis le flux UDP live
+2. **Manipulation** : Contrôle temporel (vitesse, direction, boucles, offset)
+3. **Mixage** : Fusion pondérée de plusieurs séquences + live (si activé)
+4. **Sortie** : RGB mixé transmis à `image_preprocessor` pour calcul du grayscale/pan/DMX
 
 ### 1.3 Valeur ajoutée
 
@@ -36,23 +55,35 @@ Enregistrer, manipuler temporellement et mixer des séquences de lignes d'images
 
 ### 2.1 Données d'entrée/sortie
 
-#### Entrée : `PreprocessedImageData`
+#### Entrée : RGB brut (Raw RGB Data)
 - **Résolution** : **3456 pixels** exactement (400 DPI)
 - **Source** : `CIS_MAX_PIXELS_NB` défini dans `config_instrument.h`
-- **Composantes** :
-  - `grayscale[3456]` : Données normalisées [0.0, 1.0]
-  - `contrast_factor` : Facteur de contraste calculé
-  - `stereo` : Données de panoramique stéréo (si activé)
-    - `pan_positions[]` : Positions pan par note
-    - `left_gains[]`, `right_gains[]` : Gains L/R par note
-  - `dmx` : Zones DMX moyennées RGB (si activé)
-    - `zone_r[]`, `zone_g[]`, `zone_b[]`
+- **Format** : 3 buffers séparés
+  - `buffer_R[3456]` : Canal rouge (uint8_t, [0-255])
+  - `buffer_G[3456]` : Canal vert (uint8_t, [0-255])
+  - `buffer_B[3456]` : Canal bleu (uint8_t, [0-255])
   - `timestamp_us` : Timestamp microseconde
 
-#### Sortie : `PreprocessedImageData` (format identique)
-- Résultat du mix de toutes les sources actives (séquences + live)
-- Maintien de la compatibilité 100% avec tous les consommateurs existants
-- **Garantie** : Format strictement identique à l'entrée
+**Structure de données** :
+```c
+typedef struct {
+    uint8_t *buffer_R;      // 3456 pixels
+    uint8_t *buffer_G;      // 3456 pixels
+    uint8_t *buffer_B;      // 3456 pixels
+    uint64_t timestamp_us;
+} RawImageFrame;
+```
+
+#### Sortie : RGB mixé (Mixed RGB Data)
+- **Format identique** : 3 buffers RGB (3456 pixels chacun)
+- **Contenu** : Résultat du mix de toutes les sources actives (séquences + live)
+- **Traitement ultérieur** : Ce RGB mixé est ensuite prétraité (grayscale, pan, contrast, DMX) avant d'être envoyé aux synthèses/DMX/affichage
+
+**Avantages de stocker RGB** :
+- **Légèreté** : 10.4 KB/frame vs 55 KB/frame (5× plus léger)
+- **Correctness** : Pan calculé sur RGB mixé, pas moyenne de pans précalculés
+- **Couleur préservée** : Affichage des vraies couleurs pendant le playback
+- **Mémoire** : 260 MB totale vs 1.6 GB (6× économie)
 
 ### 2.2 Capacité de stockage
 
@@ -61,26 +92,37 @@ Enregistrer, manipuler temporellement et mixer des séquences de lignes d'images
 | Nombre de séquences | 5 | `sequencer_max_sequences=5` |
 | Durée max/séquence | 5 secondes | `sequencer_max_duration_s=5.0` |
 | Fréquence d'acquisition | 1000 images/s | Fixe (UDP) |
-| Mémoire/séquence | ~70-80 MB | 5000 frames × PreprocessedImageData |
-| Mémoire totale | ~350-400 MB | Acceptable sur 4-8 Go RAM |
+| Mémoire/séquence | ~52 MB | 5000 frames × RawImageFrame |
+| Mémoire totale | ~260 MB | Acceptable sur 4-8 Go RAM |
 
-**Calcul mémoire détaillé** :
+**Calcul mémoire détaillé** (nouveau format RGB) :
 ```c
-sizeof(PreprocessedImageData) ≈ 
-    grayscale[3456] * 4 bytes           = 13.8 KB
-    + stereo.pan_positions[3456] * 4    = 13.8 KB
-    + stereo.left_gains[3456] * 4       = 13.8 KB
-    + stereo.right_gains[3456] * 4      = 13.8 KB
-    + dmx zones (~ 20 spots × 3 bytes)  = ~0.06 KB
-    + metadata                           = ~0.5 KB
-    ≈ 55 KB par frame
+sizeof(RawImageFrame) = 
+    buffer_R[3456] * 1 byte     = 3.456 KB
+    + buffer_G[3456] * 1 byte   = 3.456 KB
+    + buffer_B[3456] * 1 byte   = 3.456 KB
+    + timestamp_us (8 bytes)    = 0.008 KB
+    ≈ 10.4 KB par frame
 
 5 secondes @ 1000 fps = 5000 frames
-5000 frames × 55 KB ≈ 275 MB par séquence
+5000 frames × 10.4 KB = 52 MB par séquence
 
-5 séquences × 275 MB = 1.375 GB
-+ Overhead système ~200 MB
-Total ≈ 1.6 GB (confortable sur 4-8 GB RAM)
+5 séquences × 52 MB = 260 MB
++ Overhead système ~50 MB
+Total ≈ 310 MB (confortable sur 4-8 GB RAM)
+```
+
+**Comparaison avec l'ancien format (PreprocessedImageData)** :
+```c
+Ancien format (PreprocessedImageData):
+    55 KB/frame × 5000 frames = 275 MB/séquence
+    5 séquences = 1.375 GB + overhead = 1.6 GB total
+
+Nouveau format (RawImageFrame RGB):
+    10.4 KB/frame × 5000 frames = 52 MB/séquence
+    5 séquences = 260 MB + overhead = 310 MB total
+
+Économie: 1.6 GB → 310 MB = 81% de réduction (5.2× plus léger)
 ```
 
 **Note** : Les paramètres sont configurables dans `sp3ctra.ini` pour ajustement selon les besoins.
@@ -342,434 +384,3 @@ void image_sequencer_register_midi_callbacks(ImageSequencer *seq);
 Cette fonction enregistre automatiquement tous les callbacks nécessaires auprès du système MIDI unifié.
 
 **Voir** : `MIDI_SYSTEM_SPECIFICATION.md` section 6 pour les détails d'implémentation.
-
----
-
-## 5. ARCHITECTURE LOGICIELLE
-
-### 5.1 Structure de données
-
-**Fichier** : `src/processing/image_sequencer.h`
-
-```c
-#ifndef IMAGE_SEQUENCER_H
-#define IMAGE_SEQUENCER_H
-
-#include <stdint.h>
-#include <pthread.h>
-#include "../processing/image_preprocessor.h"
-
-/* Configuration constants */
-#define MAX_SEQUENCE_DURATION_S 10.0f
-#define MAX_SEQUENCE_FRAMES (int)(MAX_SEQUENCE_DURATION_S * 1000) // 10000 frames max
-#define DEFAULT_NUM_PLAYERS 5
-
-/* Player state machine */
-typedef enum {
-    PLAYER_STATE_IDLE,       // No sequence loaded
-    PLAYER_STATE_RECORDING,  // Recording from live
-    PLAYER_STATE_READY,      // Sequence loaded, ready to play
-    PLAYER_STATE_PLAYING,    // Active playback
-    PLAYER_STATE_STOPPED,    // Paused but still in mix (frame frozen)
-    PLAYER_STATE_MUTED       // Muted, removed from mix
-} PlayerState;
-
-/* Loop modes */
-typedef enum {
-    LOOP_MODE_SIMPLE,        // A→B→A→B...
-    LOOP_MODE_PINGPONG,      // A→B→A→B→A...
-    LOOP_MODE_ONESHOT        // A→B→[STOP]
-} LoopMode;
-
-/* Trigger modes */
-typedef enum {
-    TRIGGER_MODE_MANUAL,     // Manual start via MIDI/API
-    TRIGGER_MODE_AUTO,       // Auto-start after recording
-    TRIGGER_MODE_SYNC        // Sync to MIDI clock (quantized)
-} TriggerMode;
-
-/* Blend modes for mixing sequences */
-typedef enum {
-    BLEND_MODE_MIX,          // Weighted average
-    BLEND_MODE_CROSSFADE,    // Linear interpolation
-    BLEND_MODE_OVERLAY,      // Additive with clipping
-    BLEND_MODE_MASK          // Multiplicative masking
-} BlendMode;
-
-/* ADSR envelope for volume shaping */
-typedef struct {
-    /* Parameters (in milliseconds) */
-    float attack_ms;
-    float decay_ms;
-    float sustain_level;     // [0.0, 1.0]
-    float release_ms;
-    
-    /* Runtime state */
-    float current_level;     // Current envelope output [0.0, 1.0]
-    uint64_t trigger_time_us;
-    uint64_t release_time_us;
-    int is_triggered;        // 1 = attack/sustain phase, 0 = release phase
-} ADSREnvelope;
-
-/* Sequence player (one per sequence) */
-typedef struct {
-    /* Sequence storage (ring buffer) */
-    PreprocessedImageData *frames;  // Statically allocated at init
-    int buffer_capacity;             // Max frames (e.g., 5000 for 5s @ 1000fps)
-    int recorded_frames;             // Actual recorded frames
-    
-    /* Playback control */
-    float playback_position;         // Current position (float for fractional speeds)
-    float playback_speed;            // Speed multiplier [0.1, 10.0]
-    int playback_offset;             // Start offset in frames
-    int playback_direction;          // 1 = forward, -1 = backward (for ping-pong)
-    
-    /* State and modes */
-    PlayerState state;
-    LoopMode loop_mode;
-    TriggerMode trigger_mode;
-    
-    /* Envelope */
-    ADSREnvelope envelope;
-    
-    /* Mix level */
-    float blend_level;               // Player's contribution to mix [0.0, 1.0]
-    
-} SequencePlayer;
-
-/* Main sequencer structure */
-typedef struct {
-    /* Players array */
-    SequencePlayer *players;         // Array of players (static allocation)
-    int num_players;                 // Number of players (e.g., 5)
-    
-    /* Global mix control */
-    BlendMode blend_mode;            // Current blending mode
-    float live_mix_level;            // Live input mix level [0.0, 1.0]
-    
-    /* MIDI clock sync */
-    float bpm;                       // Current BPM (from MIDI or manual)
-    int midi_clock_sync;             // 1 = sync to MIDI clock, 0 = free-running
-    uint64_t last_clock_us;          // Last MIDI clock tick timestamp
-    
-    /* Output buffer (reused every frame) */
-    PreprocessedImageData output_frame;
-    
-    /* Thread safety */
-    pthread_mutex_t mutex;           // Protects all state (lightweight, < 10us)
-    
-    /* Statistics */
-    uint64_t frames_processed;
-    uint64_t total_process_time_us;
-    
-} ImageSequencer;
-
-/* ============================================================================
- * PUBLIC API
- * ============================================================================ */
-
-/* Initialization and cleanup */
-ImageSequencer* image_sequencer_create(int num_players, float max_duration_s);
-void image_sequencer_destroy(ImageSequencer *seq);
-
-/* Player control - Recording */
-int image_sequencer_start_recording(ImageSequencer *seq, int player_id);
-int image_sequencer_stop_recording(ImageSequencer *seq, int player_id);
-
-/* Player control - Playback */
-int image_sequencer_start_playback(ImageSequencer *seq, int player_id);
-int image_sequencer_stop_playback(ImageSequencer *seq, int player_id);
-int image_sequencer_toggle_playback(ImageSequencer *seq, int player_id);
-
-/* Player parameters */
-void image_sequencer_set_speed(ImageSequencer *seq, int player_id, float speed);
-void image_sequencer_set_offset(ImageSequencer *seq, int player_id, int offset_frames);
-void image_sequencer_set_loop_mode(ImageSequencer *seq, int player_id, LoopMode mode);
-void image_sequencer_set_trigger_mode(ImageSequencer *seq, int player_id, TriggerMode mode);
-void image_sequencer_set_blend_level(ImageSequencer *seq, int player_id, float level);
-void image_sequencer_set_playback_direction(ImageSequencer *seq, int player_id, int direction);
-
-/* Player state control */
-int image_sequencer_mute_player(ImageSequencer *seq, int player_id);
-int image_sequencer_unmute_player(ImageSequencer *seq, int player_id);
-int image_sequencer_toggle_mute(ImageSequencer *seq, int player_id);
-
-/* ADSR control */
-void image_sequencer_set_adsr(ImageSequencer *seq, int player_id, 
-                              float attack_ms, float decay_ms, 
-                              float sustain_level, float release_ms);
-void image_sequencer_trigger_envelope(ImageSequencer *seq, int player_id);
-void image_sequencer_release_envelope(ImageSequencer *seq, int player_id);
-
-/* Global control */
-void image_sequencer_set_blend_mode(ImageSequencer *seq, BlendMode mode);
-void image_sequencer_set_live_mix_level(ImageSequencer *seq, float level);
-void image_sequencer_set_bpm(ImageSequencer *seq, float bpm);
-void image_sequencer_enable_midi_sync(ImageSequencer *seq, int enable);
-
-/* MIDI clock integration */
-void image_sequencer_midi_clock_tick(ImageSequencer *seq);
-void image_sequencer_midi_clock_start(ImageSequencer *seq);
-void image_sequencer_midi_clock_stop(ImageSequencer *seq);
-
-/* Main processing function (called from UDP thread or dedicated thread) */
-int image_sequencer_process_frame(
-    ImageSequencer *seq,
-    const PreprocessedImageData *live_input,
-    PreprocessedImageData *output
-);
-
-/* MIDI callback registration */
-void image_sequencer_register_midi_callbacks(ImageSequencer *seq);
-
-/* Statistics and debugging */
-void image_sequencer_get_stats(ImageSequencer *seq, 
-                               uint64_t *frames_processed, 
-                               float *avg_process_time_us);
-void image_sequencer_print_status(ImageSequencer *seq);
-
-#endif /* IMAGE_SEQUENCER_H */
-```
-
-### 5.2 Intégration dans main.c
-
-Deux options architecturales possibles :
-
-#### Option A : Traitement dans le thread UDP (synchrone) ✅ RECOMMANDÉ
-
-```c
-// Dans udpThread() après image_preprocess_frame()
-PreprocessedImageData preprocessed_data;
-image_preprocess_frame(R, G, B, &preprocessed_data);
-
-// Nouveau: Traiter via le séquenceur
-PreprocessedImageData sequencer_output;
-if (image_sequencer_process_frame(g_sequencer, &preprocessed_data, &sequencer_output) == 0) {
-    // Utiliser la sortie du séquenceur pour audio/DMX/display
-    process_audio_with_data(&sequencer_output);
-} else {
-    // Fallback: utiliser directement les données prétraitées
-    process_audio_with_data(&preprocessed_data);
-}
-```
-
-**Avantages** :
-- Simplicité d'intégration
-- Pas de thread supplémentaire
-- Latence minimale
-- Synchronisation naturelle avec l'arrivée des données
-
-**Inconvénients** :
-- Charge CPU dans le thread UDP
-- Moins d'isolation
-
-#### Option B : Thread dédié séquenceur (asynchrone)
-
-```
-UDP Thread : [Receive] → [Preprocess] → [Ring Buffer] 
-                                              ↓
-                                    Sequencer Thread → [Audio Buffers]
-```
-
-**Avantages** :
-- Isolation du traitement
-- Priorité RT indépendante
-- Possibilité de buffer plus important
-
-**Inconvénients** :
-- Complexité accrue
-- Synchronisation supplémentaire
-- Latence additionnelle
-
-**Décision** : Commencer avec Option A, migrer vers B si nécessaire.
-
----
-
-## 6. CONFIGURATION (sp3ctra.ini)
-
-Ajouter une nouvelle section au fichier `sp3ctra.ini` :
-
-```ini
-# ============================================================================
-# IMAGE SEQUENCER CONFIGURATION
-# ============================================================================
-
-[SEQUENCER]
-# Enable/disable sequencer module
-enabled=1
-
-# Number of sequence players (1-10)
-num_players=5
-
-# Maximum duration per sequence in seconds (1.0-60.0)
-max_duration_s=5.0
-
-# Global blend mode: MIX, CROSSFADE, OVERLAY, MASK
-blend_mode=MIX
-
-# Live mix level (0.0 = no live, 1.0 = full live)
-live_mix_level=0.5
-
-# Player default parameters
-default_loop_mode=LOOP_SIMPLE      # LOOP_SIMPLE, LOOP_PINGPONG, ONESHOT
-default_trigger_mode=MANUAL        # MANUAL, AUTO, SYNC
-default_speed=1.0                  # Playback speed multiplier
-
-# ADSR envelope defaults (in milliseconds)
-default_attack_ms=10.0
-default_decay_ms=50.0
-default_sustain_level=0.8          # 0.0 to 1.0
-default_release_ms=100.0
-
-# MIDI synchronization (see MIDI_SYSTEM_SPECIFICATION.md)
-midi_clock_sync=1                  # 1 = sync to MIDI clock, 0 = free-running
-default_bpm=120.0                  # Fallback BPM if no MIDI clock
-
-# Quantization resolution for SYNC trigger mode
-# Options: QUARTER (1/4), EIGHTH (1/8), SIXTEENTH (1/16), BAR (1 bar)
-quantize_resolution=EIGHTH
-```
-
----
-
-## 7. AFFICHAGE VISUEL
-
-### 7.1 Intégration avec le balayage existant
-
-Le module `display.c` continue de fonctionner **sans modification** :
-- Il reçoit le **mix final** produit par le séquenceur
-- Le balayage montre la combinaison live + séquences actives
-- Aucun changement d'interface utilisateur nécessaire
-
-**Workflow** :
-```
-Séquenceur → output_frame → display.c → Affichage SFML
-```
-
-### 7.2 Monitoring optionnel (Phase future)
-
-Possibilité d'ajouter un overlay pour afficher :
-- État des players (⚫ IDLE / 🔴 REC / ▶️ PLAY / ⏸️ STOP)
-- Niveau de chaque player (bargraph)
-- Position de lecture (progress bar)
-- Enveloppe ADSR actuelle (graphique)
-
----
-
-## 8. PLAN DE DÉVELOPPEMENT
-
-### Phase 1 : Infrastructure de base (Semaine 1)
-- [ ] Créer `src/processing/image_sequencer.h` avec structures de données
-- [ ] Créer `src/processing/image_sequencer.c` avec fonctions de base
-- [ ] Implémenter `image_sequencer_create()` avec allocation statique
-- [ ] Implémenter `image_sequencer_destroy()`
-- [ ] Intégrer dans `main.c` (mode pass-through initial)
-- [ ] Compiler et tester sur macOS et Raspberry Pi 5
-
-**Livrables** :
-- Code compilable
-- Module initialisable sans erreur
-- Pass-through fonctionnel (entrée = sortie)
-
-### Phase 2 : Enregistrement/Lecture simple (Semaine 2)
-- [ ] Implémenter `image_sequencer_start_recording()`
-- [ ] Implémenter `image_sequencer_stop_recording()`
-- [ ] Implémenter enregistrement dans `process_frame()`
-- [ ] Implémenter `image_sequencer_start_playback()`
-- [ ] Implémenter lecture à vitesse normale (×1)
-- [ ] Implémenter mode loop simple
-
-**Tests** :
-- Enregistrer 5s de séquence
-- Lire en boucle
-- Vérifier intégrité des données
-
-### Phase 3 : Contrôle de lecture avancé (Semaine 3)
-- [ ] Vitesses variables (×0.25 à ×8)
-- [ ] Interpolation pour vitesses fractionnaires
-- [ ] Offset temporel
-- [ ] Mode ping-pong
-- [ ] Mode one-shot
-
-**Tests** :
-- Lecture à toutes les vitesses
-- Transitions fluides
-- Boundaries correctes
-
-### Phase 4 : Fusion et mix (Semaine 4)
-- [ ] Implémenter BLEND_MODE_MIX
-- [ ] Implémenter BLEND_MODE_OVERLAY
-- [ ] Implémenter BLEND_MODE_MASK
-- [ ] Mix live + séquences
-- [ ] Enveloppe ADSR
-
-**Tests** :
-- Mix de 5 séquences
-- Transitions ADSR
-- Niveaux corrects
-
-### Phase 5 : Intégration MIDI (Semaine 5)
-- [ ] Enregistrer callbacks auprès du système MIDI unifié
-- [ ] Intégration MIDI clock
-- [ ] Quantification temporelle
-- [ ] Tests avec contrôleur
-
-**Tests** :
-- Contrôle via MIDI
-- Sync MIDI clock
-- Quantification précise
-
-### Phase 6 : Configuration et optimisation (Semaine 6)
-- [ ] Support complet `sp3ctra.ini`
-- [ ] Optimisations ARM NEON (si nécessaire)
-- [ ] Profiling et tuning
-- [ ] Documentation finale
-
-**Tests** :
-- Benchmarks de performance
-- Tests de charge 60s
-- Validation zéro underrun
-
----
-
-## 9. CRITÈRES DE SUCCÈS
-
-### 9.1 Critères fonctionnels
-✅ Enregistrement de 5 séquences de 5 secondes  
-✅ Lecture à vitesses variables (0.25× à 8×)  
-✅ 3 modes de boucle fonctionnels  
-✅ Mix de 5 séquences simultanées  
-✅ Enveloppe ADSR sur chaque player  
-✅ Contrôle MIDI complet (via système unifié)  
-✅ Sync MIDI clock avec quantification  
-
-### 9.2 Critères de performance
-✅ Latence < 1 ms par frame  
-✅ CPU < 50% avec 5 players actifs (RPi5)  
-✅ Zéro allocation dynamique en RT path  
-✅ Zéro underrun audio sur 60s  
-✅ Démarrage < 5s (chargement + allocation)  
-
-### 9.3 Critères de qualité
-✅ Code conforme aux .clinerules  
-✅ Commentaires en anglais  
-✅ Tests unitaires > 80% coverage  
-✅ Documentation complète  
-✅ Pas de warnings clang-tidy  
-
----
-
-## 10. RÉFÉRENCES
-
-- **MIDI_SYSTEM_SPECIFICATION.md** : Spécification du système MIDI unifié
-- **config_instrument.h** : Définition de `CIS_MAX_PIXELS_NB` (3456 pixels)
-- **image_preprocessor.h** : Structure `PreprocessedImageData`
-- **sp3ctra.ini** : Configuration générale de l'application
-
----
-
-## CHANGELOG
-
-| Version | Date | Auteur | Modifications |
-|---------|------|--------|---------------|
-| 1.0

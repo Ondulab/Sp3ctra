@@ -406,37 +406,65 @@ void *udpThread(void *arg) {
         audio_write_started = 0;
       }
 
-      // 🎯 NEW: Preprocess the complete image (grayscale, contrast, stereo, DMX)
-      // This is done ONCE per received image in the UDP thread
-      PreprocessedImageData preprocessed_temp;
-      if (image_preprocess_frame(db->activeBuffer_R, db->activeBuffer_G, 
-                                 db->activeBuffer_B, &preprocessed_temp) == 0) {
-#ifdef DEBUG_UDP
-        printf("[UDP] Preprocessing complete: contrast=%.3f, timestamp=%llu\n",
-               preprocessed_temp.contrast_factor, preprocessed_temp.timestamp_us);
-#endif
-        
-        // 🎬 Process through sequencer (recording/playback/mix)
-        if (g_image_sequencer) {
-          PreprocessedImageData sequenced_output;
-          image_sequencer_process_frame(g_image_sequencer, &preprocessed_temp, &sequenced_output);
-          preprocessed_temp = sequenced_output; // Use sequenced output
+      // 🎬 NEW ARCHITECTURE: Sequencer BEFORE preprocessing
+      // 1. Sequencer mixes RGB (live + sequences)
+      // 2. Preprocessing calculates grayscale/pan/DMX from MIXED RGB
+      // 3. Display shows the MIXED RGB colors
+      
+      uint8_t mixed_R[CIS_MAX_PIXELS_NB];
+      uint8_t mixed_G[CIS_MAX_PIXELS_NB];
+      uint8_t mixed_B[CIS_MAX_PIXELS_NB];
+      
+      // Step 1: Mix RGB through sequencer (or passthrough if no sequencer)
+      if (g_image_sequencer) {
+        if (image_sequencer_process_frame(g_image_sequencer,
+                                          db->activeBuffer_R, db->activeBuffer_G, db->activeBuffer_B,
+                                          mixed_R, mixed_G, mixed_B) != 0) {
+          printf("[UDP] ERROR: Sequencer processing failed, using live RGB\n");
+          memcpy(mixed_R, db->activeBuffer_R, CIS_MAX_PIXELS_NB);
+          memcpy(mixed_G, db->activeBuffer_G, CIS_MAX_PIXELS_NB);
+          memcpy(mixed_B, db->activeBuffer_B, CIS_MAX_PIXELS_NB);
         }
       } else {
+        // No sequencer: passthrough live RGB
+        memcpy(mixed_R, db->activeBuffer_R, CIS_MAX_PIXELS_NB);
+        memcpy(mixed_G, db->activeBuffer_G, CIS_MAX_PIXELS_NB);
+        memcpy(mixed_B, db->activeBuffer_B, CIS_MAX_PIXELS_NB);
+      }
+      
+      // Step 2: Preprocess the MIXED RGB (pan calculated from mixed color temperature)
+      PreprocessedImageData preprocessed_temp;
+      if (image_preprocess_frame(mixed_R, mixed_G, mixed_B, &preprocessed_temp) != 0) {
         printf("[UDP] ERROR: Image preprocessing failed\n");
       }
 
-      // Handle legacy double buffer (for display) and preprocessed data
+      // Step 3: Update display buffers with MIXED RGB (fixes N&B display issue)
       pthread_mutex_lock(&db->mutex);
+      
+      // CRITICAL FIX: Copy mixed RGB to activeBuffer so display shows colors
+      memcpy(db->activeBuffer_R, mixed_R, CIS_MAX_PIXELS_NB);
+      memcpy(db->activeBuffer_G, mixed_G, CIS_MAX_PIXELS_NB);
+      memcpy(db->activeBuffer_B, mixed_B, CIS_MAX_PIXELS_NB);
+      
       swapBuffers(db);
-      updateLastValidImage(db); // Save image for audio persistence
-      
-      // Store preprocessed data in single mutex-protected buffer
+      updateLastValidImage(db);
       db->preprocessed_data = preprocessed_temp;
-      
       db->dataReady = 1;
       pthread_cond_signal(&db->cond);
       pthread_mutex_unlock(&db->mutex);
+      
+      // 🎨 DISPLAY FIX: Update global display buffers with MIXED RGB colors
+      // This replaces the grayscale→RGB conversion in synth_additive.c
+      extern uint8_t g_displayable_synth_R[CIS_MAX_PIXELS_NB];
+      extern uint8_t g_displayable_synth_G[CIS_MAX_PIXELS_NB];
+      extern uint8_t g_displayable_synth_B[CIS_MAX_PIXELS_NB];
+      extern pthread_mutex_t g_displayable_synth_mutex;
+      
+      pthread_mutex_lock(&g_displayable_synth_mutex);
+      memcpy(g_displayable_synth_R, mixed_R, CIS_MAX_PIXELS_NB);
+      memcpy(g_displayable_synth_G, mixed_G, CIS_MAX_PIXELS_NB);
+      memcpy(g_displayable_synth_B, mixed_B, CIS_MAX_PIXELS_NB);
+      pthread_mutex_unlock(&g_displayable_synth_mutex);
 
       // Capture raw scanner data only when new UDP data arrives
       // Function handles runtime enable/disable internally
