@@ -14,6 +14,7 @@
 #include "../../audio/effects/three_band_eq.h"
 #include "../../synthesis/additive/synth_additive.h"
 #include "../../synthesis/polyphonic/synth_polyphonic.h"
+#include "../../processing/image_sequencer.h"
 #include <stdio.h>
 #include <pthread.h>
 
@@ -21,6 +22,7 @@
 extern AudioSystem *gAudioSystem;
 extern ThreeBandEQ *gEqualizer;
 extern MidiController *gMidiController;
+extern ImageSequencer *g_image_sequencer;
 
 /* External declarations for synth freeze control */
 extern pthread_mutex_t g_synth_data_freeze_mutex;
@@ -61,7 +63,8 @@ void midi_cb_audio_reverb_size(const MidiParameterValue *param, void *user_data)
         if (!gAudioSystem->isReverbEnabled()) {
             gAudioSystem->enableReverb(true);
         }
-        // TODO: Implement setReverbSize method in AudioSystem
+        gAudioSystem->setReverbRoomSize(param->value);
+        
         printf("\033[1;36mREVERB SIZE: %.2f\033[0m\n", param->value);
     }
 }
@@ -73,7 +76,8 @@ void midi_cb_audio_reverb_damp(const MidiParameterValue *param, void *user_data)
         if (!gAudioSystem->isReverbEnabled()) {
             gAudioSystem->enableReverb(true);
         }
-        // TODO: Implement setReverbDamp method in AudioSystem
+        gAudioSystem->setReverbDamping(param->value);
+        
         printf("\033[1;36mREVERB DAMP: %.2f\033[0m\n", param->value);
     }
 }
@@ -85,7 +89,8 @@ void midi_cb_audio_reverb_width(const MidiParameterValue *param, void *user_data
         if (!gAudioSystem->isReverbEnabled()) {
             gAudioSystem->enableReverb(true);
         }
-        // TODO: Implement setReverbWidth method in AudioSystem
+        gAudioSystem->setReverbWidth(param->value);
+        
         printf("\033[1;36mREVERB WIDTH: %.2f\033[0m\n", param->value);
     }
 }
@@ -254,82 +259,110 @@ void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *us
 
 void midi_cb_sequencer_player_record_toggle(const MidiParameterValue *param, void *user_data) {
     (void)param;
-    (void)user_data;
     
-    // TODO: Implement sequencer record toggle
-    printf("Sequencer: Record toggle\n");
+    if (!g_image_sequencer || !user_data) return;
+    
+    int player_id = *(int*)user_data;
+    PlayerState state = image_sequencer_get_player_state(g_image_sequencer, player_id);
+    
+    if (state == PLAYER_STATE_RECORDING) {
+        image_sequencer_stop_recording(g_image_sequencer, player_id);
+    } else {
+        image_sequencer_start_recording(g_image_sequencer, player_id);
+    }
 }
 
 void midi_cb_sequencer_player_play_stop(const MidiParameterValue *param, void *user_data) {
     (void)param;
-    (void)user_data;
     
-    // TODO: Implement sequencer play/stop
-    printf("Sequencer: Play/Stop\n");
+    if (!g_image_sequencer || !user_data) return;
+    
+    int player_id = *(int*)user_data;
+    image_sequencer_toggle_playback(g_image_sequencer, player_id);
 }
 
 void midi_cb_sequencer_player_mute_toggle(const MidiParameterValue *param, void *user_data) {
     (void)param;
-    (void)user_data;
     
-    // TODO: Implement sequencer mute toggle
-    printf("Sequencer: Mute toggle\n");
+    if (!g_image_sequencer || !user_data) return;
+    
+    int player_id = *(int*)user_data;
+    image_sequencer_toggle_mute(g_image_sequencer, player_id);
 }
 
 void midi_cb_sequencer_player_speed(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
+    if (!g_image_sequencer || !user_data) return;
     
-    // TODO: Implement sequencer speed control
-    printf("Sequencer: Speed %.2fx\n", param->raw_value);
+    int player_id = *(int*)user_data;
+    image_sequencer_set_speed(g_image_sequencer, player_id, param->raw_value);
+    
+    printf("\033[1;33mSEQ Player %d: Speed %.2fx\033[0m\n", player_id, param->raw_value);
 }
 
 void midi_cb_sequencer_player_blend_level(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
+    if (!g_image_sequencer || !user_data) return;
     
-    // TODO: Implement sequencer blend level
-    printf("Sequencer: Blend level %d%%\n", (int)(param->value * 100));
+    int player_id = *(int*)user_data;
+    image_sequencer_set_blend_level(g_image_sequencer, player_id, param->value);
+    
+    printf("\033[1;33mSEQ Player %d: Blend %d%%\033[0m\n", player_id, (int)(param->value * 100));
 }
 
 void midi_cb_sequencer_player_offset(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
+    if (!g_image_sequencer || !user_data) return;
     
-    // TODO: Implement sequencer offset
-    printf("Sequencer: Offset %d%%\n", (int)(param->value * 100));
+    int player_id = *(int*)user_data;
+    // Convert 0.0-1.0 to frame offset (will be clamped to recorded_frames)
+    int offset_frames = (int)(param->value * 5000); // Max 5000 frames
+    image_sequencer_set_offset(g_image_sequencer, player_id, offset_frames);
+    
+    printf("\033[1;33mSEQ Player %d: Offset %d frames\033[0m\n", player_id, offset_frames);
 }
 
 void midi_cb_sequencer_player_attack(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
+    if (!g_image_sequencer || !user_data) return;
     
-    // TODO: Implement sequencer attack
-    printf("Sequencer: Attack %d ms\n", (int)param->raw_value);
+    int player_id = *(int*)user_data;
+    // Keep current envelope settings, only update attack
+    image_sequencer_set_adsr(g_image_sequencer, player_id, param->raw_value, 50.0f, 0.7f, 200.0f);
+    
+    printf("\033[1;33mSEQ Player %d: Attack %.0f ms\033[0m\n", player_id, param->raw_value);
 }
 
 void midi_cb_sequencer_player_release(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
+    if (!g_image_sequencer || !user_data) return;
     
-    // TODO: Implement sequencer release
-    printf("Sequencer: Release %d ms\n", (int)param->raw_value);
+    int player_id = *(int*)user_data;
+    // Keep current envelope settings, only update release
+    image_sequencer_set_adsr(g_image_sequencer, player_id, 100.0f, 50.0f, 0.7f, param->raw_value);
+    
+    printf("\033[1;33mSEQ Player %d: Release %.0f ms\033[0m\n", player_id, param->raw_value);
 }
 
 void midi_cb_sequencer_player_loop_mode(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
+    if (!g_image_sequencer || !user_data) return;
     
-    // TODO: Implement sequencer loop mode
-    const char *modes[] = {"SIMPLE", "PINGPONG", "ONESHOT"};
+    int player_id = *(int*)user_data;
     int mode = (int)param->raw_value;
+    
+    const char *modes[] = {"SIMPLE", "PINGPONG", "ONESHOT"};
     if (mode >= 0 && mode <= 2) {
-        printf("Sequencer: Loop mode %s\n", modes[mode]);
+        image_sequencer_set_loop_mode(g_image_sequencer, player_id, (LoopMode)mode);
+        printf("\033[1;35mSEQ Player %d: Loop %s\033[0m\n", player_id, modes[mode]);
     }
 }
 
 void midi_cb_sequencer_player_playback_direction(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
+    if (!g_image_sequencer || !user_data) return;
     
-    // TODO: Implement sequencer playback direction
-    const char *dirs[] = {"FORWARD", "REVERSE"};
+    int player_id = *(int*)user_data;
     int dir = (int)param->raw_value;
+    
+    const char *dirs[] = {"FORWARD", "REVERSE"};
+    image_sequencer_set_playback_direction(g_image_sequencer, player_id, dir == 0 ? 1 : -1);
+    
     if (dir >= 0 && dir <= 1) {
-        printf("Sequencer: Playback direction %s\n", dirs[dir]);
+        printf("\033[1;35mSEQ Player %d: Direction %s\033[0m\n", player_id, dirs[dir]);
     }
 }
 
@@ -340,36 +373,45 @@ void midi_cb_sequencer_player_playback_direction(const MidiParameterValue *param
 void midi_cb_sequencer_live_mix_level(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    // TODO: Implement live mix level
-    printf("Sequencer: Live mix %d%%\n", (int)(param->value * 100));
+    if (!g_image_sequencer) return;
+    
+    image_sequencer_set_live_mix_level(g_image_sequencer, param->value);
+    
+    printf("\033[1;36mSEQUENCER: Live mix %d%%\033[0m\n", (int)(param->value * 100));
 }
 
 void midi_cb_sequencer_blend_mode(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    // TODO: Implement blend mode
+    if (!g_image_sequencer) return;
+    
     const char *modes[] = {"MIX", "CROSSFADE", "OVERLAY", "MASK"};
     int mode = (int)param->raw_value;
+    
     if (mode >= 0 && mode <= 3) {
-        printf("Sequencer: Blend mode %s\n", modes[mode]);
+        image_sequencer_set_blend_mode(g_image_sequencer, (BlendMode)mode);
+        printf("\033[1;36mSEQUENCER: Blend mode %s\033[0m\n", modes[mode]);
     }
 }
 
 void midi_cb_sequencer_master_tempo(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    // TODO: Implement master tempo
-    printf("Sequencer: Master tempo %.0f BPM\n", param->raw_value);
+    if (!g_image_sequencer) return;
+    
+    image_sequencer_set_bpm(g_image_sequencer, param->raw_value);
+    
+    printf("\033[1;36mSEQUENCER: Tempo %.0f BPM\033[0m\n", param->raw_value);
 }
 
 void midi_cb_sequencer_quantize_res(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    // TODO: Implement quantize resolution
+    // TODO: Implement quantization (will be part of MIDI sync feature)
     const char *res[] = {"QUARTER", "EIGHTH", "SIXTEENTH", "BAR"};
     int r = (int)param->raw_value;
     if (r >= 0 && r <= 3) {
-        printf("Sequencer: Quantize %s\n", res[r]);
+        printf("\033[1;36mSEQUENCER: Quantize %s\033[0m\n", res[r]);
     }
 }
 
@@ -443,10 +485,65 @@ void midi_callbacks_register_synth_polyphonic(void) {
 void midi_callbacks_register_sequencer(void *sequencer_instance) {
     (void)sequencer_instance;
     
-    // TODO: Register sequencer callbacks with proper player IDs
-    // For now, just stubs
+    if (!g_image_sequencer) {
+        printf("MIDI Callbacks: Sequencer not initialized, skipping registration\n");
+        return;
+    }
     
-    printf("MIDI Callbacks: Sequencer registered (stub)\n");
+    // Register global sequencer controls
+    midi_mapping_register_callback("sequencer_global_live_mix_level", midi_cb_sequencer_live_mix_level, NULL);
+    midi_mapping_register_callback("sequencer_global_blend_mode", midi_cb_sequencer_blend_mode, NULL);
+    midi_mapping_register_callback("sequencer_global_master_tempo", midi_cb_sequencer_master_tempo, NULL);
+    midi_mapping_register_callback("sequencer_global_quantize_res", midi_cb_sequencer_quantize_res, NULL);
+    
+    // Register player-specific controls (static allocation for player IDs)
+    static int player_ids[5] = {0, 1, 2, 3, 4};
+    
+    for (int i = 0; i < 5; i++) {
+        char param_name[64];
+        
+        // Record toggle
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_record_toggle", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_record_toggle, &player_ids[i]);
+        
+        // Play/Stop
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_play_stop", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_play_stop, &player_ids[i]);
+        
+        // Mute toggle
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_mute_toggle", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_mute_toggle, &player_ids[i]);
+        
+        // Speed
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_speed", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_speed, &player_ids[i]);
+        
+        // Blend level
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_blend_level", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_blend_level, &player_ids[i]);
+        
+        // Offset
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_offset", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_offset, &player_ids[i]);
+        
+        // Attack
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_attack", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_attack, &player_ids[i]);
+        
+        // Release
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_release", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_release, &player_ids[i]);
+        
+        // Loop mode
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_loop_mode", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_loop_mode, &player_ids[i]);
+        
+        // Playback direction
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_playback_direction", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_playback_direction, &player_ids[i]);
+    }
+    
+    printf("MIDI Callbacks: Sequencer registered (5 players + global controls)\n");
 }
 
 void midi_callbacks_register_system(void) {
@@ -460,6 +557,7 @@ void midi_callbacks_register_all(void) {
     midi_callbacks_register_audio();
     midi_callbacks_register_synth_additive();
     midi_callbacks_register_synth_polyphonic();
+    midi_callbacks_register_sequencer(NULL);
     midi_callbacks_register_system();
     
     printf("MIDI Callbacks: All registered\n");
