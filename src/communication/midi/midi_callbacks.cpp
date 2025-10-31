@@ -258,16 +258,30 @@ void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *us
  * ============================================================================ */
 
 void midi_cb_sequencer_player_record_toggle(const MidiParameterValue *param, void *user_data) {
+    printf("\033[1;31m[DEBUG] SEQUENCER CALLBACK CALLED: record_toggle\033[0m\n");
     (void)param;
     
-    if (!g_image_sequencer || !user_data) return;
+    if (!g_image_sequencer) {
+        printf("\033[1;31m[DEBUG] ERROR: g_image_sequencer is NULL!\033[0m\n");
+        return;
+    }
+    
+    if (!user_data) {
+        printf("\033[1;31m[DEBUG] ERROR: user_data is NULL!\033[0m\n");
+        return;
+    }
     
     int player_id = *(int*)user_data;
+    printf("\033[1;32m[DEBUG] Player ID: %d\033[0m\n", player_id);
+    
     PlayerState state = image_sequencer_get_player_state(g_image_sequencer, player_id);
+    printf("\033[1;32m[DEBUG] Current state: %d\033[0m\n", state);
     
     if (state == PLAYER_STATE_RECORDING) {
+        printf("\033[1;33m[DEBUG] Stopping recording...\033[0m\n");
         image_sequencer_stop_recording(g_image_sequencer, player_id);
     } else {
+        printf("\033[1;33m[DEBUG] Starting recording...\033[0m\n");
         image_sequencer_start_recording(g_image_sequencer, player_id);
     }
 }
