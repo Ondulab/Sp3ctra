@@ -184,11 +184,6 @@ void synth_polyphonicMode_init(void) {
 // AUDIO_BUFFER_SIZE=512 -> ~86 calls/sec)
 #define POLYPHONIC_PRINT_INTERVAL 86
 
-// Diagnostic counters
-static unsigned long long g_polyphonic_process_count = 0;
-static unsigned long long g_polyphonic_active_voices_total = 0;
-static unsigned long long g_polyphonic_samples_generated = 0;
-
 void synth_polyphonicMode_process(float *audio_buffer,
                                   unsigned int buffer_size) {
   if (audio_buffer == NULL) {
@@ -196,8 +191,6 @@ void synth_polyphonicMode_process(float *audio_buffer,
     return;
   }
   memset(audio_buffer, 0, buffer_size * sizeof(float));
-  
-  g_polyphonic_process_count++;
 
   // Calculate smoothed magnitudes (original logic)
   global_smoothed_magnitudes[0] =
@@ -219,28 +212,8 @@ void synth_polyphonicMode_process(float *audio_buffer,
         (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * global_smoothed_magnitudes[i];
   }
 
-  // DIAGNOSTIC: Count active voices and check FFT magnitudes
-  int active_voice_count = 0;
-  float max_fft_magnitude = 0.0f;
-  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
-    if (poly_voices[i].voice_state != ADSR_STATE_IDLE) {
-      active_voice_count++;
-    }
-  }
-  for (int i = 0; i < MAX_MAPPED_OSCILLATORS; ++i) {
-    if (global_smoothed_magnitudes[i] > max_fft_magnitude) {
-      max_fft_magnitude = global_smoothed_magnitudes[i];
-    }
-  }
-  g_polyphonic_active_voices_total += active_voice_count;
-  
-  // Print diagnostic every second
-  static int diagnostic_print_counter = 0;
-  if (++diagnostic_print_counter >= POLYPHONIC_PRINT_INTERVAL) {
-    diagnostic_print_counter = 0;
-    printf("\033[1;33m[POLY DIAG] Calls=%llu, ActiveVoices=%d, MaxFFT=%.4f, Samples=%llu\033[0m\n",
-           g_polyphonic_process_count, active_voice_count, max_fft_magnitude, g_polyphonic_samples_generated);
-  }
+  // Polyphonic Debug logging disabled for performance
+  // (was causing audio dropouts due to printf() blocking)
 
   for (unsigned int sample_idx = 0; sample_idx < buffer_size; ++sample_idx) {
     float master_sample_sum = 0.0f;
@@ -354,11 +327,6 @@ void synth_polyphonicMode_process(float *audio_buffer,
       voice_sample_sum *= volume_adsr_val;
       voice_sample_sum *= current_voice->last_velocity;
       master_sample_sum += voice_sample_sum;
-      
-      // Track if we're generating non-zero samples
-      if (fabsf(voice_sample_sum) > 0.00001f) {
-        g_polyphonic_samples_generated++;
-      }
     }
 
     master_sample_sum *= MASTER_VOLUME;
