@@ -138,30 +138,6 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       }
     }
 
-  // Use fixed default reverb send levels (now controlled via unified MIDI system callbacks)
-  static const float cached_reverb_send_additive = DEFAULT_REVERB_SEND_ADDITIVE;
-  static const float cached_reverb_send_polyphonic = DEFAULT_REVERB_SEND_POLYPHONIC;
-
-  // DIAGNOSTIC: Track buffer ready states
-  static unsigned long long callback_count = 0;
-  static unsigned long long poly_buffer_ready_count = 0;
-  static unsigned long long poly_buffer_not_ready_count = 0;
-  callback_count++;
-  
-  if (source_fft != nullptr) {
-    poly_buffer_ready_count++;
-  } else {
-    poly_buffer_not_ready_count++;
-  }
-  
-  // Print diagnostic every ~1 second (assuming 512 samples @ 44.1kHz = ~86 calls/sec)
-  static int diag_counter = 0;
-  if (++diag_counter >= 86) {
-    diag_counter = 0;
-    printf("\033[1;36m[AUDIO DIAG] Callbacks=%llu, PolyReady=%llu, PolyNotReady=%llu, MixLevel=%.2f\033[0m\n",
-           callback_count, poly_buffer_ready_count, poly_buffer_not_ready_count, cached_level_polyphonic);
-  }
-
   // OPTIMIZED MIXING - Direct to output with threaded reverb
   for (unsigned int i = 0; i < chunk; i++) {
       float dry_sample_left = 0.0f;

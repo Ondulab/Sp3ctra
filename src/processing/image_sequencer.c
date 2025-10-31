@@ -146,7 +146,7 @@ ImageSequencer *image_sequencer_create(int num_players, float max_duration_s) {
     seq->max_duration_s = max_duration_s;
     seq->enabled = 0;
     seq->blend_mode = BLEND_MODE_MIX;
-    seq->live_mix_level = 1.0f;
+    seq->live_mix_level = 0.0f;  // 0.0 = 100% sequencer, 1.0 = 100% live
     seq->bpm = 120.0f;
     
     if (pthread_mutex_init(&seq->mutex, NULL) != 0) {
