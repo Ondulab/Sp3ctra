@@ -95,7 +95,7 @@ COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/midi/midi_mapping.c \
                         src/communication/midi/midi_callbacks.cpp \
                         src/communication/dmx/dmx.c
-PROCESSING_SOURCES = src/processing/image_preprocessor.c
+PROCESSING_SOURCES = src/processing/image_preprocessor.c src/processing/image_sequencer.c
 THREADING_SOURCES = src/threading/multithreading.c
 UTILS_SOURCES = src/utils/error.c src/utils/image_debug.c
 
