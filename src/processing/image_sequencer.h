@@ -160,6 +160,7 @@ void image_sequencer_trigger_envelope(ImageSequencer *seq, int player_id);
 void image_sequencer_release_envelope(ImageSequencer *seq, int player_id);
 
 /* Global control */
+void image_sequencer_set_enabled(ImageSequencer *seq, int enabled);
 void image_sequencer_set_blend_mode(ImageSequencer *seq, BlendMode mode);
 void image_sequencer_set_live_mix_level(ImageSequencer *seq, float level);
 void image_sequencer_set_bpm(ImageSequencer *seq, float bpm);

@@ -555,6 +555,10 @@ int main(int argc, char **argv) {
   } else {
     printf("[INIT] Image sequencer initialized successfully\n");
     g_image_sequencer = imageSequencer; // Make globally accessible for MIDI
+    
+    // Enable sequencer by default
+    image_sequencer_set_enabled(imageSequencer, 1);
+    printf("[INIT] Image sequencer ENABLED\n");
   }
   
   synth_IfftInit();
