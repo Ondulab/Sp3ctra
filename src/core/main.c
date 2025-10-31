@@ -61,6 +61,7 @@ void sfClock_restart(sfClock *clock) { (void)clock; }
 #include "synth_polyphonic.h" // Added for the new FFT synth mode
 #include "udp.h"
 #include "../processing/image_preprocessor.h"
+#include "../processing/image_sequencer.h"
 
 // External MIDI function declarations (C-compatible)
 extern void midi_Init(void);
@@ -544,6 +545,14 @@ int main(int argc, char **argv) {
   // Initialize image preprocessor module
   image_preprocess_init();
   
+  // Initialize image sequencer (5 players, 5 seconds max duration)
+  ImageSequencer *imageSequencer = image_sequencer_create(5, 5.0f);
+  if (!imageSequencer) {
+    printf("[INIT] ERROR: Failed to initialize image sequencer\n");
+  } else {
+    printf("[INIT] Image sequencer initialized successfully\n");
+  }
+  
   synth_IfftInit();
   synth_polyphonicMode_init(); // Initialize the polyphonic synth mode
   display_Init(window);
@@ -856,6 +865,12 @@ int main(int argc, char **argv) {
   // visual_freeze_cleanup(); // Removed: Old visual-only freeze
   displayable_synth_buffers_cleanup(); // Cleanup displayable synth buffers
   synth_data_freeze_cleanup();         // Cleanup synth data freeze resources
+  
+  // Cleanup image sequencer
+  if (imageSequencer) {
+    image_sequencer_destroy(imageSequencer);
+    imageSequencer = NULL;
+  }
   cleanupDoubleBuffer(&db);            // Cleanup DoubleBuffer resources
   audio_image_buffers_cleanup(
       &audioImageBuffers);     // Cleanup new audio image buffers
