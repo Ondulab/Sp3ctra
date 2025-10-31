@@ -72,6 +72,14 @@ extern void midi_set_note_on_callback(void (*callback)(int noteNumber,
                                                        int velocity));
 extern void midi_set_note_off_callback(void (*callback)(int noteNumber));
 
+// External unified MIDI system declarations
+extern void midi_mapping_init(void);
+extern int midi_mapping_load_parameters(const char *filename);
+extern int midi_mapping_load_mappings(const char *filename);
+extern void midi_callbacks_register_all(void);
+extern void midi_mapping_validate(void);
+extern void midi_mapping_cleanup(void);
+
 // Global signal handler for the application
 volatile sig_atomic_t app_running = 1;
 Context *global_context =
@@ -472,6 +480,32 @@ int main(int argc, char **argv) {
     midi_Init();
     midi_SetupVolumeControl();
 
+    // Initialize unified MIDI mapping system
+    printf("[MIDI] Initializing unified MIDI system...\n");
+    midi_mapping_init();
+    
+    // Load MIDI parameter specifications
+    if (midi_mapping_load_parameters("config/midi_parameters_defaults.ini") != 0) {
+      printf("[MIDI] Warning: Failed to load MIDI parameter specifications\n");
+    } else {
+      printf("[MIDI] ✅ Parameter specifications loaded\n");
+    }
+    
+    // Load user MIDI mappings
+    if (midi_mapping_load_mappings("midi_mapping.ini") != 0) {
+      printf("[MIDI] Warning: Failed to load MIDI mappings\n");
+    } else {
+      printf("[MIDI] ✅ User mappings loaded\n");
+    }
+    
+    // Register all callbacks
+    midi_callbacks_register_all();
+    printf("[MIDI] ✅ Callbacks registered\n");
+    
+    // Validate configuration
+    midi_mapping_validate();
+    printf("[MIDI] ✅ Unified MIDI system initialized\n");
+
     // Try to connect to MIDI controller
     midi_connected = midi_Connect();
     if (midi_connected) {
@@ -826,6 +860,9 @@ int main(int argc, char **argv) {
   audio_image_buffers_cleanup(
       &audioImageBuffers);     // Cleanup new audio image buffers
   udp_cleanup(context.socket); // Cleanup UDP socket to prevent port conflicts
+  
+  // Cleanup unified MIDI system before general MIDI cleanup
+  midi_mapping_cleanup();
   midi_Cleanup();
 
   /* Destroy auto-volume controller (if created) before audio cleanup */

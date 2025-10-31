@@ -92,6 +92,8 @@ SYNTHESIS_POLYPHONIC_SOURCES = src/synthesis/polyphonic/synth_polyphonic.c \
                                src/synthesis/polyphonic/kissfft/kiss_fftr.c
 COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/midi/midi_controller.cpp \
+                        src/communication/midi/midi_mapping.c \
+                        src/communication/midi/midi_callbacks.cpp \
                         src/communication/dmx/dmx.c
 PROCESSING_SOURCES = src/processing/image_preprocessor.c
 THREADING_SOURCES = src/threading/multithreading.c

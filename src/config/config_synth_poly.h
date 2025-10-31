@@ -3,7 +3,7 @@
 #ifndef __CONFIG_SYNTH_POLY_H__
 #define __CONFIG_SYNTH_POLY_H__
 
-#define DISABLE_POLYPHONIC
+//#define DISABLE_POLYPHONIC
 
 /**************************************************************************************
  * Synthesis Mode Configuration - Resource Optimization
