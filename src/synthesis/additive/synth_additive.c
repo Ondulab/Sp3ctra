@@ -741,12 +741,8 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
                  contrast_factor,
                  db);
 
-  // Update global display buffers with original color data
-  pthread_mutex_lock(&g_displayable_synth_mutex);
-  memcpy(g_displayable_synth_R, buffer_R, CIS_MAX_PIXELS_NB);
-  memcpy(g_displayable_synth_G, buffer_G, CIS_MAX_PIXELS_NB);
-  memcpy(g_displayable_synth_B, buffer_B, CIS_MAX_PIXELS_NB);
-  pthread_mutex_unlock(&g_displayable_synth_mutex);
+  // NOTE: g_displayable_synth_R/G/B buffers are now updated in multithreading.c
+  // with the MIXED RGB colors from the sequencer (not grayscale conversion)
   // Additive synthesis finished
 
   // RT-SAFE: Mark buffers as ready using atomic stores (no mutex needed)
