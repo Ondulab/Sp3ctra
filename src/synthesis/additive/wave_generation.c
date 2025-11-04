@@ -15,6 +15,7 @@
 #include "stdlib.h"
 
 #include "error.h"
+#include "logger.h"
 #include "wave_generation.h"
 
 #define PI (3.14159265358979323846)
@@ -87,8 +88,7 @@ uint32_t init_waves(volatile float *unitary_waveform,
   uint32_t note = 0;
   uint32_t current_unitary_waveform_cell = 0;
 
-  printf("---------- WAVES INIT ---------\n");
-  printf("-------------------------------\n");
+  log_info("SYNTH", "---------- WAVES INIT ---------");
 
   // compute cell number for storage all oscillators waveform
   for (uint32_t comma_cnt = 0;
@@ -157,10 +157,11 @@ uint32_t init_waves(volatile float *unitary_waveform,
   }
 
   if ((int)note < get_current_number_of_notes()) {
-    printf("Configuration fail, current pix : %d\n", (int)note);
+    log_error("SYNTH", "Wave generation configuration failed: current pixel = %d", (int)note);
     die("wave init failed");
   }
 
+  log_info("SYNTH", "-------------------------------");
 
   return buffer_len;
 }

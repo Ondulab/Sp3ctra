@@ -18,6 +18,7 @@
 #include "../../config/config_debug.h"
 #include "../../config/config_loader.h"
 #include "../../utils/image_debug.h"
+#include "../../utils/logger.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -170,7 +171,7 @@ int synth_init_thread_pool(void) {
           !worker->precomputed_pan_position || !worker->precomputed_left_gain || !worker->precomputed_right_gain ||
           !worker->last_left_gain || !worker->last_right_gain ||
           !worker->temp_waveBuffer_L || !worker->temp_waveBuffer_R) {
-        printf("Error allocating worker buffers for thread %d\n", i);
+        log_error("SYNTH", "Error allocating worker buffers for thread %d", i);
         return -1;
       }
       
@@ -183,11 +184,11 @@ int synth_init_thread_pool(void) {
 
     // Initialize synchronization
     if (pthread_mutex_init(&worker->work_mutex, NULL) != 0) {
-      printf("Error initializing mutex for thread %d\n", i);
+      log_error("SYNTH", "Error initializing mutex for thread %d", i);
       return -1;
     }
     if (pthread_cond_init(&worker->work_cond, NULL) != 0) {
-      printf("Error initializing condition for thread %d\n", i);
+      log_error("SYNTH", "Error initializing condition for thread %d", i);
       return -1;
     }
   }
@@ -238,7 +239,7 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
   int32_t buff_idx, note, local_note_idx;
   static int f32_logged = 0;
   if (!f32_logged) {
-    printf("[Float32 WORKER] Using Float32 path in workers\n");
+    log_info("SYNTH", "Float32 WORKER: Using Float32 path in workers");
     f32_logged = 1;
   }
 
@@ -445,7 +446,7 @@ int synth_start_worker_threads(void) {
   for (int i = 0; i < 3; i++) {
     if (pthread_create(&worker_threads[i], NULL, synth_persistent_worker_thread,
                        &thread_pool[i]) != 0) {
-      printf("Error creating worker thread %d\n", i);
+      log_error("SYNTH", "Error creating worker thread %d", i);
       return -1;
     }
 
@@ -459,10 +460,9 @@ int synth_start_worker_threads(void) {
     int result =
         pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &cpuset);
     if (result == 0) {
-      printf("Worker thread %d assigned to CPU %d\n", i, i + 1);
+      log_info("SYNTH", "Worker thread %d assigned to CPU %d", i, i + 1);
     } else {
-      printf("Cannot assign thread %d to CPU %d (error: %d)\n", i,
-             i + 1, result);
+      log_warning("SYNTH", "Cannot assign thread %d to CPU %d (error: %d)", i, i + 1, result);
     }
 #endif
   }
@@ -520,7 +520,7 @@ void synth_shutdown_thread_pool(void) {
   if (g_sp3ctra_config.stereo_mode_enabled) {
     // Cleanup lock-free pan gains system
     lock_free_pan_cleanup();
-    printf("🔧 LOCK_FREE_PAN: System cleaned up\n");
+    log_info("SYNTH", "Lock-free pan system cleaned up");
   }
 
   synth_pool_initialized = 0;
@@ -537,7 +537,7 @@ int init_rt_safe_buffers(void) {
   g_rt_additive_buffer.buffers[0] = (float*)calloc(buffer_size, sizeof(float));
   g_rt_additive_buffer.buffers[1] = (float*)calloc(buffer_size, sizeof(float));
   if (!g_rt_additive_buffer.buffers[0] || !g_rt_additive_buffer.buffers[1]) {
-    printf("ERROR: Failed to allocate RT additive buffers\n");
+    log_error("SYNTH", "Failed to allocate RT additive buffers");
     return -1;
   }
   g_rt_additive_buffer.ready_buffer = 0;  // RT reads from buffer 0 initially
@@ -548,7 +548,7 @@ int init_rt_safe_buffers(void) {
   g_rt_stereo_L_buffer.buffers[0] = (float*)calloc(buffer_size, sizeof(float));
   g_rt_stereo_L_buffer.buffers[1] = (float*)calloc(buffer_size, sizeof(float));
   if (!g_rt_stereo_L_buffer.buffers[0] || !g_rt_stereo_L_buffer.buffers[1]) {
-    printf("ERROR: Failed to allocate RT stereo L buffers\n");
+    log_error("SYNTH", "Failed to allocate RT stereo L buffers");
     return -1;
   }
   g_rt_stereo_L_buffer.ready_buffer = 0;
@@ -559,14 +559,14 @@ int init_rt_safe_buffers(void) {
   g_rt_stereo_R_buffer.buffers[0] = (float*)calloc(buffer_size, sizeof(float));
   g_rt_stereo_R_buffer.buffers[1] = (float*)calloc(buffer_size, sizeof(float));
   if (!g_rt_stereo_R_buffer.buffers[0] || !g_rt_stereo_R_buffer.buffers[1]) {
-    printf("ERROR: Failed to allocate RT stereo R buffers\n");
+    log_error("SYNTH", "Failed to allocate RT stereo R buffers");
     return -1;
   }
   g_rt_stereo_R_buffer.ready_buffer = 0;
   g_rt_stereo_R_buffer.worker_buffer = 1;
   pthread_mutex_init(&g_rt_stereo_R_buffer.swap_mutex, NULL);
 
-  printf("[RT-SAFE] Double buffering system initialized\n");
+  log_info("SYNTH", "RT-safe double buffering system initialized");
   return 0;
 }
 
@@ -590,7 +590,7 @@ void cleanup_rt_safe_buffers(void) {
   if (g_rt_stereo_R_buffer.buffers[1]) { free(g_rt_stereo_R_buffer.buffers[1]); g_rt_stereo_R_buffer.buffers[1] = NULL; }
   pthread_mutex_destroy(&g_rt_stereo_R_buffer.swap_mutex);
 
-  printf("[RT-SAFE] Double buffering system cleaned up\n");
+  log_info("SYNTH", "RT-safe double buffering system cleaned up");
 }
 
 /**

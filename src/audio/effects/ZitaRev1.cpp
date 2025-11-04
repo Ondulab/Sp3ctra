@@ -13,7 +13,7 @@
 
 #include "ZitaRev1.h"
 #include "config.h"
-#include <iostream>
+#include "../utils/logger.h"
 
 // Constantes pour les délais (nombres premiers)
 static const int ZITA_PRIME_DELAYS[8] = {743,  809,  877,  947,
@@ -60,8 +60,7 @@ ZitaRev1::~ZitaRev1() {}
 void ZitaRev1::init(float sampleRate) {
   _sampleRate = sampleRate;
   updateReverbParameters();
-  std::cout << "\033[1;32m[ZitaRev1] Reverb initialized at " << sampleRate
-            << " Hz\033[0m" << std::endl;
+  log_info("AUDIO", "ZitaRev1 Reverb initialized at %.0f Hz", sampleRate);
 }
 
 void ZitaRev1::clear() {

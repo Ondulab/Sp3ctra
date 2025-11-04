@@ -7,8 +7,9 @@
  */
 
 #include "synth_additive_runtime.h"
+#include "config.h"
+#include "logger.h"
 #include "wave_generation.h"
-#include "../../config/config_instrument.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -35,7 +36,7 @@ int synth_runtime_init(int max_pixels, int pixels_per_note) {
     g_synth_runtime.pixels_per_note = pixels_per_note;
     g_synth_runtime.num_notes = max_pixels / pixels_per_note;
     
-    printf("[RUNTIME] Initialized: %d pixels, %d pixels/note, %d notes\n",
+    log_info("RUNTIME", "Initialized: %d pixels, %d pixels/note, %d notes",
            g_synth_runtime.max_pixels,
            g_synth_runtime.pixels_per_note,
            g_synth_runtime.num_notes);
@@ -68,7 +69,7 @@ int synth_runtime_allocate_buffers(void) {
         return -1;
     }
     
-    printf("[RUNTIME] Allocated buffers: waves=%zu bytes, waveform=%zu bytes\n",
+    log_info("RUNTIME", "Allocated buffers: waves=%zu bytes, waveform=%zu bytes",
            waves_size, waveform_size);
     
     return 0;
@@ -85,7 +86,7 @@ void synth_runtime_free_buffers(void) {
         g_unitary_waveform_dynamic = NULL;
     }
     
-    printf("[RUNTIME] Freed dynamic buffers\n");
+    log_info("RUNTIME", "Freed dynamic buffers");
 }
 
 /* Accessor functions for dynamic buffers */

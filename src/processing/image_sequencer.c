@@ -1,4 +1,5 @@
 #include "image_sequencer.h"
+#include "../utils/logger.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,12 +76,14 @@ static float calculate_adsr_level(ADSREnvelope *env, float normalized_position) 
     env->current_level = level;
     
     // DEBUG: Always log ADSR calculations (temporarily enabled)
+    #ifdef DEBUG_SEQUENCER_ADSR
     static int log_counter = 0;
     if (++log_counter % 100 == 0) {  // Log every 100 frames to avoid spam
-        printf("\033[1;35m[ADSR DEBUG] pos=%.3f, A=%.2f, D=%.2f, S=%.2f, R=%.2f → level=%.3f\033[0m\n",
-               normalized_position, env->attack_ratio, env->decay_ratio, 
-               env->sustain_level, env->release_ratio, level);
+        log_debug("SEQUENCER", "ADSR: pos=%.3f, A=%.2f, D=%.2f, S=%.2f, R=%.2f → level=%.3f",
+                  normalized_position, env->attack_ratio, env->decay_ratio, 
+                  env->sustain_level, env->release_ratio, level);
     }
+    #endif
     
     return level;
 }
@@ -116,7 +119,7 @@ static void init_sequence_player(SequencePlayer *player, int buffer_capacity) {
     // Allocate array of RawImageFrame structures
     player->frames = (RawImageFrame *)calloc(buffer_capacity, sizeof(RawImageFrame));
     if (!player->frames) {
-        fprintf(stderr, "[ERROR] Failed to allocate frame array\n");
+        log_error("SEQUENCER", "Failed to allocate frame array");
         return;
     }
     
@@ -127,7 +130,7 @@ static void init_sequence_player(SequencePlayer *player, int buffer_capacity) {
         player->frames[i].buffer_B = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
         
         if (!player->frames[i].buffer_R || !player->frames[i].buffer_G || !player->frames[i].buffer_B) {
-            fprintf(stderr, "[ERROR] Failed to allocate RGB buffers for frame %d\n", i);
+            log_error("SEQUENCER", "Failed to allocate RGB buffers for frame %d", i);
             return;
         }
     }
@@ -140,8 +143,8 @@ static void init_sequence_player(SequencePlayer *player, int buffer_capacity) {
     
     init_adsr_envelope(&player->envelope);
     
-    printf("[INFO] Player initialized: %d frames capacity (%.1f MB)\n", 
-           buffer_capacity, (buffer_capacity * CIS_MAX_PIXELS_NB * 3) / 1024.0f / 1024.0f);
+    log_info("SEQUENCER", "Player initialized: %d frames capacity (%.1f MB)", 
+             buffer_capacity, (buffer_capacity * CIS_MAX_PIXELS_NB * 3) / 1024.0f / 1024.0f);
 }
 
 // Cleanup sequence player
@@ -163,13 +166,13 @@ static void cleanup_sequence_player(SequencePlayer *player) {
 
 ImageSequencer *image_sequencer_create(int num_players, float max_duration_s) {
     if (num_players < 1 || num_players > 10) {
-        fprintf(stderr, "[ERROR] Invalid number of players: %d\n", num_players);
+        log_error("SEQUENCER", "Invalid number of players: %d", num_players);
         return NULL;
     }
     
     ImageSequencer *seq = (ImageSequencer *)calloc(1, sizeof(ImageSequencer));
     if (!seq) {
-        fprintf(stderr, "[ERROR] Failed to allocate ImageSequencer\n");
+        log_error("SEQUENCER", "Failed to allocate ImageSequencer");
         return NULL;
     }
     
@@ -181,14 +184,14 @@ ImageSequencer *image_sequencer_create(int num_players, float max_duration_s) {
     seq->bpm = 120.0f;
     
     if (pthread_mutex_init(&seq->mutex, NULL) != 0) {
-        fprintf(stderr, "[ERROR] Failed to initialize mutex\n");
+        log_error("SEQUENCER", "Failed to initialize mutex");
         free(seq);
         return NULL;
     }
     
     seq->players = (SequencePlayer *)calloc(num_players, sizeof(SequencePlayer));
     if (!seq->players) {
-        fprintf(stderr, "[ERROR] Failed to allocate players\n");
+        log_error("SEQUENCER", "Failed to allocate players");
         pthread_mutex_destroy(&seq->mutex);
         free(seq);
         return NULL;
@@ -200,7 +203,7 @@ ImageSequencer *image_sequencer_create(int num_players, float max_duration_s) {
     seq->output_frame.buffer_B = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
     
     if (!seq->output_frame.buffer_R || !seq->output_frame.buffer_G || !seq->output_frame.buffer_B) {
-        fprintf(stderr, "[ERROR] Failed to allocate output frame buffers\n");
+        log_error("SEQUENCER", "Failed to allocate output frame buffers");
         free(seq->players);
         pthread_mutex_destroy(&seq->mutex);
         free(seq);
@@ -212,9 +215,9 @@ ImageSequencer *image_sequencer_create(int num_players, float max_duration_s) {
         init_sequence_player(&seq->players[i], buffer_capacity);
     }
     
-    printf("[INFO] Image Sequencer created: %d players, %.1fs capacity (%.1f MB total)\n", 
-           num_players, max_duration_s,
-           (num_players * buffer_capacity * CIS_MAX_PIXELS_NB * 3) / 1024.0f / 1024.0f);
+    log_info("SEQUENCER", "Image Sequencer created: %d players, %.1fs capacity (%.1f MB total)", 
+             num_players, max_duration_s,
+             (num_players * buffer_capacity * CIS_MAX_PIXELS_NB * 3) / 1024.0f / 1024.0f);
     return seq;
 }
 
@@ -234,7 +237,7 @@ void image_sequencer_destroy(ImageSequencer *seq) {
     
     pthread_mutex_destroy(&seq->mutex);
     free(seq);
-    printf("[INFO] Image Sequencer destroyed\n");
+    log_info("SEQUENCER", "Image Sequencer destroyed");
 }
 
 // Recording Control
@@ -246,7 +249,7 @@ int image_sequencer_start_recording(ImageSequencer *seq, int player_id) {
     
     // Auto-stop playback if currently playing
     if (player->state == PLAYER_STATE_PLAYING) {
-        printf("[SEQ] Player %d: Auto-stopping playback to start recording\n", player_id);
+        log_info("SEQUENCER", "Player %d: Auto-stopping playback to start recording", player_id);
         player->state = PLAYER_STATE_STOPPED;
     }
     
@@ -262,7 +265,7 @@ int image_sequencer_start_recording(ImageSequencer *seq, int player_id) {
     player->playback_position = 0.0f;
     
     pthread_mutex_unlock(&seq->mutex);
-    printf("[SEQ] Player %d: Started recording\n", player_id);
+    log_info("SEQUENCER", "Player %d: Started recording", player_id);
     return 0;
 }
 
@@ -283,11 +286,11 @@ int image_sequencer_stop_recording(ImageSequencer *seq, int player_id) {
     if (player->trigger_mode == TRIGGER_MODE_AUTO && player->recorded_frames > 0) {
         player->state = PLAYER_STATE_PLAYING;
         player->playback_position = 0.0f;
-        printf("[SEQ] Player %d: Stopped recording, auto-playing (%d frames)\n", 
-               player_id, player->recorded_frames);
+        log_info("SEQUENCER", "Player %d: Stopped recording, auto-playing (%d frames)", 
+                 player_id, player->recorded_frames);
     } else {
-        printf("[SEQ] Player %d: Stopped recording, ready (%d frames)\n", 
-               player_id, player->recorded_frames);
+        log_info("SEQUENCER", "Player %d: Stopped recording, ready (%d frames)", 
+                 player_id, player->recorded_frames);
     }
     
     pthread_mutex_unlock(&seq->mutex);
@@ -317,7 +320,7 @@ int image_sequencer_start_playback(ImageSequencer *seq, int player_id) {
     player->playback_position = 0.0f;
     
     pthread_mutex_unlock(&seq->mutex);
-    printf("[SEQ] Player %d: Started playback\n", player_id);
+    log_info("SEQUENCER", "Player %d: Started playback", player_id);
     return 0;
 }
 
@@ -335,7 +338,7 @@ int image_sequencer_stop_playback(ImageSequencer *seq, int player_id) {
     player->state = PLAYER_STATE_STOPPED;
     
     pthread_mutex_unlock(&seq->mutex);
-    printf("[SEQ] Player %d: Stopped playback\n", player_id);
+    log_info("SEQUENCER", "Player %d: Stopped playback", player_id);
     return 0;
 }
 
@@ -416,7 +419,7 @@ int image_sequencer_mute_player(ImageSequencer *seq, int player_id) {
     if (player->state == PLAYER_STATE_PLAYING) {
         player->state = PLAYER_STATE_MUTED;
         pthread_mutex_unlock(&seq->mutex);
-        printf("[SEQ] Player %d: Muted\n", player_id);
+        log_info("SEQUENCER", "Player %d: Muted", player_id);
         return 0;
     }
     
@@ -433,7 +436,7 @@ int image_sequencer_unmute_player(ImageSequencer *seq, int player_id) {
     if (player->state == PLAYER_STATE_MUTED && player->recorded_frames > 0) {
         player->state = PLAYER_STATE_PLAYING;
         pthread_mutex_unlock(&seq->mutex);
-        printf("[SEQ] Player %d: Unmuted\n", player_id);
+        log_info("SEQUENCER", "Player %d: Unmuted", player_id);
         return 0;
     }
     
@@ -631,11 +634,13 @@ int image_sequencer_process_frame(
     uint64_t start_time = get_time_us();
     
     // DEBUG: Log sequencer state
+    #ifdef DEBUG_SEQUENCER_STATE
     static int state_log_counter = 0;
     if (++state_log_counter % 1000 == 0) {
-        printf("\033[1;33m[SEQ STATE] enabled=%d, num_players=%d\033[0m\n", 
-               seq->enabled, seq->num_players);
+        log_debug("SEQUENCER", "STATE: enabled=%d, num_players=%d", 
+                  seq->enabled, seq->num_players);
     }
+    #endif
     
     // If disabled, just pass through
     if (!seq->enabled) {
@@ -675,7 +680,7 @@ int image_sequencer_process_frame(
             } else {
                 // Buffer full, auto-stop recording
                 player->state = PLAYER_STATE_READY;
-                printf("[SEQ] Player %d: Buffer full, stopped recording\n", i);
+                log_info("SEQUENCER", "Player %d: Buffer full, stopped recording", i);
             }
         }
         
@@ -694,9 +699,9 @@ int image_sequencer_process_frame(
             
             #ifdef DEBUG_SEQUENCER_PLAYBACK
             if (i == 0 && (int)player->playback_position % 100 == 0) {  // Log every 100 frames for player 0
-                printf("[SEQ] Player %d: pos=%.1f/%d (%.1f%%), env=%.3f, blend=%.2f\n",
-                       i, player->playback_position, player->recorded_frames,
-                       normalized_pos * 100.0f, env_level, player->blend_level);
+                log_debug("SEQUENCER", "Player %d: pos=%.1f/%d (%.1f%%), env=%.3f, blend=%.2f",
+                          i, player->playback_position, player->recorded_frames,
+                          normalized_pos * 100.0f, env_level, player->blend_level);
             }
             #endif
             
@@ -817,8 +822,8 @@ int image_sequencer_process_frame(
     #ifdef DEBUG_SEQUENCER_PERFORMANCE
     if (seq->frames_processed % 1000 == 0) {  // Log every 1000 frames
         float avg_time = (float)seq->total_process_time_us / (float)seq->frames_processed;
-        printf("[SEQ PERF] Frames: %llu, Avg time: %.2f µs, Active players: %d\n",
-               (unsigned long long)seq->frames_processed, avg_time, has_active_players);
+        log_debug("SEQUENCER", "PERF: Frames: %llu, Avg time: %.2f µs, Active players: %d",
+                  (unsigned long long)seq->frames_processed, avg_time, has_active_players);
     }
     #endif
     

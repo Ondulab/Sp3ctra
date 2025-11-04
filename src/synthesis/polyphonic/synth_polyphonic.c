@@ -8,6 +8,7 @@
 #include "doublebuffer.h"
 #include "error.h"
 #include "../../config/config_loader.h"
+#include "../../utils/logger.h"
 #include <errno.h>
 #include <math.h>
 #include <pthread.h>
@@ -93,7 +94,7 @@ extern volatile int keepRunning;
 
 // --- Initialization ---
 void synth_polyphonicMode_init(void) {
-  printf("Initializing synth_polyphonicMode (Polyphonic with LFO)...\n");
+  log_info("SYNTH", "Initializing polyphonic synthesis mode with LFO");
 
   for (int i = 0; i < 2; ++i) {
     if (pthread_mutex_init(&polyphonic_audio_buffers[i].mutex, NULL) != 0) {
@@ -129,10 +130,7 @@ void synth_polyphonicMode_init(void) {
   }
   history_fill_count =
       MOVING_AVERAGE_WINDOW_SIZE; // History is now full with default data
-  printf("synth_polyphonicMode: Image history pre-filled with default white "
-         "lines. "
-         "Fill count: %d\n",
-         history_fill_count);
+  log_info("SYNTH", "Polyphonic: Image history pre-filled with default white lines (fill count: %d)", history_fill_count);
 
   polyphonic_context.fft_cfg =
       kiss_fftr_alloc(CIS_MAX_PIXELS_NB, 0, NULL, NULL);
@@ -146,14 +144,14 @@ void synth_polyphonicMode_init(void) {
   memset(global_smoothed_magnitudes, 0, sizeof(global_smoothed_magnitudes));
   filter_init_spectral_params(&global_spectral_filter_params, 8000.0f,
                               -7800.0f);
-  printf("Global Spectral Filter Params: BaseCutoff=%.0fHz, EnvDepth=%.0fHz\n",
-         global_spectral_filter_params.base_cutoff_hz,
-         global_spectral_filter_params.filter_env_depth);
+  log_info("SYNTH", "Global Spectral Filter Params: BaseCutoff=%.0fHz, EnvDepth=%.0fHz",
+           global_spectral_filter_params.base_cutoff_hz,
+           global_spectral_filter_params.filter_env_depth);
 
   lfo_init(&global_vibrato_lfo, G_LFO_RATE_HZ, G_LFO_DEPTH_SEMITONES,
            (float)g_sp3ctra_config.sampling_frequency);
-  printf("Global Vibrato LFO initialized: Rate=%.2f Hz, Depth=%.2f semitones\n",
-         global_vibrato_lfo.rate_hz, global_vibrato_lfo.depth_semitones);
+  log_info("SYNTH", "Global Vibrato LFO initialized: Rate=%.2f Hz, Depth=%.2f semitones",
+           global_vibrato_lfo.rate_hz, global_vibrato_lfo.depth_semitones);
 
   for (int i = 0; i < NUM_POLY_VOICES; ++i) {
     poly_voices[i].fundamental_frequency = 0.0f;
@@ -171,10 +169,8 @@ void synth_polyphonicMode_init(void) {
                        G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
                        G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
   }
-  printf("%d polyphonic voices initialized.\n", NUM_POLY_VOICES);
-  printf("synth_polyphonicMode initialized with moving average window of %d "
-         "frames.\n",
-         MOVING_AVERAGE_WINDOW_SIZE);
+  log_info("SYNTH", "%d polyphonic voices initialized", NUM_POLY_VOICES);
+  log_info("SYNTH", "Polyphonic mode initialized with moving average window of %d frames", MOVING_AVERAGE_WINDOW_SIZE);
 }
 
 // --- Audio Processing ---
@@ -438,26 +434,19 @@ void *synth_polyphonicMode_thread_func(void *arg) {
   if (arg != NULL) {
     Context *ctx = (Context *)arg;
     image_db = ctx->doubleBuffer;
-    printf("synth_polyphonicMode_thread_func: DoubleBuffer obtenu depuis le "
-           "contexte.\n");
   } else {
-    printf("synth_polyphonicMode_thread_func: Aucun contexte fourni, pas de "
-           "DoubleBuffer disponible.\n");
+    log_warning("SYNTH", "Polyphonic thread: No context provided, no DoubleBuffer available");
   }
-  printf("synth_polyphonicMode_thread_func started.\n");
-  fflush(stdout);
+  log_info("SYNTH", "Polyphonic synthesis thread started");
   srand(time(NULL));
 
   while (keepRunning) {
     if (image_db != NULL) {
       process_image_data_for_fft(image_db);
     } else {
-      printf("synth_polyphonicMode_thread_func: Aucun DoubleBuffer. "
-             "Utilisation des "
-             "données de test.\n");
+      log_warning("SYNTH", "Polyphonic thread: No DoubleBuffer, using test data");
       generate_test_data_for_fft();
     }
-    fflush(stdout);
 
     int local_producer_idx;
     pthread_mutex_lock(&polyphonic_buffer_index_mutex);
@@ -487,7 +476,7 @@ void *synth_polyphonicMode_thread_func(void *arg) {
   }
 
 cleanup_thread:
-  printf("synth_polyphonicMode_thread_func stopping.\n");
+  log_info("SYNTH", "Polyphonic synthesis thread stopping");
   if (polyphonic_context.fft_cfg != NULL) {
     kiss_fftr_free(polyphonic_context.fft_cfg);
     polyphonic_context.fft_cfg = NULL;

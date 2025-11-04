@@ -38,16 +38,17 @@
 
 #include "display.h"
 #include "error.h"
+#include "../utils/logger.h"
 
 // NOTE: All Visual Freeze Feature code previously here has been removed
 // as the freeze logic is now handled in synth.c for synth data.
 
 int display_Init(sfRenderWindow *window) {
   if (window) {
-    printf("SFML window detected in CLI mode, using it for display\n");
-    printf("SFML CONFIGURED IN CLI+WINDOW MODE\n");
+    log_info("DISPLAY", "SFML window detected in CLI mode, using it for display");
+    log_info("DISPLAY", "SFML CONFIGURED IN CLI+WINDOW MODE");
   } else {
-    printf("Running in CLI mode, no SFML window required\n");
+    log_info("DISPLAY", "Running in CLI mode, no SFML window required");
   }
   return 0;
 }
@@ -73,7 +74,7 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
   // Create an image of one line (width = CIS_MAX_PIXELS_NB, height = 1)
   sfImage *image = sfImage_create(CIS_MAX_PIXELS_NB, 1);
   if (image == NULL) {
-    fprintf(stderr, "Error: Unable to create image\n");
+    log_error("DISPLAY", "Unable to create image");
     return;
   }
 
@@ -86,7 +87,7 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
   // Create a texture from the image of the line
   sfTexture *line_texture = sfTexture_createFromImage(image, NULL);
   if (line_texture == NULL) {
-    fprintf(stderr, "Error: Unable to create line texture\n");
+    log_error("DISPLAY", "Unable to create line texture");
     sfImage_destroy(image);
     return;
   }

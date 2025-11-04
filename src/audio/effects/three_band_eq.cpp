@@ -8,9 +8,9 @@
 #include "three_band_eq.h"
 #include "config.h"
 #include "../../config/config_loader.h"
+#include "../../utils/logger.h"
 #include <cstdio>
 #include <cstring>
-#include <iostream>
 
 // Global instance
 ThreeBandEQ *gEqualizer = nullptr;
@@ -41,8 +41,7 @@ void ThreeBandEQ::initialize(float sampleRate) {
   midEQ.reset();
   highEQ.reset();
 
-  std::cout << "Three-band equalizer initialized with sample rate: "
-            << sampleRate << " Hz" << std::endl;
+  log_info("AUDIO", "Three-band equalizer initialized with sample rate: %.0f Hz", sampleRate);
 }
 
 void ThreeBandEQ::allocateTempBuffer(int numSamples, int numChannels) {
@@ -72,36 +71,35 @@ void ThreeBandEQ::freeTempBuffer() {
 
 void ThreeBandEQ::setEnabled(bool enabled) {
   this->enabled = enabled;
-  std::cout << "Three-band equalizer " << (enabled ? "enabled" : "disabled")
-            << std::endl;
+  log_info("AUDIO", "Three-band equalizer %s", enabled ? "enabled" : "disabled");
 }
 
 void ThreeBandEQ::setLowGain(float gain) {
   lowGain = gain;
   // Configure the low EQ as a low-shelf filter
   lowEQ.setparam(DEFAULT_LOW_FREQ, gain);
-  std::cout << "EQ Low gain set to " << gain << " dB" << std::endl;
+  log_info("AUDIO", "EQ Low gain set to %.1f dB", gain);
 }
 
 void ThreeBandEQ::setMidGain(float gain) {
   midGain = gain;
   // Configure the mid EQ as a peaking filter
   midEQ.setparam(midFreq, gain);
-  std::cout << "EQ Mid gain set to " << gain << " dB" << std::endl;
+  log_info("AUDIO", "EQ Mid gain set to %.1f dB", gain);
 }
 
 void ThreeBandEQ::setHighGain(float gain) {
   highGain = gain;
   // Configure the high EQ as a high-shelf filter
   highEQ.setparam(DEFAULT_HIGH_FREQ, gain);
-  std::cout << "EQ High gain set to " << gain << " dB" << std::endl;
+  log_info("AUDIO", "EQ High gain set to %.1f dB", gain);
 }
 
 void ThreeBandEQ::setMidFrequency(float freq) {
   midFreq = freq;
   // Update the mid EQ with the new frequency
   midEQ.setparam(freq, midGain);
-  std::cout << "EQ Mid frequency set to " << freq << " Hz" << std::endl;
+  log_info("AUDIO", "EQ Mid frequency set to %.0f Hz", freq);
 }
 
 void ThreeBandEQ::process(int numSamples, int numChannels, float *data[]) {
