@@ -68,6 +68,7 @@ void sfClock_restart(sfClock *clock) { (void)clock; }
 extern void midi_Init(void);
 extern void midi_Cleanup(void);
 extern int midi_Connect(void);
+extern int midi_ConnectByName(const char* deviceName);
 extern void midi_SetupVolumeControl(void);
 // Add declarations for the new C-API MIDI callback setters
 extern void midi_set_note_on_callback(void (*callback)(int noteNumber,
@@ -82,6 +83,8 @@ extern void midi_callbacks_register_all(void);
 extern int midi_mapping_apply_defaults(void);
 extern void midi_mapping_validate(void);
 extern void midi_mapping_cleanup(void);
+extern const char* midi_mapping_get_device_name(void);
+extern int midi_mapping_get_device_id(void);
 
 // Global signal handler for the application
 volatile sig_atomic_t app_running = 1;
@@ -514,8 +517,18 @@ int main(int argc, char **argv) {
       log_info("MIDI", "User mappings loaded");
     }
     
-    // Try to connect to MIDI controller
-    midi_connected = midi_Connect();
+    // Try to connect to MIDI controller using configured device_name
+    const char* device_name = midi_mapping_get_device_name();
+    log_info("MIDI", "Attempting to connect to MIDI device: '%s'", device_name);
+    
+    if (strcmp(device_name, "auto") == 0) {
+      // Use automatic detection (legacy hardcoded list)
+      midi_connected = midi_Connect();
+    } else {
+      // Use specific device name from configuration
+      midi_connected = midi_ConnectByName(device_name);
+    }
+    
     if (midi_connected) {
       log_info("MIDI", "Controller connected");
       // Setup note callbacks if MIDI connected successfully

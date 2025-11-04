@@ -333,6 +333,13 @@ void midi_Init() {
   }
 }
 
+int midi_ConnectByName(const char* deviceName) {
+  if (gMidiController && deviceName) {
+    return gMidiController->connectToDeviceByName(std::string(deviceName)) ? 1 : 0;
+  }
+  return 0;
+}
+
 void midi_Cleanup() {
   if (gMidiController) {
     delete gMidiController;

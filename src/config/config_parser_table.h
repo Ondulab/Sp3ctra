@@ -49,15 +49,13 @@ static const config_param_def_t CONFIG_PARAMS[] = {
     CONFIG_PARAM("auto_volume", "contrast_change_threshold", PARAM_TYPE_FLOAT, 
                  contrast_change_threshold, 0.01f, 0.5f),
     
-    // Synthesis section
-    CONFIG_PARAM("synthesis", "start_frequency", PARAM_TYPE_FLOAT, 
-                 start_frequency, 20.0f, 20000.0f),
-    CONFIG_PARAM("synthesis", "semitone_per_octave", PARAM_TYPE_INT, 
-                 semitone_per_octave, 1, 24),
-    CONFIG_PARAM("synthesis", "comma_per_semitone", PARAM_TYPE_INT, 
-                 comma_per_semitone, 1, 100),
-    CONFIG_PARAM("synthesis", "pixels_per_note", PARAM_TYPE_INT, 
-                 pixels_per_note, 1, 100),
+    // Synthesis section (new user-configurable parameters)
+    CONFIG_PARAM("synthesis", "low_frequency", PARAM_TYPE_FLOAT, 
+                 low_frequency, 20.0f, 20000.0f),
+    CONFIG_PARAM("synthesis", "high_frequency", PARAM_TYPE_FLOAT, 
+                 high_frequency, 20.0f, 20000.0f),
+    CONFIG_PARAM("synthesis", "sensor_dpi", PARAM_TYPE_INT, 
+                 sensor_dpi, 200, 400),
     CONFIG_PARAM("synthesis", "invert_intensity", PARAM_TYPE_BOOL, 
                  invert_intensity, 0, 1),
     
@@ -122,6 +120,10 @@ static const deprecated_param_t DEPRECATED_PARAMS[] = {
     {"synthesis", "volume_decrement", "tau_down_base_ms"},
     {"synthesis", "volume_ramp_up_divisor", "tau_up_base_ms"},
     {"synthesis", "volume_ramp_down_divisor", "tau_down_base_ms"},
+    {"synthesis", "start_frequency", "low_frequency (auto-calculated from low/high frequency and DPI)"},
+    {"synthesis", "semitone_per_octave", "removed (always 12, auto-calculated)"},
+    {"synthesis", "comma_per_semitone", "removed (auto-calculated from low/high frequency and DPI)"},
+    {"synthesis", "pixels_per_note", "removed (always 1, auto-calculated)"},
     {"envelope_slew", "enable_phase_weighted_slew", "removed (precomputed coefficients)"},
     {"envelope_slew", "phase_weight_power", "removed (precomputed coefficients)"},
     {"auto_volume", "imu_active_threshold_x", "compile-time constant"},

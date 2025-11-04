@@ -40,12 +40,17 @@ typedef struct {
     float vibration_protection_factor;   // Threshold hardening factor when audio loud (1.0-5.0, default 3.0)
     float contrast_change_threshold;     // Minimum contrast change to validate activity (0.01-0.5, default 0.05)
     
-    // Synthesis parameters
-    float start_frequency;
-    int semitone_per_octave;
-    int comma_per_semitone;
-    int pixels_per_note;
+    // Synthesis parameters (user-configurable)
+    float low_frequency;          // Starting frequency in Hz
+    float high_frequency;         // Ending frequency in Hz
+    int sensor_dpi;               // Sensor DPI (200 or 400)
     int invert_intensity;         // 0 = white brightest gives loudest sound, 1 = dark pixels give more energy
+    
+    // Synthesis parameters (automatically calculated from above)
+    float start_frequency;        // Same as low_frequency (kept for backward compatibility)
+    int semitone_per_octave;      // Always 12 (standard musical scale)
+    int comma_per_semitone;       // Calculated based on DPI and frequency range
+    int pixels_per_note;          // Always 1 for maximum resolution
 
     // Envelope slew parameters (runtime configurable; defaults from compile-time defines)
     float tau_up_base_ms;             // Base attack time in milliseconds

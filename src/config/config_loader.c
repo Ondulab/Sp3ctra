@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <math.h>
 
 /**************************************************************************************
  * Constants
@@ -43,11 +44,17 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     .contrast_change_threshold = 0.05f,
     
     // Synthesis parameters
+    // User-configurable synthesis parameters
+    .low_frequency = 65.41f,      // C2
+    .high_frequency = 16744.04f,  // ~8 octaves above (65.41 * 2^8)
+    .sensor_dpi = 400,
+    .invert_intensity = 1,
+    
+    // Auto-calculated synthesis parameters (will be computed at runtime)
     .start_frequency = 65.41f,
     .semitone_per_octave = 12,
     .comma_per_semitone = 36,
     .pixels_per_note = 1,
-    .invert_intensity = 1,
 
     // Envelope slew parameters
     .tau_up_base_ms = 0.5f,
@@ -274,6 +281,77 @@ static int parse_key_value(const char* section, const char* key, const char* val
     config_log_warning(line_number, "Unknown parameter '%s' in section '%s'",
                       key, section);
     return CONFIG_SUCCESS; // Don't fail on unknown params
+}
+
+/**************************************************************************************
+ * Automatic Parameter Calculation
+ **************************************************************************************/
+
+/**
+ * Calculate synthesis parameters automatically from frequency range and DPI
+ * This function computes:
+ * - comma_per_semitone: based on available pixels and frequency range
+ * - pixels_per_note: always 1 for maximum resolution
+ * - semitone_per_octave: always 12 (standard musical scale)
+ * - start_frequency: same as low_frequency
+ */
+static int calculate_synthesis_params(sp3ctra_config_t* config) {
+    // Determine number of pixels based on DPI
+    int nb_pixels;
+    if (config->sensor_dpi == 400) {
+        nb_pixels = CIS_400DPI_PIXELS_NB;
+    } else if (config->sensor_dpi == 200) {
+        nb_pixels = CIS_200DPI_PIXELS_NB;
+    } else {
+        config_log_error(0, "Invalid sensor_dpi: %d (must be 200 or 400)", config->sensor_dpi);
+        return CONFIG_ERROR_INVALID_VALUE;
+    }
+    
+    // Calculate number of octaves
+    if (config->low_frequency <= 0.0f || config->high_frequency <= 0.0f) {
+        config_log_error(0, "Invalid frequency range: low=%.2f Hz, high=%.2f Hz",
+                        config->low_frequency, config->high_frequency);
+        return CONFIG_ERROR_INVALID_VALUE;
+    }
+    
+    if (config->high_frequency <= config->low_frequency) {
+        config_log_error(0, "high_frequency (%.2f Hz) must be greater than low_frequency (%.2f Hz)",
+                        config->high_frequency, config->low_frequency);
+        return CONFIG_ERROR_INVALID_VALUE;
+    }
+    
+    float nb_octaves = log2f(config->high_frequency / config->low_frequency);
+    
+    // Calculate number of semitones (always 12 per octave)
+    config->semitone_per_octave = 12;
+    float nb_semitones = nb_octaves * config->semitone_per_octave;
+    
+    // Maximum resolution: 1 pixel = 1 comma
+    config->pixels_per_note = 1;
+    
+    // Calculate commas per semitone
+    config->comma_per_semitone = (int)(nb_pixels / nb_semitones);
+    
+    // Ensure we have at least 1 comma per semitone
+    if (config->comma_per_semitone < 1) {
+        config_log_error(0, 
+            "Frequency range too wide for sensor resolution: %.2f octaves requires %d commas/semitone (minimum 1)",
+            nb_octaves, config->comma_per_semitone);
+        return CONFIG_ERROR_INVALID_VALUE;
+    }
+    
+    // Set start_frequency (backward compatibility)
+    config->start_frequency = config->low_frequency;
+    
+    // Log the calculated parameters
+    config_log_info(0, "Calculated synthesis parameters:");
+    config_log_info(0, "  - Frequency range: %.2f Hz to %.2f Hz (%.2f octaves)",
+                   config->low_frequency, config->high_frequency, nb_octaves);
+    config_log_info(0, "  - Sensor DPI: %d (%d pixels)", config->sensor_dpi, nb_pixels);
+    config_log_info(0, "  - Resolution: %d commas per semitone", config->comma_per_semitone);
+    config_log_info(0, "  - Total notes: %d", nb_pixels / config->pixels_per_note);
+    
+    return CONFIG_SUCCESS;
 }
 
 /**************************************************************************************
@@ -515,6 +593,12 @@ int load_additive_config(const char* config_file_path) {
     if (parse_errors > 0) {
         config_log_error(0, "Configuration loading failed with %d error(s)", parse_errors);
         return CONFIG_ERROR_INVALID_VALUE;
+    }
+    
+    // Calculate synthesis parameters from frequency range and DPI
+    int calc_result = calculate_synthesis_params(&g_sp3ctra_config);
+    if (calc_result != CONFIG_SUCCESS) {
+        return calc_result;
     }
     
     // Validate the loaded configuration
