@@ -460,6 +460,17 @@ void *udpThread(void *arg) {
       extern uint8_t g_displayable_synth_B[CIS_MAX_PIXELS_NB];
       extern pthread_mutex_t g_displayable_synth_mutex;
       
+      // DEBUG: Check if mixed_R is different from live
+      static int diff_log_counter = 0;
+      if (++diff_log_counter % 1000 == 0) {
+        int diff_count = 0;
+        for (int i = 0; i < CIS_MAX_PIXELS_NB; i++) {
+          if (mixed_R[i] != db->activeBuffer_R[i]) diff_count++;
+        }
+        printf("\033[1;36m[UDP DEBUG] Pixels different: %d/%d (%.1f%%)\033[0m\n",
+               diff_count, CIS_MAX_PIXELS_NB, (diff_count * 100.0f) / CIS_MAX_PIXELS_NB);
+      }
+      
       pthread_mutex_lock(&g_displayable_synth_mutex);
       memcpy(g_displayable_synth_R, mixed_R, CIS_MAX_PIXELS_NB);
       memcpy(g_displayable_synth_G, mixed_G, CIS_MAX_PIXELS_NB);

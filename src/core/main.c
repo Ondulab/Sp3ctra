@@ -78,6 +78,7 @@ extern void midi_mapping_init(void);
 extern int midi_mapping_load_parameters(const char *filename);
 extern int midi_mapping_load_mappings(const char *filename);
 extern void midi_callbacks_register_all(void);
+extern int midi_mapping_apply_defaults(void);
 extern void midi_mapping_validate(void);
 extern void midi_mapping_cleanup(void);
 
@@ -559,6 +560,12 @@ int main(int argc, char **argv) {
     midi_callbacks_register_all();
     printf("[MIDI] ✅ Callbacks registered\n");
     
+    // Apply default values to all parameters (triggers callbacks to initialize structures)
+    int defaults_applied = midi_mapping_apply_defaults();
+    if (defaults_applied > 0) {
+      printf("[MIDI] ✅ Applied default values to %d parameters\n", defaults_applied);
+    }
+    
     // Validate configuration
     midi_mapping_validate();
     printf("[MIDI] ✅ Unified MIDI system initialized\n");
@@ -750,6 +757,9 @@ int main(int argc, char **argv) {
   uint8_t local_main_R[CIS_MAX_PIXELS_NB]; // Buffers locaux pour DMX
   uint8_t local_main_G[CIS_MAX_PIXELS_NB];
   uint8_t local_main_B[CIS_MAX_PIXELS_NB];
+  uint8_t sequencer_output_R[CIS_MAX_PIXELS_NB]; // Buffers pour output du séquenceur
+  uint8_t sequencer_output_G[CIS_MAX_PIXELS_NB];
+  uint8_t sequencer_output_B[CIS_MAX_PIXELS_NB];
   int process_this_frame_main_loop;
 
   while (running && context.running && app_running) {
@@ -781,7 +791,7 @@ int main(int argc, char **argv) {
     /* Vérifier si le double buffer contient de nouvelles données */
     pthread_mutex_lock(&db.mutex);
     if (db.dataReady) {
-      // Copier les données pour DMX pendant que le mutex est verrouillé
+      // Copier les données live depuis le double buffer
       memcpy(local_main_R, db.processingBuffer_R, CIS_MAX_PIXELS_NB);
       memcpy(local_main_G, db.processingBuffer_G, CIS_MAX_PIXELS_NB);
       memcpy(local_main_B, db.processingBuffer_B, CIS_MAX_PIXELS_NB);
@@ -791,13 +801,19 @@ int main(int argc, char **argv) {
     pthread_mutex_unlock(&db.mutex);
 
     if (process_this_frame_main_loop) {
+      /* NOTE: Image sequencer is already processed in UDP thread!
+       * The UDP thread calls image_sequencer_process_frame() and updates
+       * g_displayable_synth_R/G/B with the ADSR-modulated output.
+       * We just use local_main_R/G/B (from db.processingBuffer) for DMX.
+       */
+      
       /* Rendu de la nouvelle ligne si SFML est activé */
       if (use_sfml_window && window) {
         // Lock mutex before accessing displayable synth buffers
         pthread_mutex_lock(&g_displayable_synth_mutex);
         printImageRGB(window, g_displayable_synth_R, g_displayable_synth_G,
                       g_displayable_synth_B, backgroundTexture,
-                      foregroundTexture); // Utilise les données de synth.c
+                      foregroundTexture); // Now displays sequencer output with ADSR!
         pthread_mutex_unlock(&g_displayable_synth_mutex);
       }
 

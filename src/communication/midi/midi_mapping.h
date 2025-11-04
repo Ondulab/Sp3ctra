@@ -172,12 +172,19 @@ float midi_mapping_get_parameter_value(const char *param_name);
 float midi_mapping_get_parameter_raw_value(const char *param_name);
 
 /**
- * Set parameter value programmatically
- * @param param_name Parameter identifier
- * @param normalized_value Value in range [0.0, 1.0]
+ * Set parameter value programmatically (triggers callbacks)
+ * @param param_name Full parameter name
+ * @param normalized_value Normalized value [0.0, 1.0]
  * @return 0 on success, -1 on error
  */
 int midi_mapping_set_parameter_value(const char *param_name, float normalized_value);
+
+/**
+ * Apply default values to all parameters (triggers callbacks)
+ * Should be called after loading parameters and registering callbacks
+ * @return Number of parameters initialized, -1 on error
+ */
+int midi_mapping_apply_defaults(void);
 
 /* ============================================================================
  * PUBLIC API - VALIDATION AND DIAGNOSTICS

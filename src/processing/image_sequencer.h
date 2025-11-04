@@ -58,19 +58,16 @@ typedef enum {
 #define PLAYBACK_DIRECTION_FORWARD  1
 #define PLAYBACK_DIRECTION_REVERSE -1
 
-/* ADSR envelope for volume shaping */
+/* ADSR envelope for presence shaping (positional, not temporal) */
 typedef struct {
-    /* Parameters (in milliseconds) */
-    float attack_ms;
-    float decay_ms;
-    float sustain_level;     // [0.0, 1.0]
-    float release_ms;
+    /* Parameters (as ratios of sequence length [0.0, 1.0]) */
+    float attack_ratio;      // Attack phase duration (% of sequence)
+    float decay_ratio;       // Decay phase duration (% of sequence)
+    float sustain_level;     // Sustain level [0.0, 1.0]
+    float release_ratio;     // Release phase duration (% of sequence)
     
     /* Runtime state */
     float current_level;     // Current envelope output [0.0, 1.0]
-    uint64_t trigger_time_us;
-    uint64_t release_time_us;
-    int is_triggered;        // 1 = attack/sustain phase, 0 = release phase
 } ADSREnvelope;
 
 /* Sequence player (one per sequence) */
@@ -160,12 +157,14 @@ int image_sequencer_mute_player(ImageSequencer *seq, int player_id);
 int image_sequencer_unmute_player(ImageSequencer *seq, int player_id);
 int image_sequencer_toggle_mute(ImageSequencer *seq, int player_id);
 
-/* ADSR control */
+/* ADSR envelope control (positional) */
 void image_sequencer_set_adsr(ImageSequencer *seq, int player_id, 
-                              float attack_ms, float decay_ms, 
-                              float sustain_level, float release_ms);
-void image_sequencer_trigger_envelope(ImageSequencer *seq, int player_id);
-void image_sequencer_release_envelope(ImageSequencer *seq, int player_id);
+                              float attack_ratio, float decay_ratio, 
+                              float sustain_level, float release_ratio);
+void image_sequencer_set_attack(ImageSequencer *seq, int player_id, float attack_ratio);
+void image_sequencer_set_decay(ImageSequencer *seq, int player_id, float decay_ratio);
+void image_sequencer_set_sustain(ImageSequencer *seq, int player_id, float sustain_level);
+void image_sequencer_set_release(ImageSequencer *seq, int player_id, float release_ratio);
 
 /* Global control */
 void image_sequencer_set_enabled(ImageSequencer *seq, int enabled);

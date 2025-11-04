@@ -149,9 +149,14 @@ static float midi_to_normalized(int midi_value) {
 static void update_parameter_value(ParameterEntry *param, float normalized_value) {
     if (!param) return;
     
+    printf("\033[1;35m[DEBUG] update_parameter_value: '%s' normalized=%.3f\033[0m\n", 
+           param->name, normalized_value);
+    
     // Update values
     param->current_value = normalized_value;
     param->current_raw_value = normalized_to_raw(normalized_value, &param->spec);
+    
+    printf("\033[1;35m[DEBUG]   Raw value computed: %.3f\033[0m\n", param->current_raw_value);
     
     // Prepare callback data
     MidiParameterValue callback_data = {
@@ -161,12 +166,25 @@ static void update_parameter_value(ParameterEntry *param, float normalized_value
         .is_button = param->spec.is_button
     };
     
+    // Count callbacks for this parameter
+    int callback_count = 0;
+    for (int i = 0; i < g_midi_system.num_callbacks; i++) {
+        CallbackEntry *cb = &g_midi_system.callbacks[i];
+        if (cb->is_active && strcmp(cb->param_name, param->name) == 0) {
+            callback_count++;
+        }
+    }
+    
+    printf("\033[1;35m[DEBUG]   Found %d active callbacks for '%s'\033[0m\n", 
+           callback_count, param->name);
+    
     // Trigger all registered callbacks for this parameter
     for (int i = 0; i < g_midi_system.num_callbacks; i++) {
         CallbackEntry *cb = &g_midi_system.callbacks[i];
         
         if (cb->is_active && strcmp(cb->param_name, param->name) == 0) {
             if (cb->callback) {
+                printf("\033[1;35m[DEBUG]   Triggering callback %d for '%s'\033[0m\n", i, param->name);
                 cb->callback(&callback_data, cb->user_data);
             }
         }
@@ -598,6 +616,103 @@ int midi_mapping_set_parameter_value(const char *param_name, float normalized_va
     
     update_parameter_value(param, normalized_value);
     return 0;
+}
+
+int midi_mapping_apply_defaults(void) {
+    if (!g_midi_system.is_initialized) {
+        fprintf(stderr, "ERROR: MIDI mapping system not initialized\n");
+        return -1;
+    }
+    
+    printf("\033[1;36m[DEBUG] midi_mapping_apply_defaults: Starting...\033[0m\n");
+    printf("\033[1;36m[DEBUG] Total parameters: %d\033[0m\n", g_midi_system.num_parameters);
+    
+    int count = 0;
+    
+    // Apply default values to all parameters
+    for (int i = 0; i < g_midi_system.num_parameters; i++) {
+        ParameterEntry *param = &g_midi_system.parameters[i];
+        
+        // 🔧 BUGFIX: Skip buttons - they should only be triggered by actual MIDI events
+        // Buttons are momentary triggers, not persistent states
+        if (param->spec.is_button) {
+            printf("\033[1;36m[DEBUG] Skipping button parameter '%s' (buttons not initialized)\033[0m\n", param->name);
+            continue;
+        }
+        
+        printf("\033[1;36m[DEBUG] Processing parameter '%s'\033[0m\n", param->name);
+        printf("\033[1;36m[DEBUG]   Default: %.3f, Min: %.3f, Max: %.3f\033[0m\n", 
+               param->spec.default_value, param->spec.min_value, param->spec.max_value);
+        
+        // Calculate normalized default value from raw default
+        float normalized_default;
+        
+        if (param->spec.scaling == MIDI_SCALE_DISCRETE || param->spec.is_button) {
+            // For discrete/button parameters, use default directly
+            float range = param->spec.max_value - param->spec.min_value;
+            if (range > 0.0f) {
+                normalized_default = (param->spec.default_value - param->spec.min_value) / range;
+            } else {
+                normalized_default = 0.0f;
+            }
+            printf("\033[1;36m[DEBUG]   Discrete/Button: normalized = %.3f\033[0m\n", normalized_default);
+        } else {
+            // For continuous parameters, reverse the scaling to get normalized value
+            float default_val = param->spec.default_value;
+            float min_val = param->spec.min_value;
+            float max_val = param->spec.max_value;
+            
+            switch (param->spec.scaling) {
+                case MIDI_SCALE_LINEAR:
+                    normalized_default = (default_val - min_val) / (max_val - min_val);
+                    printf("\033[1;36m[DEBUG]   Linear scaling: normalized = %.3f\033[0m\n", normalized_default);
+                    break;
+                    
+                case MIDI_SCALE_LOGARITHMIC:
+                    if (min_val > 0.0f && max_val > 0.0f && default_val > 0.0f) {
+                        float log_min = logf(min_val);
+                        float log_max = logf(max_val);
+                        float log_val = logf(default_val);
+                        normalized_default = (log_val - log_min) / (log_max - log_min);
+                        printf("\033[1;36m[DEBUG]   Logarithmic scaling: normalized = %.3f\033[0m\n", normalized_default);
+                    } else {
+                        normalized_default = 0.5f;
+                        printf("\033[1;36m[DEBUG]   Logarithmic scaling FALLBACK: normalized = %.3f\033[0m\n", normalized_default);
+                    }
+                    break;
+                    
+                case MIDI_SCALE_EXPONENTIAL:
+                    if (min_val > 0.0f && max_val > min_val && default_val > 0.0f) {
+                        float exp_range = max_val / min_val;
+                        normalized_default = logf(default_val / min_val) / logf(exp_range);
+                        printf("\033[1;36m[DEBUG]   Exponential scaling: normalized = %.3f\033[0m\n", normalized_default);
+                    } else {
+                        normalized_default = 0.5f;
+                        printf("\033[1;36m[DEBUG]   Exponential scaling FALLBACK: normalized = %.3f\033[0m\n", normalized_default);
+                    }
+                    break;
+                    
+                default:
+                    normalized_default = (default_val - min_val) / (max_val - min_val);
+                    printf("\033[1;36m[DEBUG]   Default scaling: normalized = %.3f\033[0m\n", normalized_default);
+                    break;
+            }
+        }
+        
+        // Clamp to valid range
+        if (normalized_default < 0.0f) normalized_default = 0.0f;
+        if (normalized_default > 1.0f) normalized_default = 1.0f;
+        
+        printf("\033[1;36m[DEBUG]   Calling update_parameter_value with normalized = %.3f\033[0m\n", normalized_default);
+        
+        // Update parameter (this will trigger callbacks)
+        update_parameter_value(param, normalized_default);
+        count++;
+    }
+    
+    printf("\033[1;36m[DEBUG] midi_mapping_apply_defaults: Completed, applied %d defaults\033[0m\n", count);
+    printf("MIDI Mapping System: Applied default values to %d parameters\n", count);
+    return count;
 }
 
 /* ============================================================================

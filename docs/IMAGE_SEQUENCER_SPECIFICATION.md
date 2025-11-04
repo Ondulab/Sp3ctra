@@ -242,35 +242,74 @@ IDLE ──[start_record]──> RECORDING ──[stop_record]──> READY
 - 1/16 (sixteenth note)
 - 1 mesure (bar)
 
-#### 3.1.4 Enveloppe ADSR
+#### 3.1.4 Enveloppe ADSR (Attack-Decay-Sustain-Release)
 
-Chaque player possède une enveloppe volume pour façonner son apparition/disparition dans le mix.
+Chaque player possède une enveloppe de présence pour façonner son apparition/disparition dans le mix. L'enveloppe est **positionnelle** (basée sur la position dans la séquence) plutôt que temporelle, ce qui permet une adaptation automatique à la vitesse de lecture et aux boucles.
 
 ```
-Volume
-  1.0 │     ╱────────╲
-      │    ╱ Decay    ╲
-      │   ╱            ╲
-      │  ╱   Sustain    ╲ Release
-      │ ╱                ╲
-  0.0 │────────────────────╲───
-      └─────────────────────────> Time
-      Attack    (hold)    Release
+Présence
+  1.0 │     ╱╲──────────────╲
+      │    ╱  ╲              ╲
+      │   ╱    ╲  Sustain     ╲
+      │  ╱ Decay╲              ╲ Release
+      │ ╱ Attack ╲              ╲
+  0.0 │────────────────────────────╲───
+      └──────────────────────────────────> Position normalisée [0.0, 1.0]
+      0%  5% 10%           90%    100%
 ```
 
-**Paramètres** :
-- **Attack** (A) : Temps de montée (ms) - [0, 5000]
-- **Decay** (D) : Temps de descente vers sustain (ms) - [0, 5000]
-- **Sustain** (S) : Niveau de maintien - [0.0, 1.0]
-- **Release** (R) : Temps de relâchement (ms) - [0, 10000]
+**Paramètres (en % de la séquence)** :
+- **Attack** (A) : Ratio de montée - [0.0, 1.0] (0% = pas d'attack, 0.1 = 10% de la séquence)
+- **Decay** (D) : Ratio de descente - [0.0, 1.0] (0% = pas de decay, 0.05 = 5% de la séquence)
+- **Sustain** (S) : Niveau de maintien - [0.0, 1.0] (1.0 = présence totale)
+- **Release** (R) : Ratio de relâchement - [0.0, 1.0] (0% = pas de release, 0.1 = 10% de la séquence)
 
-**Valeurs par défaut** :
+**Calcul de l'enveloppe** :
+```c
+// Position normalisée dans la séquence [0.0, 1.0]
+float norm_pos = playback_position / recorded_frames;
+float attack_end = attack_ratio;
+float decay_end = attack_end + decay_ratio;
+float sustain_end = 1.0 - release_ratio;
+
+if (norm_pos < attack_end) {
+    // Phase d'attack (0 → 1.0)
+    level = norm_pos / attack_ratio;
+} else if (norm_pos < decay_end) {
+    // Phase de decay (1.0 → sustain_level)
+    float decay_pos = (norm_pos - attack_end) / decay_ratio;
+    level = lerp(1.0, sustain_level, decay_pos);
+} else if (norm_pos < sustain_end) {
+    // Phase de sustain (niveau constant)
+    level = sustain_level;
+} else {
+    // Phase de release (sustain_level → 0)
+    float release_pos = (norm_pos - sustain_end) / release_ratio;
+    level = lerp(sustain_level, 0.0, release_pos);
+}
+```
+
+**Valeurs par défaut (pas d'enveloppe, présence immédiate à 100%)** :
 ```ini
-default_attack_ms=10.0
-default_decay_ms=50.0
-default_sustain_level=0.8
-default_release_ms=100.0
+default_attack_ratio=0.0      # Pas d'attack
+default_decay_ratio=0.0       # Pas de decay
+default_sustain_level=1.0     # Présence totale
+default_release_ratio=0.0     # Pas de release
 ```
+
+**Avantages de l'enveloppe positionnelle** :
+- ✅ **Adaptation automatique** : S'adapte à la vitesse de lecture (speed)
+- ✅ **Répétition naturelle** : Se répète automatiquement dans les boucles
+- ✅ **Intuitivité** : "10% attack" = compréhensible visuellement
+- ✅ **Direction inversée** : Fonctionne en reverse (release devient attack)
+- ✅ **Pingpong** : S'inverse naturellement avec la direction
+- ✅ **ADSR complet** : Contrôle fin avec les 4 phases classiques
+
+**Comportements spéciaux** :
+- **Mode ONESHOT** : L'enveloppe se déroule normalement sur toute la séquence
+- **Mode SIMPLE loop** : L'enveloppe redémarre à chaque boucle
+- **Mode PINGPONG** : L'enveloppe s'inverse avec la direction
+- **Player STOPPED** : La frame reste figée au niveau actuel de l'enveloppe
 
 ### 3.2 Modes de fusion (Blend Modes)
 
@@ -362,8 +401,10 @@ Le séquenceur utilise le système MIDI unifié décrit dans **MIDI_SYSTEM_SPECI
 - `speed` : Vitesse de lecture [0.1, 10.0]
 - `blend_level` : Niveau dans le mix [0.0, 1.0]
 - `offset` : Décalage temporel [0.0, 1.0]
-- `attack` : ADSR attack [0, 5000] ms
-- `release` : ADSR release [0, 10000] ms
+- `attack` : ADSR attack ratio [0.0, 1.0] (% de la séquence)
+- `decay` : ADSR decay ratio [0.0, 1.0] (% de la séquence)
+- `sustain` : ADSR sustain level [0.0, 1.0]
+- `release` : ADSR release ratio [0.0, 1.0] (% de la séquence)
 - `loop_mode` : Mode de boucle [0-2]
 - `playback_direction` : Direction lecture (0=FORWARD, 1=REVERSE)
 
