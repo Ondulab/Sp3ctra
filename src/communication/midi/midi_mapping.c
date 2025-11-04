@@ -418,7 +418,7 @@ static int create_default_midi_mapping_file(const char *mapping_file) {
 }
 
 /**
- * Create default MIDI parameters file
+ * Create default MIDI parameters file with complete specifications
  */
 static int create_default_midi_params_file(const char *params_file) {
     FILE *file = fopen(params_file, "w");
@@ -427,19 +427,167 @@ static int create_default_midi_params_file(const char *params_file) {
         return -1;
     }
     
-    fprintf(file, "# MIDI Parameters Specifications\n");
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# MIDI PARAMETERS SPECIFICATIONS\n");
+    fprintf(file, "# ============================================================================\n");
     fprintf(file, "# This file defines default values, ranges, and scaling for all MIDI-controllable parameters\n");
-    fprintf(file, "# Auto-generated - modify with caution\n\n");
+    fprintf(file, "# Format per parameter:\n");
+    fprintf(file, "#   [SECTION.parameter_name]\n");
+    fprintf(file, "#   default=<value>      # Default value\n");
+    fprintf(file, "#   min=<value>          # Minimum value\n");
+    fprintf(file, "#   max=<value>          # Maximum value\n");
+    fprintf(file, "#   scaling=<type>       # linear, logarithmic, exponential, discrete\n");
+    fprintf(file, "#   type=button          # Optional: for momentary triggers\n");
+    fprintf(file, "#\n");
+    fprintf(file, "# See MIDI_SYSTEM_SPECIFICATION.md for complete documentation\n");
+    fprintf(file, "# ============================================================================\n\n");
     
-    // Note: For brevity, we'll create a minimal file. The full version is in midi_params.ini
+    // AUDIO GLOBAL PARAMETERS
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# AUDIO GLOBAL PARAMETERS\n");
+    fprintf(file, "# ============================================================================\n\n");
+    
     fprintf(file, "[AUDIO_GLOBAL.master_volume]\n");
     fprintf(file, "default=1.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[AUDIO_GLOBAL.reverb_mix]\n");
+    fprintf(file, "default=0.3\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[AUDIO_GLOBAL.reverb_size]\n");
+    fprintf(file, "default=0.5\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[AUDIO_GLOBAL.reverb_damp]\n");
+    fprintf(file, "default=0.5\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[AUDIO_GLOBAL.reverb_width]\n");
+    fprintf(file, "default=1.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[AUDIO_GLOBAL.eq_low_gain]\n");
+    fprintf(file, "default=0.0\nmin=-12.0\nmax=12.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[AUDIO_GLOBAL.eq_mid_gain]\n");
+    fprintf(file, "default=0.0\nmin=-12.0\nmax=12.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[AUDIO_GLOBAL.eq_high_gain]\n");
+    fprintf(file, "default=0.0\nmin=-12.0\nmax=12.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[AUDIO_GLOBAL.eq_mid_freq]\n");
+    fprintf(file, "default=1000.0\nmin=200.0\nmax=5000.0\nscaling=logarithmic\n\n");
+    
+    // SYNTHESIS ADDITIVE PARAMETERS
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# SYNTHESIS ADDITIVE PARAMETERS\n");
+    fprintf(file, "# ============================================================================\n\n");
     
     fprintf(file, "[SYNTH_ADDITIVE.volume]\n");
     fprintf(file, "default=1.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
     
+    fprintf(file, "[SYNTH_ADDITIVE.reverb_send]\n");
+    fprintf(file, "default=0.2\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    // SYNTHESIS POLYPHONIC PARAMETERS
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# SYNTHESIS POLYPHONIC PARAMETERS\n");
+    fprintf(file, "# ============================================================================\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.volume]\n");
+    fprintf(file, "default=1.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.reverb_send]\n");
+    fprintf(file, "default=0.2\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.lfo_vibrato]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=10.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.env_attack]\n");
+    fprintf(file, "default=0.01\nmin=0.001\nmax=5.0\nscaling=exponential\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.env_decay]\n");
+    fprintf(file, "default=0.1\nmin=0.001\nmax=5.0\nscaling=exponential\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.env_release]\n");
+    fprintf(file, "default=0.5\nmin=0.001\nmax=10.0\nscaling=exponential\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.note_on]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=127.0\nscaling=discrete\ntype=button\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.note_off]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=127.0\nscaling=discrete\ntype=button\n\n");
+    
+    // SEQUENCER PLAYER DEFAULTS
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# SEQUENCER PLAYER DEFAULTS (applied to all 5 players)\n");
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# These defaults are automatically expanded to individual player parameters\n");
+    fprintf(file, "# (sequencer_player_1_*, sequencer_player_2_*, etc.)\n");
+    fprintf(file, "# ============================================================================\n\n");
+    
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.record_toggle]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=discrete\ntype=button\n\n");
+    
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.play_stop]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=discrete\ntype=button\n\n");
+    
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.mute_toggle]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=discrete\ntype=button\n\n");
+    
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.speed]\n");
+    fprintf(file, "default=1.0\nmin=0.1\nmax=4.0\nscaling=exponential\n\n");
+    
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.blend_level]\n");
+    fprintf(file, "default=1.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.offset]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.attack]\n");
+    fprintf(file, "default=0.01\nmin=0.001\nmax=5.0\nscaling=exponential\n\n");
+    
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.decay]\n");
+    fprintf(file, "default=0.1\nmin=0.001\nmax=5.0\nscaling=exponential\n\n");
+    
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.sustain]\n");
+    fprintf(file, "default=1.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.release]\n");
+    fprintf(file, "default=0.5\nmin=0.001\nmax=10.0\nscaling=exponential\n\n");
+    
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.loop_mode]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=2.0\nscaling=discrete\n\n");
+    
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.playback_direction]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=discrete\n\n");
+    
+    // SEQUENCER GLOBAL PARAMETERS
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# SEQUENCER GLOBAL PARAMETERS\n");
+    fprintf(file, "# ============================================================================\n\n");
+    
+    fprintf(file, "[SEQUENCER_GLOBAL.live_mix_level]\n");
+    fprintf(file, "default=1.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[SEQUENCER_GLOBAL.blend_mode]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=3.0\nscaling=discrete\n\n");
+    
+    fprintf(file, "[SEQUENCER_GLOBAL.master_tempo]\n");
+    fprintf(file, "default=120.0\nmin=40.0\nmax=240.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[SEQUENCER_GLOBAL.quantize_res]\n");
+    fprintf(file, "default=4.0\nmin=1.0\nmax=16.0\nscaling=discrete\n\n");
+    
+    // SYSTEM PARAMETERS
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# SYSTEM PARAMETERS\n");
+    fprintf(file, "# ============================================================================\n\n");
+    
+    fprintf(file, "[SYSTEM.freeze]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=discrete\ntype=button\n\n");
+    
+    fprintf(file, "[SYSTEM.resume]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=discrete\ntype=button\n");
+    
     fclose(file);
-    log_info("MIDI_MAP", "Created default parameters file: %s", params_file);
+    log_info("MIDI_MAP", "Created complete default parameters file: %s", params_file);
     return 0;
 }
 
