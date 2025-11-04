@@ -40,7 +40,9 @@ void midi_cb_audio_master_volume(const MidiParameterValue *param, void *user_dat
     if (gAudioSystem) {
         gAudioSystem->setMasterVolume(param->value);
         
-        log_info("MIDI", "VOLUME: %d%%", (int)(param->value * 100));
+        if (is_startup_verbose()) {
+            log_info("MIDI", "VOLUME: %d%%", (int)(param->value * 100));
+        }
     }
 }
 
@@ -53,7 +55,9 @@ void midi_cb_audio_reverb_mix(const MidiParameterValue *param, void *user_data) 
         }
         gAudioSystem->setReverbMix(param->value);
         
-        log_info("MIDI", "REVERB MIX: %d%%", (int)(param->value * 100));
+        if (is_startup_verbose()) {
+            log_info("MIDI", "REVERB MIX: %d%%", (int)(param->value * 100));
+        }
     }
 }
 
@@ -172,7 +176,9 @@ void midi_cb_synth_additive_volume(const MidiParameterValue *param, void *user_d
     // Set mix level directly (thread-safe)
     setSynthAdditiveMixLevel(param->value);
     
-    log_info("MIDI", "ADDITIVE SYNTH VOLUME: %d%%", (int)(param->value * 100));
+    if (is_startup_verbose()) {
+        log_info("MIDI", "ADDITIVE SYNTH VOLUME: %d%%", (int)(param->value * 100));
+    }
 }
 
 void midi_cb_synth_additive_reverb_send(const MidiParameterValue *param, void *user_data) {
@@ -199,7 +205,9 @@ void midi_cb_synth_polyphonic_volume(const MidiParameterValue *param, void *user
     // Set mix level directly (thread-safe)
     setSynthPolyphonicMixLevel(param->value);
     
-    log_info("MIDI", "POLYPHONIC SYNTH VOLUME: %d%%", (int)(param->value * 100));
+    if (is_startup_verbose()) {
+        log_info("MIDI", "POLYPHONIC SYNTH VOLUME: %d%%", (int)(param->value * 100));
+    }
 }
 
 void midi_cb_synth_polyphonic_reverb_send(const MidiParameterValue *param, void *user_data) {
@@ -478,7 +486,9 @@ void midi_cb_sequencer_live_mix_level(const MidiParameterValue *param, void *use
     
     image_sequencer_set_live_mix_level(g_image_sequencer, param->value);
     
-    log_info("MIDI", "SEQUENCER: Live mix %d%%", (int)(param->value * 100));
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SEQUENCER: Live mix %d%%", (int)(param->value * 100));
+    }
 }
 
 void midi_cb_sequencer_blend_mode(const MidiParameterValue *param, void *user_data) {
@@ -491,7 +501,9 @@ void midi_cb_sequencer_blend_mode(const MidiParameterValue *param, void *user_da
     
     if (mode >= 0 && mode <= 3) {
         image_sequencer_set_blend_mode(g_image_sequencer, (BlendMode)mode);
-        log_info("MIDI", "SEQUENCER: Blend mode %s", modes[mode]);
+        if (is_startup_verbose()) {
+            log_info("MIDI", "SEQUENCER: Blend mode %s", modes[mode]);
+        }
     }
 }
 
@@ -502,7 +514,9 @@ void midi_cb_sequencer_master_tempo(const MidiParameterValue *param, void *user_
     
     image_sequencer_set_bpm(g_image_sequencer, param->raw_value);
     
-    log_info("MIDI", "SEQUENCER: Tempo %.0f BPM", param->raw_value);
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SEQUENCER: Tempo %.0f BPM", param->raw_value);
+    }
 }
 
 void midi_cb_sequencer_quantize_res(const MidiParameterValue *param, void *user_data) {
@@ -511,7 +525,7 @@ void midi_cb_sequencer_quantize_res(const MidiParameterValue *param, void *user_
     // TODO: Implement quantization (will be part of MIDI sync feature)
     const char *res[] = {"QUARTER", "EIGHTH", "SIXTEENTH", "BAR"};
     int r = (int)param->raw_value;
-    if (r >= 0 && r <= 3) {
+    if (r >= 0 && r <= 3 && is_startup_verbose()) {
         log_info("MIDI", "SEQUENCER: Quantize %s", res[r]);
     }
 }
@@ -529,7 +543,9 @@ void midi_cb_system_freeze(const MidiParameterValue *param, void *user_data) {
     g_is_synth_data_fading_out = 0;
     pthread_mutex_unlock(&g_synth_data_freeze_mutex);
     
-    log_info("MIDI", "SYNTH DATA FREEZE: ON");
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SYNTH DATA FREEZE: ON");
+    }
 }
 
 void midi_cb_system_resume(const MidiParameterValue *param, void *user_data) {
@@ -542,7 +558,9 @@ void midi_cb_system_resume(const MidiParameterValue *param, void *user_data) {
     }
     pthread_mutex_unlock(&g_synth_data_freeze_mutex);
     
-    log_info("MIDI", "SYNTH DATA RESUME: Initiating fade out");
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SYNTH DATA RESUME: Initiating fade out");
+    }
 }
 
 /* ============================================================================
