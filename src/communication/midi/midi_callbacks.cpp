@@ -365,20 +365,36 @@ void midi_cb_sequencer_player_attack(const MidiParameterValue *param, void *user
     if (!g_image_sequencer || !user_data) return;
     
     int player_id = *(int*)user_data;
-    // Keep current envelope settings, only update attack
-    image_sequencer_set_adsr(g_image_sequencer, player_id, param->raw_value, 50.0f, 0.7f, 200.0f);
+    image_sequencer_set_attack(g_image_sequencer, player_id, param->value);
     
-    printf("\033[1;33mSEQ Player %d: Attack %.0f ms\033[0m\n", player_id, param->raw_value);
+    printf("\033[1;33mSEQ Player %d: Attack %.0f%%\033[0m\n", player_id, param->value * 100.0f);
+}
+
+void midi_cb_sequencer_player_decay(const MidiParameterValue *param, void *user_data) {
+    if (!g_image_sequencer || !user_data) return;
+    
+    int player_id = *(int*)user_data;
+    image_sequencer_set_decay(g_image_sequencer, player_id, param->value);
+    
+    printf("\033[1;33mSEQ Player %d: Decay %.0f%%\033[0m\n", player_id, param->value * 100.0f);
+}
+
+void midi_cb_sequencer_player_sustain(const MidiParameterValue *param, void *user_data) {
+    if (!g_image_sequencer || !user_data) return;
+    
+    int player_id = *(int*)user_data;
+    image_sequencer_set_sustain(g_image_sequencer, player_id, param->value);
+    
+    printf("\033[1;33mSEQ Player %d: Sustain %.0f%%\033[0m\n", player_id, param->value * 100.0f);
 }
 
 void midi_cb_sequencer_player_release(const MidiParameterValue *param, void *user_data) {
     if (!g_image_sequencer || !user_data) return;
     
     int player_id = *(int*)user_data;
-    // Keep current envelope settings, only update release
-    image_sequencer_set_adsr(g_image_sequencer, player_id, 100.0f, 50.0f, 0.7f, param->raw_value);
+    image_sequencer_set_release(g_image_sequencer, player_id, param->value);
     
-    printf("\033[1;33mSEQ Player %d: Release %.0f ms\033[0m\n", player_id, param->raw_value);
+    printf("\033[1;33mSEQ Player %d: Release %.0f%%\033[0m\n", player_id, param->value * 100.0f);
 }
 
 void midi_cb_sequencer_player_loop_mode(const MidiParameterValue *param, void *user_data) {
@@ -571,6 +587,14 @@ void midi_callbacks_register_sequencer(void *sequencer_instance) {
         // Attack
         snprintf(param_name, sizeof(param_name), "sequencer_player_%d_attack", i + 1);
         midi_mapping_register_callback(param_name, midi_cb_sequencer_player_attack, &player_ids[i]);
+        
+        // Decay
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_decay", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_decay, &player_ids[i]);
+        
+        // Sustain
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_sustain", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_sustain, &player_ids[i]);
         
         // Release
         snprintf(param_name, sizeof(param_name), "sequencer_player_%d_release", i + 1);

@@ -10,7 +10,7 @@ static void blend_rgb_frames(uint8_t *out_R, uint8_t *out_G, uint8_t *out_B,
                              const uint8_t *a_R, const uint8_t *a_G, const uint8_t *a_B,
                              const uint8_t *b_R, const uint8_t *b_G, const uint8_t *b_B,
                              float blend, int num_pixels);
-static float calculate_adsr_level(ADSREnvelope *env, uint64_t current_time);
+static float calculate_adsr_level(ADSREnvelope *env, float normalized_position);
 static inline float clamp_f(float value, float min, float max);
 static inline uint8_t clamp_u8(int value);
 
@@ -40,51 +40,49 @@ static inline uint8_t clamp_u8(int value) {
     return (uint8_t)value;
 }
 
-// Calculate ADSR envelope level
-static float calculate_adsr_level(ADSREnvelope *env, uint64_t current_time) {
-    if (!env->is_triggered) {
-        return 0.0f;
+// Calculate ADSR envelope level based on normalized position in sequence
+static float calculate_adsr_level(ADSREnvelope *env, float normalized_position) {
+    // Clamp position to [0.0, 1.0]
+    normalized_position = clamp_f(normalized_position, 0.0f, 1.0f);
+    
+    float level = 1.0f;
+    float attack_end = env->attack_ratio;
+    float decay_end = attack_end + env->decay_ratio;
+    float sustain_end = 1.0f - env->release_ratio;
+    
+    // Attack phase (0 → 1.0)
+    if (env->attack_ratio > 0.0f && normalized_position < attack_end) {
+        level = normalized_position / env->attack_ratio;
+    }
+    // Decay phase (1.0 → sustain_level)
+    else if (env->decay_ratio > 0.0f && normalized_position < decay_end) {
+        float decay_pos = (normalized_position - attack_end) / env->decay_ratio;
+        level = lerp(1.0f, env->sustain_level, decay_pos);
+    }
+    // Sustain phase (constant level)
+    else if (normalized_position < sustain_end) {
+        level = env->sustain_level;
+    }
+    // Release phase (sustain_level → 0)
+    else if (env->release_ratio > 0.0f) {
+        float release_pos = (normalized_position - sustain_end) / env->release_ratio;
+        level = lerp(env->sustain_level, 0.0f, release_pos);
+    }
+    else {
+        level = env->sustain_level;
     }
     
-    uint64_t elapsed_us = current_time - env->trigger_time_us;
-    float elapsed_ms = elapsed_us / 1000.0f;
+    env->current_level = level;
     
-    // Attack phase
-    if (elapsed_ms < env->attack_ms) {
-        float t = elapsed_ms / env->attack_ms;
-        env->current_level = lerp(0.0f, 1.0f, t);
-        return env->current_level;
+    // DEBUG: Always log ADSR calculations (temporarily enabled)
+    static int log_counter = 0;
+    if (++log_counter % 100 == 0) {  // Log every 100 frames to avoid spam
+        printf("\033[1;35m[ADSR DEBUG] pos=%.3f, A=%.2f, D=%.2f, S=%.2f, R=%.2f → level=%.3f\033[0m\n",
+               normalized_position, env->attack_ratio, env->decay_ratio, 
+               env->sustain_level, env->release_ratio, level);
     }
     
-    // Decay phase
-    elapsed_ms -= env->attack_ms;
-    if (elapsed_ms < env->decay_ms) {
-        float t = elapsed_ms / env->decay_ms;
-        env->current_level = lerp(1.0f, env->sustain_level, t);
-        return env->current_level;
-    }
-    
-    // Sustain phase (until release)
-    if (env->release_time_us == 0) {
-        env->current_level = env->sustain_level;
-        return env->current_level;
-    }
-    
-    // Release phase
-    uint64_t release_elapsed_us = current_time - env->release_time_us;
-    float release_elapsed_ms = release_elapsed_us / 1000.0f;
-    
-    if (release_elapsed_ms < env->release_ms) {
-        float t = release_elapsed_ms / env->release_ms;
-        float release_start = env->current_level;
-        env->current_level = lerp(release_start, 0.0f, t);
-        return env->current_level;
-    }
-    
-    // Release complete
-    env->is_triggered = 0;
-    env->current_level = 0.0f;
-    return 0.0f;
+    return level;
 }
 
 // Blend two RGB frames
@@ -99,14 +97,13 @@ static void blend_rgb_frames(uint8_t *out_R, uint8_t *out_G, uint8_t *out_B,
     }
 }
 
-// Initialize ADSR envelope (disabled by default for immediate response)
+// Initialize ADSR envelope (no envelope by default - immediate 100% presence)
 static void init_adsr_envelope(ADSREnvelope *env) {
     memset(env, 0, sizeof(ADSREnvelope));
-    env->attack_ms = 0.0f;      // No attack - immediate volume
-    env->decay_ms = 0.0f;       // No decay
-    env->sustain_level = 1.0f;  // Full sustain level
-    env->release_ms = 0.0f;     // No release - instant stop
-    env->is_triggered = 0;
+    env->attack_ratio = 0.0f;   // No attack - immediate presence
+    env->decay_ratio = 0.0f;    // No decay
+    env->sustain_level = 1.0f;  // Full presence
+    env->release_ratio = 0.0f;  // No release - instant stop
     env->current_level = 1.0f;  // Start at full level
 }
 
@@ -247,7 +244,15 @@ int image_sequencer_start_recording(ImageSequencer *seq, int player_id) {
     pthread_mutex_lock(&seq->mutex);
     SequencePlayer *player = &seq->players[player_id];
     
-    if (player->state != PLAYER_STATE_IDLE && player->state != PLAYER_STATE_READY) {
+    // Auto-stop playback if currently playing
+    if (player->state == PLAYER_STATE_PLAYING) {
+        printf("[SEQ] Player %d: Auto-stopping playback to start recording\n", player_id);
+        player->state = PLAYER_STATE_STOPPED;
+    }
+    
+    if (player->state != PLAYER_STATE_IDLE && 
+        player->state != PLAYER_STATE_READY && 
+        player->state != PLAYER_STATE_STOPPED) {
         pthread_mutex_unlock(&seq->mutex);
         return -1;
     }
@@ -278,9 +283,6 @@ int image_sequencer_stop_recording(ImageSequencer *seq, int player_id) {
     if (player->trigger_mode == TRIGGER_MODE_AUTO && player->recorded_frames > 0) {
         player->state = PLAYER_STATE_PLAYING;
         player->playback_position = 0.0f;
-        player->envelope.is_triggered = 1;
-        player->envelope.trigger_time_us = get_time_us();
-        player->envelope.release_time_us = 0;
         printf("[SEQ] Player %d: Stopped recording, auto-playing (%d frames)\n", 
                player_id, player->recorded_frames);
     } else {
@@ -314,10 +316,6 @@ int image_sequencer_start_playback(ImageSequencer *seq, int player_id) {
     player->state = PLAYER_STATE_PLAYING;
     player->playback_position = 0.0f;
     
-    player->envelope.is_triggered = 1;
-    player->envelope.trigger_time_us = get_time_us();
-    player->envelope.release_time_us = 0;
-    
     pthread_mutex_unlock(&seq->mutex);
     printf("[SEQ] Player %d: Started playback\n", player_id);
     return 0;
@@ -335,7 +333,6 @@ int image_sequencer_stop_playback(ImageSequencer *seq, int player_id) {
     }
     
     player->state = PLAYER_STATE_STOPPED;
-    player->envelope.release_time_us = get_time_us();
     
     pthread_mutex_unlock(&seq->mutex);
     printf("[SEQ] Player %d: Stopped playback\n", player_id);
@@ -418,7 +415,6 @@ int image_sequencer_mute_player(ImageSequencer *seq, int player_id) {
     
     if (player->state == PLAYER_STATE_PLAYING) {
         player->state = PLAYER_STATE_MUTED;
-        player->envelope.release_time_us = get_time_us();
         pthread_mutex_unlock(&seq->mutex);
         printf("[SEQ] Player %d: Muted\n", player_id);
         return 0;
@@ -436,9 +432,6 @@ int image_sequencer_unmute_player(ImageSequencer *seq, int player_id) {
     
     if (player->state == PLAYER_STATE_MUTED && player->recorded_frames > 0) {
         player->state = PLAYER_STATE_PLAYING;
-        player->envelope.is_triggered = 1;
-        player->envelope.trigger_time_us = get_time_us();
-        player->envelope.release_time_us = 0;
         pthread_mutex_unlock(&seq->mutex);
         printf("[SEQ] Player %d: Unmuted\n", player_id);
         return 0;
@@ -462,43 +455,101 @@ int image_sequencer_toggle_mute(ImageSequencer *seq, int player_id) {
     }
 }
 
-// ADSR Control
+// ADSR Control (positional envelope)
 void image_sequencer_set_adsr(ImageSequencer *seq, int player_id, 
-                              float attack_ms, float decay_ms, 
-                              float sustain_level, float release_ms) {
+                              float attack_ratio, float decay_ratio,
+                              float sustain_level, float release_ratio) {
     if (!seq || player_id < 0 || player_id >= seq->num_players) return;
     
-    attack_ms = clamp_f(attack_ms, 0.0f, 5000.0f);
-    decay_ms = clamp_f(decay_ms, 0.0f, 5000.0f);
+    attack_ratio = clamp_f(attack_ratio, 0.0f, 1.0f);
+    decay_ratio = clamp_f(decay_ratio, 0.0f, 1.0f);
     sustain_level = clamp_f(sustain_level, 0.0f, 1.0f);
-    release_ms = clamp_f(release_ms, 0.0f, 10000.0f);
+    release_ratio = clamp_f(release_ratio, 0.0f, 1.0f);
+    
+    // Ensure attack + decay + release doesn't exceed 1.0
+    float total = attack_ratio + decay_ratio + release_ratio;
+    if (total > 1.0f) {
+        attack_ratio /= total;
+        decay_ratio /= total;
+        release_ratio /= total;
+    }
     
     pthread_mutex_lock(&seq->mutex);
     ADSREnvelope *env = &seq->players[player_id].envelope;
-    env->attack_ms = attack_ms;
-    env->decay_ms = decay_ms;
+    env->attack_ratio = attack_ratio;
+    env->decay_ratio = decay_ratio;
     env->sustain_level = sustain_level;
-    env->release_ms = release_ms;
+    env->release_ratio = release_ratio;
     pthread_mutex_unlock(&seq->mutex);
 }
 
-void image_sequencer_trigger_envelope(ImageSequencer *seq, int player_id) {
+void image_sequencer_set_attack(ImageSequencer *seq, int player_id, float attack_ratio) {
     if (!seq || player_id < 0 || player_id >= seq->num_players) return;
+    
+    attack_ratio = clamp_f(attack_ratio, 0.0f, 1.0f);
     
     pthread_mutex_lock(&seq->mutex);
     ADSREnvelope *env = &seq->players[player_id].envelope;
-    env->is_triggered = 1;
-    env->trigger_time_us = get_time_us();
-    env->release_time_us = 0;
+    env->attack_ratio = attack_ratio;
+    
+    // Ensure attack + decay + release doesn't exceed 1.0
+    float total = env->attack_ratio + env->decay_ratio + env->release_ratio;
+    if (total > 1.0f) {
+        float scale = 1.0f / total;
+        env->attack_ratio *= scale;
+        env->decay_ratio *= scale;
+        env->release_ratio *= scale;
+    }
     pthread_mutex_unlock(&seq->mutex);
 }
 
-void image_sequencer_release_envelope(ImageSequencer *seq, int player_id) {
+void image_sequencer_set_decay(ImageSequencer *seq, int player_id, float decay_ratio) {
     if (!seq || player_id < 0 || player_id >= seq->num_players) return;
+    
+    decay_ratio = clamp_f(decay_ratio, 0.0f, 1.0f);
     
     pthread_mutex_lock(&seq->mutex);
     ADSREnvelope *env = &seq->players[player_id].envelope;
-    env->release_time_us = get_time_us();
+    env->decay_ratio = decay_ratio;
+    
+    // Ensure attack + decay + release doesn't exceed 1.0
+    float total = env->attack_ratio + env->decay_ratio + env->release_ratio;
+    if (total > 1.0f) {
+        float scale = 1.0f / total;
+        env->attack_ratio *= scale;
+        env->decay_ratio *= scale;
+        env->release_ratio *= scale;
+    }
+    pthread_mutex_unlock(&seq->mutex);
+}
+
+void image_sequencer_set_sustain(ImageSequencer *seq, int player_id, float sustain_level) {
+    if (!seq || player_id < 0 || player_id >= seq->num_players) return;
+    
+    sustain_level = clamp_f(sustain_level, 0.0f, 1.0f);
+    
+    pthread_mutex_lock(&seq->mutex);
+    seq->players[player_id].envelope.sustain_level = sustain_level;
+    pthread_mutex_unlock(&seq->mutex);
+}
+
+void image_sequencer_set_release(ImageSequencer *seq, int player_id, float release_ratio) {
+    if (!seq || player_id < 0 || player_id >= seq->num_players) return;
+    
+    release_ratio = clamp_f(release_ratio, 0.0f, 1.0f);
+    
+    pthread_mutex_lock(&seq->mutex);
+    ADSREnvelope *env = &seq->players[player_id].envelope;
+    env->release_ratio = release_ratio;
+    
+    // Ensure attack + decay + release doesn't exceed 1.0
+    float total = env->attack_ratio + env->decay_ratio + env->release_ratio;
+    if (total > 1.0f) {
+        float scale = 1.0f / total;
+        env->attack_ratio *= scale;
+        env->decay_ratio *= scale;
+        env->release_ratio *= scale;
+    }
     pthread_mutex_unlock(&seq->mutex);
 }
 
@@ -579,6 +630,13 @@ int image_sequencer_process_frame(
     
     uint64_t start_time = get_time_us();
     
+    // DEBUG: Log sequencer state
+    static int state_log_counter = 0;
+    if (++state_log_counter % 1000 == 0) {
+        printf("\033[1;33m[SEQ STATE] enabled=%d, num_players=%d\033[0m\n", 
+               seq->enabled, seq->num_players);
+    }
+    
     // If disabled, just pass through
     if (!seq->enabled) {
         memcpy(output_R, live_R, CIS_MAX_PIXELS_NB);
@@ -588,7 +646,6 @@ int image_sequencer_process_frame(
         return 0;
     }
     
-    uint64_t current_time = get_time_us();
     int has_active_players = 0;
     
     // Initialize output accumulators (float for weighted sum)
@@ -613,7 +670,7 @@ int image_sequencer_process_frame(
                 memcpy(player->frames[player->recorded_frames].buffer_R, live_R, CIS_MAX_PIXELS_NB);
                 memcpy(player->frames[player->recorded_frames].buffer_G, live_G, CIS_MAX_PIXELS_NB);
                 memcpy(player->frames[player->recorded_frames].buffer_B, live_B, CIS_MAX_PIXELS_NB);
-                player->frames[player->recorded_frames].timestamp_us = current_time;
+                player->frames[player->recorded_frames].timestamp_us = get_time_us();
                 player->recorded_frames++;
             } else {
                 // Buffer full, auto-stop recording
@@ -623,17 +680,25 @@ int image_sequencer_process_frame(
         }
         
         // Handle playback
-        if (player->state == PLAYER_STATE_PLAYING || player->state == PLAYER_STATE_STOPPED) {
+        if (player->state == PLAYER_STATE_PLAYING) {
             if (player->recorded_frames == 0) continue;
             
-            // Calculate envelope level
-            float env_level = calculate_adsr_level(&player->envelope, current_time);
-            
-            // If envelope finished in stopped state, mark as ready
-            if (player->state == PLAYER_STATE_STOPPED && env_level == 0.0f) {
-                player->state = PLAYER_STATE_READY;
-                continue;
+            // Calculate normalized position for ASR envelope
+            float normalized_pos = 0.0f;
+            if (player->recorded_frames > 0) {
+                normalized_pos = player->playback_position / (float)player->recorded_frames;
             }
+            
+            // Calculate envelope level based on position
+            float env_level = calculate_adsr_level(&player->envelope, normalized_pos);
+            
+            #ifdef DEBUG_SEQUENCER_PLAYBACK
+            if (i == 0 && (int)player->playback_position % 100 == 0) {  // Log every 100 frames for player 0
+                printf("[SEQ] Player %d: pos=%.1f/%d (%.1f%%), env=%.3f, blend=%.2f\n",
+                       i, player->playback_position, player->recorded_frames,
+                       normalized_pos * 100.0f, env_level, player->blend_level);
+            }
+            #endif
             
             // Get current frame with interpolation
             int frame_idx = (int)player->playback_position;
@@ -652,7 +717,6 @@ int image_sequencer_process_frame(
                     player->playback_position = (float)frame_idx;
                 } else { // LOOP_MODE_ONESHOT
                     player->state = PLAYER_STATE_STOPPED;
-                    player->envelope.release_time_us = current_time;
                     continue;
                 }
             }
@@ -684,13 +748,16 @@ int image_sequencer_process_frame(
             // Apply envelope and blend level
             float total_level = env_level * player->blend_level;
             
-            // Accumulate into output
+            // 🎨 ADSR FIX: Accumulate RGB with envelope modulation
+            // IMPORTANT: We must accumulate even when level is low (for fade-out effect)
+            // The level will naturally reduce pixel brightness, creating the fade
             for (int p = 0; p < CIS_MAX_PIXELS_NB; p++) {
                 accum_R[p] += player_R[p] * total_level;
                 accum_G[p] += player_G[p] * total_level;
                 accum_B[p] += player_B[p] * total_level;
             }
-            total_weight += total_level;
+            // Don't add env_level to total_weight - only count blend_level for multi-player normalization
+            total_weight += player->blend_level;
             
             has_active_players = 1;
             
@@ -708,7 +775,8 @@ int image_sequencer_process_frame(
         // If we have active players, normalize and blend
         if (total_weight > 0.0f) {
             for (int p = 0; p < CIS_MAX_PIXELS_NB; p++) {
-                // Normalize sequencer output
+                // Normalize only for multi-player mixing (not for ADSR envelope)
+                // The envelope effect is already baked into accum values
                 float norm_R = accum_R[p] / total_weight;
                 float norm_G = accum_G[p] / total_weight;
                 float norm_B = accum_B[p] / total_weight;
@@ -745,6 +813,14 @@ int image_sequencer_process_frame(
     seq->frames_processed++;
     uint64_t process_time = get_time_us() - start_time;
     seq->total_process_time_us += process_time;
+    
+    #ifdef DEBUG_SEQUENCER_PERFORMANCE
+    if (seq->frames_processed % 1000 == 0) {  // Log every 1000 frames
+        float avg_time = (float)seq->total_process_time_us / (float)seq->frames_processed;
+        printf("[SEQ PERF] Frames: %llu, Avg time: %.2f µs, Active players: %d\n",
+               (unsigned long long)seq->frames_processed, avg_time, has_active_players);
+    }
+    #endif
     
     pthread_mutex_unlock(&seq->mutex);
     return 0;

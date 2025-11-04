@@ -62,6 +62,8 @@ void midi_cb_sequencer_player_speed(const MidiParameterValue *param, void *user_
 void midi_cb_sequencer_player_blend_level(const MidiParameterValue *param, void *user_data);
 void midi_cb_sequencer_player_offset(const MidiParameterValue *param, void *user_data);
 void midi_cb_sequencer_player_attack(const MidiParameterValue *param, void *user_data);
+void midi_cb_sequencer_player_decay(const MidiParameterValue *param, void *user_data);
+void midi_cb_sequencer_player_sustain(const MidiParameterValue *param, void *user_data);
 void midi_cb_sequencer_player_release(const MidiParameterValue *param, void *user_data);
 void midi_cb_sequencer_player_loop_mode(const MidiParameterValue *param, void *user_data);
 void midi_cb_sequencer_player_playback_direction(const MidiParameterValue *param, void *user_data);
