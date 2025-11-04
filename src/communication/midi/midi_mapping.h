@@ -212,6 +212,22 @@ void midi_mapping_print_status(void);
  */
 void midi_mapping_print_debug_info(void);
 
+/* ============================================================================
+ * PUBLIC API - DEVICE CONFIGURATION
+ * ============================================================================ */
+
+/**
+ * Get configured MIDI device name from midi_mapping.ini
+ * @return Device name string ("auto" if not configured)
+ */
+const char* midi_mapping_get_device_name(void);
+
+/**
+ * Get configured MIDI device ID from midi_mapping.ini
+ * @return Device ID (-1 for auto)
+ */
+int midi_mapping_get_device_id(void);
+
 #ifdef __cplusplus
 }
 #endif

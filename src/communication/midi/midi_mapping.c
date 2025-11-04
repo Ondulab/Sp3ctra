@@ -54,6 +54,10 @@ typedef struct {
 
 static MidiMappingSystem g_midi_system = {0};
 
+/* Global MIDI device configuration */
+static char g_midi_device_name[256] = "auto";
+static int g_midi_device_id = -1; // -1 means auto
+
 /* ============================================================================
  * INTERNAL HELPER FUNCTIONS
  * ============================================================================ */
@@ -625,7 +629,7 @@ int midi_mapping_load_mappings(const char *config_file) {
     char current_section[64] = "";
     int line_number = 0;
     int mappings_loaded = 0;
-    int skip_section = 0; // Flag to skip entire sections
+    int in_midi_device_section = 0; // Flag for MIDI_DEVICE section
     
     while (fgets(line, sizeof(line), file)) {
         line_number++;
@@ -647,21 +651,45 @@ int midi_mapping_load_mappings(const char *config_file) {
             *end = '\0';
             const char *section_name = trimmed + 1;
             
-            // Skip MIDI_DEVICE section - it's for device configuration, not parameter mapping
+            // Handle MIDI_DEVICE section specially - read device config
             if (strcmp(section_name, "MIDI_DEVICE") == 0) {
-                skip_section = 1;
+                in_midi_device_section = 1;
                 current_section[0] = '\0'; // Clear current section
                 continue;
             }
             
-            skip_section = 0; // Reset flag for other sections
+            in_midi_device_section = 0; // Reset flag for other sections
             strncpy(current_section, section_name, sizeof(current_section) - 1);
             current_section[sizeof(current_section) - 1] = '\0';
             continue;
         }
         
-        // Skip parameters if we're in a skipped section
-        if (skip_section) {
+        // Handle MIDI_DEVICE section parameters
+        if (in_midi_device_section) {
+            // Parse device_name and device_id
+            char *equals = strchr(trimmed, '=');
+            if (equals) {
+                *equals = '\0';
+                char *key = trim_whitespace(trimmed);
+                char *value = trim_whitespace(equals + 1);
+                
+                // Remove inline comments from value
+                remove_inline_comment(value);
+                value = trim_whitespace(value);
+                
+                if (strcmp(key, "device_name") == 0) {
+                    strncpy(g_midi_device_name, value, sizeof(g_midi_device_name) - 1);
+                    g_midi_device_name[sizeof(g_midi_device_name) - 1] = '\0';
+                    log_info("MIDI_MAP", "MIDI device_name configured: '%s'", g_midi_device_name);
+                } else if (strcmp(key, "device_id") == 0) {
+                    if (strcmp(value, "auto") == 0) {
+                        g_midi_device_id = -1;
+                    } else {
+                        g_midi_device_id = atoi(value);
+                    }
+                    log_info("MIDI_MAP", "MIDI device_id configured: %d", g_midi_device_id);
+                }
+            }
             continue;
         }
         
@@ -1070,4 +1098,16 @@ void midi_mapping_print_debug_info(void) {
     }
     
     printf("\n======================================\n\n");
+}
+
+/* ============================================================================
+ * PUBLIC API IMPLEMENTATION - DEVICE CONFIGURATION
+ * ============================================================================ */
+
+const char* midi_mapping_get_device_name(void) {
+    return g_midi_device_name;
+}
+
+int midi_mapping_get_device_id(void) {
+    return g_midi_device_id;
 }
