@@ -19,6 +19,7 @@
 #include <termios.h>
 
 #include "error.h"
+#include "logger.h"
 #include "udp.h"
 
 // #define CALIBRATION
@@ -38,12 +39,12 @@ int udp_Init(struct sockaddr_in *si_other, struct sockaddr_in *si_me) {
     die("socket");
   }
 
-  printf("CREATE UDP SOCKET\n");
+  log_info("UDP", "Creating UDP socket");
 
   // Enable socket address reuse to prevent "Address already in use" errors
   int reuse = 1;
   if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == -1) {
-    perror("Warning: Failed to set SO_REUSEADDR");
+    log_warning("UDP", "Failed to set SO_REUSEADDR: %s", strerror(errno));
     // Continue anyway, this is not critical
   }
 
@@ -55,17 +56,15 @@ int udp_Init(struct sockaddr_in *si_other, struct sockaddr_in *si_me) {
 
   // Liaison de la socket au port
   if (bind(s, (struct sockaddr *)si_me, sizeof(*si_me)) == -1) {
-    printf("ERROR: Failed to bind UDP socket to port %d\n", PORT);
-    printf(
-        "This usually means the port is already in use by another process.\n");
-    printf(
-        "Try waiting a few seconds or check if another instance is running.\n");
-    perror("bind");
+    log_error("UDP", "Failed to bind UDP socket to port %d", PORT);
+    log_error("UDP", "This usually means the port is already in use by another process");
+    log_error("UDP", "Try waiting a few seconds or check if another instance is running");
+    log_error("UDP", "bind error: %s", strerror(errno));
     close(s);
     return -1;
   }
 
-  printf("BIND SOCKET to port %d\n", PORT);
+  log_info("UDP", "Socket bound to port %d", PORT);
 
   // Retourne le descripteur de la socket
   return s;
@@ -73,7 +72,7 @@ int udp_Init(struct sockaddr_in *si_other, struct sockaddr_in *si_me) {
 
 void udp_cleanup(int socket_fd) {
   if (socket_fd >= 0) {
-    printf("CLOSING UDP SOCKET\n");
+    log_info("UDP", "Closing UDP socket");
     close(socket_fd);
   }
 }

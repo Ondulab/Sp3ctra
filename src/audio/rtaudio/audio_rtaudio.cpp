@@ -9,6 +9,7 @@
 #include "../../config/config_loader.h"   // For runtime configuration access
 #include "../../utils/image_debug.h"      // For continuous volume capture
 #include "../../synthesis/additive/wave_generation.h"  // For waves[] access
+#include "../../utils/logger.h"           // For structured logging
 #include <algorithm>         // For std::transform
 #include <cstring>
 #include <iostream>
@@ -288,9 +289,7 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
       reverbDamping(DEFAULT_REVERB_DAMPING), reverbWidth(DEFAULT_REVERB_WIDTH),
       reverbEnabled(ENABLE_REVERB), reverbThreadRunning(false) {
 
-  std::cout << "\033[1;32m[ZitaRev1] Reverb enabled by default with "
-               "Zita-Rev1 algorithm\033[0m"
-            << std::endl;
+  log_info("AUDIO", "Reverb enabled by default with Zita-Rev1 algorithm");
 
   processBuffer.resize(bufferSize * channels);
 
@@ -610,7 +609,7 @@ void AudioSystem::reverbThreadFunction() {
 bool AudioSystem::initialize() {
   // Forcer l'utilisation de l'API ALSA sur Linux
 #ifdef __linux__
-  std::cout << "Attempting to initialize RtAudio with ALSA API..." << std::endl;
+  log_info("AUDIO", "Attempting to initialize RtAudio with ALSA API");
   audio = new RtAudio(RtAudio::LINUX_ALSA);
 #else
   audio = new RtAudio();
@@ -618,7 +617,7 @@ bool AudioSystem::initialize() {
 
   // Vérifier si RtAudio a été correctement créé
   if (!audio) {
-    std::cerr << "Unable to create RtAudio instance" << std::endl;
+    log_error("AUDIO", "Unable to create RtAudio instance");
     return false;
   }
 
@@ -627,7 +626,7 @@ bool AudioSystem::initialize() {
   try {
     deviceCount = audio->getDeviceCount();
   } catch (const std::exception &error) {
-    std::cerr << "Error getting device count: " << error.what() << std::endl;
+    log_error("AUDIO", "Error getting device count: %s", error.what());
     delete audio;
     audio = nullptr;
     return false;
@@ -640,7 +639,7 @@ bool AudioSystem::initialize() {
   // Handle specific device requests (ID or name)
   if (requestedDeviceId >= 0 || g_requested_audio_device_name != NULL) {
     // Only enumerate devices when specifically requested
-    std::cout << "🔍 Searching for specific audio device..." << std::endl;
+    log_info("AUDIO", "Searching for specific audio device");
     
     // Perform full enumeration only when needed
     std::vector<std::pair<unsigned int, std::string>> accessibleDevices;
@@ -654,7 +653,7 @@ bool AudioSystem::initialize() {
           if (requestedDeviceId >= 0 && i == (unsigned int)requestedDeviceId) {
             preferredDeviceId = i;
             foundRequestedDevice = true;
-            std::cout << "✅ Found requested device ID " << i << ": " << info.name << std::endl;
+            log_info("AUDIO", "Found requested device ID %u: %s", i, info.name.c_str());
           }
           
           // Check for requested device name
@@ -667,8 +666,8 @@ bool AudioSystem::initialize() {
             if (deviceName.find(searchName) != std::string::npos) {
               preferredDeviceId = i;
               foundRequestedDevice = true;
-              std::cout << "✅ Found requested device '" << g_requested_audio_device_name 
-                        << "': " << info.name << std::endl;
+              log_info("AUDIO", "Found requested device '%s': %s", 
+                      g_requested_audio_device_name, info.name.c_str());
               break;
             }
           }
@@ -681,23 +680,23 @@ bool AudioSystem::initialize() {
     
     // Validate that requested device was found
     if ((requestedDeviceId >= 0 || g_requested_audio_device_name != NULL) && !foundRequestedDevice) {
-      std::cerr << "❌ Requested audio device not found!" << std::endl;
+      log_error("AUDIO", "Requested audio device not found");
       if (requestedDeviceId >= 0) {
-        std::cerr << "   Device ID " << requestedDeviceId << " is not available." << std::endl;
+        log_error("AUDIO", "Device ID %d is not available", requestedDeviceId);
       }
       if (g_requested_audio_device_name != NULL) {
-        std::cerr << "   Device '" << g_requested_audio_device_name << "' is not available." << std::endl;
+        log_error("AUDIO", "Device '%s' is not available", g_requested_audio_device_name);
       }
-      std::cerr << "   Use --list-audio-devices to see available devices." << std::endl;
+      log_error("AUDIO", "Use --list-audio-devices to see available devices");
       return false;
     }
   } else {
     // Default behavior: use default device without enumeration
     try {
       RtAudio::DeviceInfo defaultInfo = audio->getDeviceInfo(preferredDeviceId);
-      std::cout << "🎯 Using default audio device: " << defaultInfo.name << std::endl;
+      log_info("AUDIO", "Using default audio device: %s", defaultInfo.name.c_str());
     } catch (const std::exception &error) {
-      std::cerr << "❌ Cannot access default audio device: " << error.what() << std::endl;
+      log_error("AUDIO", "Cannot access default audio device: %s", error.what());
       return false;
     }
   }
@@ -731,7 +730,7 @@ bool AudioSystem::initialize() {
   // Check device capabilities before opening
   try {
     RtAudio::DeviceInfo deviceInfo = audio->getDeviceInfo(preferredDeviceId);
-    std::cout << "Audio device: " << deviceInfo.name << " (ID: " << preferredDeviceId << ")" << std::endl;
+    log_info("AUDIO", "Audio device: %s (ID: %u)", deviceInfo.name.c_str(), preferredDeviceId);
 
     // Check if configured frequency is supported
     bool supportsConfigRate = false;
@@ -744,19 +743,19 @@ bool AudioSystem::initialize() {
     }
 
     if (!supportsConfigRate) {
-      std::cerr << "ERROR: Device does not support " << configRate << "Hz" << std::endl;
+      log_error("AUDIO", "Device does not support %uHz", configRate);
       return false;
     }
   } catch (std::exception &e) {
-    std::cerr << "Device query failed: " << e.what() << std::endl;
+    log_error("AUDIO", "Device query failed: %s", e.what());
     return false;
   }
 
   // Use SAMPLING_FREQUENCY from config.h instead of hard-coding 96kHz
   unsigned int configSampleRate = g_sp3ctra_config.sampling_frequency;
   if (sampleRate != configSampleRate) {
-    std::cout << "CONFIGURATION: Change from " << sampleRate << "Hz to "
-              << configSampleRate << "Hz (defined in config.h)" << std::endl;
+    log_info("AUDIO", "CONFIGURATION: Change from %uHz to %uHz (defined in config.h)", 
+            sampleRate, configSampleRate);
     sampleRate = configSampleRate;
   }
 
@@ -771,23 +770,23 @@ bool AudioSystem::initialize() {
       
       // Check for critical mismatches only
       if (bufferSize != (unsigned int)g_sp3ctra_config.audio_buffer_size) {
-        std::cerr << "ERROR: Buffer size mismatch - Config: " << g_sp3ctra_config.audio_buffer_size 
-                  << " frames, Hardware: " << bufferSize << " frames" << std::endl;
-        std::cerr << "Change audio_buffer_size to " << bufferSize << " in sp3ctra.ini" << std::endl;
+        log_error("AUDIO", "Buffer size mismatch - Config: %d frames, Hardware: %u frames", 
+                 g_sp3ctra_config.audio_buffer_size, bufferSize);
+        log_error("AUDIO", "Change audio_buffer_size to %u in sp3ctra.ini", bufferSize);
         return false;
       }
 
       if (actualSampleRate != configSampleRate) {
-        std::cerr << "ERROR: Sample rate mismatch - Requested: " << configSampleRate 
-                  << "Hz, Got: " << actualSampleRate << "Hz" << std::endl;
+        log_error("AUDIO", "Sample rate mismatch - Requested: %uHz, Got: %uHz", 
+                 configSampleRate, actualSampleRate);
         return false;
       }
 
-      std::cout << "Stream opened successfully: " << actualSampleRate << "Hz, " 
-                << bufferSize << " frames" << std::endl;
+      log_info("AUDIO", "Stream opened successfully: %uHz, %u frames", 
+              actualSampleRate, bufferSize);
     }
   } catch (std::exception &e) {
-    std::cerr << "RtAudio error: " << e.what() << std::endl;
+    log_error("AUDIO", "RtAudio error: %s", e.what());
     delete audio;    // Clean up RtAudio object on failure
     audio = nullptr; // Set pointer to nullptr
     return false;
@@ -804,7 +803,7 @@ bool AudioSystem::start() {
   try {
     audio->startStream();
   } catch (std::exception &e) {
-    std::cerr << "Erreur démarrage RtAudio: " << e.what() << std::endl;
+    log_error("AUDIO", "RtAudio start error: %s", e.what());
     return false;
   }
 
@@ -818,7 +817,7 @@ void AudioSystem::stop() {
     try {
       audio->stopStream();
     } catch (std::exception &e) {
-      std::cerr << "Erreur arrêt RtAudio: " << e.what() << std::endl;
+      log_error("AUDIO", "RtAudio stop error: %s", e.what());
     }
     isRunning = false;
   }
@@ -897,7 +896,7 @@ bool AudioSystem::setDevice(unsigned int deviceId) {
       audio->startStream();
     }
   } catch (std::exception &e) {
-    std::cerr << "Erreur changement périphérique: " << e.what() << std::endl;
+    log_error("AUDIO", "Device change error: %s", e.what());
     return false;
   }
 
@@ -953,8 +952,7 @@ float AudioSystem::getMasterVolume() const { return masterVolume; }
 // Activer/désactiver la réverbération
 void AudioSystem::enableReverb(bool enable) {
   reverbEnabled = enable;
-  std::cout << "\033[1;36mREVERB: " << (enable ? "ON" : "OFF") << "\033[0m"
-            << std::endl;
+  log_info("AUDIO", "REVERB: %s", enable ? "ON" : "OFF");
 }
 
 // Vérifier si la réverbération est activée
@@ -1027,8 +1025,7 @@ float AudioSystem::getReverbWidth() const { return reverbWidth; }
 // Set requested device ID for initialization
 void AudioSystem::setRequestedDeviceId(int deviceId) {
   requestedDeviceId = deviceId;
-  std::cout << "Audio device ID " << deviceId << " requested for initialization"
-            << std::endl;
+  log_info("AUDIO", "Audio device ID %d requested for initialization", deviceId);
 }
 
 // Fonctions C pour la compatibilité avec le code existant
@@ -1082,7 +1079,7 @@ void audio_Init(void) {
   // CRITICAL: Initialize buffer index atomically
   __atomic_store_n(&current_buffer_index, 0, __ATOMIC_SEQ_CST);
   
-  printf("[RT-SAFE] Audio buffers initialized with zero content and atomic ready states\n");
+  log_info("AUDIO", "RT-safe audio buffers initialized with zero content and atomic ready states");
 
   // Créer et initialiser le système audio RtAudio
   if (!gAudioSystem) {
@@ -1096,9 +1093,7 @@ void audio_Init(void) {
   if (!gEqualizer) {
     float sampleRate = (gAudioSystem) ? g_sp3ctra_config.sampling_frequency : 44100.0f;
     eq_Init(sampleRate);
-    std::cout
-        << "\033[1;32m[ThreeBandEQ] Three-band equalizer initialized\033[0m"
-        << std::endl;
+    log_info("AUDIO", "Three-band equalizer initialized");
   }
 }
 

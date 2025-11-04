@@ -13,8 +13,8 @@
 #include "synth_additive.h" // For synth data freeze global variables and mutex
 #include "synth_polyphonic.h" // For synth_polyphonic_set_vibrato_rate
 #include "three_band_eq.h"
+#include "../../utils/logger.h"
 #include <algorithm>
-#include <iostream>
 #include <pthread.h> // Required for pthread_mutex_lock/unlock
 
 // Global instance
@@ -131,7 +131,7 @@ bool MidiController::connectToDevice(unsigned int portNumber) {
       currentController = MIDI_NONE;
     }
 
-    std::cout << "Connected to MIDI device: " << portName << std::endl;
+    log_info("MIDI", "Connected to MIDI device: %s", portName.c_str());
     return true;
   } catch (RtMidiError &error) {
     std::cerr << "Error connecting to MIDI device: " << error.getMessage()
@@ -163,7 +163,7 @@ void MidiController::disconnect() {
     midiIn->closePort();
     isConnected = false;
     currentController = MIDI_NONE;
-    std::cout << "MIDI device disconnected" << std::endl;
+    log_info("MIDI", "MIDI device disconnected");
   }
 }
 
@@ -249,6 +249,20 @@ void MidiController::processMidiMessage(double timeStamp,
   if (g_use_unified_midi_system) {
     unsigned char messageType = status & 0xF0;
     unsigned char channel = status & 0x0F;
+    
+    // Log all incoming MIDI messages at debug level
+    const char *msg_type_str = "UNKNOWN";
+    if (messageType == 0xB0) {
+      msg_type_str = "CC";
+    } else if (messageType == 0x90) {
+      msg_type_str = "NOTE_ON";
+    } else if (messageType == 0x80) {
+      msg_type_str = "NOTE_OFF";
+    } else if (messageType == 0xE0) {
+      msg_type_str = "PITCHBEND";
+    }
+    
+    log_debug("MIDI", "RX: %s ch=%d num=%d val=%d", msg_type_str, channel, number, value);
     
     // Convert RtMidi message type to our enum and dispatch
     if (messageType == 0xB0) {
@@ -346,9 +360,9 @@ void midi_SetupVolumeControl() {
         gAudioSystem->setMasterVolume(volume);
       }
     });
-    printf("MIDI volume control enabled\n");
+    log_info("MIDI", "MIDI volume control enabled");
   } else {
-    printf("Cannot setup MIDI volume control - MIDI or Audio not initialized\n");
+    log_warning("MIDI", "Cannot setup MIDI volume control - MIDI or Audio not initialized");
   }
 }
 

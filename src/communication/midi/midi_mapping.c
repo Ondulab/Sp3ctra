@@ -8,10 +8,12 @@
  */
 
 #include "midi_mapping.h"
+#include "../../utils/logger.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <errno.h>
 
 /* ============================================================================
  * INTERNAL STRUCTURES
@@ -149,14 +151,14 @@ static float midi_to_normalized(int midi_value) {
 static void update_parameter_value(ParameterEntry *param, float normalized_value) {
     if (!param) return;
     
-    printf("\033[1;35m[DEBUG] update_parameter_value: '%s' normalized=%.3f\033[0m\n", 
-           param->name, normalized_value);
+    log_debug("MIDI_MAP", "update_parameter_value: '%s' normalized=%.3f", 
+              param->name, normalized_value);
     
     // Update values
     param->current_value = normalized_value;
     param->current_raw_value = normalized_to_raw(normalized_value, &param->spec);
     
-    printf("\033[1;35m[DEBUG]   Raw value computed: %.3f\033[0m\n", param->current_raw_value);
+    log_debug("MIDI_MAP", "  Raw value computed: %.3f", param->current_raw_value);
     
     // Prepare callback data
     MidiParameterValue callback_data = {
@@ -175,8 +177,8 @@ static void update_parameter_value(ParameterEntry *param, float normalized_value
         }
     }
     
-    printf("\033[1;35m[DEBUG]   Found %d active callbacks for '%s'\033[0m\n", 
-           callback_count, param->name);
+    log_debug("MIDI_MAP", "  Found %d active callbacks for '%s'", 
+              callback_count, param->name);
     
     // Trigger all registered callbacks for this parameter
     for (int i = 0; i < g_midi_system.num_callbacks; i++) {
@@ -184,7 +186,7 @@ static void update_parameter_value(ParameterEntry *param, float normalized_value
         
         if (cb->is_active && strcmp(cb->param_name, param->name) == 0) {
             if (cb->callback) {
-                printf("\033[1;35m[DEBUG]   Triggering callback %d for '%s'\033[0m\n", i, param->name);
+                log_debug("MIDI_MAP", "  Triggering callback %d for '%s'", i, param->name);
                 cb->callback(&callback_data, cb->user_data);
             }
         }
@@ -203,7 +205,7 @@ int midi_mapping_init(void) {
     memset(&g_midi_system, 0, sizeof(MidiMappingSystem));
     g_midi_system.is_initialized = 1;
     
-    printf("MIDI Mapping System: Initialized\n");
+    log_info("MIDI_MAP", "MIDI Mapping System initialized");
     return 0;
 }
 
@@ -213,7 +215,7 @@ void midi_mapping_cleanup(void) {
     }
     
     memset(&g_midi_system, 0, sizeof(MidiMappingSystem));
-    printf("MIDI Mapping System: Cleaned up\n");
+    log_info("MIDI_MAP", "MIDI Mapping System cleaned up");
 }
 
 /* ============================================================================
@@ -239,6 +241,16 @@ static char* trim_whitespace(char* str) {
     *(end + 1) = 0;
     
     return str;
+}
+
+/**
+ * Remove inline comments from a string (everything after '#')
+ */
+static void remove_inline_comment(char* str) {
+    char* comment = strchr(str, '#');
+    if (comment) {
+        *comment = '\0';
+    }
 }
 
 /**
@@ -294,16 +306,157 @@ static int parse_midi_control(const char *str, MidiControl *control) {
  * PUBLIC API IMPLEMENTATION - CONFIGURATION
  * ============================================================================ */
 
+/**
+ * Create default MIDI mapping file with all mappings set to 'none'
+ */
+static int create_default_midi_mapping_file(const char *mapping_file) {
+    FILE *file = fopen(mapping_file, "w");
+    if (!file) {
+        log_error("MIDI_MAP", "Cannot create MIDI mapping file '%s': %s", 
+                  mapping_file, strerror(errno));
+        return -1;
+    }
+    
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# MIDI MAPPING CONFIGURATION\n");
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# Format: parameter_name=TYPE:NUMBER\n");
+    fprintf(file, "# Types: CC (Control Change), NOTE (Note On/Off), PITCHBEND\n");
+    fprintf(file, "# Use \"none\" to disable a mapping\n");
+    fprintf(file, "#\n");
+    fprintf(file, "# Examples:\n");
+    fprintf(file, "#   master_volume=CC:1        # CC1 controls master volume\n");
+    fprintf(file, "#   note_on=NOTE:*            # All MIDI notes trigger note on\n");
+    fprintf(file, "#   freeze=CC:105             # CC105 triggers freeze\n");
+    fprintf(file, "#\n");
+    fprintf(file, "# See midi_params.ini for parameter ranges and defaults\n");
+    fprintf(file, "# See MIDI_SYSTEM_SPECIFICATION.md for complete documentation\n");
+    fprintf(file, "# ============================================================================\n\n");
+    
+    fprintf(file, "[MIDI_DEVICE]\n");
+    fprintf(file, "device_name=auto              # \"auto\" or specific device name\n");
+    fprintf(file, "device_id=auto                # \"auto\" or specific device ID\n\n");
+    
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# AUDIO GLOBAL\n");
+    fprintf(file, "# ============================================================================\n\n");
+    fprintf(file, "[AUDIO_GLOBAL]\n");
+    fprintf(file, "master_volume=none            # Master output volume\n");
+    fprintf(file, "reverb_mix=none               # Reverb dry/wet mix\n");
+    fprintf(file, "reverb_size=none              # Reverb room size\n");
+    fprintf(file, "reverb_damp=none              # Reverb high frequency damping\n");
+    fprintf(file, "reverb_width=none             # Reverb stereo width\n");
+    fprintf(file, "eq_low_gain=none              # EQ low frequency gain\n");
+    fprintf(file, "eq_mid_gain=none              # EQ mid frequency gain\n");
+    fprintf(file, "eq_high_gain=none             # EQ high frequency gain\n");
+    fprintf(file, "eq_mid_freq=none              # EQ mid frequency center\n\n");
+    
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# SYNTHESIS ADDITIVE\n");
+    fprintf(file, "# ============================================================================\n\n");
+    fprintf(file, "[SYNTH_ADDITIVE]\n");
+    fprintf(file, "volume=none                   # Additive synthesis mix level\n");
+    fprintf(file, "reverb_send=none              # Additive reverb send amount\n\n");
+    
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# SYNTHESIS POLYPHONIC\n");
+    fprintf(file, "# ============================================================================\n\n");
+    fprintf(file, "[SYNTH_POLYPHONIC]\n");
+    fprintf(file, "volume=none                   # Polyphonic synthesis mix level\n");
+    fprintf(file, "reverb_send=none              # Polyphonic reverb send amount\n");
+    fprintf(file, "lfo_vibrato=none              # LFO vibrato rate\n");
+    fprintf(file, "env_attack=none               # Volume envelope attack time\n");
+    fprintf(file, "env_decay=none                # Volume envelope decay time\n");
+    fprintf(file, "env_release=none              # Volume envelope release time\n");
+    fprintf(file, "note_on=none                  # MIDI note on (use NOTE:* for all notes)\n");
+    fprintf(file, "note_off=none                 # MIDI note off (use NOTE:* for all notes)\n\n");
+    
+    // Generate sequencer player sections (1-5)
+    for (int player = 1; player <= 5; player++) {
+        fprintf(file, "# ============================================================================\n");
+        fprintf(file, "# SEQUENCER - PLAYER %d\n", player);
+        fprintf(file, "# ============================================================================\n\n");
+        fprintf(file, "[SEQUENCER_PLAYER_%d]\n", player);
+        fprintf(file, "record_toggle=none            # Toggle recording\n");
+        fprintf(file, "play_stop=none                # Toggle playback/pause\n");
+        fprintf(file, "mute_toggle=none              # Toggle mute\n");
+        fprintf(file, "speed=none                    # Playback speed multiplier\n");
+        fprintf(file, "blend_level=none              # Player contribution to mix\n");
+        fprintf(file, "offset=none                   # Playback start offset\n");
+        fprintf(file, "attack=none                   # ADSR attack time\n");
+        fprintf(file, "decay=none                    # ADSR decay time\n");
+        fprintf(file, "sustain=none                  # ADSR sustain level\n");
+        fprintf(file, "release=none                  # ADSR release time\n");
+        fprintf(file, "loop_mode=none                # Loop mode selector (0=SIMPLE, 1=PINGPONG, 2=ONESHOT)\n");
+        fprintf(file, "playback_direction=none       # Playback direction (0=FORWARD, 1=REVERSE)\n\n");
+    }
+    
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# SEQUENCER - GLOBAL\n");
+    fprintf(file, "# ============================================================================\n\n");
+    fprintf(file, "[SEQUENCER_GLOBAL]\n");
+    fprintf(file, "live_mix_level=none           # Live input mix level\n");
+    fprintf(file, "blend_mode=none               # Blending mode selector\n");
+    fprintf(file, "master_tempo=none             # Manual BPM control\n");
+    fprintf(file, "quantize_res=none             # Quantization resolution\n\n");
+    
+    fprintf(file, "# ============================================================================\n");
+    fprintf(file, "# SYSTEM\n");
+    fprintf(file, "# ============================================================================\n\n");
+    fprintf(file, "[SYSTEM]\n");
+    fprintf(file, "freeze=none                   # Freeze synth data\n");
+    fprintf(file, "resume=none                   # Resume synth data with fade\n");
+    
+    fclose(file);
+    
+    log_info("MIDI_MAP", "Created default mapping file with all mappings disabled: %s", mapping_file);
+    return 0;
+}
+
+/**
+ * Create default MIDI parameters file
+ */
+static int create_default_midi_params_file(const char *params_file) {
+    FILE *file = fopen(params_file, "w");
+    if (!file) {
+        log_error("MIDI_MAP", "Cannot create MIDI parameters file '%s'", params_file);
+        return -1;
+    }
+    
+    fprintf(file, "# MIDI Parameters Specifications\n");
+    fprintf(file, "# This file defines default values, ranges, and scaling for all MIDI-controllable parameters\n");
+    fprintf(file, "# Auto-generated - modify with caution\n\n");
+    
+    // Note: For brevity, we'll create a minimal file. The full version is in midi_params.ini
+    fprintf(file, "[AUDIO_GLOBAL.master_volume]\n");
+    fprintf(file, "default=1.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[SYNTH_ADDITIVE.volume]\n");
+    fprintf(file, "default=1.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fclose(file);
+    log_info("MIDI_MAP", "Created default parameters file: %s", params_file);
+    return 0;
+}
+
 int midi_mapping_load_parameters(const char *params_file) {
     if (!g_midi_system.is_initialized) {
-        fprintf(stderr, "ERROR: MIDI mapping system not initialized\n");
+        log_error("MIDI_MAP", "MIDI mapping system not initialized");
         return -1;
     }
     
     FILE *file = fopen(params_file, "r");
     if (!file) {
-        fprintf(stderr, "WARNING: Cannot open MIDI parameters file '%s', using defaults\n", params_file);
-        return -1;
+        log_info("MIDI_MAP", "Parameters file '%s' not found, creating with defaults", params_file);
+        if (create_default_midi_params_file(params_file) != 0) {
+            return -1;
+        }
+        // Try to open again
+        file = fopen(params_file, "r");
+        if (!file) {
+            log_error("MIDI_MAP", "Cannot open MIDI parameters file '%s' after creation", params_file);
+            return -1;
+        }
     }
     
     char line[256];
@@ -325,7 +478,7 @@ int midi_mapping_load_parameters(const char *params_file) {
         if (*trimmed == '[') {
             char *end = strchr(trimmed, ']');
             if (!end) {
-                fprintf(stderr, "ERROR: Line %d: Invalid section header\n", line_number);
+                log_error("MIDI_MAP", "Line %d: Invalid section header", line_number);
                 fclose(file);
                 return -1;
             }
@@ -353,7 +506,7 @@ int midi_mapping_load_parameters(const char *params_file) {
             current_entry = find_parameter(current_param);
             if (!current_entry) {
                 if (g_midi_system.num_parameters >= MIDI_MAX_PARAMETERS) {
-                    fprintf(stderr, "ERROR: Maximum number of parameters reached\n");
+                    log_error("MIDI_MAP", "Maximum number of parameters reached");
                     fclose(file);
                     return -1;
                 }
@@ -391,27 +544,88 @@ int midi_mapping_load_parameters(const char *params_file) {
     }
     
     fclose(file);
-    printf("MIDI Mapping System: Loaded %d parameter specifications from %s\n", 
-           g_midi_system.num_parameters, params_file);
+    
+    // Post-processing: Expand SEQUENCER_PLAYER_DEFAULTS to individual players
+    // Find all DEFAULTS parameters and duplicate them for players 1-5
+    int defaults_count = 0;
+    ParameterEntry defaults_params[50]; // Temporary storage for defaults
+    
+    // First pass: collect all DEFAULTS parameters
+    for (int i = 0; i < g_midi_system.num_parameters; i++) {
+        if (strncmp(g_midi_system.parameters[i].name, "sequencer_player_defaults_", 26) == 0) {
+            if (defaults_count < 50) {
+                defaults_params[defaults_count++] = g_midi_system.parameters[i];
+            }
+        }
+    }
+    
+    // Second pass: create individual player parameters from defaults
+    if (defaults_count > 0) {
+        log_info("MIDI_MAP", "Expanding %d SEQUENCER_PLAYER_DEFAULTS to 5 players", defaults_count);
+        
+        for (int player = 1; player <= 5; player++) {
+            for (int d = 0; d < defaults_count; d++) {
+                // Extract parameter suffix (e.g., "speed" from "sequencer_player_defaults_speed")
+                const char *suffix = defaults_params[d].name + 26; // Skip "sequencer_player_defaults_"
+                
+                // Build player-specific name (e.g., "sequencer_player_1_speed")
+                char player_param_name[MIDI_MAX_PARAM_NAME];
+                snprintf(player_param_name, MIDI_MAX_PARAM_NAME, "sequencer_player_%d_%s", player, suffix);
+                
+                // Check if this player parameter already exists (override case)
+                ParameterEntry *existing = find_parameter(player_param_name);
+                if (existing) {
+                    // Parameter already defined specifically for this player, skip
+                    continue;
+                }
+                
+                // Create new parameter entry for this player
+                if (g_midi_system.num_parameters >= MIDI_MAX_PARAMETERS) {
+                    log_warning("MIDI_MAP", "Maximum parameters reached while expanding defaults");
+                    break;
+                }
+                
+                ParameterEntry *new_param = &g_midi_system.parameters[g_midi_system.num_parameters++];
+                *new_param = defaults_params[d]; // Copy all fields
+                strncpy(new_param->name, player_param_name, MIDI_MAX_PARAM_NAME - 1);
+                new_param->name[MIDI_MAX_PARAM_NAME - 1] = '\0';
+                new_param->is_mapped = 0; // Will be set by load_mappings if needed
+            }
+        }
+        
+        log_info("MIDI_MAP", "Expanded to %d total parameters", g_midi_system.num_parameters);
+    }
+    
+    log_info("MIDI_MAP", "Loaded %d parameter specifications from %s", 
+             g_midi_system.num_parameters, params_file);
     return 0;
 }
 
 int midi_mapping_load_mappings(const char *config_file) {
     if (!g_midi_system.is_initialized) {
-        fprintf(stderr, "ERROR: MIDI mapping system not initialized\n");
+        log_error("MIDI_MAP", "MIDI mapping system not initialized");
         return -1;
     }
     
     FILE *file = fopen(config_file, "r");
     if (!file) {
-        fprintf(stderr, "WARNING: Cannot open MIDI mappings file '%s'\n", config_file);
-        return -1;
+        log_info("MIDI_MAP", "Mappings file '%s' not found, creating with all mappings disabled (none)", config_file);
+        if (create_default_midi_mapping_file(config_file) != 0) {
+            return -1;
+        }
+        // Try to open again
+        file = fopen(config_file, "r");
+        if (!file) {
+            log_error("MIDI_MAP", "Cannot open MIDI mappings file '%s' after creation", config_file);
+            return -1;
+        }
     }
     
     char line[256];
     char current_section[64] = "";
     int line_number = 0;
     int mappings_loaded = 0;
+    int skip_section = 0; // Flag to skip entire sections
     
     while (fgets(line, sizeof(line), file)) {
         line_number++;
@@ -426,13 +640,28 @@ int midi_mapping_load_mappings(const char *config_file) {
         if (*trimmed == '[') {
             char *end = strchr(trimmed, ']');
             if (!end) {
-                fprintf(stderr, "ERROR: Line %d: Invalid section header\n", line_number);
+                log_error("MIDI_MAP", "Line %d: Invalid section header", line_number);
                 fclose(file);
                 return -1;
             }
             *end = '\0';
-            strncpy(current_section, trimmed + 1, sizeof(current_section) - 1);
+            const char *section_name = trimmed + 1;
+            
+            // Skip MIDI_DEVICE section - it's for device configuration, not parameter mapping
+            if (strcmp(section_name, "MIDI_DEVICE") == 0) {
+                skip_section = 1;
+                current_section[0] = '\0'; // Clear current section
+                continue;
+            }
+            
+            skip_section = 0; // Reset flag for other sections
+            strncpy(current_section, section_name, sizeof(current_section) - 1);
             current_section[sizeof(current_section) - 1] = '\0';
+            continue;
+        }
+        
+        // Skip parameters if we're in a skipped section
+        if (skip_section) {
             continue;
         }
         
@@ -445,6 +674,10 @@ int midi_mapping_load_mappings(const char *config_file) {
         *equals = '\0';
         char *key = trim_whitespace(trimmed);
         char *value = trim_whitespace(equals + 1);
+        
+        // Remove inline comments from value
+        remove_inline_comment(value);
+        value = trim_whitespace(value);
         
         // Build full parameter name from section + key (section_key)
         char full_param_name[MIDI_MAX_PARAM_NAME];
@@ -464,8 +697,8 @@ int midi_mapping_load_mappings(const char *config_file) {
         // Find parameter
         ParameterEntry *param = find_parameter(full_param_name);
         if (!param) {
-            fprintf(stderr, "WARNING: Line %d: Unknown parameter '%s' (looked for '%s')\n", 
-                    line_number, key, full_param_name);
+            log_warning("MIDI_MAP", "Line %d: Unknown parameter '%s' (looked for '%s')", 
+                        line_number, key, full_param_name);
             continue;
         }
         
@@ -477,13 +710,17 @@ int midi_mapping_load_mappings(const char *config_file) {
                 param->is_mapped = 1;
                 mappings_loaded++;
             }
+            // Silently accept "none" - it's a valid way to disable a mapping
         } else {
-            fprintf(stderr, "WARNING: Line %d: Invalid MIDI control format '%s'\n", line_number, value);
+            // Only warn if it's not "none" (which is handled above)
+            if (strcmp(value, "none") != 0) {
+                log_warning("MIDI_MAP", "Line %d: Invalid MIDI control format '%s'", line_number, value);
+            }
         }
     }
     
     fclose(file);
-    printf("MIDI Mapping System: Loaded %d MIDI mappings from %s\n", mappings_loaded, config_file);
+    log_info("MIDI_MAP", "Loaded %d MIDI mappings from %s", mappings_loaded, config_file);
     return 0;
 }
 
@@ -495,24 +732,24 @@ int midi_mapping_register_callback(const char *param_name,
                                    MidiCallback callback, 
                                    void *user_data) {
     if (!g_midi_system.is_initialized) {
-        fprintf(stderr, "ERROR: MIDI mapping system not initialized\n");
+        log_error("MIDI_MAP", "MIDI mapping system not initialized");
         return -1;
     }
     
     if (!param_name || !callback) {
-        fprintf(stderr, "ERROR: Invalid parameters for callback registration\n");
+        log_error("MIDI_MAP", "Invalid parameters for callback registration");
         return -1;
     }
     
     if (g_midi_system.num_callbacks >= MIDI_MAX_CALLBACKS) {
-        fprintf(stderr, "ERROR: Maximum number of callbacks reached\n");
+        log_error("MIDI_MAP", "Maximum number of callbacks reached");
         return -1;
     }
     
     // Check if parameter exists (optional, depends on initialization order)
     ParameterEntry *param = find_parameter(param_name);
     if (!param) {
-        fprintf(stderr, "WARNING: Registering callback for unknown parameter: %s\n", param_name);
+        log_warning("MIDI_MAP", "Registering callback for unknown parameter: %s", param_name);
     }
     
     // Add callback entry
@@ -553,9 +790,19 @@ void midi_mapping_dispatch(MidiMessageType type, int channel, int number, int va
     ParameterEntry *param = find_parameter_by_control(type, channel, number);
     
     if (!param) {
-        // No mapping for this control
+        // No mapping for this control - log at debug level
+        const char *type_str = "UNKNOWN";
+        if (type == MIDI_MSG_CC) type_str = "CC";
+        else if (type == MIDI_MSG_NOTE_ON) type_str = "NOTE_ON";
+        else if (type == MIDI_MSG_NOTE_OFF) type_str = "NOTE_OFF";
+        else if (type == MIDI_MSG_PITCHBEND) type_str = "PITCHBEND";
+        
+        log_debug("MIDI_MAP", "Unmapped: %s:%d (ch=%d, val=%d)", type_str, number, channel, value);
         return;
     }
+    
+    // Log mapped message at INFO level (user wants to see these)
+    log_info("MIDI_MAP", "Mapped to '%s': val=%d", param->name, value);
     
     // Convert MIDI value to normalized value
     float normalized = midi_to_normalized(value);
@@ -620,12 +867,12 @@ int midi_mapping_set_parameter_value(const char *param_name, float normalized_va
 
 int midi_mapping_apply_defaults(void) {
     if (!g_midi_system.is_initialized) {
-        fprintf(stderr, "ERROR: MIDI mapping system not initialized\n");
+        log_error("MIDI_MAP", "MIDI mapping system not initialized");
         return -1;
     }
     
-    printf("\033[1;36m[DEBUG] midi_mapping_apply_defaults: Starting...\033[0m\n");
-    printf("\033[1;36m[DEBUG] Total parameters: %d\033[0m\n", g_midi_system.num_parameters);
+    log_debug("MIDI_MAP", "midi_mapping_apply_defaults: Starting...");
+    log_debug("MIDI_MAP", "Total parameters: %d", g_midi_system.num_parameters);
     
     int count = 0;
     
@@ -633,16 +880,16 @@ int midi_mapping_apply_defaults(void) {
     for (int i = 0; i < g_midi_system.num_parameters; i++) {
         ParameterEntry *param = &g_midi_system.parameters[i];
         
-        // 🔧 BUGFIX: Skip buttons - they should only be triggered by actual MIDI events
+        // BUGFIX: Skip buttons - they should only be triggered by actual MIDI events
         // Buttons are momentary triggers, not persistent states
         if (param->spec.is_button) {
-            printf("\033[1;36m[DEBUG] Skipping button parameter '%s' (buttons not initialized)\033[0m\n", param->name);
+            log_debug("MIDI_MAP", "Skipping button parameter '%s' (buttons not initialized)", param->name);
             continue;
         }
         
-        printf("\033[1;36m[DEBUG] Processing parameter '%s'\033[0m\n", param->name);
-        printf("\033[1;36m[DEBUG]   Default: %.3f, Min: %.3f, Max: %.3f\033[0m\n", 
-               param->spec.default_value, param->spec.min_value, param->spec.max_value);
+        log_debug("MIDI_MAP", "Processing parameter '%s'", param->name);
+        log_debug("MIDI_MAP", "  Default: %.3f, Min: %.3f, Max: %.3f", 
+                  param->spec.default_value, param->spec.min_value, param->spec.max_value);
         
         // Calculate normalized default value from raw default
         float normalized_default;
@@ -655,7 +902,7 @@ int midi_mapping_apply_defaults(void) {
             } else {
                 normalized_default = 0.0f;
             }
-            printf("\033[1;36m[DEBUG]   Discrete/Button: normalized = %.3f\033[0m\n", normalized_default);
+            log_debug("MIDI_MAP", "  Discrete/Button: normalized = %.3f", normalized_default);
         } else {
             // For continuous parameters, reverse the scaling to get normalized value
             float default_val = param->spec.default_value;
@@ -665,7 +912,7 @@ int midi_mapping_apply_defaults(void) {
             switch (param->spec.scaling) {
                 case MIDI_SCALE_LINEAR:
                     normalized_default = (default_val - min_val) / (max_val - min_val);
-                    printf("\033[1;36m[DEBUG]   Linear scaling: normalized = %.3f\033[0m\n", normalized_default);
+                    log_debug("MIDI_MAP", "  Linear scaling: normalized = %.3f", normalized_default);
                     break;
                     
                 case MIDI_SCALE_LOGARITHMIC:
@@ -674,10 +921,10 @@ int midi_mapping_apply_defaults(void) {
                         float log_max = logf(max_val);
                         float log_val = logf(default_val);
                         normalized_default = (log_val - log_min) / (log_max - log_min);
-                        printf("\033[1;36m[DEBUG]   Logarithmic scaling: normalized = %.3f\033[0m\n", normalized_default);
+                        log_debug("MIDI_MAP", "  Logarithmic scaling: normalized = %.3f", normalized_default);
                     } else {
                         normalized_default = 0.5f;
-                        printf("\033[1;36m[DEBUG]   Logarithmic scaling FALLBACK: normalized = %.3f\033[0m\n", normalized_default);
+                        log_debug("MIDI_MAP", "  Logarithmic scaling FALLBACK: normalized = %.3f", normalized_default);
                     }
                     break;
                     
@@ -685,16 +932,16 @@ int midi_mapping_apply_defaults(void) {
                     if (min_val > 0.0f && max_val > min_val && default_val > 0.0f) {
                         float exp_range = max_val / min_val;
                         normalized_default = logf(default_val / min_val) / logf(exp_range);
-                        printf("\033[1;36m[DEBUG]   Exponential scaling: normalized = %.3f\033[0m\n", normalized_default);
+                        log_debug("MIDI_MAP", "  Exponential scaling: normalized = %.3f", normalized_default);
                     } else {
                         normalized_default = 0.5f;
-                        printf("\033[1;36m[DEBUG]   Exponential scaling FALLBACK: normalized = %.3f\033[0m\n", normalized_default);
+                        log_debug("MIDI_MAP", "  Exponential scaling FALLBACK: normalized = %.3f", normalized_default);
                     }
                     break;
                     
                 default:
                     normalized_default = (default_val - min_val) / (max_val - min_val);
-                    printf("\033[1;36m[DEBUG]   Default scaling: normalized = %.3f\033[0m\n", normalized_default);
+                    log_debug("MIDI_MAP", "  Default scaling: normalized = %.3f", normalized_default);
                     break;
             }
         }
@@ -703,15 +950,15 @@ int midi_mapping_apply_defaults(void) {
         if (normalized_default < 0.0f) normalized_default = 0.0f;
         if (normalized_default > 1.0f) normalized_default = 1.0f;
         
-        printf("\033[1;36m[DEBUG]   Calling update_parameter_value with normalized = %.3f\033[0m\n", normalized_default);
+        log_debug("MIDI_MAP", "  Calling update_parameter_value with normalized = %.3f", normalized_default);
         
         // Update parameter (this will trigger callbacks)
         update_parameter_value(param, normalized_default);
         count++;
     }
     
-    printf("\033[1;36m[DEBUG] midi_mapping_apply_defaults: Completed, applied %d defaults\033[0m\n", count);
-    printf("MIDI Mapping System: Applied default values to %d parameters\n", count);
+    log_debug("MIDI_MAP", "midi_mapping_apply_defaults: Completed, applied %d defaults", count);
+    log_info("MIDI_MAP", "Applied default values to %d parameters", count);
     return count;
 }
 
@@ -742,9 +989,9 @@ int midi_mapping_validate(void) {
                 // Check channel conflict
                 if (ctrl1->channel == ctrl2->channel || 
                     ctrl1->channel == -1 || ctrl2->channel == -1) {
-                    fprintf(stderr, "WARNING: MIDI conflict: %s and %s both use same control\n",
-                           g_midi_system.parameters[i].name,
-                           g_midi_system.parameters[j].name);
+                    log_warning("MIDI_MAP", "MIDI conflict: %s and %s both use same control",
+                                g_midi_system.parameters[i].name,
+                                g_midi_system.parameters[j].name);
                     conflicts++;
                 }
             }

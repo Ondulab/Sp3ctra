@@ -56,6 +56,7 @@ void sfClock_restart(sfClock *clock) { (void)clock; }
 #include "dmx.h"
 #include "error.h"
 #include "image_debug.h"
+#include "logger.h"
 #include "multithreading.h"
 #include "synth_additive.h"
 #include "synth_polyphonic.h" // Added for the new FFT synth mode
@@ -129,12 +130,19 @@ void signalHandler(int signal) {
 }
 
 int main(int argc, char **argv) {
+  /* Initialize logging system (default INFO level) */
+  logger_init(LOG_LEVEL_INFO);
+  
   /* Load Sp3ctra configuration */
-  printf("[CONFIG] Loading Sp3ctra configuration...\n");
+  log_info("CONFIG", "Loading Sp3ctra configuration...");
   if (load_additive_config("sp3ctra.ini") != 0) {
-    printf("[CONFIG] Failed to load configuration. Exiting.\n");
+    log_error("CONFIG", "Failed to load configuration. Exiting.");
     return EXIT_FAILURE;
   }
+  
+  /* Apply log level from configuration */
+  logger_init(g_sp3ctra_config.log_level);
+  log_info("CONFIG", "Log level set from configuration");
   
   // Configure SIGINT signal handler (Ctrl+C)
   signal(SIGINT, signalHandler);
@@ -177,6 +185,9 @@ int main(int argc, char **argv) {
       printf("  ./build/Sp3ctra --debug-additive-osc=23-89       # Debug range of additive oscillators (23-89)\n");
       printf("  ./build/Sp3ctra --display --audio-device=1       # Run with visual display and specific audio device\n");
       return EXIT_SUCCESS;
+    } else if (strcmp(argv[i], "--verbose") == 0 || strcmp(argv[i], "-v") == 0) {
+      logger_init(LOG_LEVEL_DEBUG);
+      log_info("MAIN", "Verbose logging enabled");
     // Option --cli removed as redundant (CLI mode is the default mode)
     } else if (strcmp(argv[i], "--sfml-window") == 0 || strcmp(argv[i], "--show-display") == 0 || strcmp(argv[i], "--display") == 0) {
       use_sfml_window = 1;
@@ -486,34 +497,33 @@ int main(int argc, char **argv) {
     midi_SetupVolumeControl();
 
     // Initialize unified MIDI mapping system
-    printf("[MIDI] Initializing unified MIDI system...\n");
+    log_info("MIDI", "Initializing unified MIDI system...");
     midi_mapping_init();
     
-    // Load MIDI parameter specifications
-    if (midi_mapping_load_parameters("config/midi_parameters_defaults.ini") != 0) {
-      printf("[MIDI] Warning: Failed to load MIDI parameter specifications\n");
+    // Load MIDI parameter specifications from dedicated file
+    if (midi_mapping_load_parameters("midi_params.ini") != 0) {
+      log_warning("MIDI", "Failed to load MIDI parameter specifications");
     } else {
-      printf("[MIDI] ✅ Parameter specifications loaded\n");
+      log_info("MIDI", "Parameter specifications loaded");
     }
     
     // Load user MIDI mappings
     if (midi_mapping_load_mappings("midi_mapping.ini") != 0) {
-      printf("[MIDI] Warning: Failed to load MIDI mappings\n");
+      log_warning("MIDI", "Failed to load MIDI mappings");
     } else {
-      printf("[MIDI] ✅ User mappings loaded\n");
+      log_info("MIDI", "User mappings loaded");
     }
     
     // Try to connect to MIDI controller
     midi_connected = midi_Connect();
     if (midi_connected) {
-      printf("MIDI: Controller connected\n");
+      log_info("MIDI", "Controller connected");
       // Setup note callbacks if MIDI connected successfully
       midi_set_note_on_callback(synth_polyphonic_note_on);
       midi_set_note_off_callback(synth_polyphonic_note_off);
-      printf("MIDI: Note On/Off callbacks for synth_polyphonic registered via "
-             "C API.\n");
+      log_info("MIDI", "Note On/Off callbacks for synth_polyphonic registered via C API");
     } else {
-      printf("MIDI: No controller found\n");
+      log_info("MIDI", "No controller found");
     }
   }
 
@@ -527,16 +537,16 @@ int main(int argc, char **argv) {
 #endif
 
   // Display final synthesis configuration
-  printf("========== SYNTHESIS CONFIGURATION ==========\n");
-  printf("ADDITIVE synthesis: %s\n",
+  log_info("CONFIG", "========== SYNTHESIS CONFIGURATION ==========");
+  log_info("CONFIG", "ADDITIVE synthesis: %s",
          enable_additive_synth ? "ENABLED" : "DISABLED");
-  printf("POLYPHONIC synthesis:  %s\n",
+  log_info("CONFIG", "POLYPHONIC synthesis: %s",
          enable_polyphonic_synth ? "ENABLED" : "DISABLED");
-  printf("MIDI polling:   %s\n", enable_midi ? "ENABLED" : "DISABLED");
+  log_info("CONFIG", "MIDI polling: %s", enable_midi ? "ENABLED" : "DISABLED");
   if (enable_midi) {
-    printf("MIDI connected: %s\n", midi_connected ? "YES" : "NO");
+    log_info("CONFIG", "MIDI connected: %s", midi_connected ? "YES" : "NO");
   }
-  printf("============================================\n");
+  log_info("CONFIG", "============================================");
 
   // Initialize image preprocessor module
   image_preprocess_init();
@@ -545,30 +555,30 @@ int main(int argc, char **argv) {
   // IMPORTANT: Must be done BEFORE registering MIDI callbacks!
   ImageSequencer *imageSequencer = image_sequencer_create(5, 5.0f);
   if (!imageSequencer) {
-    printf("[INIT] ERROR: Failed to initialize image sequencer\n");
+    log_error("INIT", "Failed to initialize image sequencer");
   } else {
-    printf("[INIT] Image sequencer initialized successfully\n");
+    log_info("INIT", "Image sequencer initialized successfully");
     g_image_sequencer = imageSequencer; // Make globally accessible for MIDI
     
     // Enable sequencer by default
     image_sequencer_set_enabled(imageSequencer, 1);
-    printf("[INIT] Image sequencer ENABLED\n");
+    log_info("INIT", "Image sequencer ENABLED");
   }
   
   // NOW register all MIDI callbacks (after sequencer is created)
   if (enable_midi) {
     midi_callbacks_register_all();
-    printf("[MIDI] ✅ Callbacks registered\n");
+    log_info("MIDI", "Callbacks registered");
     
     // Apply default values to all parameters (triggers callbacks to initialize structures)
     int defaults_applied = midi_mapping_apply_defaults();
     if (defaults_applied > 0) {
-      printf("[MIDI] ✅ Applied default values to %d parameters\n", defaults_applied);
+      log_info("MIDI", "Applied default values to %d parameters", defaults_applied);
     }
     
     // Validate configuration
     midi_mapping_validate();
-    printf("[MIDI] ✅ Unified MIDI system initialized\n");
+    log_info("MIDI", "Unified MIDI system initialized");
   }
   
   synth_IfftInit();
@@ -632,17 +642,17 @@ int main(int argc, char **argv) {
   /* Initialize auto-volume controller (reads IMU X from UDP thread and
      adjusts master volume). Instance is stored in auto_volume.c as
      gAutoVolumeInstance. */
-  printf("[INIT] Initializing auto-volume controller...\n");
-  printf("[INIT] Auto-volume config: enabled=%d, threshold=%.3f, timeout=%ds, fade=%dms\n",
+  log_info("INIT", "Initializing auto-volume controller...");
+  log_info("INIT", "Auto-volume config: enabled=%d, threshold=%.3f, timeout=%ds, fade=%dms",
          g_sp3ctra_config.auto_volume_enabled, IMU_ACTIVE_THRESHOLD_X, g_sp3ctra_config.imu_inactivity_timeout_s, g_sp3ctra_config.auto_volume_fade_ms);
-  printf("[INIT] Volume levels: active=%.1f, inactive=%.3f\n",
+  log_info("INIT", "Volume levels: active=%.1f, inactive=%.3f",
          1.0f, g_sp3ctra_config.auto_volume_inactive_level);
 
   gAutoVolumeInstance = auto_volume_create(&context);
   if (!gAutoVolumeInstance) {
-    printf("[INIT] ERROR: Failed to initialize auto-volume controller\n");
+    log_error("INIT", "Failed to initialize auto-volume controller");
   } else {
-    printf("[INIT] Auto-volume controller initialized successfully\n");
+    log_info("INIT", "Auto-volume controller initialized successfully");
   }
 
   /* Create textures and sprites for rendering in main thread */
@@ -720,12 +730,11 @@ int main(int argc, char **argv) {
       return EXIT_FAILURE;
     }
     polyphonic_thread_created = 1;
-    printf("Polyphonic synthesis thread started successfully\n");
+    log_info("THREAD", "Polyphonic synthesis thread started successfully");
     // Optionally set scheduling parameters for fftSynthThreadId as well if
     // needed
   } else {
-    printf("Polyphonic synthesis thread NOT created (disabled by "
-           "configuration)\n");
+    log_info("THREAD", "Polyphonic synthesis thread NOT created (disabled by configuration)");
   }
 
   /* Main loop (gestion des événements et rendu) */
@@ -742,24 +751,22 @@ int main(int argc, char **argv) {
   int running = 1;
 
   /* Boucle principale */
-  printf("========================================================\n");
-  printf("Application running.\n");
+  log_info("SYNTH", "========================================================");
+  log_info("SYNTH", "Application running");
   if (use_sfml_window) {
-    printf("Visual scanner display enabled.\n");
+    log_info("SYNTH", "Visual scanner display enabled");
   } else {
-    printf("No visual display (use --display to enable).\n");
+    log_info("SYNTH", "No visual display (use --display to enable)");
   }
-  printf("Press Ctrl+C to stop the application.\n");
-  printf("========================================================\n");
-  fflush(stdout); // S'assurer que tout est affiché immédiatement
+  log_info("SYNTH", "Press Ctrl+C to stop the application");
+  log_info("SYNTH", "========================================================");
 
   /* Boucle principale */
   uint8_t local_main_R[CIS_MAX_PIXELS_NB]; // Buffers locaux pour DMX
   uint8_t local_main_G[CIS_MAX_PIXELS_NB];
   uint8_t local_main_B[CIS_MAX_PIXELS_NB];
-  uint8_t sequencer_output_R[CIS_MAX_PIXELS_NB]; // Buffers pour output du séquenceur
-  uint8_t sequencer_output_G[CIS_MAX_PIXELS_NB];
-  uint8_t sequencer_output_B[CIS_MAX_PIXELS_NB];
+  // Note: sequencer_output_R/G/B buffers removed - sequencer output is now
+  // directly written to g_displayable_synth_R/G/B by the UDP thread
   int process_this_frame_main_loop;
 
   while (running && context.running && app_running) {

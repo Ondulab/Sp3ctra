@@ -15,6 +15,7 @@
 #include "../../synthesis/additive/synth_additive.h"
 #include "../../synthesis/polyphonic/synth_polyphonic.h"
 #include "../../processing/image_sequencer.h"
+#include "../../utils/logger.h"
 #include <stdio.h>
 #include <pthread.h>
 
@@ -39,7 +40,7 @@ void midi_cb_audio_master_volume(const MidiParameterValue *param, void *user_dat
     if (gAudioSystem) {
         gAudioSystem->setMasterVolume(param->value);
         
-        printf("\033[1;37mVOLUME: %d%%\033[0m\n", (int)(param->value * 100));
+        log_info("MIDI", "VOLUME: %d%%", (int)(param->value * 100));
     }
 }
 
@@ -52,7 +53,7 @@ void midi_cb_audio_reverb_mix(const MidiParameterValue *param, void *user_data) 
         }
         gAudioSystem->setReverbMix(param->value);
         
-        printf("\033[1;36mREVERB MIX: %d%%\033[0m\n", (int)(param->value * 100));
+        log_info("MIDI", "REVERB MIX: %d%%", (int)(param->value * 100));
     }
 }
 
@@ -65,7 +66,9 @@ void midi_cb_audio_reverb_size(const MidiParameterValue *param, void *user_data)
         }
         gAudioSystem->setReverbRoomSize(param->value);
         
-        printf("\033[1;36mREVERB SIZE: %.2f\033[0m\n", param->value);
+        if (is_startup_verbose()) {
+            log_info("MIDI", "REVERB SIZE: %.2f", param->value);
+        }
     }
 }
 
@@ -78,7 +81,9 @@ void midi_cb_audio_reverb_damp(const MidiParameterValue *param, void *user_data)
         }
         gAudioSystem->setReverbDamping(param->value);
         
-        printf("\033[1;36mREVERB DAMP: %.2f\033[0m\n", param->value);
+        if (is_startup_verbose()) {
+            log_info("MIDI", "REVERB DAMP: %.2f", param->value);
+        }
     }
 }
 
@@ -91,7 +96,9 @@ void midi_cb_audio_reverb_width(const MidiParameterValue *param, void *user_data
         }
         gAudioSystem->setReverbWidth(param->value);
         
-        printf("\033[1;36mREVERB WIDTH: %.2f\033[0m\n", param->value);
+        if (is_startup_verbose()) {
+            log_info("MIDI", "REVERB WIDTH: %.2f", param->value);
+        }
     }
 }
 
@@ -104,7 +111,9 @@ void midi_cb_audio_eq_low_gain(const MidiParameterValue *param, void *user_data)
         }
         gEqualizer->setLowGain(param->raw_value);
         
-        printf("\033[1;32mEQ LOW GAIN: %.1f dB\033[0m\n", param->raw_value);
+        if (is_startup_verbose()) {
+            log_info("MIDI", "EQ LOW GAIN: %.1f dB", param->raw_value);
+        }
     }
 }
 
@@ -117,7 +126,9 @@ void midi_cb_audio_eq_mid_gain(const MidiParameterValue *param, void *user_data)
         }
         gEqualizer->setMidGain(param->raw_value);
         
-        printf("\033[1;36mEQ MID GAIN: %.1f dB\033[0m\n", param->raw_value);
+        if (is_startup_verbose()) {
+            log_info("MIDI", "EQ MID GAIN: %.1f dB", param->raw_value);
+        }
     }
 }
 
@@ -130,7 +141,9 @@ void midi_cb_audio_eq_high_gain(const MidiParameterValue *param, void *user_data
         }
         gEqualizer->setHighGain(param->raw_value);
         
-        printf("\033[1;35mEQ HIGH GAIN: %.1f dB\033[0m\n", param->raw_value);
+        if (is_startup_verbose()) {
+            log_info("MIDI", "EQ HIGH GAIN: %.1f dB", param->raw_value);
+        }
     }
 }
 
@@ -143,7 +156,9 @@ void midi_cb_audio_eq_mid_freq(const MidiParameterValue *param, void *user_data)
         }
         gEqualizer->setMidFrequency(param->raw_value);
         
-        printf("\033[1;33mEQ MID FREQ: %.0f Hz\033[0m\n", param->raw_value);
+        if (is_startup_verbose()) {
+            log_info("MIDI", "EQ MID FREQ: %.0f Hz", param->raw_value);
+        }
     }
 }
 
@@ -157,7 +172,7 @@ void midi_cb_synth_additive_volume(const MidiParameterValue *param, void *user_d
     // Set mix level directly (thread-safe)
     setSynthAdditiveMixLevel(param->value);
     
-    printf("\033[1;37mADDITIVE SYNTH VOLUME: %d%%\033[0m\n", (int)(param->value * 100));
+    log_info("MIDI", "ADDITIVE SYNTH VOLUME: %d%%", (int)(param->value * 100));
 }
 
 void midi_cb_synth_additive_reverb_send(const MidiParameterValue *param, void *user_data) {
@@ -169,7 +184,9 @@ void midi_cb_synth_additive_reverb_send(const MidiParameterValue *param, void *u
         }
     }
     
-    printf("\033[1;36mADDITIVE REVERB SEND: %d%%\033[0m\n", (int)(param->value * 100));
+    if (is_startup_verbose()) {
+        log_info("MIDI", "ADDITIVE REVERB SEND: %d%%", (int)(param->value * 100));
+    }
 }
 
 /* ============================================================================
@@ -182,7 +199,7 @@ void midi_cb_synth_polyphonic_volume(const MidiParameterValue *param, void *user
     // Set mix level directly (thread-safe)
     setSynthPolyphonicMixLevel(param->value);
     
-    printf("\033[1;37mPOLYPHONIC SYNTH VOLUME: %d%%\033[0m\n", (int)(param->value * 100));
+    log_info("MIDI", "POLYPHONIC SYNTH VOLUME: %d%%", (int)(param->value * 100));
 }
 
 void midi_cb_synth_polyphonic_reverb_send(const MidiParameterValue *param, void *user_data) {
@@ -194,7 +211,9 @@ void midi_cb_synth_polyphonic_reverb_send(const MidiParameterValue *param, void 
         }
     }
     
-    printf("\033[1;36mPOLYPHONIC REVERB SEND: %d%%\033[0m\n", (int)(param->value * 100));
+    if (is_startup_verbose()) {
+        log_info("MIDI", "POLYPHONIC REVERB SEND: %d%%", (int)(param->value * 100));
+    }
 }
 
 void midi_cb_synth_polyphonic_lfo_vibrato(const MidiParameterValue *param, void *user_data) {
@@ -202,7 +221,9 @@ void midi_cb_synth_polyphonic_lfo_vibrato(const MidiParameterValue *param, void 
     
     synth_polyphonic_set_vibrato_rate(param->raw_value);
     
-    printf("\033[1;35mVIBRATO LFO SPEED: %.2f Hz\033[0m\n", param->raw_value);
+    if (is_startup_verbose()) {
+        log_info("MIDI", "VIBRATO LFO SPEED: %.2f Hz", param->raw_value);
+    }
 }
 
 void midi_cb_synth_polyphonic_env_attack(const MidiParameterValue *param, void *user_data) {
@@ -210,7 +231,9 @@ void midi_cb_synth_polyphonic_env_attack(const MidiParameterValue *param, void *
     
     synth_polyphonic_set_volume_adsr_attack(param->raw_value);
     
-    printf("\033[1;33mPOLYPHONIC ENV ATTACK: %d ms\033[0m\n", (int)(param->raw_value * 1000));
+    if (is_startup_verbose()) {
+        log_info("MIDI", "POLYPHONIC ENV ATTACK: %d ms", (int)(param->raw_value * 1000));
+    }
 }
 
 void midi_cb_synth_polyphonic_env_decay(const MidiParameterValue *param, void *user_data) {
@@ -218,7 +241,9 @@ void midi_cb_synth_polyphonic_env_decay(const MidiParameterValue *param, void *u
     
     synth_polyphonic_set_volume_adsr_decay(param->raw_value);
     
-    printf("\033[1;33mPOLYPHONIC ENV DECAY: %d ms\033[0m\n", (int)(param->raw_value * 1000));
+    if (is_startup_verbose()) {
+        log_info("MIDI", "POLYPHONIC ENV DECAY: %d ms", (int)(param->raw_value * 1000));
+    }
 }
 
 void midi_cb_synth_polyphonic_env_release(const MidiParameterValue *param, void *user_data) {
@@ -226,7 +251,9 @@ void midi_cb_synth_polyphonic_env_release(const MidiParameterValue *param, void 
     
     synth_polyphonic_set_volume_adsr_release(param->raw_value);
     
-    printf("\033[1;33mPOLYPHONIC ENV RELEASE: %d ms\033[0m\n", (int)(param->raw_value * 1000));
+    if (is_startup_verbose()) {
+        log_info("MIDI", "POLYPHONIC ENV RELEASE: %d ms", (int)(param->raw_value * 1000));
+    }
 }
 
 void midi_cb_synth_polyphonic_note_on(const MidiParameterValue *param, void *user_data) {
@@ -239,7 +266,7 @@ void midi_cb_synth_polyphonic_note_on(const MidiParameterValue *param, void *use
     
     synth_polyphonic_note_on(note_number, velocity);
     
-    printf("\033[1;32mMIDI Note On: %d (velocity %d)\033[0m\n", note_number, velocity);
+    log_debug("MIDI", "Note On: %d (velocity %d)", note_number, velocity);
 }
 
 void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *user_data) {
@@ -250,7 +277,7 @@ void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *us
     
     synth_polyphonic_note_off(note_number);
     
-    printf("\033[1;31mMIDI Note Off: %d\033[0m\n", note_number);
+    log_debug("MIDI", "Note Off: %d", note_number);
 }
 
 /* ============================================================================
@@ -258,76 +285,76 @@ void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *us
  * ============================================================================ */
 
 void midi_cb_sequencer_player_record_toggle(const MidiParameterValue *param, void *user_data) {
-    printf("\033[1;31m[DEBUG] SEQUENCER CALLBACK CALLED: record_toggle\033[0m\n");
+    log_debug("MIDI", "SEQUENCER CALLBACK CALLED: record_toggle");
     (void)param;
     
     if (!g_image_sequencer) {
-        printf("\033[1;31m[DEBUG] ERROR: g_image_sequencer is NULL!\033[0m\n");
+        log_error("MIDI", "g_image_sequencer is NULL");
         return;
     }
     
     if (!user_data) {
-        printf("\033[1;31m[DEBUG] ERROR: user_data is NULL!\033[0m\n");
+        log_error("MIDI", "user_data is NULL");
         return;
     }
     
     int player_id = *(int*)user_data;
-    printf("\033[1;32m[DEBUG] Player ID: %d\033[0m\n", player_id);
+    log_debug("MIDI", "Player ID: %d", player_id);
     
     PlayerState state = image_sequencer_get_player_state(g_image_sequencer, player_id);
-    printf("\033[1;32m[DEBUG] Current state: %d\033[0m\n", state);
+    log_debug("MIDI", "Current state: %d", state);
     
     if (state == PLAYER_STATE_RECORDING) {
-        printf("\033[1;33m[DEBUG] Stopping recording...\033[0m\n");
+        log_debug("MIDI", "Stopping recording");
         image_sequencer_stop_recording(g_image_sequencer, player_id);
     } else {
-        printf("\033[1;33m[DEBUG] Starting recording...\033[0m\n");
+        log_debug("MIDI", "Starting recording");
         image_sequencer_start_recording(g_image_sequencer, player_id);
     }
 }
 
 void midi_cb_sequencer_player_play_stop(const MidiParameterValue *param, void *user_data) {
-    printf("\033[1;31m[DEBUG] SEQUENCER CALLBACK CALLED: play_stop\033[0m\n");
+    log_debug("MIDI", "SEQUENCER CALLBACK CALLED: play_stop");
     (void)param;
     
     if (!g_image_sequencer) {
-        printf("\033[1;31m[DEBUG] ERROR: g_image_sequencer is NULL!\033[0m\n");
+        log_error("MIDI", "g_image_sequencer is NULL");
         return;
     }
     
     if (!user_data) {
-        printf("\033[1;31m[DEBUG] ERROR: user_data is NULL!\033[0m\n");
+        log_error("MIDI", "user_data is NULL");
         return;
     }
     
     int player_id = *(int*)user_data;
-    printf("\033[1;32m[DEBUG] Player ID: %d\033[0m\n", player_id);
+    log_debug("MIDI", "Player ID: %d", player_id);
     
     PlayerState state = image_sequencer_get_player_state(g_image_sequencer, player_id);
-    printf("\033[1;32m[DEBUG] Current state: %d, toggling playback...\033[0m\n", state);
+    log_debug("MIDI", "Current state: %d, toggling playback", state);
     
     image_sequencer_toggle_playback(g_image_sequencer, player_id);
 }
 
 void midi_cb_sequencer_player_mute_toggle(const MidiParameterValue *param, void *user_data) {
-    printf("\033[1;31m[DEBUG] SEQUENCER CALLBACK CALLED: mute_toggle\033[0m\n");
+    log_debug("MIDI", "SEQUENCER CALLBACK CALLED: mute_toggle");
     (void)param;
     
     if (!g_image_sequencer) {
-        printf("\033[1;31m[DEBUG] ERROR: g_image_sequencer is NULL!\033[0m\n");
+        log_error("MIDI", "g_image_sequencer is NULL");
         return;
     }
     
     if (!user_data) {
-        printf("\033[1;31m[DEBUG] ERROR: user_data is NULL!\033[0m\n");
+        log_error("MIDI", "user_data is NULL");
         return;
     }
     
     int player_id = *(int*)user_data;
-    printf("\033[1;32m[DEBUG] Player ID: %d\033[0m\n", player_id);
+    log_debug("MIDI", "Player ID: %d", player_id);
     
     PlayerState state = image_sequencer_get_player_state(g_image_sequencer, player_id);
-    printf("\033[1;32m[DEBUG] Current state: %d, toggling mute...\033[0m\n", state);
+    log_debug("MIDI", "Current state: %d, toggling mute", state);
     
     image_sequencer_toggle_mute(g_image_sequencer, player_id);
 }
@@ -338,7 +365,9 @@ void midi_cb_sequencer_player_speed(const MidiParameterValue *param, void *user_
     int player_id = *(int*)user_data;
     image_sequencer_set_speed(g_image_sequencer, player_id, param->raw_value);
     
-    printf("\033[1;33mSEQ Player %d: Speed %.2fx\033[0m\n", player_id, param->raw_value);
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SEQ Player %d: Speed %.2fx", player_id, param->raw_value);
+    }
 }
 
 void midi_cb_sequencer_player_blend_level(const MidiParameterValue *param, void *user_data) {
@@ -347,7 +376,9 @@ void midi_cb_sequencer_player_blend_level(const MidiParameterValue *param, void 
     int player_id = *(int*)user_data;
     image_sequencer_set_blend_level(g_image_sequencer, player_id, param->value);
     
-    printf("\033[1;33mSEQ Player %d: Blend %d%%\033[0m\n", player_id, (int)(param->value * 100));
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SEQ Player %d: Blend %d%%", player_id, (int)(param->value * 100));
+    }
 }
 
 void midi_cb_sequencer_player_offset(const MidiParameterValue *param, void *user_data) {
@@ -358,7 +389,9 @@ void midi_cb_sequencer_player_offset(const MidiParameterValue *param, void *user
     int offset_frames = (int)(param->value * 5000); // Max 5000 frames
     image_sequencer_set_offset(g_image_sequencer, player_id, offset_frames);
     
-    printf("\033[1;33mSEQ Player %d: Offset %d frames\033[0m\n", player_id, offset_frames);
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SEQ Player %d: Offset %d frames", player_id, offset_frames);
+    }
 }
 
 void midi_cb_sequencer_player_attack(const MidiParameterValue *param, void *user_data) {
@@ -367,7 +400,9 @@ void midi_cb_sequencer_player_attack(const MidiParameterValue *param, void *user
     int player_id = *(int*)user_data;
     image_sequencer_set_attack(g_image_sequencer, player_id, param->value);
     
-    printf("\033[1;33mSEQ Player %d: Attack %.0f%%\033[0m\n", player_id, param->value * 100.0f);
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SEQ Player %d: Attack %.0f%%", player_id, param->value * 100.0f);
+    }
 }
 
 void midi_cb_sequencer_player_decay(const MidiParameterValue *param, void *user_data) {
@@ -376,7 +411,9 @@ void midi_cb_sequencer_player_decay(const MidiParameterValue *param, void *user_
     int player_id = *(int*)user_data;
     image_sequencer_set_decay(g_image_sequencer, player_id, param->value);
     
-    printf("\033[1;33mSEQ Player %d: Decay %.0f%%\033[0m\n", player_id, param->value * 100.0f);
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SEQ Player %d: Decay %.0f%%", player_id, param->value * 100.0f);
+    }
 }
 
 void midi_cb_sequencer_player_sustain(const MidiParameterValue *param, void *user_data) {
@@ -385,7 +422,9 @@ void midi_cb_sequencer_player_sustain(const MidiParameterValue *param, void *use
     int player_id = *(int*)user_data;
     image_sequencer_set_sustain(g_image_sequencer, player_id, param->value);
     
-    printf("\033[1;33mSEQ Player %d: Sustain %.0f%%\033[0m\n", player_id, param->value * 100.0f);
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SEQ Player %d: Sustain %.0f%%", player_id, param->value * 100.0f);
+    }
 }
 
 void midi_cb_sequencer_player_release(const MidiParameterValue *param, void *user_data) {
@@ -394,7 +433,9 @@ void midi_cb_sequencer_player_release(const MidiParameterValue *param, void *use
     int player_id = *(int*)user_data;
     image_sequencer_set_release(g_image_sequencer, player_id, param->value);
     
-    printf("\033[1;33mSEQ Player %d: Release %.0f%%\033[0m\n", player_id, param->value * 100.0f);
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SEQ Player %d: Release %.0f%%", player_id, param->value * 100.0f);
+    }
 }
 
 void midi_cb_sequencer_player_loop_mode(const MidiParameterValue *param, void *user_data) {
@@ -406,7 +447,9 @@ void midi_cb_sequencer_player_loop_mode(const MidiParameterValue *param, void *u
     const char *modes[] = {"SIMPLE", "PINGPONG", "ONESHOT"};
     if (mode >= 0 && mode <= 2) {
         image_sequencer_set_loop_mode(g_image_sequencer, player_id, (LoopMode)mode);
-        printf("\033[1;35mSEQ Player %d: Loop %s\033[0m\n", player_id, modes[mode]);
+        if (is_startup_verbose()) {
+            log_info("MIDI", "SEQ Player %d: Loop %s", player_id, modes[mode]);
+        }
     }
 }
 
@@ -419,8 +462,8 @@ void midi_cb_sequencer_player_playback_direction(const MidiParameterValue *param
     const char *dirs[] = {"FORWARD", "REVERSE"};
     image_sequencer_set_playback_direction(g_image_sequencer, player_id, dir == 0 ? 1 : -1);
     
-    if (dir >= 0 && dir <= 1) {
-        printf("\033[1;35mSEQ Player %d: Direction %s\033[0m\n", player_id, dirs[dir]);
+    if (is_startup_verbose() && dir >= 0 && dir <= 1) {
+        log_info("MIDI", "SEQ Player %d: Direction %s", player_id, dirs[dir]);
     }
 }
 
@@ -435,7 +478,7 @@ void midi_cb_sequencer_live_mix_level(const MidiParameterValue *param, void *use
     
     image_sequencer_set_live_mix_level(g_image_sequencer, param->value);
     
-    printf("\033[1;36mSEQUENCER: Live mix %d%%\033[0m\n", (int)(param->value * 100));
+    log_info("MIDI", "SEQUENCER: Live mix %d%%", (int)(param->value * 100));
 }
 
 void midi_cb_sequencer_blend_mode(const MidiParameterValue *param, void *user_data) {
@@ -448,7 +491,7 @@ void midi_cb_sequencer_blend_mode(const MidiParameterValue *param, void *user_da
     
     if (mode >= 0 && mode <= 3) {
         image_sequencer_set_blend_mode(g_image_sequencer, (BlendMode)mode);
-        printf("\033[1;36mSEQUENCER: Blend mode %s\033[0m\n", modes[mode]);
+        log_info("MIDI", "SEQUENCER: Blend mode %s", modes[mode]);
     }
 }
 
@@ -459,7 +502,7 @@ void midi_cb_sequencer_master_tempo(const MidiParameterValue *param, void *user_
     
     image_sequencer_set_bpm(g_image_sequencer, param->raw_value);
     
-    printf("\033[1;36mSEQUENCER: Tempo %.0f BPM\033[0m\n", param->raw_value);
+    log_info("MIDI", "SEQUENCER: Tempo %.0f BPM", param->raw_value);
 }
 
 void midi_cb_sequencer_quantize_res(const MidiParameterValue *param, void *user_data) {
@@ -469,7 +512,7 @@ void midi_cb_sequencer_quantize_res(const MidiParameterValue *param, void *user_
     const char *res[] = {"QUARTER", "EIGHTH", "SIXTEENTH", "BAR"};
     int r = (int)param->raw_value;
     if (r >= 0 && r <= 3) {
-        printf("\033[1;36mSEQUENCER: Quantize %s\033[0m\n", res[r]);
+        log_info("MIDI", "SEQUENCER: Quantize %s", res[r]);
     }
 }
 
@@ -486,7 +529,7 @@ void midi_cb_system_freeze(const MidiParameterValue *param, void *user_data) {
     g_is_synth_data_fading_out = 0;
     pthread_mutex_unlock(&g_synth_data_freeze_mutex);
     
-    printf("\033[1;34mSYNTH DATA FREEZE: ON\033[0m\n");
+    log_info("MIDI", "SYNTH DATA FREEZE: ON");
 }
 
 void midi_cb_system_resume(const MidiParameterValue *param, void *user_data) {
@@ -499,7 +542,7 @@ void midi_cb_system_resume(const MidiParameterValue *param, void *user_data) {
     }
     pthread_mutex_unlock(&g_synth_data_freeze_mutex);
     
-    printf("\033[1;34mSYNTH DATA RESUME: Initiating fade out\033[0m\n");
+    log_info("MIDI", "SYNTH DATA RESUME: Initiating fade out");
 }
 
 /* ============================================================================
@@ -517,14 +560,14 @@ void midi_callbacks_register_audio(void) {
     midi_mapping_register_callback("audio_global_eq_high_gain", midi_cb_audio_eq_high_gain, NULL);
     midi_mapping_register_callback("audio_global_eq_mid_freq", midi_cb_audio_eq_mid_freq, NULL);
     
-    printf("MIDI Callbacks: Audio registered\n");
+    log_info("MIDI", "Callbacks: Audio registered");
 }
 
 void midi_callbacks_register_synth_additive(void) {
     midi_mapping_register_callback("synth_additive_volume", midi_cb_synth_additive_volume, NULL);
     midi_mapping_register_callback("synth_additive_reverb_send", midi_cb_synth_additive_reverb_send, NULL);
     
-    printf("MIDI Callbacks: Additive synth registered\n");
+    log_info("MIDI", "Callbacks: Additive synth registered");
 }
 
 void midi_callbacks_register_synth_polyphonic(void) {
@@ -537,14 +580,14 @@ void midi_callbacks_register_synth_polyphonic(void) {
     midi_mapping_register_callback("synth_polyphonic_note_on", midi_cb_synth_polyphonic_note_on, NULL);
     midi_mapping_register_callback("synth_polyphonic_note_off", midi_cb_synth_polyphonic_note_off, NULL);
     
-    printf("MIDI Callbacks: Polyphonic synth registered\n");
+    log_info("MIDI", "Callbacks: Polyphonic synth registered");
 }
 
 void midi_callbacks_register_sequencer(void *sequencer_instance) {
     (void)sequencer_instance;
     
     if (!g_image_sequencer) {
-        printf("MIDI Callbacks: Sequencer not initialized, skipping registration\n");
+        log_warning("MIDI", "Callbacks: Sequencer not initialized, skipping registration");
         return;
     }
     
@@ -609,14 +652,14 @@ void midi_callbacks_register_sequencer(void *sequencer_instance) {
         midi_mapping_register_callback(param_name, midi_cb_sequencer_player_playback_direction, &player_ids[i]);
     }
     
-    printf("MIDI Callbacks: Sequencer registered (5 players + global controls)\n");
+    log_info("MIDI", "Callbacks: Sequencer registered (5 players + global controls)");
 }
 
 void midi_callbacks_register_system(void) {
     midi_mapping_register_callback("system_freeze", midi_cb_system_freeze, NULL);
     midi_mapping_register_callback("system_resume", midi_cb_system_resume, NULL);
     
-    printf("MIDI Callbacks: System registered\n");
+    log_info("MIDI", "Callbacks: System registered");
 }
 
 void midi_callbacks_register_all(void) {
@@ -626,5 +669,5 @@ void midi_callbacks_register_all(void) {
     midi_callbacks_register_sequencer(NULL);
     midi_callbacks_register_system();
     
-    printf("MIDI Callbacks: All registered\n");
+    log_info("MIDI", "Callbacks: All registered");
 }

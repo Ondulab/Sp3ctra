@@ -1,6 +1,7 @@
 /* image_debug.c */
 
 #include "image_debug.h"
+#include "logger.h"
 #include "config_debug.h"
 #include "config_audio.h"
 #include "../synthesis/additive/wave_generation.h"
@@ -147,32 +148,32 @@ int image_debug_init(void) {
     struct stat st = {0};
     if (stat(output_dir, &st) == -1) {
         if (mkdir(output_dir, 0755) != 0) {
-            printf("ERROR: Failed to create debug image directory: %s\n", output_dir);
+            log_error("IMG_DEBUG", "Failed to create debug image directory: %s", output_dir);
             return -1;
         }
     }
     
     debug_initialized = 1;
     
-    printf("🔧 IMAGE_DEBUG: Initialized, output directory: %s\n", output_dir);
+    log_info("IMG_DEBUG", "Initialized, output directory: %s", output_dir);
     return 0;
 }
 
 void image_debug_cleanup(void) {
     debug_initialized = 0;
-    printf("🔧 IMAGE_DEBUG: Cleanup completed\n");
+    log_info("IMG_DEBUG", "Cleanup completed");
 }
 
 void image_debug_enable_runtime(int enable) {
     debug_image_runtime_enabled = enable;
     if (enable) {
-        printf("🔧 IMAGE_DEBUG: Runtime debug enabled\n");
+        log_info("IMG_DEBUG", "Runtime debug enabled");
         // Initialize debug system if not already done
         if (!debug_initialized) {
             image_debug_init();
         }
     } else {
-        printf("🔧 IMAGE_DEBUG: Runtime debug disabled\n");
+        log_info("IMG_DEBUG", "Runtime debug disabled");
     }
 }
 
@@ -207,14 +208,14 @@ static int init_raw_scanner_capture(void) {
     // Allocate buffer (RGB format for raw scanner data)
     raw_scanner_capture.buffer = calloc(raw_scanner_capture.width * raw_scanner_capture.max_height * 3, sizeof(uint8_t));
     if (!raw_scanner_capture.buffer) {
-        printf("ERROR: Failed to allocate raw scanner capture buffer\n");
+        log_error("IMG_DEBUG", "Failed to allocate raw scanner capture buffer");
         return -1;
     }
     
     raw_scanner_initialized = 1;
     
-    printf("🔧 RAW_SCANNER: Initialized buffer (%dx%d lines)\n", 
-           CIS_MAX_PIXELS_NB, raw_scanner_capture_lines);
+    log_info("IMG_DEBUG", "RAW_SCANNER: Initialized buffer (%dx%d lines)", 
+             CIS_MAX_PIXELS_NB, raw_scanner_capture_lines);
     return 0;
 }
 
@@ -237,7 +238,7 @@ int image_debug_capture_raw_scanner_line(uint8_t *buffer_R, uint8_t *buffer_G, u
     
     // Check if buffer is full
     if (scan->current_height >= raw_scanner_capture_lines) {
-        printf("🔧 RAW_SCANNER: Auto-saving after %d lines\n", scan->current_height);
+        log_info("IMG_DEBUG", "RAW_SCANNER: Auto-saving after %d lines", scan->current_height);
         image_debug_save_raw_scanner_capture();
         image_debug_reset_raw_scanner_capture();
     }
@@ -278,11 +279,11 @@ int image_debug_save_raw_scanner_capture(void) {
                                scan->buffer, scan->width * 3);
     
     if (result) {
-        printf("🔧 RAW_SCANNER: Saved raw scanner capture (%dx%d): %s\n", 
-               scan->width, scan->current_height, full_path);
+        log_info("IMG_DEBUG", "RAW_SCANNER: Saved raw scanner capture (%dx%d): %s", 
+                 scan->width, scan->current_height, full_path);
         return 0;
     } else {
-        printf("ERROR: Failed to save raw scanner capture: %s\n", full_path);
+        log_error("IMG_DEBUG", "Failed to save raw scanner capture: %s", full_path);
         return -1;
     }
 }
@@ -300,7 +301,7 @@ int image_debug_reset_raw_scanner_capture(void) {
         memset(scan->buffer, 0, scan->width * scan->max_height * 3);
     }
     
-    printf("🔧 RAW_SCANNER: Reset raw scanner capture buffer\n");
+    log_info("IMG_DEBUG", "RAW_SCANNER: Reset raw scanner capture buffer");
     return 0;
 }
 
@@ -312,7 +313,7 @@ void image_debug_configure_raw_scanner(int enable, int capture_lines) {
     }
     
     if (enable) {
-        printf("🔧 RAW_SCANNER: Runtime capture enabled (%d lines)\n", raw_scanner_capture_lines);
+        log_info("IMG_DEBUG", "RAW_SCANNER: Runtime capture enabled (%d lines)", raw_scanner_capture_lines);
         // Auto-enable general image debug if raw scanner is enabled
         if (!debug_image_runtime_enabled) {
             image_debug_enable_runtime(1);
@@ -322,7 +323,7 @@ void image_debug_configure_raw_scanner(int enable, int capture_lines) {
             image_debug_init();
         }
     } else {
-        printf("🔧 RAW_SCANNER: Runtime capture disabled\n");
+        log_info("IMG_DEBUG", "RAW_SCANNER: Runtime capture disabled");
     }
 }
 
@@ -374,8 +375,8 @@ static int init_static_capture_buffer(void) {
     static_target_buffer = (float *)calloc(total, sizeof(float));
     static_marker_buffer = (uint8_t *)calloc(MAX_CAPTURE_SAMPLES, sizeof(uint8_t));
     if (!static_volume_buffer || !static_target_buffer || !static_marker_buffer) {
-        printf("ERROR: Failed to allocate static capture buffers (%d notes x %d samples)\n",
-               MAX_CAPTURE_NOTES, MAX_CAPTURE_SAMPLES);
+        log_error("IMG_DEBUG", "Failed to allocate static capture buffers (%d notes x %d samples)",
+                  MAX_CAPTURE_NOTES, MAX_CAPTURE_SAMPLES);
         free(static_volume_buffer); static_volume_buffer = NULL;
         free(static_target_buffer); static_target_buffer = NULL;
         free(static_marker_buffer); static_marker_buffer = NULL;
@@ -386,8 +387,8 @@ static int init_static_capture_buffer(void) {
     static_capture_samples_captured = 0;
     static_capture_initialized = 1;
 
-    printf("🔧 STATIC_CAPTURE: Allocated buffers (%d notes x %d samples) with markers\n",
-           MAX_CAPTURE_NOTES, MAX_CAPTURE_SAMPLES);
+    log_info("IMG_DEBUG", "STATIC_CAPTURE: Allocated buffers (%d notes x %d samples) with markers",
+             MAX_CAPTURE_NOTES, MAX_CAPTURE_SAMPLES);
 
     return 0;
 }
@@ -424,14 +425,14 @@ static int init_oscillator_volume_scan(void) {
     // Allocate buffer for volume data (stores both current and target volumes)
     oscillator_volume_buffer = calloc(oscillator_volume_scan.width * oscillator_volume_scan.max_height, sizeof(oscillator_volume_data_t));
     if (!oscillator_volume_buffer) {
-        printf("ERROR: Failed to allocate oscillator volume data buffer\n");
+        log_error("IMG_DEBUG", "Failed to allocate oscillator volume data buffer");
         return -1;
     }
     
     oscillator_scan_initialized = 1;
     
-    printf("🔧 OSCILLATOR_SCAN: Initialized buffer (%dx%d samples)\n", 
-           get_current_number_of_notes(), oscillator_capture_samples);
+    log_info("IMG_DEBUG", "OSCILLATOR_SCAN: Initialized buffer (%dx%d samples)", 
+             get_current_number_of_notes(), oscillator_capture_samples);
     return 0;
 }
 
@@ -453,7 +454,7 @@ static int copy_static_buffer_to_oscillator_buffer(void) {
     int samples_to_copy = (static_capture_samples_captured < oscillator_capture_samples) ? 
                          static_capture_samples_captured : oscillator_capture_samples;
     
-    printf("🔧 STATIC_CAPTURE: Copying %d samples from static buffer\n", samples_to_copy);
+    log_debug("IMG_DEBUG", "STATIC_CAPTURE: Copying %d samples from static buffer", samples_to_copy);
     
     // Copy data from static buffer to oscillator buffer
     for (int sample = 0; sample < samples_to_copy; sample++) {
@@ -471,7 +472,7 @@ static int copy_static_buffer_to_oscillator_buffer(void) {
     oscillator_volume_scan.current_height = samples_to_copy;
     oscillator_volume_scan.initialized = 1;
     
-    printf("🔧 STATIC_CAPTURE: Copied %d samples to oscillator buffer for PNG generation\n", samples_to_copy);
+    log_debug("IMG_DEBUG", "STATIC_CAPTURE: Copied %d samples to oscillator buffer for PNG generation", samples_to_copy);
     return 0;
 }
 
@@ -492,7 +493,7 @@ static int image_debug_save_oscillator_volume_scan(void) {
     // Create an RGB buffer for the output image
     uint8_t *rgb_8bit = malloc(scan->width * scan->current_height * 3);
     if (!rgb_8bit) {
-        printf("ERROR: Failed to allocate RGB conversion buffer\n");
+        log_error("IMG_DEBUG", "Failed to allocate RGB conversion buffer");
         return -1;
     }
     
@@ -554,9 +555,9 @@ static int image_debug_save_oscillator_volume_scan(void) {
     }
     
     if (oscillator_markers_enabled) {
-        printf("🔧 OSCILLATOR_SCAN: Drew %d yellow separator lines.\n", marker_count);
+        log_debug("IMG_DEBUG", "OSCILLATOR_SCAN: Drew %d yellow separator lines", marker_count);
     } else {
-        printf("🔧 OSCILLATOR_SCAN: Markers disabled (no separator lines drawn).\n");
+        log_debug("IMG_DEBUG", "OSCILLATOR_SCAN: Markers disabled (no separator lines drawn)");
     }
     
     // Generate filename with timestamp
@@ -573,11 +574,11 @@ static int image_debug_save_oscillator_volume_scan(void) {
     free(rgb_8bit);
     
     if (result) {
-        printf("🔧 OSCILLATOR_SCAN: Saved colorized volume scan (%dx%d): %s\n", 
-               scan->width, scan->current_height, full_path);
+        log_info("IMG_DEBUG", "OSCILLATOR_SCAN: Saved colorized volume scan (%dx%d): %s", 
+                 scan->width, scan->current_height, full_path);
         return 0;
     } else {
-        printf("ERROR: Failed to save colorized oscillator volume scan: %s\n", full_path);
+        log_error("IMG_DEBUG", "Failed to save colorized oscillator volume scan: %s", full_path);
         return -1;
     }
 }
@@ -594,7 +595,7 @@ static int image_debug_reset_oscillator_volume_scan(void) {
     temporal_scan_t *scan = &oscillator_volume_scan;
     scan->current_height = 0;
     
-    printf("🔧 OSCILLATOR_SCAN: Reset volume scan buffer\n");
+    log_info("IMG_DEBUG", "OSCILLATOR_SCAN: Reset volume scan buffer");
     return 0;
 }
 
@@ -609,8 +610,8 @@ void image_debug_configure_oscillator_capture(int enable, int capture_samples, i
     oscillator_markers_enabled = enable_markers;
     
     if (enable) {
-        printf("🔧 OSCILLATOR: Runtime capture enabled (%d samples%s)\n", 
-               oscillator_capture_samples, enable_markers ? ", markers enabled" : "");
+        log_info("IMG_DEBUG", "OSCILLATOR: Runtime capture enabled (%d samples%s)", 
+                 oscillator_capture_samples, enable_markers ? ", markers enabled" : "");
         // Auto-enable general image debug if oscillator capture is enabled
         if (!debug_image_runtime_enabled) {
             image_debug_enable_runtime(1);
@@ -621,11 +622,11 @@ void image_debug_configure_oscillator_capture(int enable, int capture_samples, i
         }
         // Pre-allocate capture buffers outside RT path
         if (init_static_capture_buffer() != 0) {
-            printf("ERROR: Unable to allocate static capture buffers, disabling oscillator capture.\n");
+            log_error("IMG_DEBUG", "Unable to allocate static capture buffers, disabling oscillator capture");
             oscillator_runtime_enabled = 0;
         }
     } else {
-        printf("🔧 OSCILLATOR: Runtime capture disabled\n");
+        log_info("IMG_DEBUG", "OSCILLATOR: Runtime capture disabled");
         // Free capture buffers when disabling to release memory
         free_static_capture_buffer();
     }
@@ -677,7 +678,7 @@ void image_debug_capture_volume_sample_fast(int note, float current_volume, floa
             static volatile int processing_in_progress = 0;
             
             if (__sync_bool_compare_and_swap(&processing_in_progress, 0, 1)) {
-                printf("🔧 STATIC_CAPTURE: Processing %d samples for PNG generation\n", static_capture_samples_captured);
+                log_info("IMG_DEBUG", "STATIC_CAPTURE: Processing %d samples for PNG generation", static_capture_samples_captured);
                 
                 if (copy_static_buffer_to_oscillator_buffer() == 0) {
                     // Generate and save the PNG image

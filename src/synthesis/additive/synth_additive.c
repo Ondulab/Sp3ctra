@@ -31,6 +31,9 @@
 // Runtime configuration
 #include "../../config/config_loader.h"
 
+// Logger
+#include "../../utils/logger.h"
+
 // Standard includes
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,18 +105,18 @@ void synth_additive_cleanup(void) {
 int32_t synth_IfftInit(void) {
   int32_t buffer_len = 0;
 
-  printf("---------- SYNTH INIT ---------\n");
-  printf("-------------------------------\n");
+  log_info("SYNTH", "---------- SYNTH INIT ---------");
+  log_info("SYNTH", "-------------------------------");
 
   // Initialize runtime configuration
   if (synth_runtime_init(CIS_MAX_PIXELS_NB, g_sp3ctra_config.pixels_per_note) != 0) {
-    fprintf(stderr, "Failed to initialize runtime configuration\n");
+    log_error("SYNTH", "Failed to initialize runtime configuration");
     return -1;
   }
 
   // Allocate dynamic buffers
   if (synth_runtime_allocate_buffers() != 0) {
-    fprintf(stderr, "Failed to allocate dynamic buffers\n");
+    log_error("SYNTH", "Failed to allocate dynamic buffers");
     return -1;
   }
 
@@ -152,29 +155,29 @@ int32_t synth_IfftInit(void) {
     }
 
   if (buffer_len > (2400000 - 1)) {
-    printf("RAM overflow");
+    log_error("SYNTH", "RAM overflow");
     die("synth init failed");
     return -1;
   }
 
-  printf("Note number  = %d\n", (int)get_current_number_of_notes());
-  printf("[INFO] using Float32 path\n");
-  printf("Buffer length = %d uint16\n", (int)buffer_len);
+  log_info("SYNTH", "Note number = %d", (int)get_current_number_of_notes());
+  log_info("SYNTH", "Using Float32 path");
+  log_info("SYNTH", "Buffer length = %d uint16", (int)buffer_len);
 
   uint8_t FreqStr[256] = {0};
   sprintf((char *)FreqStr, " %d -> %dHz      Octave:%d",
           (int)waves[0].frequency, (int)waves[get_current_number_of_notes() - 1].frequency,
           (int)sqrt(waves[get_current_number_of_notes() - 1].octave_coeff));
 
-  printf("First note Freq = %dHz\nSize = %d\n", (int)waves[0].frequency,
+  log_info("SYNTH", "First note Freq = %dHz, Size = %d", (int)waves[0].frequency,
          (int)waves[0].area_size);
-  printf("Last  note Freq = %dHz\nSize = %d\nOctave = %d\n",
+  log_info("SYNTH", "Last note Freq = %dHz, Size = %d, Octave = %d",
          (int)waves[get_current_number_of_notes() - 1].frequency,
          (int)waves[get_current_number_of_notes() - 1].area_size /
              (int)sqrt(waves[get_current_number_of_notes() - 1].octave_coeff),
          (int)sqrt(waves[get_current_number_of_notes() - 1].octave_coeff));
 
-  printf("-------------------------------\n");
+  log_info("SYNTH", "-------------------------------");
 
 #ifdef PRINT_IFFT_FREQUENCY
   for (uint32_t pix = 0; pix < NUMBER_OF_NOTES; pix++) {
@@ -203,12 +206,12 @@ int32_t synth_IfftInit(void) {
   printf("-------------------------------\n");
 #endif
 
-  printf("Note number  = %d\n", (int)get_current_number_of_notes());
+  log_info("SYNTH", "Note number = %d", (int)get_current_number_of_notes());
 
   // Allocate imageRef dynamically
   imageRef = (int32_t*)calloc(get_current_number_of_notes(), sizeof(int32_t));
   if (!imageRef) {
-    fprintf(stderr, "ERROR: Failed to allocate imageRef\n");
+    log_error("SYNTH", "Failed to allocate imageRef");
     return -1;
   }
   // REFACTORED: Initialize with 1.0 in micros scale (normalized amplitude)
@@ -228,7 +231,7 @@ int32_t synth_IfftInit(void) {
   if (g_sp3ctra_config.stereo_mode_enabled) {
     // Initialize lock-free pan gains system
     lock_free_pan_init();
-    printf("🔧 LOCK_FREE_PAN: System initialized for stereo mode\n");
+    log_info("AUDIO", "Lock-free pan system initialized for stereo mode");
   }
 
   return 0;
@@ -259,17 +262,17 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     if (synth_init_thread_pool() == 0) {
       if (init_rt_safe_buffers() == 0) {
         if (synth_start_worker_threads() == 0) {
-          printf("RT-safe synthesis system initialized successfully\n");
+          log_info("SYNTH", "RT-safe synthesis system initialized successfully");
         } else {
-          printf("Error starting threads, synthesis will fail\n");
+          log_error("SYNTH", "Failed to start worker threads, synthesis will fail");
           synth_pool_initialized = 0;
         }
       } else {
-        printf("Error initializing RT-safe buffers, synthesis will fail\n");
+        log_error("SYNTH", "Failed to initialize RT-safe buffers, synthesis will fail");
         synth_pool_initialized = 0;
       }
     } else {
-      printf("Error initializing pool, synthesis will fail\n");
+      log_error("SYNTH", "Failed to initialize thread pool, synthesis will fail");
       synth_pool_initialized = 0;
     }
     first_call = 0;
@@ -283,7 +286,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     maxVolumeBuffer  = (float*)calloc(bs, sizeof(float));
     tmp_audioData    = (float*)calloc(bs, sizeof(float));
     if (!additiveBuffer || !sumVolumeBuffer || !maxVolumeBuffer || !tmp_audioData) {
-      printf("ERROR: Failed to allocate additive persistent buffers\n");
+      log_error("SYNTH", "Failed to allocate additive persistent buffers");
       return;
     }
   }
@@ -400,7 +403,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
 
   } else {
     // === ERROR: Thread pool not available ===
-    printf("ERROR: Thread pool not available\n");
+    log_error("SYNTH", "Thread pool not available");
     // Fill buffers with silence
     fill_float(0, audioDataLeft, g_sp3ctra_config.audio_buffer_size);
     fill_float(0, audioDataRight, g_sp3ctra_config.audio_buffer_size);
@@ -485,7 +488,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
       stereoBuffer_L = (float*)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
       stereoBuffer_R = (float*)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
       if (!stereoBuffer_L || !stereoBuffer_R) {
-        printf("ERROR: Failed to allocate stereo buffers\n");
+        log_error("SYNTH", "Failed to allocate stereo buffers");
       }
     }
     fill_float(0, stereoBuffer_L, g_sp3ctra_config.audio_buffer_size);
@@ -625,7 +628,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
 
   // Check that input buffers are not NULL
   if (!buffer_R || !buffer_G || !buffer_B) {
-    printf("ERROR: One of the input buffers is NULL!\n");
+    log_error("SYNTH", "One of the input buffers is NULL");
     return;
   }
   int index = __atomic_load_n(&current_buffer_index, __ATOMIC_RELAXED);

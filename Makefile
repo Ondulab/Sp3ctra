@@ -97,7 +97,7 @@ COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/dmx/dmx.c
 PROCESSING_SOURCES = src/processing/image_preprocessor.c src/processing/image_sequencer.c
 THREADING_SOURCES = src/threading/multithreading.c
-UTILS_SOURCES = src/utils/error.c src/utils/image_debug.c
+UTILS_SOURCES = src/utils/error.c src/utils/image_debug.c src/utils/logger.c
 
 # Conditional display sources (only include if NO_SFML is not defined)
 ifeq ($(findstring -DNO_SFML,$(CFLAGS)),)

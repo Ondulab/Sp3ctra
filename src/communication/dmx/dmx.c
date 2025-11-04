@@ -69,6 +69,7 @@
 #include "config.h"
 #include "dmx.h"
 #include "context.h"
+#include "logger.h"
 #include <math.h>
 
 // Function to determine if a pixel is significant
@@ -278,25 +279,25 @@ extern void signalHandler(int signal);
 int dmx_init_configuration(int num_spots, DMXSpotType spot_type, int start_channel) {
     // Validate parameters
     if (num_spots <= 0 || num_spots > 512) {
-        printf("❌ Invalid number of spots: %d (must be 1-512)\n", num_spots);
+        log_error("DMX", "Invalid number of spots: %d (must be 1-512)", num_spots);
         return -1;
     }
     
     if (spot_type != DMX_SPOT_RGB) {
-        printf("❌ Unsupported spot type: %d (only DMX_SPOT_RGB supported)\n", spot_type);
+        log_error("DMX", "Unsupported spot type: %d (only DMX_SPOT_RGB supported)", spot_type);
         return -1;
     }
     
     if (start_channel < 1 || start_channel > 512) {
-        printf("❌ Invalid start channel: %d (must be 1-512)\n", start_channel);
+        log_error("DMX", "Invalid start channel: %d (must be 1-512)", start_channel);
         return -1;
     }
     
     // Check if total channels fit in DMX universe
     int total_channels = num_spots * (int)spot_type;
     if (start_channel + total_channels - 1 > 512) {
-        printf("❌ Configuration exceeds DMX universe: start=%d, spots=%d, channels_per_spot=%d, total=%d\n",
-               start_channel, num_spots, (int)spot_type, start_channel + total_channels - 1);
+        log_error("DMX", "Configuration exceeds DMX universe: start=%d, spots=%d, channels_per_spot=%d, total=%d",
+                  start_channel, num_spots, (int)spot_type, start_channel + total_channels - 1);
         return -1;
     }
     
@@ -309,7 +310,7 @@ int dmx_init_configuration(int num_spots, DMXSpotType spot_type, int start_chann
     // Allocate memory for spots
     global_dmx_spots = malloc(num_spots * sizeof(DMXSpot));
     if (global_dmx_spots == NULL) {
-        printf("❌ Failed to allocate memory for %d DMX spots\n", num_spots);
+        log_error("DMX", "Failed to allocate memory for %d DMX spots", num_spots);
         return -1;
     }
     
@@ -319,8 +320,8 @@ int dmx_init_configuration(int num_spots, DMXSpotType spot_type, int start_chann
     // Generate channel mapping
     dmx_generate_channel_mapping(global_dmx_spots, num_spots, spot_type, start_channel);
     
-    printf("✅ DMX configuration initialized: %d spots, type=%d, start_channel=%d, total_channels=%d\n",
-           num_spots, (int)spot_type, start_channel, total_channels);
+    log_info("DMX", "Configuration initialized: %d spots, type=%d, start_channel=%d, total_channels=%d",
+             num_spots, (int)spot_type, start_channel, total_channels);
     
     return 0;
 }
@@ -340,13 +341,13 @@ void dmx_generate_channel_mapping(DMXSpot spots[], int num_spots, DMXSpotType sp
                 break;
             // Future extensions for other types
             default:
-                printf("⚠️  Unsupported spot type in channel mapping: %d\n", (int)spot_type);
+                log_warning("DMX", "Unsupported spot type in channel mapping: %d", (int)spot_type);
                 break;
         }
     }
     
-    printf("🔧 Generated channel mapping: spot[0] starts at channel %d, spot[%d] starts at channel %d\n",
-           spots[0].start_channel, num_spots-1, spots[num_spots-1].start_channel);
+    log_info("DMX", "Generated channel mapping: spot[0] starts at channel %d, spot[%d] starts at channel %d",
+             spots[0].start_channel, num_spots-1, spots[num_spots-1].start_channel);
 }
 
 void intHandler(int dummy) {
@@ -719,13 +720,13 @@ int init_dmx_linux_libftdi(int silent) {
     int ret;
     
     if (!silent)
-        printf("🔧 Initializing DMX via libftdi (Linux)...\n");
+        log_info("DMX", "Initializing DMX via libftdi (Linux)");
     
     // Initialize libftdi context
     dmx_ctx.ftdi = ftdi_new();
     if (dmx_ctx.ftdi == NULL) {
         if (!silent)
-            fprintf(stderr, "❌ ftdi_new failed\n");
+            log_error("DMX", "ftdi_new failed");
         return -1;
     }
     
@@ -733,47 +734,47 @@ int init_dmx_linux_libftdi(int silent) {
     ret = ftdi_usb_open(dmx_ctx.ftdi, 0x0403, 0x6001);  // Standard FTDI VID/PID
     if (ret < 0) {
         if (!silent)
-            fprintf(stderr, "❌ Unable to open FTDI device: %s\n", ftdi_get_error_string(dmx_ctx.ftdi));
+            log_error("DMX", "Unable to open FTDI device: %s", ftdi_get_error_string(dmx_ctx.ftdi));
         ftdi_free(dmx_ctx.ftdi);
         dmx_ctx.ftdi = NULL;
         return -1;
     }
     
     if (!silent)
-        printf("✅ FTDI device opened successfully\n");
+        log_info("DMX", "FTDI device opened successfully");
     
     // Configure for DMX: 250000 bps, 8N2
     ret = ftdi_set_baudrate(dmx_ctx.ftdi, DMX_BAUD);
     if (ret < 0) {
         if (!silent)
-            fprintf(stderr, "❌ Set baud rate failed: %s\n", ftdi_get_error_string(dmx_ctx.ftdi));
+            log_error("DMX", "Set baud rate failed: %s", ftdi_get_error_string(dmx_ctx.ftdi));
         ftdi_usb_close(dmx_ctx.ftdi);
         ftdi_free(dmx_ctx.ftdi);
         dmx_ctx.ftdi = NULL;
         return -1;
     } else {
         if (!silent)
-            printf("✅ Baud rate set to %d\n", DMX_BAUD);
+            log_info("DMX", "Baud rate set to %d", DMX_BAUD);
     }
     
     ret = ftdi_set_line_property(dmx_ctx.ftdi, BITS_8, STOP_BIT_2, NONE);
     if (ret < 0) {
         if (!silent)
-            fprintf(stderr, "❌ Set line properties failed: %s\n", ftdi_get_error_string(dmx_ctx.ftdi));
+            log_error("DMX", "Set line properties failed: %s", ftdi_get_error_string(dmx_ctx.ftdi));
         ftdi_usb_close(dmx_ctx.ftdi);
         ftdi_free(dmx_ctx.ftdi);
         dmx_ctx.ftdi = NULL;
         return -1;
     } else {
         if (!silent)
-            printf("✅ Line properties set (8N2)\n");
+            log_info("DMX", "Line properties set (8N2)");
     }
     
     // Reset any previous bitmode settings
     ret = ftdi_set_bitmode(dmx_ctx.ftdi, 0x00, BITMODE_RESET);
     if (ret < 0) {
         if (!silent)
-            printf("⚠️  Bitmode reset warning: %s\n", ftdi_get_error_string(dmx_ctx.ftdi));
+            log_warning("DMX", "Bitmode reset warning: %s", ftdi_get_error_string(dmx_ctx.ftdi));
     }
     
     // Mark context as using libftdi
@@ -781,7 +782,7 @@ int init_dmx_linux_libftdi(int silent) {
     dmx_ctx.fd = -1; // Not using traditional fd
     
     if (!silent)
-        printf("🎉 libftdi DMX initialized successfully\n");
+        log_info("DMX", "libftdi DMX initialized successfully");
     
     return 0; // Success
 }
@@ -803,19 +804,19 @@ void print_usb_device_info(int fd, int silent) {
     
     struct serial_struct ser;
     if (ioctl(fd, TIOCGSERIAL, &ser) == 0) {
-        printf("🔍 USB Serial Device Information:\n");
-        printf("   Type: %d, Line: %d\n", ser.type, ser.line);
-        printf("   Port: 0x%x, IRQ: %d\n", ser.port, ser.irq);
-        printf("   Flags: 0x%x\n", ser.flags);
-        printf("   Base baud: %d, Custom divisor: %d\n", ser.baud_base, ser.custom_divisor);
+        log_info("DMX", "USB Serial Device Information:");
+        log_info("DMX", "   Type: %d, Line: %d", ser.type, ser.line);
+        log_info("DMX", "   Port: 0x%x, IRQ: %d", ser.port, ser.irq);
+        log_info("DMX", "   Flags: 0x%x", ser.flags);
+        log_info("DMX", "   Base baud: %d, Custom divisor: %d", ser.baud_base, ser.custom_divisor);
         
         // Try to identify device type
         if (ser.type == PORT_16550A) {
-            printf("   Device type: 16550A UART\n");
+            log_info("DMX", "   Device type: 16550A UART");
         } else if (ser.type == PORT_UNKNOWN) {
-            printf("   Device type: Unknown\n");
+            log_info("DMX", "   Device type: Unknown");
         } else {
-            printf("   Device type: %d (see linux/serial.h)\n", ser.type);
+            log_info("DMX", "   Device type: %d (see linux/serial.h)", ser.type);
         }
     }
 }
@@ -826,17 +827,17 @@ int set_custom_baudrate_termios2(int fd, int baud, int silent) {
     struct termios2 tio2;
     
     if (!silent)
-        printf("🔧 Attempting termios2 configuration for %d bps...\n", baud);
+        log_info("DMX", "Attempting termios2 configuration for %d bps", baud);
     
     // Get current termios2 settings
     if (ioctl(fd, TCGETS2, &tio2) < 0) {
-        if (!silent)
-            printf("⚠️  TCGETS2 failed, termios2 not available: %s (errno: %d)\n", strerror(errno), errno);
+    if (!silent)
+        log_warning("DMX", "TCGETS2 failed, termios2 not available: %s (errno: %d)", strerror(errno), errno);
         return -1;
     }
     
     if (!silent)
-        printf("✅ termios2 available, current speeds: %u/%u\n", tio2.c_ispeed, tio2.c_ospeed);
+        log_info("DMX", "termios2 available, current speeds: %u/%u", tio2.c_ispeed, tio2.c_ospeed);
     
     // Store original values for comparison
     unsigned int orig_ispeed = tio2.c_ispeed;
@@ -850,14 +851,14 @@ int set_custom_baudrate_termios2(int fd, int baud, int silent) {
     tio2.c_ospeed = baud;       // Set output speed
     
     if (!silent) {
-        printf("🔧 Configuring: cflag 0x%x -> 0x%x, speeds %u/%u -> %u/%u\n",
-               orig_cflag, tio2.c_cflag, orig_ispeed, orig_ospeed, tio2.c_ispeed, tio2.c_ospeed);
+        log_info("DMX", "Configuring: cflag 0x%x -> 0x%x, speeds %u/%u -> %u/%u",
+                 orig_cflag, tio2.c_cflag, orig_ispeed, orig_ospeed, tio2.c_ispeed, tio2.c_ospeed);
     }
     
     // Apply the new settings
     if (ioctl(fd, TCSETS2, &tio2) < 0) {
-        if (!silent)
-            printf("⚠️  TCSETS2 failed: %s (errno: %d)\n", strerror(errno), errno);
+    if (!silent)
+        log_warning("DMX", "TCSETS2 failed: %s (errno: %d)", strerror(errno), errno);
         return -1;
     }
     
@@ -867,16 +868,16 @@ int set_custom_baudrate_termios2(int fd, int baud, int silent) {
     // Verify the baud rate was set correctly
     struct termios2 verify_tio2;
     if (ioctl(fd, TCGETS2, &verify_tio2) < 0) {
-        if (!silent)
-            printf("⚠️  Verification TCGETS2 failed: %s\n", strerror(errno));
+    if (!silent)
+        log_warning("DMX", "Verification TCGETS2 failed: %s", strerror(errno));
         return -1;
     }
     
     if (!silent) {
-        printf("✅ termios2 configuration applied\n");
-        printf("   Verified speeds: %u/%u (requested: %u)\n", 
-               verify_tio2.c_ispeed, verify_tio2.c_ospeed, (unsigned int)baud);
-        printf("   Verified cflag: 0x%x\n", verify_tio2.c_cflag);
+        log_info("DMX", "termios2 configuration applied");
+        log_info("DMX", "   Verified speeds: %u/%u (requested: %u)", 
+                 verify_tio2.c_ispeed, verify_tio2.c_ospeed, (unsigned int)baud);
+        log_info("DMX", "   Verified cflag: 0x%x", verify_tio2.c_cflag);
     }
     
     // Check if the speeds match what we requested (allow small tolerance)
@@ -884,15 +885,15 @@ int set_custom_baudrate_termios2(int fd, int baud, int silent) {
     if (abs((int)verify_tio2.c_ispeed - baud) <= (int)tolerance && 
         abs((int)verify_tio2.c_ospeed - baud) <= (int)tolerance) {
         if (!silent)
-            printf("🎉 termios2 DMX baud rate successfully configured: %u bps\n", verify_tio2.c_ospeed);
+            log_info("DMX", "termios2 DMX baud rate successfully configured: %u bps", verify_tio2.c_ospeed);
         return 0;
     } else {
         if (!silent) {
-            printf("⚠️  termios2 baud rate mismatch\n");
-            printf("   Requested: %d, Got input: %u, output: %u\n", 
-                   baud, verify_tio2.c_ispeed, verify_tio2.c_ospeed);
-            printf("   Difference: input %d, output %d\n", 
-                   (int)verify_tio2.c_ispeed - baud, (int)verify_tio2.c_ospeed - baud);
+            log_warning("DMX", "termios2 baud rate mismatch");
+            log_warning("DMX", "   Requested: %d, Got input: %u, output: %u", 
+                        baud, verify_tio2.c_ispeed, verify_tio2.c_ospeed);
+            log_warning("DMX", "   Difference: input %d, output %d", 
+                        (int)verify_tio2.c_ispeed - baud, (int)verify_tio2.c_ospeed - baud);
         }
         return -1;
     }
@@ -900,7 +901,7 @@ int set_custom_baudrate_termios2(int fd, int baud, int silent) {
 #else
     (void)fd; (void)baud; (void)silent; // Suppress unused warnings
     if (!silent)
-        printf("⚠️  termios2 headers not available at compile time\n");
+        log_warning("DMX", "termios2 headers not available at compile time");
     return -1; // termios2 headers not available
 #endif
 }
@@ -910,19 +911,19 @@ int set_custom_baudrate_ftdi(int fd, int baud, int silent) {
     struct serial_struct ser;
     
     if (!silent)
-        printf("🔧 Attempting FTDI configuration for %d bps...\n", baud);
+        log_info("DMX", "Attempting FTDI configuration for %d bps", baud);
     
     // Get current serial settings
     if (ioctl(fd, TIOCGSERIAL, &ser) < 0) {
-        if (!silent)
-            printf("⚠️  TIOCGSERIAL failed: %s (errno: %d)\n", strerror(errno), errno);
+    if (!silent)
+        log_warning("DMX", "TIOCGSERIAL failed: %s (errno: %d)", strerror(errno), errno);
         return -1;
     }
     
     if (!silent) {
-        printf("✅ FTDI device detected\n");
-        printf("   Current: type=%d, baud_base=%d, custom_divisor=%d, flags=0x%x\n",
-               ser.type, ser.baud_base, ser.custom_divisor, ser.flags);
+        log_info("DMX", "FTDI device detected");
+        log_info("DMX", "   Current: type=%d, baud_base=%d, custom_divisor=%d, flags=0x%x",
+                 ser.type, ser.baud_base, ser.custom_divisor, ser.flags);
     }
     
     // Store original values
@@ -945,7 +946,7 @@ int set_custom_baudrate_ftdi(int fd, int baud, int silent) {
         
         if (divisor > 0 && divisor <= 65535) { // Valid divisor range
             if (!silent) {
-                printf("🔧 Trying %s base clock: divisor=%d\n", base_names[i], divisor);
+                log_info("DMX", "Trying %s base clock: divisor=%d", base_names[i], divisor);
             }
             
             // Configure the serial settings
@@ -957,7 +958,7 @@ int set_custom_baudrate_ftdi(int fd, int baud, int silent) {
             // Apply settings
             if (ioctl(fd, TIOCSSERIAL, &ser) < 0) {
                 if (!silent)
-                    printf("⚠️  TIOCSSERIAL failed for %s: %s\n", base_names[i], strerror(errno));
+                    log_warning("DMX", "TIOCSSERIAL failed for %s: %s", base_names[i], strerror(errno));
                 continue;
             }
             
@@ -968,7 +969,7 @@ int set_custom_baudrate_ftdi(int fd, int baud, int silent) {
             struct serial_struct verify_ser;
             if (ioctl(fd, TIOCGSERIAL, &verify_ser) < 0) {
                 if (!silent)
-                    printf("⚠️  Verification TIOCGSERIAL failed: %s\n", strerror(errno));
+                    log_warning("DMX", "Verification TIOCGSERIAL failed: %s", strerror(errno));
                 continue;
             }
             
@@ -976,27 +977,27 @@ int set_custom_baudrate_ftdi(int fd, int baud, int silent) {
             int actual_baud = base_clocks[i] / (16 * verify_ser.custom_divisor);
             
             if (!silent) {
-                printf("✅ FTDI configured with %s base clock\n", base_names[i]);
-                printf("   Settings: baud_base=%d, custom_divisor=%d, flags=0x%x\n",
-                       verify_ser.baud_base, verify_ser.custom_divisor, verify_ser.flags);
-                printf("   Calculated actual baud rate: %d bps\n", actual_baud);
+                log_info("DMX", "FTDI configured with %s base clock", base_names[i]);
+                log_info("DMX", "   Settings: baud_base=%d, custom_divisor=%d, flags=0x%x",
+                         verify_ser.baud_base, verify_ser.custom_divisor, verify_ser.flags);
+                log_info("DMX", "   Calculated actual baud rate: %d bps", actual_baud);
             }
             
             // Check if we're close enough (within 2% tolerance for FTDI)
             int tolerance = baud / 50; // 2% tolerance
             if (abs(actual_baud - baud) <= tolerance) {
                 if (!silent)
-                    printf("🎉 FTDI DMX baud rate successfully configured: %d bps (target: %d)\n", 
-                           actual_baud, baud);
+                    log_info("DMX", "FTDI DMX baud rate successfully configured: %d bps (target: %d)", 
+                             actual_baud, baud);
                 return 0;
             } else {
                 if (!silent)
-                    printf("⚠️  FTDI baud rate outside tolerance: %d bps (target: %d, diff: %d)\n", 
-                           actual_baud, baud, abs(actual_baud - baud));
+                    log_warning("DMX", "FTDI baud rate outside tolerance: %d bps (target: %d, diff: %d)", 
+                                actual_baud, baud, abs(actual_baud - baud));
             }
         } else {
             if (!silent)
-                printf("⚠️  Invalid divisor %d for %s base clock\n", divisor, base_names[i]);
+                log_warning("DMX", "Invalid divisor %d for %s base clock", divisor, base_names[i]);
         }
     }
     
@@ -1007,14 +1008,14 @@ int set_custom_baudrate_ftdi(int fd, int baud, int silent) {
     ioctl(fd, TIOCSSERIAL, &ser);
     
     if (!silent)
-        printf("⚠️  All FTDI baud rate attempts failed, settings restored\n");
+        log_warning("DMX", "All FTDI baud rate attempts failed, settings restored");
     return -1;
 }
 
 // Function to try system command approach as last resort
 int set_custom_baudrate_system(int fd, int baud, const char* port, int silent) {
     if (!silent)
-        printf("🔧 Attempting system command approach for %d bps...\n", baud);
+        log_info("DMX", "Attempting system command approach for %d bps", baud);
         
     // Close fd temporarily for external stty command
     close(fd);
@@ -1025,14 +1026,14 @@ int set_custom_baudrate_system(int fd, int baud, const char* port, int silent) {
     // Method 1: Direct baud rate setting
     snprintf(cmd, sizeof(cmd), "stty -F %s %d 2>/dev/null", port, baud);
     if (!silent)
-        printf("🔧 Trying: %s\n", cmd);
+        log_info("DMX", "Trying: %s", cmd);
     
     if (system(cmd) == 0) {
         // Reopen the port
         fd = open(port, O_RDWR | O_NOCTTY);
         if (fd >= 0) {
             if (!silent)
-                printf("✅ System stty command succeeded\n");
+                log_info("DMX", "System stty command succeeded");
             return fd; // Return new fd
         }
     }
@@ -1040,14 +1041,14 @@ int set_custom_baudrate_system(int fd, int baud, const char* port, int silent) {
     // Method 2: Try with different parameters
     snprintf(cmd, sizeof(cmd), "stty -F %s speed %d raw -echo 2>/dev/null", port, baud);
     if (!silent)
-        printf("🔧 Trying: %s\n", cmd);
+        log_info("DMX", "Trying: %s", cmd);
         
     if (system(cmd) == 0) {
         // Reopen the port
         fd = open(port, O_RDWR | O_NOCTTY);
         if (fd >= 0) {
             if (!silent)
-                printf("✅ System stty speed command succeeded\n");
+                log_info("DMX", "System stty speed command succeeded");
             return fd; // Return new fd
         }
     }
@@ -1055,7 +1056,7 @@ int set_custom_baudrate_system(int fd, int baud, const char* port, int silent) {
     // Reopen with original settings if system commands failed
     fd = open(port, O_RDWR | O_NOCTTY);
     if (!silent)
-        printf("⚠️  System command approach failed, reopened port\n");
+        log_warning("DMX", "System command approach failed, reopened port");
     return fd; // Return reopened fd (even if system commands failed)
 }
 #endif
@@ -1071,24 +1072,24 @@ int send_dmx_frame(int fd, unsigned char *frame, size_t len) {
   // Traditional fd-based DMX (Mac or Linux fallback)
   // Set break condition (100 µs) then clear and wait for 12 µs (Mark After Break)
   if (ioctl(fd, TIOCSBRK) < 0) {
-    perror("Error setting break condition");
+    log_error("DMX", "Error setting break condition: %s", strerror(errno));
     return -1;
   }
   usleep(100); // 100 µs break
 
   if (ioctl(fd, TIOCCBRK) < 0) {
-    perror("Error clearing break condition");
+    log_error("DMX", "Error clearing break condition: %s", strerror(errno));
     return -1;
   }
   usleep(12); // 12 µs Mark After Break
 
   ssize_t written = write(fd, frame, len);
   if (written < 0) {
-    perror("Error writing frame");
+    log_error("DMX", "Error writing frame: %s", strerror(errno));
     return -1;
   }
   if (tcdrain(fd) < 0) {
-    perror("Error draining output");
+    log_error("DMX", "Error draining output: %s", strerror(errno));
     return -1;
   }
 
@@ -1104,38 +1105,38 @@ int init_dmx_macos(const char *port, int silent) {
 
   if (!port) {
     if (!silent)
-      fprintf(stderr, "❌ DMX port required on macOS\n");
+      log_error("DMX", "DMX port required on macOS");
     return -1;
   }
 
   if (!silent)
-    printf("🍎 Initializing DMX on macOS with port: %s\n", port);
+    log_info("DMX", "Initializing DMX on macOS with port: %s", port);
 
   // Open serial port
   fd = open(port, O_RDWR | O_NOCTTY | O_NONBLOCK);
   if (fd < 0) {
     if (!silent)
-      perror("Error opening serial port");
+      log_error("DMX", "Error opening serial port: %s", strerror(errno));
     return -1;
   }
 
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags == -1) {
     if (!silent)
-      perror("Error getting flags");
+      log_error("DMX", "Error getting flags: %s", strerror(errno));
     close(fd);
     return -1;
   }
   if (fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) == -1) {
     if (!silent)
-      perror("Error setting flags");
+      log_error("DMX", "Error setting flags: %s", strerror(errno));
     close(fd);
     return -1;
   }
 
   if (tcgetattr(fd, &tty) != 0) {
     if (!silent)
-      perror("Error from tcgetattr");
+      log_error("DMX", "Error from tcgetattr: %s", strerror(errno));
     close(fd);
     return -1;
   }
@@ -1153,8 +1154,7 @@ int init_dmx_macos(const char *port, int silent) {
 
   if (tcsetattr(fd, TCSANOW, &tty) != 0) {
     if (!silent) {
-      perror("Error from tcsetattr");
-      printf("Errno: %d, %s\n", errno, strerror(errno));
+      log_error("DMX", "Error from tcsetattr: %s (errno: %d)", strerror(errno), errno);
     }
     close(fd);
     return -1;
@@ -1163,14 +1163,14 @@ int init_dmx_macos(const char *port, int silent) {
   int status;
   if (ioctl(fd, TIOCMGET, &status) < 0) {
     if (!silent)
-      perror("Error getting modem status");
+      log_error("DMX", "Error getting modem status: %s", strerror(errno));
     close(fd);
     return -1;
   }
   status &= ~(TIOCM_DTR | TIOCM_RTS);
   if (ioctl(fd, TIOCMSET, &status) < 0) {
     if (!silent)
-      perror("Error setting modem status");
+      log_error("DMX", "Error setting modem status: %s", strerror(errno));
     close(fd);
     return -1;
   }
@@ -1179,7 +1179,7 @@ int init_dmx_macos(const char *port, int silent) {
   speed_t speed = DMX_BAUD;
   if (ioctl(fd, IOSSIOSPEED, &speed) < 0) {
     if (!silent)
-      perror("Error setting custom baud rate");
+      log_error("DMX", "Error setting custom baud rate: %s", strerror(errno));
     close(fd);
     return -1;
   }
@@ -1189,7 +1189,7 @@ int init_dmx_macos(const char *port, int silent) {
   dmx_ctx.fd = fd;
   
   if (!silent)
-    printf("✅ macOS DMX initialized successfully: %d bps\n", DMX_BAUD);
+    log_info("DMX", "macOS DMX initialized successfully: %d bps", DMX_BAUD);
   return fd;
 }
 #endif
@@ -1200,33 +1200,33 @@ int init_dmx_linux_standard(const char *port, int silent) {
   struct termios tty;
 
   if (!silent)
-    printf("🐧 Initializing DMX on Linux (standard) with port: %s\n", port);
+    log_info("DMX", "Initializing DMX on Linux (standard) with port: %s", port);
 
   // Open serial port
   fd = open(port, O_RDWR | O_NOCTTY | O_NONBLOCK);
   if (fd < 0) {
     if (!silent)
-      perror("Error opening serial port");
+      log_error("DMX", "Error opening serial port: %s", strerror(errno));
     return -1;
   }
 
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags == -1) {
     if (!silent)
-      perror("Error getting flags");
+      log_error("DMX", "Error getting flags: %s", strerror(errno));
     close(fd);
     return -1;
   }
   if (fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) == -1) {
     if (!silent)
-      perror("Error setting flags");
+      log_error("DMX", "Error setting flags: %s", strerror(errno));
     close(fd);
     return -1;
   }
 
   if (tcgetattr(fd, &tty) != 0) {
     if (!silent)
-      perror("Error from tcgetattr");
+      log_error("DMX", "Error from tcgetattr: %s", strerror(errno));
     close(fd);
     return -1;
   }
@@ -1244,8 +1244,7 @@ int init_dmx_linux_standard(const char *port, int silent) {
 
   if (tcsetattr(fd, TCSANOW, &tty) != 0) {
     if (!silent) {
-      perror("Error from tcsetattr");
-      printf("Errno: %d, %s\n", errno, strerror(errno));
+      log_error("DMX", "Error from tcsetattr: %s (errno: %d)", strerror(errno), errno);
     }
     close(fd);
     return -1;
@@ -1254,14 +1253,14 @@ int init_dmx_linux_standard(const char *port, int silent) {
   int status;
   if (ioctl(fd, TIOCMGET, &status) < 0) {
     if (!silent)
-      perror("Error getting modem status");
+      log_error("DMX", "Error getting modem status: %s", strerror(errno));
     close(fd);
     return -1;
   }
   status &= ~(TIOCM_DTR | TIOCM_RTS);
   if (ioctl(fd, TIOCMSET, &status) < 0) {
     if (!silent)
-      perror("Error setting modem status");
+      log_error("DMX", "Error setting modem status: %s", strerror(errno));
     close(fd);
     return -1;
   }
@@ -1270,7 +1269,7 @@ int init_dmx_linux_standard(const char *port, int silent) {
   int baud_configured = 0;
   
   if (!silent) {
-    printf("🔧 Configuring DMX baud rate (%d bps) using multi-level approach...\n", DMX_BAUD);
+    log_info("DMX", "Configuring DMX baud rate (%d bps) using multi-level approach", DMX_BAUD);
     print_usb_device_info(fd, silent);
   }
   
@@ -1291,7 +1290,7 @@ int init_dmx_linux_standard(const char *port, int silent) {
   
   if (!baud_configured) {
     if (!silent)
-      printf("⚠️  All standard DMX baud rate methods failed\n");
+      log_warning("DMX", "All standard DMX baud rate methods failed");
     close(fd);
     return -1;
   }
@@ -1301,7 +1300,7 @@ int init_dmx_linux_standard(const char *port, int silent) {
   dmx_ctx.fd = fd;
   
   if (!silent)
-    printf("✅ Linux DMX (standard) initialized successfully\n");
+    log_info("DMX", "Linux DMX (standard) initialized successfully");
   return fd;
 }
 #endif
@@ -1318,23 +1317,23 @@ int init_Dmx(const char *port, int silent) {
 #else
   // Linux: Try libftdi first (ignore port), then fallback to standard methods
   if (!silent)
-    printf("🐧 Linux DMX initialization - trying libftdi first...\n");
+    log_info("DMX", "Linux DMX initialization - trying libftdi first");
   
   // Try libftdi first (auto-detect, ignore port parameter)
   if (init_dmx_linux_libftdi(silent) == 0) {
     if (!silent)
-      printf("🎉 DMX initialized via libftdi (recommended for Linux)\n");
+      log_info("DMX", "DMX initialized via libftdi (recommended for Linux)");
     return 0; // Success with libftdi
   }
   
   if (!silent) {
-    printf("⚠️  libftdi initialization failed, falling back to standard methods...\n");
+    log_warning("DMX", "libftdi initialization failed, falling back to standard methods");
   }
   
   // Fallback to standard Linux methods (use port parameter)
   if (!port) {
     if (!silent)
-      fprintf(stderr, "❌ DMX port required for Linux fallback methods\n");
+      log_error("DMX", "DMX port required for Linux fallback methods");
     return -1;
   }
   

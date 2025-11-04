@@ -4,11 +4,27 @@
 #define CONFIG_LOADER_H
 
 #include <stdint.h>
+#include "../utils/logger.h"
+
+/**************************************************************************************
+ * Error Codes
+ **************************************************************************************/
+typedef enum {
+    CONFIG_SUCCESS = 0,
+    CONFIG_ERROR_FILE_NOT_FOUND = -1,
+    CONFIG_ERROR_INVALID_SYNTAX = -2,
+    CONFIG_ERROR_INVALID_VALUE = -3,
+    CONFIG_ERROR_VALIDATION_FAILED = -4,
+    CONFIG_ERROR_OUT_OF_MEMORY = -5
+} config_error_t;
 
 /**************************************************************************************
  * Sp3ctra Runtime Configuration Structure
  **************************************************************************************/
 typedef struct {
+    // Logging configuration
+    log_level_t log_level;               // Logging level (ERROR, WARNING, INFO, DEBUG)
+    
     // Audio system parameters (runtime configurable)
     int sampling_frequency;              // Sampling frequency in Hz (22050, 44100, 48000, 96000)
     int audio_buffer_size;               // Audio buffer size in frames
@@ -73,10 +89,9 @@ extern sp3ctra_config_t g_sp3ctra_config;
 /**
  * Load additive synthesis configuration from INI file
  * Creates the file with default values if it doesn't exist
- * Exits the program with error message if validation fails
  * 
  * @param config_file_path Path to the configuration file
- * @return 0 on success, -1 on error
+ * @return CONFIG_SUCCESS on success, error code on failure
  */
 int load_additive_config(const char* config_file_path);
 
@@ -84,16 +99,16 @@ int load_additive_config(const char* config_file_path);
  * Create default configuration file with current default values
  * 
  * @param config_file_path Path where to create the configuration file
- * @return 0 on success, -1 on error
+ * @return CONFIG_SUCCESS on success, error code on failure
  */
 int create_default_config_file(const char* config_file_path);
 
 /**
  * Validate configuration parameters
- * Exits the program if any parameter is out of valid range
  * 
  * @param config Configuration structure to validate
+ * @return CONFIG_SUCCESS if valid, CONFIG_ERROR_VALIDATION_FAILED otherwise
  */
-void validate_config(const sp3ctra_config_t* config);
+int validate_config(const sp3ctra_config_t* config);
 
 #endif // CONFIG_LOADER_H

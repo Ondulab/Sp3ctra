@@ -12,6 +12,7 @@
 #include "../../synthesis/additive/synth_additive_math.h"
 #include "../../communication/dmx/dmx.h"
 #include "../../config/config_loader.h"
+#include "../../utils/logger.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -35,7 +36,7 @@ void image_preprocess_init(void) {
         return;
     }
     
-    printf("[PREPROCESS] Image preprocessor module initialized\n");
+    log_info("PREPROCESS", "Image preprocessor module initialized");
     module_initialized = 1;
 }
 
@@ -45,7 +46,7 @@ void image_preprocess_cleanup(void) {
         return;
     }
     
-    printf("[PREPROCESS] Image preprocessor module cleaned up\n");
+    log_info("PREPROCESS", "Image preprocessor module cleaned up");
     module_initialized = 0;
 }
 
@@ -57,12 +58,12 @@ int image_preprocess_frame(
     PreprocessedImageData *out
 ) {
     if (!module_initialized) {
-        fprintf(stderr, "[PREPROCESS] ERROR: Module not initialized\n");
+        log_error("PREPROCESS", "Module not initialized");
         return -1;
     }
     
     if (!raw_r || !raw_g || !raw_b || !out) {
-        fprintf(stderr, "[PREPROCESS] ERROR: NULL pointer passed\n");
+        log_error("PREPROCESS", "NULL pointer passed");
         return -1;
     }
     

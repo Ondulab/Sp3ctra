@@ -13,6 +13,7 @@
 #include "synth_additive.h"
 #include "udp.h"
 #include "image_debug.h"
+#include "logger.h"
 #include "../processing/image_preprocessor.h"
 #include "../processing/image_sequencer.h"
 #include <time.h>
@@ -49,11 +50,11 @@ static void WaitForDMXColorUpdate(DMXContext *ctx) {
 
 void initDoubleBuffer(DoubleBuffer *db) {
   if (pthread_mutex_init(&db->mutex, NULL) != 0) {
-    fprintf(stderr, "Error: Mutex initialization failed\n");
+    log_error("THREAD", "Mutex initialization failed");
     exit(EXIT_FAILURE);
   }
   if (pthread_cond_init(&db->cond, NULL) != 0) {
-    fprintf(stderr, "Error: Condition variable initialization failed\n");
+    log_error("THREAD", "Condition variable initialization failed");
     exit(EXIT_FAILURE);
   }
 
@@ -77,7 +78,7 @@ void initDoubleBuffer(DoubleBuffer *db) {
       !db->processingBuffer_R || !db->processingBuffer_G ||
       !db->processingBuffer_B || !db->lastValidImage_R ||
       !db->lastValidImage_G || !db->lastValidImage_B) {
-    fprintf(stderr, "Error: Allocation of image buffers failed\n");
+    log_error("THREAD", "Allocation of image buffers failed");
     exit(EXIT_FAILURE);
   }
 
@@ -109,7 +110,7 @@ void initDoubleBuffer(DoubleBuffer *db) {
   
   db->preprocessed_data.timestamp_us = 0;
   
-  printf("[INIT] DoubleBuffer preprocessed_data initialized with safe defaults\n");
+  log_info("THREAD", "DoubleBuffer preprocessed_data initialized with safe defaults");
 }
 
 void cleanupDoubleBuffer(DoubleBuffer *db) {
@@ -235,7 +236,7 @@ void *udpThread(void *arg) {
   int *receivedFragments =
       (int *)calloc(UDP_MAX_NB_PACKET_PER_LINE, sizeof(int));
   if (receivedFragments == NULL) {
-    perror("Error allocating receivedFragments");
+    log_error("THREAD", "Error allocating receivedFragments: %s", strerror(errno));
     exit(EXIT_FAILURE);
   }
   uint32_t fragmentCount = 0;
@@ -246,25 +247,22 @@ void *udpThread(void *arg) {
   uint8_t *audio_write_B = NULL;
   int audio_write_started = 0;
 
-  printf("[UDP] UDP thread started with dual buffer system\n");
-  printf("[UDP] Listening for packets on socket %d, expecting "
-         "IMAGE_DATA_HEADER (0x%02X)\n",
-         s, IMAGE_DATA_HEADER);
+  log_info("THREAD", "UDP thread started with dual buffer system");
+  log_info("THREAD", "Listening for packets on socket %d, expecting IMAGE_DATA_HEADER (0x%02X)", s, IMAGE_DATA_HEADER);
 
   while (ctx->running) {
     recv_len = recvfrom(s, &packet, sizeof(packet), 0,
                         (struct sockaddr *)si_other, &slen);
     if (recv_len < 0) {
       if (errno != EAGAIN && errno != EWOULDBLOCK) {
-        printf("[UDP] recvfrom error: %s\n", strerror(errno));
+        log_error("THREAD", "recvfrom error: %s", strerror(errno));
       }
       continue;
     }
 
 #ifdef DEBUG_UDP
     // Debug: Log every received packet
-    printf("[UDP] Received packet: size=%zd bytes, type=0x%02X\n", recv_len,
-           packet.type);
+    log_debug("UDP", "Received packet: size=%zd bytes, type=0x%02X", recv_len, packet.type);
 #endif
 
     if (packet.type == IMU_DATA_HEADER) {
@@ -279,7 +277,7 @@ void *udpThread(void *arg) {
         ctx->imu_x_filtered = raw_x;
         ctx->imu_has_value = 1;
 #ifdef DEBUG_IMU_PACKETS
-        printf("[IMU] First IMU packet received! raw_x=%.6f\n", raw_x);
+        log_debug("IMU", "First IMU packet received! raw_x=%.6f", raw_x);
 #endif
       } else {
         ctx->imu_x_filtered = IMU_FILTER_ALPHA_X * raw_x +
@@ -289,40 +287,34 @@ void *udpThread(void *arg) {
       pthread_mutex_unlock(&ctx->imu_mutex);
 
 #ifdef DEBUG_IMU_PACKETS
-      printf("[IMU] raw_x=%.6f filtered=%.6f threshold=%.6f active=%s\n", raw_x,
-             ctx->imu_x_filtered, g_additive_config.imu_active_threshold_x,
-             (fabsf(ctx->imu_x_filtered) >= g_additive_config.imu_active_threshold_x) ? "YES"
-                                                                    : "NO");
+      log_debug("IMU", "raw_x=%.6f filtered=%.6f threshold=%.6f active=%s", raw_x,
+                ctx->imu_x_filtered, g_additive_config.imu_active_threshold_x,
+                (fabsf(ctx->imu_x_filtered) >= g_additive_config.imu_active_threshold_x) ? "YES" : "NO");
 #endif
 #ifdef DEBUG_UDP
-      printf("[UDP][IMU] raw_x=%.6f filtered=%.6f\n", raw_x,
-             ctx->imu_x_filtered);
+      log_debug("UDP", "IMU raw_x=%.6f filtered=%.6f", raw_x, ctx->imu_x_filtered);
 #endif
       continue;
     }
 
     if (packet.type != IMAGE_DATA_HEADER) {
 #ifdef DEBUG_UDP
-      printf("[UDP] Ignoring packet with type 0x%02X (expected 0x%02X)\n",
-             packet.type, IMAGE_DATA_HEADER);
+      log_debug("UDP", "Ignoring packet with type 0x%02X (expected 0x%02X)", packet.type, IMAGE_DATA_HEADER);
 #endif
       continue;
     }
 
 #ifdef DEBUG_UDP
-    printf("[UDP] Processing IMAGE_DATA packet: line_id=%u, fragment_id=%u/%u, "
-           "size=%u\n",
-           packet.line_id, packet.fragment_id, packet.total_fragments,
-           packet.fragment_size);
+    log_debug("UDP", "Processing IMAGE_DATA packet: line_id=%u, fragment_id=%u/%u, size=%u",
+              packet.line_id, packet.fragment_id, packet.total_fragments, packet.fragment_size);
 #endif
 
     if (currentLineId != packet.line_id) {
       // If we had a previous incomplete line, log it
       if (currentLineId != 0 && fragmentCount > 0) {
 #ifdef DEBUG_UDP
-        printf("[UDP] ⚠️  INCOMPLETE LINE DISCARDED: line_id=%u had %u/%d "
-               "fragments\n",
-               currentLineId, fragmentCount, UDP_MAX_NB_PACKET_PER_LINE);
+        log_debug("UDP", "INCOMPLETE LINE DISCARDED: line_id=%u had %u/%d fragments",
+                  currentLineId, fragmentCount, UDP_MAX_NB_PACKET_PER_LINE);
 #endif
 
         // Complete the incomplete audio buffer write if it was started
@@ -330,8 +322,7 @@ void *udpThread(void *arg) {
           audio_image_buffers_complete_write(audioBuffers);
           audio_write_started = 0;
 #ifdef DEBUG_UDP
-          printf("[UDP] Completed partial audio buffer write for incomplete "
-                 "line\n");
+          log_debug("UDP", "Completed partial audio buffer write for incomplete line");
 #endif
         }
       }
@@ -347,20 +338,18 @@ void *udpThread(void *arg) {
                                           &audio_write_B) == 0) {
         audio_write_started = 1;
 #ifdef DEBUG_UDP
-        printf("[UDP] Started audio buffer write for line_id=%u\n",
-               packet.line_id);
+        log_debug("UDP", "Started audio buffer write for line_id=%u", packet.line_id);
 #endif
       } else {
         audio_write_started = 0;
-        printf("[UDP] Warning: Failed to start audio buffer write\n");
+        log_warning("THREAD", "Failed to start audio buffer write");
       }
     }
 
     // Validate fragment_id to prevent buffer overflow
     if (packet.fragment_id >= UDP_MAX_NB_PACKET_PER_LINE) {
-      printf(
-          "[UDP] ERROR: fragment_id %u exceeds maximum %u, ignoring packet\n",
-          packet.fragment_id, UDP_MAX_NB_PACKET_PER_LINE);
+      log_error("THREAD", "fragment_id %u exceeds maximum %u, ignoring packet",
+                packet.fragment_id, UDP_MAX_NB_PACKET_PER_LINE);
       continue;
     }
 
@@ -389,14 +378,12 @@ void *udpThread(void *arg) {
     }
 
 #ifdef DEBUG_UDP
-    printf("[UDP] Fragment count: %u/%u for line %u\n", fragmentCount,
-           packet.total_fragments, packet.line_id);
+    log_debug("UDP", "Fragment count: %u/%u for line %u", fragmentCount, packet.total_fragments, packet.line_id);
 #endif
 
     if (fragmentCount == packet.total_fragments) {
 #ifdef DEBUG_UDP
-      printf("[UDP] ✅ COMPLETE LINE RECEIVED! line_id=%u, %u fragments\n",
-             packet.line_id, fragmentCount);
+      log_debug("UDP", "COMPLETE LINE RECEIVED! line_id=%u, %u fragments", packet.line_id, fragmentCount);
 #endif
       // Complete line received
 
@@ -420,7 +407,7 @@ void *udpThread(void *arg) {
         if (image_sequencer_process_frame(g_image_sequencer,
                                           db->activeBuffer_R, db->activeBuffer_G, db->activeBuffer_B,
                                           mixed_R, mixed_G, mixed_B) != 0) {
-          printf("[UDP] ERROR: Sequencer processing failed, using live RGB\n");
+          log_error("THREAD", "Sequencer processing failed, using live RGB");
           memcpy(mixed_R, db->activeBuffer_R, CIS_MAX_PIXELS_NB);
           memcpy(mixed_G, db->activeBuffer_G, CIS_MAX_PIXELS_NB);
           memcpy(mixed_B, db->activeBuffer_B, CIS_MAX_PIXELS_NB);
@@ -435,7 +422,7 @@ void *udpThread(void *arg) {
       // Step 2: Preprocess the MIXED RGB (pan calculated from mixed color temperature)
       PreprocessedImageData preprocessed_temp;
       if (image_preprocess_frame(mixed_R, mixed_G, mixed_B, &preprocessed_temp) != 0) {
-        printf("[UDP] ERROR: Image preprocessing failed\n");
+        log_error("THREAD", "Image preprocessing failed");
       }
 
       // Step 3: Update display buffers with MIXED RGB (fixes N&B display issue)
@@ -467,8 +454,8 @@ void *udpThread(void *arg) {
         for (int i = 0; i < CIS_MAX_PIXELS_NB; i++) {
           if (mixed_R[i] != db->activeBuffer_R[i]) diff_count++;
         }
-        printf("\033[1;36m[UDP DEBUG] Pixels different: %d/%d (%.1f%%)\033[0m\n",
-               diff_count, CIS_MAX_PIXELS_NB, (diff_count * 100.0f) / CIS_MAX_PIXELS_NB);
+        log_debug("UDP", "Pixels different: %d/%d (%.1f%%)",
+                  diff_count, CIS_MAX_PIXELS_NB, (diff_count * 100.0f) / CIS_MAX_PIXELS_NB);
       }
       
       pthread_mutex_lock(&g_displayable_synth_mutex);
@@ -485,7 +472,7 @@ void *udpThread(void *arg) {
     }
   }
 
-  printf("[UDP] UDP thread terminating\n");
+  log_info("THREAD", "UDP thread terminating");
   free(receivedFragments);
   return NULL;
 }
@@ -496,16 +483,14 @@ void *dmxSendingThread(void *arg) {
 
   // Vérifier si le descripteur de fichier DMX est valide
   if (dmxCtx->fd < 0) {
-    fprintf(
-        stderr,
-        "DMX thread started with invalid file descriptor, exiting thread\n");
+    log_error("THREAD", "DMX thread started with invalid file descriptor, exiting thread");
     return NULL;
   }
 
   while (dmxCtx->running && keepRunning) {
     // Vérifier si le descripteur de fichier est toujours valide
     if (dmxCtx->fd < 0) {
-      fprintf(stderr, "DMX file descriptor became invalid, exiting thread\n");
+      log_error("THREAD", "DMX file descriptor became invalid, exiting thread");
       break;
     }
 
@@ -527,7 +512,7 @@ void *dmxSendingThread(void *arg) {
         frame[base + 1] = dmxCtx->spots[i].data.rgb.green;
         frame[base + 2] = dmxCtx->spots[i].data.rgb.blue;
       } else {
-        fprintf(stderr, "DMX address out of bounds for spot %d\n", i);
+        log_error("THREAD", "DMX address out of bounds for spot %d", i);
       }
     }
 
@@ -535,10 +520,10 @@ void *dmxSendingThread(void *arg) {
     // l'application est toujours en cours d'exécution
     if (dmxCtx->running && keepRunning && dmxCtx->fd >= 0 &&
         send_dmx_frame(dmxCtx->fd, frame, DMX_FRAME_SIZE) < 0) {
-      perror("Error sending DMX frame");
+      log_error("THREAD", "Error sending DMX frame: %s", strerror(errno));
       // En cas d'erreur répétée, on peut quitter le thread
       if (errno == EBADF || errno == EIO) {
-        fprintf(stderr, "Critical DMX error, exiting thread\n");
+        log_error("THREAD", "Critical DMX error, exiting thread");
         break;
       }
     }
@@ -553,7 +538,7 @@ void *dmxSendingThread(void *arg) {
     }
   }
 
-  printf("DMX thread terminating...\n");
+  log_info("THREAD", "DMX thread terminating");
 
   // Fermer le descripteur de fichier seulement s'il est valide
   if (dmxCtx->fd >= 0) {
@@ -572,10 +557,8 @@ void *audioProcessingThread(void *arg) {
   uint8_t *audio_read_G = NULL;
   uint8_t *audio_read_B = NULL;
 
-  printf("[AUDIO] Audio processing thread started with lock-free dual buffer "
-         "system\n");
-  printf("[AUDIO] Real-time audio processing guaranteed - no timeouts, no "
-         "blocking!\n");
+  log_info("THREAD", "Audio processing thread started with lock-free dual buffer system");
+  log_info("THREAD", "Real-time audio processing guaranteed - no timeouts, no blocking!");
 
   while (context->running) {
     // Get current read pointers atomically (no mutex, no blocking!)
@@ -609,6 +592,6 @@ void *audioProcessingThread(void *arg) {
     usleep(100); // 0.1ms - much smaller than before
   }
 
-  printf("[AUDIO] Audio processing thread terminated\n");
+  log_info("THREAD", "Audio processing thread terminated");
   return NULL;
 }

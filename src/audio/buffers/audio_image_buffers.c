@@ -3,6 +3,7 @@
 #include "audio_image_buffers.h"
 #include "config.h"
 #include "error.h"
+#include "logger.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,8 +61,7 @@ int audio_image_buffers_init(AudioImageBuffers *buffers) {
     buffers->buffer1_B[i] = test_value / 4;
   }
 
-  printf("AudioImageBuffers: Initialized with test pattern for immediate audio "
-         "feedback\n");
+  log_info("BUFFERS", "Audio image buffers initialized with test pattern for immediate audio feedback");
 
   // Initialize atomic indices
   // Buffer 0 starts as read buffer, Buffer 1 starts as write buffer
@@ -81,11 +81,8 @@ int audio_image_buffers_init(AudioImageBuffers *buffers) {
   buffers->buffer_swaps = 0;
   buffers->initialized = 1;
 
-  printf("AudioImageBuffers: Initialized dual buffer system (2 x %d pixels x 3 "
-         "channels)\n",
-         CIS_MAX_PIXELS_NB);
-  printf("AudioImageBuffers: Buffer 0 = read, Buffer 1 = write (initial "
-         "state)\n");
+  log_info("BUFFERS", "Dual buffer system initialized: 2 x %d pixels x 3 channels", CIS_MAX_PIXELS_NB);
+  log_info("BUFFERS", "Initial state: Buffer 0 = read, Buffer 1 = write");
 
   return 0;
 }
@@ -133,7 +130,7 @@ void audio_image_buffers_cleanup(AudioImageBuffers *buffers) {
   // Reset structure
   memset(buffers, 0, sizeof(AudioImageBuffers));
 
-  printf("AudioImageBuffers: Cleanup completed\n");
+  log_info("BUFFERS", "Audio image buffers cleanup completed");
 }
 
 /**
