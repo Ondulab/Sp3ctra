@@ -4,6 +4,7 @@
 #include "audio_c_api.h"
 #include "auto_volume.h"
 #include "config.h"
+#include "config_instrument.h"
 #include "config_loader.h"
 #include "config_synth_additive.h" /* For IMU_FILTER_ALPHA_X, AUTO_VOLUME_POLL_MS */
 #include "context.h"
@@ -49,6 +50,8 @@ static void WaitForDMXColorUpdate(DMXContext *ctx) {
 */
 
 void initDoubleBuffer(DoubleBuffer *db) {
+  int nb_pixels;
+  
   if (pthread_mutex_init(&db->mutex, NULL) != 0) {
     log_error("THREAD", "Mutex initialization failed");
     exit(EXIT_FAILURE);
@@ -58,21 +61,23 @@ void initDoubleBuffer(DoubleBuffer *db) {
     exit(EXIT_FAILURE);
   }
 
-  db->activeBuffer_R = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
-  db->activeBuffer_G = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
-  db->activeBuffer_B = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
+  nb_pixels = get_cis_pixels_nb();
+  
+  db->activeBuffer_R = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  db->activeBuffer_G = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  db->activeBuffer_B = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
 
   db->processingBuffer_R =
-      (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
+      (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
   db->processingBuffer_G =
-      (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
+      (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
   db->processingBuffer_B =
-      (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
+      (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
 
   // Allocate persistent image buffers for audio continuity
-  db->lastValidImage_R = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
-  db->lastValidImage_G = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
-  db->lastValidImage_B = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
+  db->lastValidImage_R = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  db->lastValidImage_G = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  db->lastValidImage_B = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
 
   if (!db->activeBuffer_R || !db->activeBuffer_G || !db->activeBuffer_B ||
       !db->processingBuffer_R || !db->processingBuffer_G ||
@@ -83,9 +88,9 @@ void initDoubleBuffer(DoubleBuffer *db) {
   }
 
   // Initialize persistent image with black (zero)
-  memset(db->lastValidImage_R, 0, CIS_MAX_PIXELS_NB);
-  memset(db->lastValidImage_G, 0, CIS_MAX_PIXELS_NB);
-  memset(db->lastValidImage_B, 0, CIS_MAX_PIXELS_NB);
+  memset(db->lastValidImage_R, 0, nb_pixels);
+  memset(db->lastValidImage_G, 0, nb_pixels);
+  memset(db->lastValidImage_B, 0, nb_pixels);
 
   db->dataReady = 0;
   db->lastValidImageExists = 0;
@@ -162,10 +167,12 @@ void swapBuffers(DoubleBuffer *db) {
  * @note Mutex must be locked before calling this function
  */
 void updateLastValidImage(DoubleBuffer *db) {
+  int nb_pixels = get_cis_pixels_nb();
+  
   // Copy processing buffer to persistent image buffer
-  memcpy(db->lastValidImage_R, db->processingBuffer_R, CIS_MAX_PIXELS_NB);
-  memcpy(db->lastValidImage_G, db->processingBuffer_G, CIS_MAX_PIXELS_NB);
-  memcpy(db->lastValidImage_B, db->processingBuffer_B, CIS_MAX_PIXELS_NB);
+  memcpy(db->lastValidImage_R, db->processingBuffer_R, nb_pixels);
+  memcpy(db->lastValidImage_G, db->processingBuffer_G, nb_pixels);
+  memcpy(db->lastValidImage_B, db->processingBuffer_B, nb_pixels);
 
   db->lastValidImageExists = 1;
   db->udp_frames_received++;
@@ -183,18 +190,20 @@ void updateLastValidImage(DoubleBuffer *db) {
  */
 void getLastValidImageForAudio(DoubleBuffer *db, uint8_t *out_R, uint8_t *out_G,
                                uint8_t *out_B) {
+  int nb_pixels = get_cis_pixels_nb();
+  
   pthread_mutex_lock(&db->mutex);
 
   if (db->lastValidImageExists) {
-    memcpy(out_R, db->lastValidImage_R, CIS_MAX_PIXELS_NB);
-    memcpy(out_G, db->lastValidImage_G, CIS_MAX_PIXELS_NB);
-    memcpy(out_B, db->lastValidImage_B, CIS_MAX_PIXELS_NB);
+    memcpy(out_R, db->lastValidImage_R, nb_pixels);
+    memcpy(out_G, db->lastValidImage_G, nb_pixels);
+    memcpy(out_B, db->lastValidImage_B, nb_pixels);
     db->audio_frames_processed++;
   } else {
     // If no valid image exists, use black (silence)
-    memset(out_R, 0, CIS_MAX_PIXELS_NB);
-    memset(out_G, 0, CIS_MAX_PIXELS_NB);
-    memset(out_B, 0, CIS_MAX_PIXELS_NB);
+    memset(out_R, 0, nb_pixels);
+    memset(out_G, 0, nb_pixels);
+    memset(out_B, 0, nb_pixels);
     // Debug log removed for production use
   }
 
@@ -222,30 +231,64 @@ int hasValidImageForAudio(DoubleBuffer *db) {
 // 'enableImageTransform' to toggle image transformation at runtime.
 
 void *udpThread(void *arg) {
-  Context *ctx = (Context *)arg;
-  DoubleBuffer *db = ctx->doubleBuffer;
-  AudioImageBuffers *audioBuffers = ctx->audioImageBuffers;
-  int s = ctx->socket;
-  struct sockaddr_in *si_other = ctx->si_other;
-  socklen_t slen = sizeof(*si_other);
+  Context *ctx;
+  DoubleBuffer *db;
+  AudioImageBuffers *audioBuffers;
+  int s;
+  struct sockaddr_in *si_other;
+  socklen_t slen;
   ssize_t recv_len;
   struct packet_Image packet;
+  int nb_pixels;
+  uint8_t *mixed_R;
+  uint8_t *mixed_G;
+  uint8_t *mixed_B;
+  uint32_t currentLineId;
+  int *receivedFragments;
+  uint32_t fragmentCount;
+  uint8_t *audio_write_R;
+  uint8_t *audio_write_G;
+  uint8_t *audio_write_B;
+  int audio_write_started;
+  
+  /* Initialize variables */
+  ctx = (Context *)arg;
+  db = ctx->doubleBuffer;
+  audioBuffers = ctx->audioImageBuffers;
+  s = ctx->socket;
+  si_other = ctx->si_other;
+  slen = sizeof(*si_other);
+  nb_pixels = get_cis_pixels_nb();
+  mixed_R = NULL;
+  mixed_G = NULL;
+  mixed_B = NULL;
+  currentLineId = 0;
+  fragmentCount = 0;
+  audio_write_R = NULL;
+  audio_write_G = NULL;
+  audio_write_B = NULL;
+  audio_write_started = 0;
 
-  // Local variables for reassembling line fragments
-  uint32_t currentLineId = 0;
-  int *receivedFragments =
-      (int *)calloc(UDP_MAX_NB_PACKET_PER_LINE, sizeof(int));
+  /* Allocate receivedFragments */
+  receivedFragments = (int *)calloc(UDP_MAX_NB_PACKET_PER_LINE, sizeof(int));
   if (receivedFragments == NULL) {
     log_error("THREAD", "Error allocating receivedFragments: %s", strerror(errno));
     exit(EXIT_FAILURE);
   }
-  uint32_t fragmentCount = 0;
-
-  // Pointers for audio buffer writing
-  uint8_t *audio_write_R = NULL;
-  uint8_t *audio_write_G = NULL;
-  uint8_t *audio_write_B = NULL;
-  int audio_write_started = 0;
+  
+  /* Allocate mixed buffers dynamically */
+  mixed_R = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  mixed_G = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  mixed_B = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  
+  if (!mixed_R || !mixed_G || !mixed_B) {
+    log_error("THREAD", "Failed to allocate mixed buffers");
+    if (mixed_R) free(mixed_R);
+    if (mixed_G) free(mixed_G);
+    if (mixed_B) free(mixed_B);
+    free(receivedFragments);
+    exit(EXIT_FAILURE);
+  }
 
   log_info("THREAD", "UDP thread started with dual buffer system");
   log_info("THREAD", "Listening for packets on socket %d, expecting IMAGE_DATA_HEADER (0x%02X)", s, IMAGE_DATA_HEADER);
@@ -382,56 +425,57 @@ void *udpThread(void *arg) {
 #endif
 
     if (fragmentCount == packet.total_fragments) {
+      PreprocessedImageData preprocessed_temp;
+      static int diff_log_counter = 0;
+      int diff_count;
+      int i;
+      
 #ifdef DEBUG_UDP
       log_debug("UDP", "COMPLETE LINE RECEIVED! line_id=%u, %u fragments", packet.line_id, fragmentCount);
 #endif
-      // Complete line received
+      /* Complete line received */
 
-      // Complete audio buffer write and swap
+      /* Complete audio buffer write and swap */
       if (audio_write_started) {
         audio_image_buffers_complete_write(audioBuffers);
         audio_write_started = 0;
       }
 
-      // 🎬 NEW ARCHITECTURE: Sequencer BEFORE preprocessing
-      // 1. Sequencer mixes RGB (live + sequences)
-      // 2. Preprocessing calculates grayscale/pan/DMX from MIXED RGB
-      // 3. Display shows the MIXED RGB colors
+      /* 🎬 NEW ARCHITECTURE: Sequencer BEFORE preprocessing
+       * 1. Sequencer mixes RGB (live + sequences)
+       * 2. Preprocessing calculates grayscale/pan/DMX from MIXED RGB
+       * 3. Display shows the MIXED RGB colors
+       */
       
-      uint8_t mixed_R[CIS_MAX_PIXELS_NB];
-      uint8_t mixed_G[CIS_MAX_PIXELS_NB];
-      uint8_t mixed_B[CIS_MAX_PIXELS_NB];
-      
-      // Step 1: Mix RGB through sequencer (or passthrough if no sequencer)
+      /* Step 1: Mix RGB through sequencer (or passthrough if no sequencer) */
       if (g_image_sequencer) {
         if (image_sequencer_process_frame(g_image_sequencer,
                                           db->activeBuffer_R, db->activeBuffer_G, db->activeBuffer_B,
                                           mixed_R, mixed_G, mixed_B) != 0) {
           log_error("THREAD", "Sequencer processing failed, using live RGB");
-          memcpy(mixed_R, db->activeBuffer_R, CIS_MAX_PIXELS_NB);
-          memcpy(mixed_G, db->activeBuffer_G, CIS_MAX_PIXELS_NB);
-          memcpy(mixed_B, db->activeBuffer_B, CIS_MAX_PIXELS_NB);
+          memcpy(mixed_R, db->activeBuffer_R, nb_pixels);
+          memcpy(mixed_G, db->activeBuffer_G, nb_pixels);
+          memcpy(mixed_B, db->activeBuffer_B, nb_pixels);
         }
       } else {
-        // No sequencer: passthrough live RGB
-        memcpy(mixed_R, db->activeBuffer_R, CIS_MAX_PIXELS_NB);
-        memcpy(mixed_G, db->activeBuffer_G, CIS_MAX_PIXELS_NB);
-        memcpy(mixed_B, db->activeBuffer_B, CIS_MAX_PIXELS_NB);
+        /* No sequencer: passthrough live RGB */
+        memcpy(mixed_R, db->activeBuffer_R, nb_pixels);
+        memcpy(mixed_G, db->activeBuffer_G, nb_pixels);
+        memcpy(mixed_B, db->activeBuffer_B, nb_pixels);
       }
       
-      // Step 2: Preprocess the MIXED RGB (pan calculated from mixed color temperature)
-      PreprocessedImageData preprocessed_temp;
+      /* Step 2: Preprocess the MIXED RGB (pan calculated from mixed color temperature) */
       if (image_preprocess_frame(mixed_R, mixed_G, mixed_B, &preprocessed_temp) != 0) {
         log_error("THREAD", "Image preprocessing failed");
       }
 
-      // Step 3: Update display buffers with MIXED RGB (fixes N&B display issue)
+      /* Step 3: Update display buffers with MIXED RGB (fixes N&B display issue) */
       pthread_mutex_lock(&db->mutex);
       
-      // CRITICAL FIX: Copy mixed RGB to activeBuffer so display shows colors
-      memcpy(db->activeBuffer_R, mixed_R, CIS_MAX_PIXELS_NB);
-      memcpy(db->activeBuffer_G, mixed_G, CIS_MAX_PIXELS_NB);
-      memcpy(db->activeBuffer_B, mixed_B, CIS_MAX_PIXELS_NB);
+      /* CRITICAL FIX: Copy mixed RGB to activeBuffer so display shows colors */
+      memcpy(db->activeBuffer_R, mixed_R, nb_pixels);
+      memcpy(db->activeBuffer_G, mixed_G, nb_pixels);
+      memcpy(db->activeBuffer_B, mixed_B, nb_pixels);
       
       swapBuffers(db);
       updateLastValidImage(db);
@@ -440,32 +484,29 @@ void *udpThread(void *arg) {
       pthread_cond_signal(&db->cond);
       pthread_mutex_unlock(&db->mutex);
       
-      // 🎨 DISPLAY FIX: Update global display buffers with MIXED RGB colors
-      // This replaces the grayscale→RGB conversion in synth_additive.c
-      extern uint8_t g_displayable_synth_R[CIS_MAX_PIXELS_NB];
-      extern uint8_t g_displayable_synth_G[CIS_MAX_PIXELS_NB];
-      extern uint8_t g_displayable_synth_B[CIS_MAX_PIXELS_NB];
-      extern pthread_mutex_t g_displayable_synth_mutex;
+      /* 🎨 DISPLAY FIX: Update global display buffers with MIXED RGB colors
+       * This replaces the grayscale→RGB conversion in synth_additive.c
+       */
       
-      // DEBUG: Check if mixed_R is different from live
-      static int diff_log_counter = 0;
+      /* DEBUG: Check if mixed_R is different from live */
       if (++diff_log_counter % 1000 == 0) {
-        int diff_count = 0;
-        for (int i = 0; i < CIS_MAX_PIXELS_NB; i++) {
+        diff_count = 0;
+        for (i = 0; i < nb_pixels; i++) {
           if (mixed_R[i] != db->activeBuffer_R[i]) diff_count++;
         }
         log_debug("UDP", "Pixels different: %d/%d (%.1f%%)",
-                  diff_count, CIS_MAX_PIXELS_NB, (diff_count * 100.0f) / CIS_MAX_PIXELS_NB);
+                  diff_count, nb_pixels, (diff_count * 100.0f) / nb_pixels);
       }
       
       pthread_mutex_lock(&g_displayable_synth_mutex);
-      memcpy(g_displayable_synth_R, mixed_R, CIS_MAX_PIXELS_NB);
-      memcpy(g_displayable_synth_G, mixed_G, CIS_MAX_PIXELS_NB);
-      memcpy(g_displayable_synth_B, mixed_B, CIS_MAX_PIXELS_NB);
+      memcpy(g_displayable_synth_R, mixed_R, nb_pixels);
+      memcpy(g_displayable_synth_G, mixed_G, nb_pixels);
+      memcpy(g_displayable_synth_B, mixed_B, nb_pixels);
       pthread_mutex_unlock(&g_displayable_synth_mutex);
 
-      // Capture raw scanner data only when new UDP data arrives
-      // Function handles runtime enable/disable internally
+      /* Capture raw scanner data only when new UDP data arrives
+       * Function handles runtime enable/disable internally
+       */
       image_debug_capture_raw_scanner_line(db->processingBuffer_R, 
                                           db->processingBuffer_G, 
                                           db->processingBuffer_B);
@@ -473,7 +514,13 @@ void *udpThread(void *arg) {
   }
 
   log_info("THREAD", "UDP thread terminating");
+  
+  // Free allocated buffers
+  if (mixed_R) free(mixed_R);
+  if (mixed_G) free(mixed_G);
+  if (mixed_B) free(mixed_B);
   free(receivedFragments);
+  
   return NULL;
 }
 

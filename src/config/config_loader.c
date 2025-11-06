@@ -438,15 +438,19 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "\n");
     
     fprintf(file, "[synthesis]\n");
-    fprintf(file, "# Base frequency for the first note (Hz)\n");
-    fprintf(file, "start_frequency = %.2f\n", DEFAULT_CONFIG.start_frequency);
+    fprintf(file, "# Frequency range configuration\n");
+    fprintf(file, "# These values define the musical range that will be mapped across the sensor\n");
+    fprintf(file, "# Starting frequency in Hz (C2)\n");
+    fprintf(file, "low_frequency = %.2f\n", DEFAULT_CONFIG.low_frequency);
     fprintf(file, "\n");
-    fprintf(file, "# Musical scale configuration\n");
-    fprintf(file, "semitone_per_octave = %d\n", DEFAULT_CONFIG.semitone_per_octave);
-    fprintf(file, "comma_per_semitone = %d\n", DEFAULT_CONFIG.comma_per_semitone);
+    fprintf(file, "# Ending frequency in Hz (~8 octaves above)\n");
+    fprintf(file, "high_frequency = %.2f\n", DEFAULT_CONFIG.high_frequency);
+    fprintf(file, "\n");
+    fprintf(file, "# Sensor DPI configuration (200 or 400)\n");
+    fprintf(file, "# The system will automatically calculate the optimal resolution\n");
+    fprintf(file, "sensor_dpi = %d\n", DEFAULT_CONFIG.sensor_dpi);
     fprintf(file, "\n");
     fprintf(file, "# Pixel to note mapping and intensity behavior\n");
-    fprintf(file, "pixels_per_note = %d\n", DEFAULT_CONFIG.pixels_per_note);
     fprintf(file, "# 0=bright pixels louder, 1=dark pixels louder\n");
     fprintf(file, "invert_intensity = %d\n", DEFAULT_CONFIG.invert_intensity);
     fprintf(file, "\n");

@@ -93,15 +93,14 @@ typedef struct {
 
 /* Structure pour stocker une ligne d'image en niveaux de gris */
 typedef struct {
-  float line_data[CIS_MAX_PIXELS_NB];
+  float *line_data;  // Dynamic allocation
 } GrayscaleLine;
 
 /* Structure pour la FFT */
 typedef struct {
   kiss_fftr_cfg fft_cfg;                        // Configuration de KissFFT
-  kiss_fft_scalar fft_input[CIS_MAX_PIXELS_NB]; // Buffer d'entrée pour la FFT
-  kiss_fft_cpx
-      fft_output[CIS_MAX_PIXELS_NB / 2 + 1]; // Buffer de sortie pour la FFT
+  kiss_fft_scalar *fft_input;  // Dynamic allocation - Buffer d'entrée pour la FFT
+  kiss_fft_cpx *fft_output;    // Dynamic allocation - Buffer de sortie pour la FFT
 } FftContext;
 
 /* Exported types ------------------------------------------------------------*/

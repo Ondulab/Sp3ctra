@@ -50,6 +50,7 @@ void sfClock_restart(sfClock *clock) { (void)clock; }
 #include "audio_c_api.h"
 #include "auto_volume.h"
 #include "config.h"
+#include "config_instrument.h"
 #include "config_loader.h"
 #include "context.h"
 #include "display.h"
@@ -418,7 +419,9 @@ int main(int argc, char **argv) {
   sfRenderWindow *window = NULL;
 #ifndef NO_SFML
   // This entire block only executes if SFML is enabled
-  sfVideoMode mode = {WINDOWS_WIDTH, WINDOWS_HEIGHT, 32};
+  // Use runtime pixel count for window width
+  int window_width = get_cis_pixels_nb();
+  sfVideoMode mode = {window_width, WINDOWS_HEIGHT, 32};
 
   // Create SFML window only if the option is enabled
   if (use_sfml_window) {
@@ -678,8 +681,9 @@ int main(int argc, char **argv) {
   // Ce bloc ne s'exécute que si SFML est activé
   // Créer les textures uniquement si la fenêtre SFML est demandée
   if (use_sfml_window) {
-    backgroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
-    foregroundTexture = sfTexture_create(WINDOWS_WIDTH, WINDOWS_HEIGHT);
+    int texture_width = get_cis_pixels_nb();
+    backgroundTexture = sfTexture_create(texture_width, WINDOWS_HEIGHT);
+    foregroundTexture = sfTexture_create(texture_width, WINDOWS_HEIGHT);
     backgroundSprite = sfSprite_create();
     foregroundSprite = sfSprite_create();
     sfSprite_setTexture(backgroundSprite, backgroundTexture, sfTrue);
@@ -775,9 +779,20 @@ int main(int argc, char **argv) {
   log_info("SYNTH", "========================================================");
 
   /* Boucle principale */
-  uint8_t local_main_R[CIS_MAX_PIXELS_NB]; // Buffers locaux pour DMX
-  uint8_t local_main_G[CIS_MAX_PIXELS_NB];
-  uint8_t local_main_B[CIS_MAX_PIXELS_NB];
+  /* Allocate local buffers dynamically based on runtime pixel count */
+  int nb_pixels = get_cis_pixels_nb();
+  uint8_t *local_main_R = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  uint8_t *local_main_G = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  uint8_t *local_main_B = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  
+  if (!local_main_R || !local_main_G || !local_main_B) {
+    log_error("MAIN", "Failed to allocate local main loop buffers");
+    if (local_main_R) free(local_main_R);
+    if (local_main_G) free(local_main_G);
+    if (local_main_B) free(local_main_B);
+    context.running = 0;
+    return EXIT_FAILURE;
+  }
   // Note: sequencer_output_R/G/B buffers removed - sequencer output is now
   // directly written to g_displayable_synth_R/G/B by the UDP thread
   int process_this_frame_main_loop;
@@ -812,9 +827,9 @@ int main(int argc, char **argv) {
     pthread_mutex_lock(&db.mutex);
     if (db.dataReady) {
       // Copier les données live depuis le double buffer
-      memcpy(local_main_R, db.processingBuffer_R, CIS_MAX_PIXELS_NB);
-      memcpy(local_main_G, db.processingBuffer_G, CIS_MAX_PIXELS_NB);
-      memcpy(local_main_B, db.processingBuffer_B, CIS_MAX_PIXELS_NB);
+      memcpy(local_main_R, db.processingBuffer_R, nb_pixels);
+      memcpy(local_main_G, db.processingBuffer_G, nb_pixels);
+      memcpy(local_main_B, db.processingBuffer_B, nb_pixels);
       db.dataReady = 0; // Marquer comme consommé par la boucle principale
       process_this_frame_main_loop = 1;
     }
@@ -842,7 +857,7 @@ int main(int argc, char **argv) {
       // live de db.processingBuffer)
       if (use_dmx && dmxCtx->spots && dmxCtx->num_spots > 0) {
         computeAverageColorPerZone(local_main_R, local_main_G, local_main_B,
-                                   CIS_MAX_PIXELS_NB, dmxCtx->spots, dmxCtx->num_spots);
+                                   nb_pixels, dmxCtx->spots, dmxCtx->num_spots);
 
         pthread_mutex_lock(&dmxCtx->mutex);
         dmxCtx->colorUpdated = 1;
@@ -918,6 +933,12 @@ int main(int argc, char **argv) {
     image_sequencer_destroy(imageSequencer);
     imageSequencer = NULL;
   }
+  
+  // Free local main loop buffers
+  if (local_main_R) free(local_main_R);
+  if (local_main_G) free(local_main_G);
+  if (local_main_B) free(local_main_B);
+  
   cleanupDoubleBuffer(&db);            // Cleanup DoubleBuffer resources
   audio_image_buffers_cleanup(
       &audioImageBuffers);     // Cleanup new audio image buffers

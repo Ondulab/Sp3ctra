@@ -29,6 +29,7 @@
 #include "synth_additive.h"
 
 // Runtime configuration
+#include "../../config/config_instrument.h"
 #include "../../config/config_loader.h"
 
 // Logger
@@ -109,7 +110,7 @@ int32_t synth_IfftInit(void) {
   log_info("SYNTH", "-------------------------------");
 
   // Initialize runtime configuration
-  if (synth_runtime_init(CIS_MAX_PIXELS_NB, g_sp3ctra_config.pixels_per_note) != 0) {
+  if (synth_runtime_init(get_cis_pixels_nb(), g_sp3ctra_config.pixels_per_note) != 0) {
     log_error("SYNTH", "Failed to initialize runtime configuration");
     return -1;
   }
@@ -632,10 +633,19 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     return;
   }
   int index = __atomic_load_n(&current_buffer_index, __ATOMIC_RELAXED);
-  static float
-      g_grayScale_live[CIS_MAX_PIXELS_NB]; // Buffer for live grayscale data (normalized float [0, 1])
-  float processed_grayScale[CIS_MAX_PIXELS_NB]; // Buffer for data to be
-                                                  // passed to synth_IfftMode (normalized float [0, 1])
+  int nb_pixels = get_cis_pixels_nb();
+  static float *g_grayScale_live = NULL; // Buffer for live grayscale data (normalized float [0, 1])
+  static float *processed_grayScale = NULL; // Buffer for data to be passed to synth_IfftMode (normalized float [0, 1])
+  
+  // Allocate buffers on first call
+  if (!g_grayScale_live) {
+    g_grayScale_live = (float *)malloc(nb_pixels * sizeof(float));
+    processed_grayScale = (float *)malloc(nb_pixels * sizeof(float));
+    if (!g_grayScale_live || !processed_grayScale) {
+      log_error("SYNTH", "Failed to allocate grayscale buffers");
+      return;
+    }
+  }
 
   // RT-SAFE: Poll buffer ready state atomically (no mutex/cond needed)
   // Increased sleep time to reduce CPU contention and improve startup stability
@@ -652,7 +662,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // 🎯 USE PREPROCESSED DATA: Get all preprocessed data in single mutex lock (optimized)
   float contrast_factor;
   pthread_mutex_lock(&db->mutex);
-  memcpy(g_grayScale_live, db->preprocessed_data.grayscale, CIS_MAX_PIXELS_NB * sizeof(float));
+  memcpy(g_grayScale_live, db->preprocessed_data.grayscale, nb_pixels * sizeof(float));
   contrast_factor = db->preprocessed_data.contrast_factor;
   pthread_mutex_unlock(&db->mutex);
 
@@ -717,7 +727,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
       alpha_blend = (alpha_blend < 0.0f)
                         ? 0.0f
                         : ((alpha_blend > 1.0f) ? 1.0f : alpha_blend);
-      for (int i = 0; i < CIS_MAX_PIXELS_NB; ++i) {
+      for (int i = 0; i < nb_pixels; ++i) {
         processed_grayScale[i] =
             g_frozen_grayscale_buffer[i] * (1.0f - alpha_blend) +
             g_grayScale_live[i] * alpha_blend;
@@ -725,10 +735,10 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     }
   } else if (local_is_frozen) {
     memcpy(processed_grayScale, g_frozen_grayscale_buffer,
-           sizeof(g_frozen_grayscale_buffer)); // Use frozen data
+           nb_pixels * sizeof(float)); // Use frozen data
   } else {
     memcpy(processed_grayScale, g_grayScale_live,
-           sizeof(g_grayScale_live)); // Use live data
+           nb_pixels * sizeof(float)); // Use live data
   }
   // --- End Synth Data Freeze/Fade Logic ---
 

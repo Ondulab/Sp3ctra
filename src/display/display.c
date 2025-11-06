@@ -38,6 +38,7 @@
 
 #include "display.h"
 #include "error.h"
+#include "../config/config_instrument.h"
 #include "../utils/logger.h"
 
 // NOTE: All Visual Freeze Feature code previously here has been removed
@@ -64,72 +65,83 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
     return;
   }
 
-  // NOTE: Visual Freeze logic previously here has been removed.
-  // printImageRGB now directly uses the provided buffer_R, buffer_G, buffer_B
-  // for display. The decision of whether these buffers contain "live" or
-  // "frozen/faded" data (derived from synth.c's processed_grayScale)
-  // will be handled by the caller in main.c, which will prepare
-  // appropriate R,G,B buffers to pass here.
+  /* NOTE: Visual Freeze logic previously here has been removed. */
+  /* printImageRGB now directly uses the provided buffer_R, buffer_G, buffer_B */
+  /* for display. The decision of whether these buffers contain "live" or */
+  /* "frozen/faded" data (derived from synth.c's processed_grayScale) */
+  /* will be handled by the caller in main.c, which will prepare */
+  /* appropriate R,G,B buffers to pass here. */
 
-  // Create an image of one line (width = CIS_MAX_PIXELS_NB, height = 1)
-  sfImage *image = sfImage_create(CIS_MAX_PIXELS_NB, 1);
-  if (image == NULL) {
-    log_error("DISPLAY", "Unable to create image");
-    return;
+  {
+    int nb_pixels;
+    sfImage *image;
+    int x;
+    
+    nb_pixels = get_cis_pixels_nb();
+    
+    /* Create an image of one line (width = nb_pixels, height = 1) */
+    image = sfImage_create(nb_pixels, 1);
+    if (image == NULL) {
+      log_error("DISPLAY", "Unable to create image");
+      return;
+    }
+
+    /* Set the color of each pixel by combining the three channels */
+    for (x = 0; x < nb_pixels; x++) {
+      sfColor color = sfColor_fromRGB(buffer_R[x], buffer_G[x], buffer_B[x]);
+      sfImage_setPixel(image, x, 0, color);
+    }
+
+    /* Create a texture from the image of the line */
+    {
+      sfTexture *line_texture = sfTexture_createFromImage(image, NULL);
+      if (line_texture == NULL) {
+        log_error("DISPLAY", "Unable to create line texture");
+        sfImage_destroy(image);
+        return;
+      }
+
+      /* Copy the background texture into the foreground texture with a 1-pixel */
+      /* vertical shift */
+      sfTexture_updateFromTexture(foreground_texture, background_texture, 0, 1);
+
+      /* Update the foreground texture with the new image line at the top */
+      sfTexture_updateFromImage(foreground_texture, image, 0, 0);
+
+      /* Create a sprite to draw the foreground texture */
+      {
+        sfSprite *foreground_sprite = sfSprite_create();
+        sfSprite_setTexture(foreground_sprite, foreground_texture, sfTrue);
+
+        /* Add dynamic scaling to fix HiDPI/Retina display issues */
+        {
+          sfVector2u texture_size = sfTexture_getSize(foreground_texture);
+          sfVector2u window_size = sfRenderWindow_getSize(window);
+          if (texture_size.x > 0 && texture_size.y > 0) {
+            float scale_x = (float)window_size.x / texture_size.x;
+            float scale_y = (float)window_size.y / texture_size.y;
+            sfSprite_setScale(foreground_sprite, (sfVector2f){scale_x, scale_y});
+          }
+        }
+
+        sfRenderWindow_drawSprite(window, foreground_sprite, NULL);
+
+        /* Display the window contents */
+        sfRenderWindow_display(window);
+
+        /* Copy the updated foreground texture back into the background texture for */
+        /* the next iteration */
+        sfTexture_updateFromTexture(background_texture, foreground_texture, 0, 0);
+
+        /* Cleanup */
+        sfImage_destroy(image);
+        if (line_texture)
+          sfTexture_destroy(line_texture);
+        if (foreground_sprite)
+          sfSprite_destroy(foreground_sprite);
+      }
+    }
   }
-
-  // Set the color of each pixel by combining the three channels
-  for (int x = 0; x < CIS_MAX_PIXELS_NB; x++) {
-    sfColor color = sfColor_fromRGB(buffer_R[x], buffer_G[x], buffer_B[x]);
-    sfImage_setPixel(image, x, 0, color);
-  }
-
-  // Create a texture from the image of the line
-  sfTexture *line_texture = sfTexture_createFromImage(image, NULL);
-  if (line_texture == NULL) {
-    log_error("DISPLAY", "Unable to create line texture");
-    sfImage_destroy(image);
-    return;
-  }
-
-  // Copy the background texture into the foreground texture with a 1-pixel
-  // vertical shift
-  sfTexture_updateFromTexture(foreground_texture, background_texture, 0, 1);
-
-  // Update the foreground texture with the new image line at the top
-  sfTexture_updateFromImage(foreground_texture, image, 0, 0);
-
-  // Create a sprite to draw the foreground texture
-  sfSprite *foreground_sprite = sfSprite_create();
-  sfSprite_setTexture(foreground_sprite, foreground_texture, sfTrue);
-
-  // Add dynamic scaling to fix HiDPI/Retina display issues
-  sfVector2u texture_size = sfTexture_getSize(foreground_texture);
-  sfVector2u window_size = sfRenderWindow_getSize(window);
-  if (texture_size.x > 0 && texture_size.y > 0) {
-    float scale_x = (float)window_size.x / texture_size.x;
-    float scale_y = (float)window_size.y / texture_size.y;
-    sfSprite_setScale(foreground_sprite, (sfVector2f){scale_x, scale_y});
-  }
-
-  sfRenderWindow_drawSprite(window, foreground_sprite, NULL);
-
-  // Display the window contents
-  sfRenderWindow_display(window);
-
-  // Copy the updated foreground texture back into the background texture for
-  // the next iteration
-  sfTexture_updateFromTexture(background_texture, foreground_texture, 0, 0);
-
-  // Cleanup
-  sfImage_destroy(image);
-  // sfTexture_destroy(line_texture); // line_texture is created from image, no
-  // need to destroy if image is destroyed? Actually, SFML docs say
-  // sfTexture_createFromImage creates a new texture that must be destroyed.
-  if (line_texture)
-    sfTexture_destroy(line_texture);
-  if (foreground_sprite)
-    sfSprite_destroy(foreground_sprite);
 #else
   // NO_SFML is defined, do nothing.
   // Add (void) casts to prevent unused parameter warnings if necessary.
@@ -152,54 +164,68 @@ void printImage(sfRenderWindow *window, int32_t *image_buff,
     return;
   }
 
-  // Create an image for the new line
-  sfImage *image = sfImage_createFromColor(CIS_MAX_PIXELS_NB, 1, sfBlack);
+  {
+    int nb_pixels;
+    sfImage *image;
+    int x;
+    
+    nb_pixels = get_cis_pixels_nb();
+    
+    /* Create an image for the new line */
+    image = sfImage_createFromColor(nb_pixels, 1, sfBlack);
 
-  // Set the color for each pixel in the new line
-  for (int x = 0; x < CIS_MAX_PIXELS_NB; x++) {
-    sfColor color =
-        sfColor_fromRGB(image_buff[x] & 0xFF, (image_buff[x] >> 8) & 0xFF,
-                        (image_buff[x] >> 16) & 0xFF);
-    sfImage_setPixel(image, x, 0, color);
+    /* Set the color for each pixel in the new line */
+    for (x = 0; x < nb_pixels; x++) {
+      sfColor color =
+          sfColor_fromRGB(image_buff[x] & 0xFF, (image_buff[x] >> 8) & 0xFF,
+                          (image_buff[x] >> 16) & 0xFF);
+      sfImage_setPixel(image, x, 0, color);
+    }
+
+    /* Create a texture from the new line image */
+    {
+      sfTexture *line_texture = sfTexture_createFromImage(image, NULL);
+
+      /* Copy background texture into foreground texture with a 1-pixel downward */
+      /* shift */
+      sfTexture_updateFromTexture(foreground_texture, background_texture, 0, 1);
+
+      /* Draw the new line at the top of the foreground texture */
+      sfTexture_updateFromImage(foreground_texture, image, 0, 0);
+
+      /* Draw the foreground texture onto the window */
+      {
+        sfSprite *foreground_sprite = sfSprite_create();
+        sfSprite_setTexture(foreground_sprite, foreground_texture, sfTrue);
+
+        /* Add dynamic scaling to fix HiDPI/Retina display issues */
+        {
+          sfVector2u texture_size = sfTexture_getSize(foreground_texture);
+          sfVector2u window_size = sfRenderWindow_getSize(window);
+          if (texture_size.x > 0 && texture_size.y > 0) {
+            float scale_x = (float)window_size.x / texture_size.x;
+            float scale_y = (float)window_size.y / texture_size.y;
+            sfSprite_setScale(foreground_sprite, (sfVector2f){scale_x, scale_y});
+          }
+        }
+
+        sfRenderWindow_drawSprite(window, foreground_sprite, NULL);
+
+        /* Display the window contents */
+        sfRenderWindow_display(window);
+
+        /* Copy the updated foreground texture back into the background texture */
+        sfTexture_updateFromTexture(background_texture, foreground_texture, 0, 0);
+
+        /* Cleanup */
+        sfImage_destroy(image);
+        if (line_texture)
+          sfTexture_destroy(line_texture);
+        if (foreground_sprite)
+          sfSprite_destroy(foreground_sprite);
+      }
+    }
   }
-
-  // Create a texture from the new line image
-  sfTexture *line_texture = sfTexture_createFromImage(image, NULL);
-
-  // Copy background texture into foreground texture with a 1-pixel downward
-  // shift
-  sfTexture_updateFromTexture(foreground_texture, background_texture, 0, 1);
-
-  // Draw the new line at the top of the foreground texture
-  sfTexture_updateFromImage(foreground_texture, image, 0, 0);
-
-  // Draw the foreground texture onto the window
-  sfSprite *foreground_sprite = sfSprite_create();
-  sfSprite_setTexture(foreground_sprite, foreground_texture, sfTrue);
-
-  // Add dynamic scaling to fix HiDPI/Retina display issues
-  sfVector2u texture_size = sfTexture_getSize(foreground_texture);
-  sfVector2u window_size = sfRenderWindow_getSize(window);
-  if (texture_size.x > 0 && texture_size.y > 0) {
-    float scale_x = (float)window_size.x / texture_size.x;
-    float scale_y = (float)window_size.y / texture_size.y;
-    sfSprite_setScale(foreground_sprite, (sfVector2f){scale_x, scale_y});
-  }
-
-  sfRenderWindow_drawSprite(window, foreground_sprite, NULL);
-
-  // Display the window contents
-  sfRenderWindow_display(window);
-
-  // Copy the updated foreground texture back into the background texture
-  sfTexture_updateFromTexture(background_texture, foreground_texture, 0, 0);
-
-  // Cleanup
-  sfImage_destroy(image);
-  if (line_texture)
-    sfTexture_destroy(line_texture);
-  if (foreground_sprite)
-    sfSprite_destroy(foreground_sprite);
 #else
   // NO_SFML is defined, do nothing.
   (void)window;
@@ -219,29 +245,38 @@ void printRawData(sfRenderWindow *window, uint32_t *image_buff,
     return;
   }
 
-  sfRenderWindow_clear(window, sfBlack);
+  {
+    int nb_pixels;
+    int x;
+    
+    nb_pixels = get_cis_pixels_nb();
+    
+    sfRenderWindow_clear(window, sfBlack);
 
-  // Create a vertical line for each x coordinate
-  for (int x = 0; x < CIS_MAX_PIXELS_NB; x++) {
-    // Draw a black vertical line
-    sfVertexArray *line = sfVertexArray_create();
-    sfVertexArray_setPrimitiveType(line, sfLinesStrip);
-    sfVertex vertex1 = {.position = {x, 0}, .color = sfBlack};
-    sfVertex vertex2 = {.position = {x, WINDOWS_HEIGHT}, .color = sfBlack};
-    sfVertexArray_append(line, vertex1);
-    sfVertexArray_append(line, vertex2);
-    sfRenderWindow_drawVertexArray(window, line, NULL);
-    sfVertexArray_destroy(line);
+    /* Create a vertical line for each x coordinate */
+    for (x = 0; x < nb_pixels; x++) {
+      /* Draw a black vertical line */
+      sfVertexArray *line = sfVertexArray_create();
+      sfVertexArray_setPrimitiveType(line, sfLinesStrip);
+      sfVertex vertex1 = {.position = {x, 0}, .color = sfBlack};
+      sfVertex vertex2 = {.position = {x, WINDOWS_HEIGHT}, .color = sfBlack};
+      sfVertexArray_append(line, vertex1);
+      sfVertexArray_append(line, vertex2);
+      sfRenderWindow_drawVertexArray(window, line, NULL);
+      sfVertexArray_destroy(line);
 
-    // Draw a green point
-    sfVertexArray *point = sfVertexArray_create();
-    sfVertexArray_setPrimitiveType(point, sfPoints);
-    sfVertex vertex = {
-        .position = {x, (float)(image_buff[x] * (WINDOWS_HEIGHT / 8192.0f))},
-        .color = sfGreen};
-    sfVertexArray_append(point, vertex);
-    sfRenderWindow_drawVertexArray(window, point, NULL);
-    sfVertexArray_destroy(point);
+      /* Draw a green point */
+      {
+        sfVertexArray *point = sfVertexArray_create();
+        sfVertexArray_setPrimitiveType(point, sfPoints);
+        sfVertex vertex = {
+            .position = {x, (float)(image_buff[x] * (WINDOWS_HEIGHT / 8192.0f))},
+            .color = sfGreen};
+        sfVertexArray_append(point, vertex);
+        sfRenderWindow_drawVertexArray(window, point, NULL);
+        sfVertexArray_destroy(point);
+      }
+    }
   }
 
   // Prepare sprites for drawing textures

@@ -8,6 +8,7 @@
 #include "doublebuffer.h"
 #include "error.h"
 #include "../../config/config_loader.h"
+#include "../../config/config_instrument.h"
 #include "../../utils/logger.h"
 #include <errno.h>
 #include <math.h>
@@ -94,9 +95,12 @@ extern volatile int keepRunning;
 
 // --- Initialization ---
 void synth_polyphonicMode_init(void) {
+  int i, j, nb_pixels;
+  float *default_white_line;
+  
   log_info("SYNTH", "Initializing polyphonic synthesis mode with LFO");
 
-  for (int i = 0; i < 2; ++i) {
+  for (i = 0; i < 2; ++i) {
     if (pthread_mutex_init(&polyphonic_audio_buffers[i].mutex, NULL) != 0) {
       die("Failed to initialize polyphonic audio buffer mutex");
     }
@@ -118,28 +122,49 @@ void synth_polyphonicMode_init(void) {
     die("Failed to initialize image history mutex");
   }
   history_write_index = 0;
+  
+  // Get runtime pixel count
+  nb_pixels = get_cis_pixels_nb();
+  
+  // Allocate line_data for each history entry
+  for (i = 0; i < MOVING_AVERAGE_WINDOW_SIZE; ++i) {
+    image_line_history[i].line_data = (float *)calloc(nb_pixels, sizeof(float));
+    if (image_line_history[i].line_data == NULL) {
+      die("Failed to allocate image_line_history line_data");
+    }
+  }
+  
   // Pre-fill image_line_history with a default white line
   // This ensures that the FFT has valid, non-zero data from the start.
-  float default_white_line[CIS_MAX_PIXELS_NB];
-  for (int i = 0; i < CIS_MAX_PIXELS_NB; ++i) {
+  default_white_line = (float *)malloc(nb_pixels * sizeof(float));
+  if (default_white_line == NULL) {
+    die("Failed to allocate default_white_line");
+  }
+  for (i = 0; i < nb_pixels; ++i) {
     default_white_line[i] = 255.0f; // Max brightness for a white line
   }
-  for (int i = 0; i < MOVING_AVERAGE_WINDOW_SIZE; ++i) {
+  for (i = 0; i < MOVING_AVERAGE_WINDOW_SIZE; ++i) {
     memcpy(image_line_history[i].line_data, default_white_line,
-           CIS_MAX_PIXELS_NB * sizeof(float));
+           nb_pixels * sizeof(float));
   }
+  free(default_white_line);
+  
   history_fill_count =
       MOVING_AVERAGE_WINDOW_SIZE; // History is now full with default data
   log_info("SYNTH", "Polyphonic: Image history pre-filled with default white lines (fill count: %d)", history_fill_count);
 
+  // Allocate FFT buffers dynamically
+  polyphonic_context.fft_input = (kiss_fft_scalar *)calloc(nb_pixels, sizeof(kiss_fft_scalar));
+  polyphonic_context.fft_output = (kiss_fft_cpx *)calloc(nb_pixels / 2 + 1, sizeof(kiss_fft_cpx));
+  if (polyphonic_context.fft_input == NULL || polyphonic_context.fft_output == NULL) {
+    die("Failed to allocate FFT buffers");
+  }
+  
   polyphonic_context.fft_cfg =
-      kiss_fftr_alloc(CIS_MAX_PIXELS_NB, 0, NULL, NULL);
+      kiss_fftr_alloc(nb_pixels, 0, NULL, NULL);
   if (polyphonic_context.fft_cfg == NULL) {
     die("Failed to initialize FFT configuration");
   }
-  memset(polyphonic_context.fft_input, 0, sizeof(polyphonic_context.fft_input));
-  memset(polyphonic_context.fft_output, 0,
-         sizeof(polyphonic_context.fft_output));
 
   memset(global_smoothed_magnitudes, 0, sizeof(global_smoothed_magnitudes));
   filter_init_spectral_params(&global_spectral_filter_params, 8000.0f,
@@ -153,13 +178,13 @@ void synth_polyphonicMode_init(void) {
   log_info("SYNTH", "Global Vibrato LFO initialized: Rate=%.2f Hz, Depth=%.2f semitones",
            global_vibrato_lfo.rate_hz, global_vibrato_lfo.depth_semitones);
 
-  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+  for (i = 0; i < NUM_POLY_VOICES; ++i) {
     poly_voices[i].fundamental_frequency = 0.0f;
     poly_voices[i].voice_state = ADSR_STATE_IDLE;
     poly_voices[i].midi_note_number = -1;
     poly_voices[i].last_velocity = 1.0f;
     poly_voices[i].last_triggered_order = 0; // Initialize trigger order
-    for (int j = 0; j < MAX_MAPPED_OSCILLATORS; ++j) {
+    for (j = 0; j < MAX_MAPPED_OSCILLATORS; ++j) {
       poly_voices[i].oscillators[j].phase = 0.0f;
     }
     adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
@@ -338,17 +363,24 @@ void synth_polyphonicMode_process(float *audio_buffer,
 
 // --- Image & FFT Processing ---
 static void process_image_data_for_fft(DoubleBuffer *image_db) {
+  int nb_pixels, i, j, k, idx;
+  float *current_grayscale_line;
+  float sum;
+  struct timespec ts;
+  int wait_ret;
+  
   if (image_db == NULL) {
     fprintf(stderr, "process_image_data_for_fft: image_db is NULL\n");
     return;
   }
+  
+  nb_pixels = get_cis_pixels_nb();
+  
   pthread_mutex_lock(&image_db->mutex);
   while (!image_db->dataReady && keepRunning) {
-    struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     ts.tv_sec += 1;
-    int wait_ret =
-        pthread_cond_timedwait(&image_db->cond, &image_db->mutex, &ts);
+    wait_ret = pthread_cond_timedwait(&image_db->cond, &image_db->mutex, &ts);
     if (wait_ret == ETIMEDOUT && !keepRunning) {
       pthread_mutex_unlock(&image_db->mutex);
       return;
@@ -359,8 +391,14 @@ static void process_image_data_for_fft(DoubleBuffer *image_db) {
     return;
   }
 
-  float current_grayscale_line[CIS_MAX_PIXELS_NB];
-  for (int i = 0; i < CIS_MAX_PIXELS_NB; ++i) {
+  current_grayscale_line = (float *)malloc(nb_pixels * sizeof(float));
+  if (current_grayscale_line == NULL) {
+    fprintf(stderr, "Failed to allocate current_grayscale_line\n");
+    pthread_mutex_unlock(&image_db->mutex);
+    return;
+  }
+  
+  for (i = 0; i < nb_pixels; ++i) {
     current_grayscale_line[i] = 0.299f * image_db->activeBuffer_R[i] +
                                 0.587f * image_db->activeBuffer_G[i] +
                                 0.114f * image_db->activeBuffer_B[i];
@@ -369,7 +407,9 @@ static void process_image_data_for_fft(DoubleBuffer *image_db) {
 
   pthread_mutex_lock(&image_history_mutex);
   memcpy(image_line_history[history_write_index].line_data,
-         current_grayscale_line, CIS_MAX_PIXELS_NB * sizeof(float));
+         current_grayscale_line, nb_pixels * sizeof(float));
+  free(current_grayscale_line);
+  
   history_write_index = (history_write_index + 1) % MOVING_AVERAGE_WINDOW_SIZE;
   if (history_fill_count < MOVING_AVERAGE_WINDOW_SIZE) {
     history_fill_count++;
@@ -377,12 +417,12 @@ static void process_image_data_for_fft(DoubleBuffer *image_db) {
 
   if (history_fill_count > 0) {
     memset(polyphonic_context.fft_input, 0,
-           CIS_MAX_PIXELS_NB * sizeof(kiss_fft_scalar));
-    for (int j = 0; j < CIS_MAX_PIXELS_NB; ++j) {
-      float sum = 0.0f;
-      for (int k = 0; k < history_fill_count; ++k) {
-        int idx = (history_write_index - 1 - k + MOVING_AVERAGE_WINDOW_SIZE) %
-                  MOVING_AVERAGE_WINDOW_SIZE;
+           nb_pixels * sizeof(kiss_fft_scalar));
+    for (j = 0; j < nb_pixels; ++j) {
+      sum = 0.0f;
+      for (k = 0; k < history_fill_count; ++k) {
+        idx = (history_write_index - 1 - k + MOVING_AVERAGE_WINDOW_SIZE) %
+              MOVING_AVERAGE_WINDOW_SIZE;
         sum += image_line_history[idx].line_data[j];
       }
       polyphonic_context.fft_input[j] = sum / history_fill_count;
@@ -395,29 +435,44 @@ static void process_image_data_for_fft(DoubleBuffer *image_db) {
 
 static void generate_test_data_for_fft(void) {
   static int call_count = 0;
+  int nb_pixels, i, j, k, idx;
+  float *test_line;
+  float phase, sum;
+  
   printf("Génération de données de test pour la FFT (%d)...\n", call_count++);
+  
+  nb_pixels = get_cis_pixels_nb();
+  
   pthread_mutex_lock(&image_history_mutex);
-  float test_line[CIS_MAX_PIXELS_NB];
-  for (int i = 0; i < CIS_MAX_PIXELS_NB; i++) {
-    float phase = 10.0f * 2.0f * M_PI * (float)i / (float)CIS_MAX_PIXELS_NB;
+  test_line = (float *)malloc(nb_pixels * sizeof(float));
+  if (test_line == NULL) {
+    fprintf(stderr, "Failed to allocate test_line\n");
+    pthread_mutex_unlock(&image_history_mutex);
+    return;
+  }
+  
+  for (i = 0; i < nb_pixels; i++) {
+    phase = 10.0f * 2.0f * M_PI * (float)i / (float)nb_pixels;
     test_line[i] = sinf(phase) * 100.0f;
     test_line[i] += sinf(5.0f * phase) * 50.0f;
     test_line[i] += (rand() % 100) / 100.0f * 20.0f;
   }
   memcpy(image_line_history[history_write_index].line_data, test_line,
-         CIS_MAX_PIXELS_NB * sizeof(float));
+         nb_pixels * sizeof(float));
+  free(test_line);
+  
   history_write_index = (history_write_index + 1) % MOVING_AVERAGE_WINDOW_SIZE;
   if (history_fill_count < MOVING_AVERAGE_WINDOW_SIZE) {
     history_fill_count++;
   }
   if (history_fill_count > 0) {
     memset(polyphonic_context.fft_input, 0,
-           CIS_MAX_PIXELS_NB * sizeof(kiss_fft_scalar));
-    for (int j = 0; j < CIS_MAX_PIXELS_NB; ++j) {
-      float sum = 0.0f;
-      for (int k = 0; k < history_fill_count; ++k) {
-        int idx = (history_write_index - 1 - k + MOVING_AVERAGE_WINDOW_SIZE) %
-                  MOVING_AVERAGE_WINDOW_SIZE;
+           nb_pixels * sizeof(kiss_fft_scalar));
+    for (j = 0; j < nb_pixels; ++j) {
+      sum = 0.0f;
+      for (k = 0; k < history_fill_count; ++k) {
+        idx = (history_write_index - 1 - k + MOVING_AVERAGE_WINDOW_SIZE) %
+              MOVING_AVERAGE_WINDOW_SIZE;
         sum += image_line_history[idx].line_data[j];
       }
       polyphonic_context.fft_input[j] = sum / history_fill_count;

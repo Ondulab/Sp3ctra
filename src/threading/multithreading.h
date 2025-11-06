@@ -152,9 +152,9 @@ struct PACKED_STRUCT packet_IMU
 
 struct PACKED_STRUCT cisRgbBuffers
 {
-    uint8_t R[CIS_MAX_PIXELS_NB];
-    uint8_t G[CIS_MAX_PIXELS_NB];
-    uint8_t B[CIS_MAX_PIXELS_NB];
+    uint8_t *R;  // Dynamic allocation
+    uint8_t *G;  // Dynamic allocation
+    uint8_t *B;  // Dynamic allocation
 };
 
 //---------------------------------------------------------------------------------------------------------------------------------------------------------

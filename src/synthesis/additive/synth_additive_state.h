@@ -19,16 +19,16 @@
 
 /* Synth Data Freeze Feature */
 extern volatile int g_is_synth_data_frozen;
-extern float g_frozen_grayscale_buffer[CIS_MAX_PIXELS_NB];
+extern float *g_frozen_grayscale_buffer;  // Dynamic allocation
 extern volatile int g_is_synth_data_fading_out;
 extern double g_synth_data_fade_start_time;
 extern const double G_SYNTH_DATA_FADE_DURATION_SECONDS;
 extern pthread_mutex_t g_synth_data_freeze_mutex;
 
 /* Buffers for display to reflect synth data (grayscale converted to RGB) */
-extern uint8_t g_displayable_synth_R[CIS_MAX_PIXELS_NB];
-extern uint8_t g_displayable_synth_G[CIS_MAX_PIXELS_NB];
-extern uint8_t g_displayable_synth_B[CIS_MAX_PIXELS_NB];
+extern uint8_t *g_displayable_synth_R;  // Dynamic allocation
+extern uint8_t *g_displayable_synth_G;  // Dynamic allocation
+extern uint8_t *g_displayable_synth_B;  // Dynamic allocation
 extern pthread_mutex_t g_displayable_synth_mutex;
 
 /* Exported function prototypes ----------------------------------------------*/
