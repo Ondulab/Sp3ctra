@@ -1,4 +1,5 @@
 #include "image_sequencer.h"
+#include "../config/config_instrument.h"
 #include "../utils/logger.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -112,9 +113,14 @@ static void init_adsr_envelope(ADSREnvelope *env) {
 
 // Initialize sequence player with RGB frame buffers
 static void init_sequence_player(SequencePlayer *player, int buffer_capacity) {
+    int nb_pixels;
+    int i;
+    
     memset(player, 0, sizeof(SequencePlayer));
     player->state = PLAYER_STATE_IDLE;
     player->buffer_capacity = buffer_capacity;
+    
+    nb_pixels = get_cis_pixels_nb();
     
     // Allocate array of RawImageFrame structures
     player->frames = (RawImageFrame *)calloc(buffer_capacity, sizeof(RawImageFrame));
@@ -124,10 +130,10 @@ static void init_sequence_player(SequencePlayer *player, int buffer_capacity) {
     }
     
     // Allocate RGB buffers for each frame
-    for (int i = 0; i < buffer_capacity; i++) {
-        player->frames[i].buffer_R = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
-        player->frames[i].buffer_G = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
-        player->frames[i].buffer_B = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
+    for (i = 0; i < buffer_capacity; i++) {
+        player->frames[i].buffer_R = (uint8_t *)malloc(nb_pixels);
+        player->frames[i].buffer_G = (uint8_t *)malloc(nb_pixels);
+        player->frames[i].buffer_B = (uint8_t *)malloc(nb_pixels);
         
         if (!player->frames[i].buffer_R || !player->frames[i].buffer_G || !player->frames[i].buffer_B) {
             log_error("SEQUENCER", "Failed to allocate RGB buffers for frame %d", i);
@@ -144,7 +150,7 @@ static void init_sequence_player(SequencePlayer *player, int buffer_capacity) {
     init_adsr_envelope(&player->envelope);
     
     log_info("SEQUENCER", "Player initialized: %d frames capacity (%.1f MB)", 
-             buffer_capacity, (buffer_capacity * CIS_MAX_PIXELS_NB * 3) / 1024.0f / 1024.0f);
+             buffer_capacity, (buffer_capacity * nb_pixels * 3) / 1024.0f / 1024.0f);
 }
 
 // Cleanup sequence player
@@ -165,22 +171,29 @@ static void cleanup_sequence_player(SequencePlayer *player) {
  * ============================================================================ */
 
 ImageSequencer *image_sequencer_create(int num_players, float max_duration_s) {
+    ImageSequencer *seq;
+    int nb_pixels;
+    int buffer_capacity;
+    int i;
+    
     if (num_players < 1 || num_players > 10) {
         log_error("SEQUENCER", "Invalid number of players: %d", num_players);
         return NULL;
     }
     
-    ImageSequencer *seq = (ImageSequencer *)calloc(1, sizeof(ImageSequencer));
+    seq = (ImageSequencer *)calloc(1, sizeof(ImageSequencer));
     if (!seq) {
         log_error("SEQUENCER", "Failed to allocate ImageSequencer");
         return NULL;
     }
     
+    nb_pixels = get_cis_pixels_nb();
+    
     seq->num_players = num_players;
     seq->max_duration_s = max_duration_s;
     seq->enabled = 0;
     seq->blend_mode = BLEND_MODE_MIX;
-    seq->live_mix_level = 0.0f;  // 0.0 = 100% sequencer, 1.0 = 100% live
+    seq->live_mix_level = 0.0f;  /* 0.0 = 100% sequencer, 1.0 = 100% live */
     seq->bpm = 120.0f;
     
     if (pthread_mutex_init(&seq->mutex, NULL) != 0) {
@@ -197,10 +210,10 @@ ImageSequencer *image_sequencer_create(int num_players, float max_duration_s) {
         return NULL;
     }
     
-    // Allocate output frame RGB buffers
-    seq->output_frame.buffer_R = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
-    seq->output_frame.buffer_G = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
-    seq->output_frame.buffer_B = (uint8_t *)malloc(CIS_MAX_PIXELS_NB);
+    /* Allocate output frame RGB buffers */
+    seq->output_frame.buffer_R = (uint8_t *)malloc(nb_pixels);
+    seq->output_frame.buffer_G = (uint8_t *)malloc(nb_pixels);
+    seq->output_frame.buffer_B = (uint8_t *)malloc(nb_pixels);
     
     if (!seq->output_frame.buffer_R || !seq->output_frame.buffer_G || !seq->output_frame.buffer_B) {
         log_error("SEQUENCER", "Failed to allocate output frame buffers");
@@ -210,14 +223,14 @@ ImageSequencer *image_sequencer_create(int num_players, float max_duration_s) {
         return NULL;
     }
     
-    int buffer_capacity = (int)(max_duration_s * 1000);
-    for (int i = 0; i < num_players; i++) {
+    buffer_capacity = (int)(max_duration_s * 1000);
+    for (i = 0; i < num_players; i++) {
         init_sequence_player(&seq->players[i], buffer_capacity);
     }
     
     log_info("SEQUENCER", "Image Sequencer created: %d players, %.1fs capacity (%.1f MB total)", 
              num_players, max_duration_s,
-             (num_players * buffer_capacity * CIS_MAX_PIXELS_NB * 3) / 1024.0f / 1024.0f);
+             (num_players * buffer_capacity * nb_pixels * 3) / 1024.0f / 1024.0f);
     return seq;
 }
 
@@ -642,22 +655,31 @@ int image_sequencer_process_frame(
     }
     #endif
     
-    // If disabled, just pass through
+    /* If disabled, just pass through */
     if (!seq->enabled) {
-        memcpy(output_R, live_R, CIS_MAX_PIXELS_NB);
-        memcpy(output_G, live_G, CIS_MAX_PIXELS_NB);
-        memcpy(output_B, live_B, CIS_MAX_PIXELS_NB);
+        int nb_pixels = get_cis_pixels_nb();
+        memcpy(output_R, live_R, nb_pixels);
+        memcpy(output_G, live_G, nb_pixels);
+        memcpy(output_B, live_B, nb_pixels);
         pthread_mutex_unlock(&seq->mutex);
         return 0;
     }
     
     int has_active_players = 0;
+    int nb_pixels;
+    float *accum_R;
+    float *accum_G;
+    float *accum_B;
+    float total_weight;
+    int i;
     
-    // Initialize output accumulators (float for weighted sum)
-    float *accum_R = (float *)calloc(CIS_MAX_PIXELS_NB, sizeof(float));
-    float *accum_G = (float *)calloc(CIS_MAX_PIXELS_NB, sizeof(float));
-    float *accum_B = (float *)calloc(CIS_MAX_PIXELS_NB, sizeof(float));
-    float total_weight = 0.0f;
+    nb_pixels = get_cis_pixels_nb();
+    
+    /* Initialize output accumulators (float for weighted sum) */
+    accum_R = (float *)calloc(nb_pixels, sizeof(float));
+    accum_G = (float *)calloc(nb_pixels, sizeof(float));
+    accum_B = (float *)calloc(nb_pixels, sizeof(float));
+    total_weight = 0.0f;
     
     if (!accum_R || !accum_G || !accum_B) {
         pthread_mutex_unlock(&seq->mutex);
@@ -665,26 +687,26 @@ int image_sequencer_process_frame(
         return -1;
     }
     
-    // Process each player
-    for (int i = 0; i < seq->num_players; i++) {
+    /* Process each player */
+    for (i = 0; i < seq->num_players; i++) {
         SequencePlayer *player = &seq->players[i];
         
-        // Handle recording
+        /* Handle recording */
         if (player->state == PLAYER_STATE_RECORDING) {
             if (player->recorded_frames < player->buffer_capacity) {
-                memcpy(player->frames[player->recorded_frames].buffer_R, live_R, CIS_MAX_PIXELS_NB);
-                memcpy(player->frames[player->recorded_frames].buffer_G, live_G, CIS_MAX_PIXELS_NB);
-                memcpy(player->frames[player->recorded_frames].buffer_B, live_B, CIS_MAX_PIXELS_NB);
+                memcpy(player->frames[player->recorded_frames].buffer_R, live_R, nb_pixels);
+                memcpy(player->frames[player->recorded_frames].buffer_G, live_G, nb_pixels);
+                memcpy(player->frames[player->recorded_frames].buffer_B, live_B, nb_pixels);
                 player->frames[player->recorded_frames].timestamp_us = get_time_us();
                 player->recorded_frames++;
             } else {
-                // Buffer full, auto-stop recording
+                /* Buffer full, auto-stop recording */
                 player->state = PLAYER_STATE_READY;
                 log_info("SEQUENCER", "Player %d: Buffer full, stopped recording", i);
             }
         }
         
-        // Handle playback
+        /* Handle playback */
         if (player->state == PLAYER_STATE_PLAYING) {
             if (player->recorded_frames == 0) continue;
             
@@ -726,90 +748,125 @@ int image_sequencer_process_frame(
                 }
             }
             
-            // Get player frame RGB (with interpolation if needed)
-            uint8_t *player_R, *player_G, *player_B;
-            uint8_t temp_R[CIS_MAX_PIXELS_NB], temp_G[CIS_MAX_PIXELS_NB], temp_B[CIS_MAX_PIXELS_NB];
+            /* Get player frame RGB (with interpolation if needed) */
+            {
+                uint8_t *player_R;
+                uint8_t *player_G;
+                uint8_t *player_B;
+                uint8_t *temp_R;
+                uint8_t *temp_G;
+                uint8_t *temp_B;
+                
+                temp_R = NULL;
+                temp_G = NULL;
+                temp_B = NULL;
+                
+                if (frac > 0.001f && frame_idx + 1 < player->recorded_frames) {
+                    /* Interpolate between two frames */
+                    temp_R = (uint8_t *)malloc(nb_pixels);
+                    temp_G = (uint8_t *)malloc(nb_pixels);
+                    temp_B = (uint8_t *)malloc(nb_pixels);
+                    
+                    if (temp_R && temp_G && temp_B) {
+                        blend_rgb_frames(temp_R, temp_G, temp_B,
+                                       player->frames[frame_idx].buffer_R,
+                                       player->frames[frame_idx].buffer_G,
+                                       player->frames[frame_idx].buffer_B,
+                                       player->frames[frame_idx + 1].buffer_R,
+                                       player->frames[frame_idx + 1].buffer_G,
+                                       player->frames[frame_idx + 1].buffer_B,
+                                       frac, nb_pixels);
+                        player_R = temp_R;
+                        player_G = temp_G;
+                        player_B = temp_B;
+                    } else {
+                        /* Allocation failed, use current frame directly */
+                        player_R = player->frames[frame_idx].buffer_R;
+                        player_G = player->frames[frame_idx].buffer_G;
+                        player_B = player->frames[frame_idx].buffer_B;
+                    }
+                } else {
+                    /* Use current frame directly */
+                    player_R = player->frames[frame_idx].buffer_R;
+                    player_G = player->frames[frame_idx].buffer_G;
+                    player_B = player->frames[frame_idx].buffer_B;
+                }
             
-            if (frac > 0.001f && frame_idx + 1 < player->recorded_frames) {
-                // Interpolate between two frames
-                blend_rgb_frames(temp_R, temp_G, temp_B,
-                               player->frames[frame_idx].buffer_R,
-                               player->frames[frame_idx].buffer_G,
-                               player->frames[frame_idx].buffer_B,
-                               player->frames[frame_idx + 1].buffer_R,
-                               player->frames[frame_idx + 1].buffer_G,
-                               player->frames[frame_idx + 1].buffer_B,
-                               frac, CIS_MAX_PIXELS_NB);
-                player_R = temp_R;
-                player_G = temp_G;
-                player_B = temp_B;
-            } else {
-                // Use current frame directly
-                player_R = player->frames[frame_idx].buffer_R;
-                player_G = player->frames[frame_idx].buffer_G;
-                player_B = player->frames[frame_idx].buffer_B;
+                /* Apply envelope and blend level */
+                {
+                    float total_level;
+                    int p;
+                    
+                    total_level = env_level * player->blend_level;
+                    
+                    /* 🎨 ADSR FIX: Accumulate RGB with envelope modulation */
+                    /* IMPORTANT: We must accumulate even when level is low (for fade-out effect) */
+                    /* The level will naturally reduce pixel brightness, creating the fade */
+                    for (p = 0; p < nb_pixels; p++) {
+                        accum_R[p] += player_R[p] * total_level;
+                        accum_G[p] += player_G[p] * total_level;
+                        accum_B[p] += player_B[p] * total_level;
+                    }
+                    /* Don't add env_level to total_weight - only count blend_level for multi-player normalization */
+                    total_weight += player->blend_level;
+                    
+                    has_active_players = 1;
+                    
+                    /* Advance playback position */
+                    player->playback_position += player->playback_speed * player->playback_direction;
+                }
+                
+                /* Free temporary interpolation buffers if allocated */
+                if (temp_R) free(temp_R);
+                if (temp_G) free(temp_G);
+                if (temp_B) free(temp_B);
             }
-            
-            // Apply envelope and blend level
-            float total_level = env_level * player->blend_level;
-            
-            // 🎨 ADSR FIX: Accumulate RGB with envelope modulation
-            // IMPORTANT: We must accumulate even when level is low (for fade-out effect)
-            // The level will naturally reduce pixel brightness, creating the fade
-            for (int p = 0; p < CIS_MAX_PIXELS_NB; p++) {
-                accum_R[p] += player_R[p] * total_level;
-                accum_G[p] += player_G[p] * total_level;
-                accum_B[p] += player_B[p] * total_level;
-            }
-            // Don't add env_level to total_weight - only count blend_level for multi-player normalization
-            total_weight += player->blend_level;
-            
-            has_active_players = 1;
-            
-            // Advance playback position
-            player->playback_position += player->playback_speed * player->playback_direction;
         }
     }
     
-    // Mix with live input and write output
+    /* Mix with live input and write output */
     if (has_active_players) {
-        // Normalize accumulated values and blend with live
-        float seq_weight = 1.0f - seq->live_mix_level;
-        float live_weight = seq->live_mix_level;
+        /* Normalize accumulated values and blend with live */
+        float seq_weight;
+        float live_weight;
         
-        // If we have active players, normalize and blend
+        seq_weight = 1.0f - seq->live_mix_level;
+        live_weight = seq->live_mix_level;
+        
+        /* If we have active players, normalize and blend */
         if (total_weight > 0.0f) {
-            for (int p = 0; p < CIS_MAX_PIXELS_NB; p++) {
-                // Normalize only for multi-player mixing (not for ADSR envelope)
-                // The envelope effect is already baked into accum values
-                float norm_R = accum_R[p] / total_weight;
-                float norm_G = accum_G[p] / total_weight;
-                float norm_B = accum_B[p] / total_weight;
-                
-                // Mix with live
-                float mixed_R = norm_R * seq_weight + live_R[p] * live_weight;
-                float mixed_G = norm_G * seq_weight + live_G[p] * live_weight;
-                float mixed_B = norm_B * seq_weight + live_B[p] * live_weight;
-                
-                // Clamp and write output
+            int p;
+            for (p = 0; p < nb_pixels; p++) {
+                    /* Normalize only for multi-player mixing (not for ADSR envelope) */
+                    /* The envelope effect is already baked into accum values */
+                    float norm_R = accum_R[p] / total_weight;
+                    float norm_G = accum_G[p] / total_weight;
+                    float norm_B = accum_B[p] / total_weight;
+                    
+                    /* Mix with live */
+                    float mixed_R = norm_R * seq_weight + live_R[p] * live_weight;
+                    float mixed_G = norm_G * seq_weight + live_G[p] * live_weight;
+                    float mixed_B = norm_B * seq_weight + live_B[p] * live_weight;
+                    
+                /* Clamp and write output */
                 output_R[p] = clamp_u8((int)mixed_R);
                 output_G[p] = clamp_u8((int)mixed_G);
                 output_B[p] = clamp_u8((int)mixed_B);
             }
         } else {
-            // No weight, just pass through live
-            memcpy(output_R, live_R, CIS_MAX_PIXELS_NB);
-            memcpy(output_G, live_G, CIS_MAX_PIXELS_NB);
-            memcpy(output_B, live_B, CIS_MAX_PIXELS_NB);
+            /* No weight, just pass through live */
+            memcpy(output_R, live_R, nb_pixels);
+            memcpy(output_G, live_G, nb_pixels);
+            memcpy(output_B, live_B, nb_pixels);
         }
     } else {
-        // No active players, just pass through live
-        memcpy(output_R, live_R, CIS_MAX_PIXELS_NB);
-        memcpy(output_G, live_G, CIS_MAX_PIXELS_NB);
-        memcpy(output_B, live_B, CIS_MAX_PIXELS_NB);
+        /* No active players, just pass through live */
+        memcpy(output_R, live_R, nb_pixels);
+        memcpy(output_G, live_G, nb_pixels);
+        memcpy(output_B, live_B, nb_pixels);
     }
     
-    // Cleanup
+    /* Cleanup */
     free(accum_R);
     free(accum_G);
     free(accum_B);

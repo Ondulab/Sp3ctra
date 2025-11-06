@@ -23,7 +23,7 @@
 // Helper function to get current number of notes based on runtime configuration
 static inline int get_current_number_of_notes(void) {
     extern sp3ctra_config_t g_sp3ctra_config;
-    return CIS_MAX_PIXELS_NB / g_sp3ctra_config.pixels_per_note;
+    return get_cis_pixels_nb() / g_sp3ctra_config.pixels_per_note;
 }
 
 /**************************************************************************************

@@ -2,6 +2,7 @@
 
 #include "audio_image_buffers.h"
 #include "config.h"
+#include "config_instrument.h"
 #include "error.h"
 #include "logger.h"
 #include <math.h>
@@ -19,6 +20,11 @@
  * @return 0 on success, -1 on error
  */
 int audio_image_buffers_init(AudioImageBuffers *buffers) {
+  int nb_pixels;
+  int i;
+  float phase;
+  uint8_t test_value;
+
   if (!buffers) {
     fprintf(stderr, "ERROR: AudioImageBuffers pointer is NULL\n");
     return -1;
@@ -27,15 +33,18 @@ int audio_image_buffers_init(AudioImageBuffers *buffers) {
   // Initialize all pointers to NULL for safe cleanup
   memset(buffers, 0, sizeof(AudioImageBuffers));
 
+  // Get runtime pixel count
+  nb_pixels = get_cis_pixels_nb();
+
   // Allocate Buffer 0 - RGB channels separated for memory contiguity
-  buffers->buffer0_R = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
-  buffers->buffer0_G = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
-  buffers->buffer0_B = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
+  buffers->buffer0_R = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  buffers->buffer0_G = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  buffers->buffer0_B = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
 
   // Allocate Buffer 1 - RGB channels separated for memory contiguity
-  buffers->buffer1_R = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
-  buffers->buffer1_G = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
-  buffers->buffer1_B = (uint8_t *)malloc(CIS_MAX_PIXELS_NB * sizeof(uint8_t));
+  buffers->buffer1_R = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  buffers->buffer1_G = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
+  buffers->buffer1_B = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
 
   // Check all allocations
   if (!buffers->buffer0_R || !buffers->buffer0_G || !buffers->buffer0_B ||
@@ -47,10 +56,10 @@ int audio_image_buffers_init(AudioImageBuffers *buffers) {
 
   // Initialize buffers with test pattern to ensure audio synthesis works
   // This provides immediate audio feedback even without scanner data
-  for (int i = 0; i < CIS_MAX_PIXELS_NB; i++) {
+  for (i = 0; i < nb_pixels; i++) {
     // Create a simple test pattern: sine wave for audio testing
-    float phase = (float)i / CIS_MAX_PIXELS_NB * 2.0f * M_PI * 4.0f; // 4 cycles
-    uint8_t test_value = (uint8_t)(127.0f + 127.0f * sin(phase));
+    phase = (float)i / nb_pixels * 2.0f * M_PI * 4.0f; // 4 cycles
+    test_value = (uint8_t)(127.0f + 127.0f * sin(phase));
 
     buffers->buffer0_R[i] = test_value;
     buffers->buffer0_G[i] = test_value / 2; // Different pattern for G
@@ -81,7 +90,7 @@ int audio_image_buffers_init(AudioImageBuffers *buffers) {
   buffers->buffer_swaps = 0;
   buffers->initialized = 1;
 
-  log_info("BUFFERS", "Dual buffer system initialized: 2 x %d pixels x 3 channels", CIS_MAX_PIXELS_NB);
+  log_info("BUFFERS", "Dual buffer system initialized: 2 x %d pixels x 3 channels", nb_pixels);
   log_info("BUFFERS", "Initial state: Buffer 0 = read, Buffer 1 = write");
 
   return 0;

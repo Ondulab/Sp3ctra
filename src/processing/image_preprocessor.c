@@ -8,6 +8,7 @@
  */
 
 #include "image_preprocessor.h"
+#include "../../config/config_instrument.h"
 #include "../../synthesis/additive/synth_additive_stereo.h"
 #include "../../synthesis/additive/synth_additive_math.h"
 #include "../../communication/dmx/dmx.h"
@@ -74,7 +75,7 @@ int image_preprocess_frame(
     preprocess_grayscale(raw_r, raw_g, raw_b, out->grayscale);
     
     /* 2. Calculate contrast factor (always needed) */
-    out->contrast_factor = calculate_contrast(out->grayscale, CIS_MAX_PIXELS_NB);
+    out->contrast_factor = calculate_contrast(out->grayscale, get_cis_pixels_nb());
     
     /* 3. Calculate stereo panning data (only if stereo enabled) */
     if (g_sp3ctra_config.stereo_mode_enabled) {
@@ -106,11 +107,16 @@ static uint64_t get_timestamp_us(void) {
  */
 static void preprocess_grayscale(const uint8_t *raw_r, const uint8_t *raw_g, 
                                   const uint8_t *raw_b, float *out_grayscale) {
-    for (int i = 0; i < CIS_MAX_PIXELS_NB; i++) {
-        // Standard grayscale conversion: 0.299*R + 0.587*G + 0.114*B
+    int nb_pixels;
+    int i;
+    
+    nb_pixels = get_cis_pixels_nb();
+    
+    for (i = 0; i < nb_pixels; i++) {
+        /* Standard grayscale conversion: 0.299*R + 0.587*G + 0.114*B */
         float gray = (0.299f * raw_r[i] + 0.587f * raw_g[i] + 0.114f * raw_b[i]);
         
-        // Normalize to [0.0, 1.0] range
+        /* Normalize to [0.0, 1.0] range */
         out_grayscale[i] = gray / 255.0f;
     }
 }
@@ -121,22 +127,29 @@ static void preprocess_grayscale(const uint8_t *raw_r, const uint8_t *raw_g,
  */
 static void preprocess_stereo(const uint8_t *raw_r, const uint8_t *raw_g,
                                const uint8_t *raw_b, PreprocessedImageData *out) {
-    int num_notes = CIS_MAX_PIXELS_NB / g_sp3ctra_config.pixels_per_note;
-    int pixels_per_note = g_sp3ctra_config.pixels_per_note;
+    int nb_pixels;
+    int num_notes;
+    int pixels_per_note;
+    int note;
     
-    // Ensure we don't exceed array bounds
+    nb_pixels = get_cis_pixels_nb();
+    num_notes = nb_pixels / g_sp3ctra_config.pixels_per_note;
+    pixels_per_note = g_sp3ctra_config.pixels_per_note;
+    
+    /* Ensure we don't exceed array bounds */
     if (num_notes > PREPROCESS_MAX_NOTES) {
         num_notes = PREPROCESS_MAX_NOTES;
     }
     
-    for (int note = 0; note < num_notes; note++) {
-        // Calculate average RGB for this note's pixels
+    for (note = 0; note < num_notes; note++) {
+        /* Calculate average RGB for this note's pixels */
         uint32_t r_sum = 0, g_sum = 0, b_sum = 0;
         uint32_t pixel_count = 0;
+        int pix;
         
-        for (int pix = 0; pix < pixels_per_note; pix++) {
+        for (pix = 0; pix < pixels_per_note; pix++) {
             uint32_t pixel_idx = note * pixels_per_note + pix;
-            if (pixel_idx < CIS_MAX_PIXELS_NB) {
+            if (pixel_idx < (uint32_t)nb_pixels) {
                 r_sum += raw_r[pixel_idx];
                 g_sum += raw_g[pixel_idx];
                 b_sum += raw_b[pixel_idx];
@@ -145,21 +158,21 @@ static void preprocess_stereo(const uint8_t *raw_r, const uint8_t *raw_g,
         }
         
         if (pixel_count > 0) {
-            // Calculate average RGB values
+            /* Calculate average RGB values */
             uint8_t r_avg = r_sum / pixel_count;
             uint8_t g_avg = g_sum / pixel_count;
             uint8_t b_avg = b_sum / pixel_count;
             
-            // Calculate color temperature and pan position
+            /* Calculate color temperature and pan position */
             float temperature = calculate_color_temperature(r_avg, g_avg, b_avg);
             out->stereo.pan_positions[note] = temperature;
             
-            // Calculate pan gains using constant power law
+            /* Calculate pan gains using constant power law */
             calculate_pan_gains(temperature, 
                               &out->stereo.left_gains[note],
                               &out->stereo.right_gains[note]);
         } else {
-            // Default to center if no pixels
+            /* Default to center if no pixels */
             out->stereo.pan_positions[note] = 0.0f;
             out->stereo.left_gains[note] = 0.707f;
             out->stereo.right_gains[note] = 0.707f;
@@ -174,26 +187,35 @@ static void preprocess_stereo(const uint8_t *raw_r, const uint8_t *raw_g,
 static void preprocess_dmx(const uint8_t *raw_r, const uint8_t *raw_g,
                             const uint8_t *raw_b, PreprocessedImageData *out) {
     #ifdef USE_DMX
-    // Calculate pixels per zone
-    int pixels_per_zone = CIS_MAX_PIXELS_NB / DMX_NUM_SPOTS;
+    int nb_pixels;
+    int pixels_per_zone;
+    int zone;
     
-    for (int zone = 0; zone < DMX_NUM_SPOTS; zone++) {
+    nb_pixels = get_cis_pixels_nb();
+    
+    /* Calculate pixels per zone */
+    pixels_per_zone = nb_pixels / DMX_NUM_SPOTS;
+    
+    for (zone = 0; zone < DMX_NUM_SPOTS; zone++) {
         uint32_t r_sum = 0, g_sum = 0, b_sum = 0;
         uint32_t pixel_count = 0;
+        int start_pixel;
+        int end_pixel;
+        int pix;
         
-        // Calculate start and end pixel indices for this zone
-        int start_pixel = zone * pixels_per_zone;
-        int end_pixel = (zone == DMX_NUM_SPOTS - 1) ? CIS_MAX_PIXELS_NB : start_pixel + pixels_per_zone;
+        /* Calculate start and end pixel indices for this zone */
+        start_pixel = zone * pixels_per_zone;
+        end_pixel = (zone == DMX_NUM_SPOTS - 1) ? nb_pixels : start_pixel + pixels_per_zone;
         
-        // Sum RGB values across zone
-        for (int pix = start_pixel; pix < end_pixel && pix < CIS_MAX_PIXELS_NB; pix++) {
+        /* Sum RGB values across zone */
+        for (pix = start_pixel; pix < end_pixel && pix < nb_pixels; pix++) {
             r_sum += raw_r[pix];
             g_sum += raw_g[pix];
             b_sum += raw_b[pix];
             pixel_count++;
         }
         
-        // Calculate average
+        /* Calculate average */
         if (pixel_count > 0) {
             out->dmx.zone_r[zone] = r_sum / pixel_count;
             out->dmx.zone_g[zone] = g_sum / pixel_count;
