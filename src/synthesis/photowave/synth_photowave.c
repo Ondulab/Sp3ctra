@@ -567,10 +567,13 @@ void synth_photowave_mode_init(void) {
     }
 }
 
-void synth_photowave_mode_cleanup(void) {
-    // Stop thread if running
+void synth_photowave_thread_stop(void) {
+    // Signal thread to stop
     photowave_thread_running = 0;
-    
+    log_info("PHOTOWAVE", "Thread stop signal sent");
+}
+
+void synth_photowave_mode_cleanup(void) {
     // Cleanup global state
     synth_photowave_cleanup(&g_photowave_state);
     

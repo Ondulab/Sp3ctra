@@ -269,7 +269,11 @@ static MidiScalingType parse_scaling_type(const char *str) {
 }
 
 /**
- * Parse MIDI control specification from string (e.g., "CC:20" or "NOTE:*")
+ * Parse MIDI control specification from string
+ * Formats supported:
+ *   - "CC:20" or "NOTE:60" - Any channel (backward compatible)
+ *   - "CC:20:1" or "NOTE:60:2" - Specific channel (0-15)
+ *   - "NOTE:*" or "NOTE:*:1" - Wildcard note (any/specific channel)
  */
 static int parse_midi_control(const char *str, MidiControl *control) {
     if (strcmp(str, "none") == 0) {
@@ -278,16 +282,67 @@ static int parse_midi_control(const char *str, MidiControl *control) {
     }
     
     char type_str[16];
-    int number;
+    int number, channel;
     
-    // Parse type:number format
+    // Parse type:number:channel format (e.g., "CC:20:1")
+    if (sscanf(str, "%15[^:]:%d:%d", type_str, &number, &channel) == 3) {
+        // Validate channel range (0-15 in MIDI spec)
+        if (channel < 0 || channel > 15) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "Invalid MIDI channel %d (must be 0-15), using any channel", channel);
+            log_warning("MIDI_MAP", msg);
+            channel = -1;
+        }
+        
+        if (strcmp(type_str, "CC") == 0) {
+            // Validate CC number range (0-127)
+            if (number < 0 || number > 127) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Invalid CC number %d (must be 0-127)", number);
+                log_error("MIDI_MAP", msg);
+                return -1;
+            }
+            control->type = MIDI_MSG_CC;
+            control->number = number;
+            control->channel = channel;
+            return 0;
+        } else if (strcmp(type_str, "NOTE") == 0) {
+            // Validate note number range (0-127)
+            if (number < 0 || number > 127) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Invalid note number %d (must be 0-127)", number);
+                log_error("MIDI_MAP", msg);
+                return -1;
+            }
+            control->type = MIDI_MSG_NOTE_ON;
+            control->number = number;
+            control->channel = channel;
+            return 0;
+        }
+    }
+    
+    // Parse type:number format (backward compatible - any channel)
     if (sscanf(str, "%15[^:]:%d", type_str, &number) == 2) {
         if (strcmp(type_str, "CC") == 0) {
+            // Validate CC number range (0-127)
+            if (number < 0 || number > 127) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Invalid CC number %d (must be 0-127)", number);
+                log_error("MIDI_MAP", msg);
+                return -1;
+            }
             control->type = MIDI_MSG_CC;
             control->number = number;
             control->channel = -1; // Any channel
             return 0;
         } else if (strcmp(type_str, "NOTE") == 0) {
+            // Validate note number range (0-127)
+            if (number < 0 || number > 127) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Invalid note number %d (must be 0-127)", number);
+                log_error("MIDI_MAP", msg);
+                return -1;
+            }
             control->type = MIDI_MSG_NOTE_ON;
             control->number = number;
             control->channel = -1;
@@ -295,11 +350,27 @@ static int parse_midi_control(const char *str, MidiControl *control) {
         }
     }
     
-    // Check for wildcard note
+    // Check for wildcard note with optional channel (e.g., "NOTE:*" or "NOTE:*:1")
+    if (sscanf(str, "%15[^:]:%*[*]:%d", type_str, &channel) == 2) {
+        if (strcmp(type_str, "NOTE") == 0) {
+            if (channel < 0 || channel > 15) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Invalid MIDI channel %d (must be 0-15), using any channel", channel);
+                log_warning("MIDI_MAP", msg);
+                channel = -1;
+            }
+            control->type = MIDI_MSG_NOTE_ON;
+            control->number = -1; // Any note
+            control->channel = channel;
+            return 0;
+        }
+    }
+    
+    // Check for wildcard note without channel (backward compatible)
     if (strcmp(str, "NOTE:*") == 0) {
         control->type = MIDI_MSG_NOTE_ON;
         control->number = -1; // Any note
-        control->channel = -1;
+        control->channel = -1; // Any channel
         return 0;
     }
     
@@ -873,8 +944,10 @@ int midi_mapping_load_mappings(const char *config_file) {
         // Find parameter
         ParameterEntry *param = find_parameter(full_param_name);
         if (!param) {
-            log_warning("MIDI_MAP", "Line %d: Unknown parameter '%s' (looked for '%s')", 
-                        line_number, key, full_param_name);
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Line %d: Unknown parameter '%s' (looked for '%s')", 
+                     line_number, key, full_param_name);
+            log_warning("MIDI_MAP", msg);
             continue;
         }
         
@@ -890,13 +963,30 @@ int midi_mapping_load_mappings(const char *config_file) {
         } else {
             // Only warn if it's not "none" (which is handled above)
             if (strcmp(value, "none") != 0) {
-                log_warning("MIDI_MAP", "Line %d: Invalid MIDI control format '%s'", line_number, value);
+                char msg[256];
+                snprintf(msg, sizeof(msg), "Line %d: Invalid MIDI control format '%s'", line_number, value);
+                log_warning("MIDI_MAP", msg);
             }
         }
     }
     
     fclose(file);
     log_info("MIDI_MAP", "Loaded %d MIDI mappings from %s", mappings_loaded, config_file);
+    
+    // Log channel-specific mappings for debugging
+    int channel_specific = 0;
+    for (int i = 0; i < g_midi_system.num_parameters; i++) {
+        if (g_midi_system.parameters[i].is_mapped && 
+            g_midi_system.parameters[i].control.channel != -1) {
+            channel_specific++;
+        }
+    }
+    if (channel_specific > 0) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "  %d mappings use specific MIDI channels", channel_specific);
+        log_info("MIDI_MAP", msg);
+    }
+    
     return 0;
 }
 

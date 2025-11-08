@@ -70,7 +70,9 @@ void sfClock_restart(sfClock *clock) { (void)clock; }
 extern void midi_Init(void);
 extern void midi_Cleanup(void);
 extern int midi_Connect(void);
+extern int midi_ConnectAll(void);
 extern int midi_ConnectByName(const char* deviceName);
+extern int midi_GetConnectedDeviceCount(void);
 extern void midi_SetupVolumeControl(void);
 // Add declarations for the new C-API MIDI callback setters
 extern void midi_set_note_on_callback(void (*callback)(int noteNumber,
@@ -526,10 +528,14 @@ int main(int argc, char **argv) {
     log_info("MIDI", "Attempting to connect to MIDI device: '%s'", device_name);
     
     if (strcmp(device_name, "auto") == 0) {
-      // Use automatic detection (legacy hardcoded list)
-      midi_connected = midi_Connect();
+      // Connect to ALL available MIDI devices (multi-device support)
+      midi_connected = midi_ConnectAll();
+      if (midi_connected) {
+        int device_count = midi_GetConnectedDeviceCount();
+        log_info("MIDI", "Multi-device mode: %d MIDI device(s) connected", device_count);
+      }
     } else {
-      // Use specific device name from configuration
+      // Use specific device name from configuration (single device mode)
       midi_connected = midi_ConnectByName(device_name);
     }
     
@@ -941,7 +947,8 @@ int main(int argc, char **argv) {
     printf("Polyphonic synthesis thread terminated\n");
   }
 
-  // Join the Photowave synth thread
+  // Stop and join the Photowave synth thread
+  synth_photowave_thread_stop();  // Signal thread to stop BEFORE joining
   pthread_join(photowaveThreadId, NULL);
   printf("Photowave synthesis thread terminated\n");
 

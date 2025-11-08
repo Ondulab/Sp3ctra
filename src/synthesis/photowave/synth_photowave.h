@@ -346,6 +346,14 @@ void synth_photowave_apply_config(PhotowaveState *state);
 void synth_photowave_mode_init(void);
 
 /**
+ * @brief Stop Photowave thread (called before pthread_join)
+ * 
+ * Signals the Photowave thread to stop by setting the running flag to 0.
+ * Must be called before pthread_join() to ensure clean thread termination.
+ */
+void synth_photowave_thread_stop(void);
+
+/**
  * @brief Cleanup Photowave mode (called at shutdown)
  * 
  * Frees all global resources allocated by Photowave mode.
