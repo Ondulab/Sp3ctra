@@ -55,8 +55,10 @@ void setMinimalTestVolume(float volume);
 // Control synth mix levels (thread-safe)
 void setSynthAdditiveMixLevel(float level);  // 0.0 - 1.0
 void setSynthPolyphonicMixLevel(float level); // 0.0 - 1.0
+void setSynthPhotowaveMixLevel(float level);  // 0.0 - 1.0
 float getSynthAdditiveMixLevel(void);
 float getSynthPolyphonicMixLevel(void);
+float getSynthPhotowaveMixLevel(void);
 
 #ifdef __cplusplus
 }

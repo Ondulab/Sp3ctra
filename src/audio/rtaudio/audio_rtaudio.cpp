@@ -4,6 +4,7 @@
 #include "audio_c_api.h"
 #include "midi_controller.h" // For gMidiController
 #include "synth_polyphonic.h" // For polyphonic_audio_buffers and related variables
+#include "../../synthesis/photowave/synth_photowave.h" // For photowave_audio_buffers
 #include "../../config/config_debug.h"    // For debug configuration macros
 #include "../../config/config_audio.h"    // For HDMI format configuration
 #include "../../config/config_loader.h"   // For runtime configuration access
@@ -34,6 +35,7 @@ AudioSystem *gAudioSystem = nullptr;
 // Volatile ensures thread visibility on modern architectures
 static volatile float g_synth_additive_mix_level = 1.0f;
 static volatile float g_synth_polyphonic_mix_level = 0.5f;
+static volatile float g_synth_photowave_mix_level = 0.5f;
 
 // Global variables to store requested audio device before AudioSystem is created
 extern "C" {
@@ -93,6 +95,8 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   static int localReadIndex = 0;
   static unsigned int polyphonic_readOffset = 0;
   static int polyphonic_localReadIndex = 0;
+  static unsigned int photowave_readOffset = 0;
+  static int photowave_localReadIndex = 0;
 
   // Cache volume level to avoid repeated access
   static float cached_volume = 1.0f;
@@ -107,6 +111,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   // Read mix levels from global variables (controlled via MIDI)
   float cached_level_additive = g_synth_additive_mix_level;
   float cached_level_polyphonic = g_synth_polyphonic_mix_level;
+  float cached_level_photowave = g_synth_photowave_mix_level;
 
   unsigned int framesToRender = nFrames;
 
@@ -121,6 +126,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     float *source_additive_left = nullptr;
     float *source_additive_right = nullptr;
     float *source_fft = nullptr;
+    float *source_photowave = nullptr;
 
     // Always use stereo mode with both left and right channels
     if (buffers_L[localReadIndex].ready == 1) {
@@ -136,6 +142,15 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       if (polyphonic_framesAvailable >= chunk) {
         source_fft = &polyphonic_audio_buffers[polyphonic_localReadIndex]
                           .data[polyphonic_readOffset];
+      }
+    }
+
+    if (photowave_audio_buffers[photowave_localReadIndex].ready == 1) {
+      unsigned int photowave_framesAvailable =
+          g_sp3ctra_config.audio_buffer_size - photowave_readOffset;
+      if (photowave_framesAvailable >= chunk) {
+        source_photowave = &photowave_audio_buffers[photowave_localReadIndex]
+                               .data[photowave_readOffset];
       }
     }
 
@@ -170,6 +185,12 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       if (source_fft) {
         dry_sample_left += source_fft[i] * cached_level_polyphonic;
         dry_sample_right += source_fft[i] * cached_level_polyphonic;
+      }
+
+      // Add Photowave contribution (same for both channels)
+      if (source_photowave) {
+        dry_sample_left += source_photowave[i] * cached_level_photowave;
+        dry_sample_right += source_photowave[i] * cached_level_photowave;
       }
 
       // Direct reverb processing in callback - ULTRA OPTIMIZED
@@ -244,6 +265,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     outRight += chunk;
     readOffset += chunk;
     polyphonic_readOffset += chunk;
+    photowave_readOffset += chunk;
     framesToRender -= chunk;
 
     // Handle buffer transitions - Additive synthesis (RT-SAFE VERSION)
@@ -270,6 +292,17 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       }
       polyphonic_localReadIndex = (polyphonic_localReadIndex == 0) ? 1 : 0;
       polyphonic_readOffset = 0;
+    }
+
+    // Handle buffer transitions - Photowave (RT-SAFE VERSION)
+    if (photowave_readOffset >= (unsigned int)g_sp3ctra_config.audio_buffer_size) {
+      if (photowave_audio_buffers[photowave_localReadIndex].ready == 1) {
+        // RT-SAFE: Use atomic store instead of mutex for buffer ready state
+        __atomic_store_n(&photowave_audio_buffers[photowave_localReadIndex].ready, 0, __ATOMIC_RELEASE);
+        // Note: pthread_cond_signal removed - producer thread will poll ready state
+      }
+      photowave_localReadIndex = (photowave_localReadIndex == 0) ? 1 : 0;
+      photowave_readOffset = 0;
     }
   }
 
@@ -1385,6 +1418,19 @@ float getSynthAdditiveMixLevel(void) {
 
 float getSynthPolyphonicMixLevel(void) {
   return g_synth_polyphonic_mix_level;
+}
+
+void setSynthPhotowaveMixLevel(float level) {
+  // Clamp to valid range
+  if (level < 0.0f) level = 0.0f;
+  if (level > 1.0f) level = 1.0f;
+  
+  // Volatile write (thread-safe for float on modern architectures)
+  g_synth_photowave_mix_level = level;
+}
+
+float getSynthPhotowaveMixLevel(void) {
+  return g_synth_photowave_mix_level;
 }
 
 } // extern "C"

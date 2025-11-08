@@ -48,10 +48,10 @@ typedef enum {
 
 /* Blend modes for mixing sequences */
 typedef enum {
-    BLEND_MODE_MIX,          // Weighted average
-    BLEND_MODE_CROSSFADE,    // Linear interpolation
-    BLEND_MODE_OVERLAY,      // Additive with clipping
-    BLEND_MODE_MASK          // Multiplicative masking
+    BLEND_MODE_MIX,          // Weighted average (classic crossfade)
+    BLEND_MODE_ADD,          // Additive blend (both at max in center)
+    BLEND_MODE_SCREEN,       // Screen blend (brightens, like Photoshop)
+    BLEND_MODE_MASK          // Multiplicative masking (darkens)
 } BlendMode;
 
 /* Playback direction */

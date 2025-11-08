@@ -25,7 +25,7 @@ ifeq ($(UNAME_S),Darwin)
     INCLUDES = -I/opt/homebrew/include -I$(SFML_INCLUDE) \
                -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects \
                -Isrc/audio/pan -Isrc/synthesis/additive -Isrc/synthesis/polyphonic \
-               -Isrc/synthesis/polyphonic/kissfft -Isrc/communication/network -Isrc/communication/midi \
+               -Isrc/synthesis/polyphonic/kissfft -Isrc/synthesis/photowave -Isrc/communication/network -Isrc/communication/midi \
                -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
     
     # macOS Libraries - Use SFML@2 exclusively to avoid version conflicts
@@ -48,7 +48,7 @@ else
     INCLUDES = -I/usr/include -I/usr/local/include $(LIBFTDI_CFLAGS) \
                -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects \
                -Isrc/audio/pan -Isrc/synthesis/additive -Isrc/synthesis/polyphonic \
-               -Isrc/synthesis/polyphonic/kissfft -Isrc/communication/network -Isrc/communication/midi \
+               -Isrc/synthesis/polyphonic/kissfft -Isrc/synthesis/photowave -Isrc/communication/network -Isrc/communication/midi \
                -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
     
     # Linux Libraries (including libftdi1 for DMX support)
@@ -90,6 +90,7 @@ SYNTHESIS_ADDITIVE_SOURCES = $(SYNTHESIS_ADDITIVE_BASE_SOURCES) $(SYNTHESIS_ADDI
 SYNTHESIS_POLYPHONIC_SOURCES = src/synthesis/polyphonic/synth_polyphonic.c \
                                src/synthesis/polyphonic/kissfft/kiss_fft.c \
                                src/synthesis/polyphonic/kissfft/kiss_fftr.c
+SYNTHESIS_PHOTOWAVE_SOURCES = src/synthesis/photowave/synth_photowave.c
 COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/midi/midi_controller.cpp \
                         src/communication/midi/midi_mapping.c \
@@ -109,7 +110,7 @@ endif
 # All sources
 ALL_SOURCES = $(CORE_SOURCES) $(CONFIG_SOURCES) $(AUDIO_RTAUDIO_SOURCES) $(AUDIO_BUFFERS_SOURCES) \
               $(AUDIO_PAN_SOURCES) $(AUDIO_EFFECTS_SOURCES) $(SYNTHESIS_ADDITIVE_SOURCES) \
-              $(SYNTHESIS_POLYPHONIC_SOURCES) $(COMMUNICATION_SOURCES) $(PROCESSING_SOURCES) \
+              $(SYNTHESIS_POLYPHONIC_SOURCES) $(SYNTHESIS_PHOTOWAVE_SOURCES) $(COMMUNICATION_SOURCES) $(PROCESSING_SOURCES) \
               $(DISPLAY_SOURCES) $(THREADING_SOURCES) $(UTILS_SOURCES)
 
 # Object files

@@ -80,6 +80,13 @@ typedef struct {
     float contrast_adjustment_power;           // Exponent for adjusting the contrast curve
     int enable_non_linear_mapping;             // Enable/disable non-linear gamma mapping (0/1)
     float gamma_value;                         // Gamma value for non-linear intensity correction
+    
+    // Photowave synthesis parameters
+    int photowave_scan_mode;                   // Scanning mode (0=L→R, 1=R→L, 2=Dual)
+    int photowave_interp_mode;                 // Interpolation mode (0=Linear, 1=Cubic)
+    float photowave_amplitude;                 // Amplitude (0.0-1.0)
+    int photowave_blur_radius;                 // Blur radius in pixels (0-50)
+    float photowave_blur_amount;               // Blur amount/dry-wet mix (0.0-1.0)
 } sp3ctra_config_t;
 
 /**************************************************************************************

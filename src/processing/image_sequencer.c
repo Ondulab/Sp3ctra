@@ -836,22 +836,147 @@ int image_sequencer_process_frame(
         /* If we have active players, normalize and blend */
         if (total_weight > 0.0f) {
             int p;
-            for (p = 0; p < nb_pixels; p++) {
-                    /* Normalize only for multi-player mixing (not for ADSR envelope) */
-                    /* The envelope effect is already baked into accum values */
-                    float norm_R = accum_R[p] / total_weight;
-                    float norm_G = accum_G[p] / total_weight;
-                    float norm_B = accum_B[p] / total_weight;
-                    
-                    /* Mix with live */
-                    float mixed_R = norm_R * seq_weight + live_R[p] * live_weight;
-                    float mixed_G = norm_G * seq_weight + live_G[p] * live_weight;
-                    float mixed_B = norm_B * seq_weight + live_B[p] * live_weight;
-                    
-                /* Clamp and write output */
-                output_R[p] = clamp_u8((int)mixed_R);
-                output_G[p] = clamp_u8((int)mixed_G);
-                output_B[p] = clamp_u8((int)mixed_B);
+            
+            /* Apply blend mode */
+            switch (seq->blend_mode) {
+                case BLEND_MODE_MIX: {
+                    /* Weighted average - classic crossfade */
+                    for (p = 0; p < nb_pixels; p++) {
+                        /* Normalize only for multi-player mixing (not for ADSR envelope) */
+                        /* The envelope effect is already baked into accum values */
+                        float norm_R = accum_R[p] / total_weight;
+                        float norm_G = accum_G[p] / total_weight;
+                        float norm_B = accum_B[p] / total_weight;
+                        
+                        /* Mix with live */
+                        float mixed_R = norm_R * seq_weight + live_R[p] * live_weight;
+                        float mixed_G = norm_G * seq_weight + live_G[p] * live_weight;
+                        float mixed_B = norm_B * seq_weight + live_B[p] * live_weight;
+                        
+                        /* Clamp and write output */
+                        output_R[p] = clamp_u8((int)mixed_R);
+                        output_G[p] = clamp_u8((int)mixed_G);
+                        output_B[p] = clamp_u8((int)mixed_B);
+                    }
+                    break;
+                }
+                
+                case BLEND_MODE_ADD: {
+                    /* Additive blend - both sources at max in center
+                     * live_mix_level=0.0 → 100% looper, 0% live
+                     * live_mix_level=0.5 → 100% looper, 100% live (BOTH AT MAX!)
+                     * live_mix_level=1.0 → 0% looper, 100% live
+                     */
+                    for (p = 0; p < nb_pixels; p++) {
+                        float norm_R = accum_R[p] / total_weight;
+                        float norm_G = accum_G[p] / total_weight;
+                        float norm_B = accum_B[p] / total_weight;
+                        
+                        /* Calculate additive weights
+                         * At center (0.5): both weights = 1.0
+                         * looper_weight: 1.0 at left, 1.0 at center, 0.0 at right
+                         * live_weight: 0.0 at left, 1.0 at center, 1.0 at right
+                         */
+                        float t = seq->live_mix_level;
+                        float looper_weight = (t < 0.5f) ? 1.0f : (1.0f - (t - 0.5f) * 2.0f);
+                        float live_weight = (t < 0.5f) ? (t * 2.0f) : 1.0f;
+                        
+                        /* Add both sources with their weights */
+                        float mixed_R = norm_R * looper_weight + live_R[p] * live_weight;
+                        float mixed_G = norm_G * looper_weight + live_G[p] * live_weight;
+                        float mixed_B = norm_B * looper_weight + live_B[p] * live_weight;
+                        
+                        /* Clamp to [0, 255] - can exceed due to addition */
+                        output_R[p] = clamp_u8((int)mixed_R);
+                        output_G[p] = clamp_u8((int)mixed_G);
+                        output_B[p] = clamp_u8((int)mixed_B);
+                    }
+                    break;
+                }
+                
+                case BLEND_MODE_SCREEN: {
+                    /* Screen blend - like Photoshop screen mode
+                     * Formula: 1 - (1-a) * (1-b)
+                     * Brightens the image, never makes it darker
+                     * Great for light effects and overlays
+                     */
+                    for (p = 0; p < nb_pixels; p++) {
+                        float norm_R = accum_R[p] / total_weight;
+                        float norm_G = accum_G[p] / total_weight;
+                        float norm_B = accum_B[p] / total_weight;
+                        
+                        /* Normalize to [0.0, 1.0] for screen formula */
+                        float seq_R = norm_R / 255.0f;
+                        float seq_G = norm_G / 255.0f;
+                        float seq_B = norm_B / 255.0f;
+                        
+                        float live_R_norm = live_R[p] / 255.0f;
+                        float live_G_norm = live_G[p] / 255.0f;
+                        float live_B_norm = live_B[p] / 255.0f;
+                        
+                        /* Apply screen formula: 1 - (1-a) * (1-b) */
+                        float screen_R = 1.0f - (1.0f - seq_R) * (1.0f - live_R_norm);
+                        float screen_G = 1.0f - (1.0f - seq_G) * (1.0f - live_G_norm);
+                        float screen_B = 1.0f - (1.0f - seq_B) * (1.0f - live_B_norm);
+                        
+                        /* Mix between screen result and original based on live_mix_level */
+                        float mixed_R = screen_R * 255.0f * seq_weight + live_R[p] * live_weight;
+                        float mixed_G = screen_G * 255.0f * seq_weight + live_G[p] * live_weight;
+                        float mixed_B = screen_B * 255.0f * seq_weight + live_B[p] * live_weight;
+                        
+                        output_R[p] = clamp_u8((int)mixed_R);
+                        output_G[p] = clamp_u8((int)mixed_G);
+                        output_B[p] = clamp_u8((int)mixed_B);
+                    }
+                    break;
+                }
+                
+                case BLEND_MODE_MASK: {
+                    /* Multiplicative masking - dark areas mask other layers */
+                    for (p = 0; p < nb_pixels; p++) {
+                        /* Normalize to [0.0, 1.0] for multiplication */
+                        float norm_R = (accum_R[p] / total_weight) / 255.0f;
+                        float norm_G = (accum_G[p] / total_weight) / 255.0f;
+                        float norm_B = (accum_B[p] / total_weight) / 255.0f;
+                        
+                        /* Apply multiplicative mask to live input */
+                        float live_norm_R = live_R[p] / 255.0f;
+                        float live_norm_G = live_G[p] / 255.0f;
+                        float live_norm_B = live_B[p] / 255.0f;
+                        
+                        /* Multiply normalized values */
+                        float masked_R = norm_R * live_norm_R;
+                        float masked_G = norm_G * live_norm_G;
+                        float masked_B = norm_B * live_norm_B;
+                        
+                        /* Mix between masked result and original based on live_mix_level */
+                        float mixed_R = masked_R * 255.0f * seq_weight + live_R[p] * live_weight;
+                        float mixed_G = masked_G * 255.0f * seq_weight + live_G[p] * live_weight;
+                        float mixed_B = masked_B * 255.0f * seq_weight + live_B[p] * live_weight;
+                        
+                        output_R[p] = clamp_u8((int)mixed_R);
+                        output_G[p] = clamp_u8((int)mixed_G);
+                        output_B[p] = clamp_u8((int)mixed_B);
+                    }
+                    break;
+                }
+                
+                default:
+                    /* Fallback to MIX mode */
+                    for (p = 0; p < nb_pixels; p++) {
+                        float norm_R = accum_R[p] / total_weight;
+                        float norm_G = accum_G[p] / total_weight;
+                        float norm_B = accum_B[p] / total_weight;
+                        
+                        float mixed_R = norm_R * seq_weight + live_R[p] * live_weight;
+                        float mixed_G = norm_G * seq_weight + live_G[p] * live_weight;
+                        float mixed_B = norm_B * seq_weight + live_B[p] * live_weight;
+                        
+                        output_R[p] = clamp_u8((int)mixed_R);
+                        output_G[p] = clamp_u8((int)mixed_G);
+                        output_B[p] = clamp_u8((int)mixed_B);
+                    }
+                    break;
             }
         } else {
             /* No weight, just pass through live */

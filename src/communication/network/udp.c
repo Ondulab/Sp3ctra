@@ -21,6 +21,7 @@
 #include "error.h"
 #include "logger.h"
 #include "udp.h"
+#include "../synthesis/photowave/synth_photowave.h"
 
 // #define CALIBRATION
 // #define SSS_MOD_MODE
