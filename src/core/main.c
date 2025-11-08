@@ -61,6 +61,7 @@ void sfClock_restart(sfClock *clock) { (void)clock; }
 #include "multithreading.h"
 #include "synth_additive.h"
 #include "synth_polyphonic.h" // Added for the new FFT synth mode
+#include "synth_photowave.h"  // Added for Photowave synthesis
 #include "udp.h"
 #include "../processing/image_preprocessor.h"
 #include "../processing/image_sequencer.h"
@@ -599,6 +600,7 @@ int main(int argc, char **argv) {
   
   synth_IfftInit();
   synth_polyphonicMode_init(); // Initialize the polyphonic synth mode
+  synth_photowave_mode_init(); // Initialize the Photowave synth mode
   display_Init(window);
   // visual_freeze_init(); // Removed: Old visual-only freeze
   synth_data_freeze_init();         // Initialize synth data freeze feature
@@ -753,6 +755,28 @@ int main(int argc, char **argv) {
   } else {
     log_info("THREAD", "Polyphonic synthesis thread NOT created (disabled by configuration)");
   }
+
+  // Create and start the Photowave synth thread
+  pthread_t photowaveThreadId;
+  if (pthread_create(&photowaveThreadId, NULL,
+                     synth_photowave_thread_func,
+                     (void *)&context) != 0) {
+    perror("Error creating Photowave synth thread");
+#ifndef NO_SFML
+    if (window)
+      sfRenderWindow_destroy(window);
+#endif
+    return EXIT_FAILURE;
+  }
+  log_info("THREAD", "Photowave synthesis thread started successfully");
+  
+  // Apply Photowave configuration from sp3ctra.ini
+  synth_photowave_apply_config(&g_photowave_state);
+  
+  // Set audible default frequency (440 Hz = A4 note)
+  // This ensures Photowave generates audible sound immediately
+  synth_photowave_set_frequency(&g_photowave_state, 440.0f);
+  log_info("PHOTOWAVE", "Default frequency set to 440 Hz (A4)");
 
   /* Main loop (gestion des événements et rendu) */
   // sfEvent event; // Unused variable
@@ -917,6 +941,10 @@ int main(int argc, char **argv) {
     printf("Polyphonic synthesis thread terminated\n");
   }
 
+  // Join the Photowave synth thread
+  pthread_join(photowaveThreadId, NULL);
+  printf("Photowave synthesis thread terminated\n");
+
 #ifdef USE_DMX
   if (use_dmx && dmxFd >= 0) {
     pthread_join(dmxThreadId, NULL);
@@ -927,6 +955,7 @@ int main(int argc, char **argv) {
   // visual_freeze_cleanup(); // Removed: Old visual-only freeze
   displayable_synth_buffers_cleanup(); // Cleanup displayable synth buffers
   synth_data_freeze_cleanup();         // Cleanup synth data freeze resources
+  synth_photowave_mode_cleanup();      // Cleanup Photowave synthesis resources
   
   // Cleanup image sequencer
   if (imageSequencer) {

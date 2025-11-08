@@ -17,6 +17,7 @@
 #include "logger.h"
 #include "../processing/image_preprocessor.h"
 #include "../processing/image_sequencer.h"
+#include "../synthesis/photowave/synth_photowave.h"
 #include <time.h>
 
 /* External sequencer instance */
@@ -468,6 +469,14 @@ void *udpThread(void *arg) {
       if (image_preprocess_frame(mixed_R, mixed_G, mixed_B, &preprocessed_temp) != 0) {
         log_error("THREAD", "Image preprocessing failed");
       }
+
+      /* 🎵 PHOTOWAVE FIX: Pass grayscale image data to Photowave synthesis thread
+       * This connects the scanner data pipeline to Photowave for audio generation
+       * Note: Photowave will convert RGB to grayscale internally, so we pass mixed_R
+       */
+      synth_photowave_set_image_line(&g_photowave_state, 
+                                     mixed_R, 
+                                     nb_pixels);
 
       /* Step 3: Update display buffers with MIXED RGB (fixes N&B display issue) */
       pthread_mutex_lock(&db->mutex);

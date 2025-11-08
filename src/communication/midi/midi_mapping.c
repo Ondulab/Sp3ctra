@@ -400,7 +400,7 @@ static int create_default_midi_mapping_file(const char *mapping_file) {
     fprintf(file, "# ============================================================================\n\n");
     fprintf(file, "[SEQUENCER_GLOBAL]\n");
     fprintf(file, "live_mix_level=none           # Live input mix level\n");
-    fprintf(file, "blend_mode=none               # Blending mode selector\n");
+    fprintf(file, "blend_mode=none               # Blending mode selector (0=MIX, 1=ADD, 2=SCREEN, 3=MASK)\n");
     fprintf(file, "master_tempo=none             # Manual BPM control\n");
     fprintf(file, "quantize_res=none             # Quantization resolution\n\n");
     

@@ -10,14 +10,16 @@
 #include "midi_callbacks.h"
 #include "midi_controller.h"
 #include "../../audio/rtaudio/audio_rtaudio.h"
-#include "../../audio/rtaudio/audio_c_api.h"  // For setSynthAdditiveMixLevel, setSynthPolyphonicMixLevel
+#include "../../audio/rtaudio/audio_c_api.h"  // For setSynthAdditiveMixLevel, setSynthPolyphonicMixLevel, setSynthPhotowaveMixLevel
 #include "../../audio/effects/three_band_eq.h"
 #include "../../synthesis/additive/synth_additive.h"
 #include "../../synthesis/polyphonic/synth_polyphonic.h"
+#include "../../synthesis/photowave/synth_photowave.h"
 #include "../../processing/image_sequencer.h"
 #include "../../utils/logger.h"
 #include <stdio.h>
 #include <pthread.h>
+#include <math.h>
 
 /* External declarations for global objects */
 extern AudioSystem *gAudioSystem;
@@ -286,6 +288,96 @@ void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *us
     synth_polyphonic_note_off(note_number);
     
     log_debug("MIDI", "Note Off: %d", note_number);
+}
+
+/* ============================================================================
+ * SYNTHESIS PHOTOWAVE CALLBACKS
+ * ============================================================================ */
+
+void midi_cb_synth_photowave_volume(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    // Set mix level directly (thread-safe)
+    setSynthPhotowaveMixLevel(param->value);
+    
+    if (is_startup_verbose()) {
+        log_info("MIDI", "PHOTOWAVE SYNTH VOLUME: %d%%", (int)(param->value * 100));
+    }
+}
+
+void midi_cb_synth_photowave_note_on(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    // Note handling is special - raw_value contains note number
+    int note_number = (int)param->raw_value;
+    // param->value contains normalized velocity (0.0 to 1.0)
+    int velocity = (int)(param->value * 127.0f);
+    
+    synth_photowave_note_on(&g_photowave_state, (uint8_t)note_number, (uint8_t)velocity);
+    
+    log_debug("MIDI", "Photowave Note On: %d (velocity %d)", note_number, velocity);
+}
+
+void midi_cb_synth_photowave_note_off(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    // Note handling is special - raw_value contains note number
+    int note_number = (int)param->raw_value;
+    
+    synth_photowave_note_off(&g_photowave_state, (uint8_t)note_number);
+    
+    log_debug("MIDI", "Photowave Note Off: %d", note_number);
+}
+
+void midi_cb_synth_photowave_modulation(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    // CC1 (Modulation): Scan mode (0-42=L→R, 43-84=R→L, 85-127=Dual)
+    synth_photowave_control_change(&g_photowave_state, 1, (uint8_t)(param->value * 127.0f));
+    
+    if (is_startup_verbose()) {
+        log_info("MIDI", "PHOTOWAVE MODULATION (Scan Mode): %d", (int)(param->value * 127));
+    }
+}
+
+void midi_cb_synth_photowave_resonance(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    // CC71 (Resonance): Blur amount (0-127 → 0.0-1.0)
+    synth_photowave_control_change(&g_photowave_state, 71, (uint8_t)(param->value * 127.0f));
+    
+    if (is_startup_verbose()) {
+        log_info("MIDI", "PHOTOWAVE RESONANCE (Blur): %d%%", (int)(param->value * 100));
+    }
+}
+
+void midi_cb_synth_photowave_brightness(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    // CC74 (Brightness): Interpolation mode (0-63=Linear, 64-127=Cubic)
+    synth_photowave_control_change(&g_photowave_state, 74, (uint8_t)(param->value * 127.0f));
+    
+    if (is_startup_verbose()) {
+        log_info("MIDI", "PHOTOWAVE BRIGHTNESS (Interp): %d", (int)(param->value * 127));
+    }
+}
+
+void midi_cb_synth_photowave_pitch(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    // Convert CC value (0.0-1.0) to frequency using exponential mapping
+    // CC=0 → f_min, CC=127 → f_max
+    float f_min = g_photowave_state.f_min;
+    float f_max = g_photowave_state.f_max;
+    float ratio = f_max / f_min;
+    float frequency = f_min * powf(ratio, param->value);
+    
+    // Set frequency directly (continuous oscillator mode)
+    synth_photowave_set_frequency(&g_photowave_state, frequency);
+    
+    if (is_startup_verbose()) {
+        log_info("MIDI", "PHOTOWAVE PITCH: CC=%d (%.1f Hz)", (int)(param->value * 127), frequency);
+    }
 }
 
 /* ============================================================================
@@ -601,6 +693,18 @@ void midi_callbacks_register_synth_polyphonic(void) {
     log_info("MIDI", "Callbacks: Polyphonic synth registered");
 }
 
+void midi_callbacks_register_synth_photowave(void) {
+    midi_mapping_register_callback("synth_photowave_volume", midi_cb_synth_photowave_volume, NULL);
+    midi_mapping_register_callback("synth_photowave_note_on", midi_cb_synth_photowave_note_on, NULL);
+    midi_mapping_register_callback("synth_photowave_note_off", midi_cb_synth_photowave_note_off, NULL);
+    midi_mapping_register_callback("synth_photowave_pitch", midi_cb_synth_photowave_pitch, NULL);
+    midi_mapping_register_callback("synth_photowave_modulation", midi_cb_synth_photowave_modulation, NULL);
+    midi_mapping_register_callback("synth_photowave_resonance", midi_cb_synth_photowave_resonance, NULL);
+    midi_mapping_register_callback("synth_photowave_brightness", midi_cb_synth_photowave_brightness, NULL);
+    
+    log_info("MIDI", "Callbacks: Photowave synth registered");
+}
+
 void midi_callbacks_register_sequencer(void *sequencer_instance) {
     (void)sequencer_instance;
     
@@ -684,6 +788,7 @@ void midi_callbacks_register_all(void) {
     midi_callbacks_register_audio();
     midi_callbacks_register_synth_additive();
     midi_callbacks_register_synth_polyphonic();
+    midi_callbacks_register_synth_photowave();
     midi_callbacks_register_sequencer(NULL);
     midi_callbacks_register_system();
     
