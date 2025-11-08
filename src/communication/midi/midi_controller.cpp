@@ -30,6 +30,7 @@ MidiController::MidiController()
   volumeChangeCallback = [](float /*volume*/) {};
   noteOnCallback = nullptr;
   noteOffCallback = nullptr;
+  // midiInputs vector is automatically initialized empty
 }
 
 MidiController::~MidiController() { cleanup(); }
@@ -48,10 +49,19 @@ bool MidiController::initialize() {
 void MidiController::cleanup() {
   disconnect();
 
+  // Clean up legacy single device
   if (midiIn) {
     delete midiIn;
     midiIn = nullptr;
   }
+
+  // Clean up all multi-device inputs
+  for (auto* input : midiInputs) {
+    if (input) {
+      delete input;
+    }
+  }
+  midiInputs.clear();
 
   isConnected = false;
   currentController = MIDI_NONE;
@@ -159,12 +169,97 @@ bool MidiController::connectToDeviceByName(const std::string &deviceName) {
 }
 
 void MidiController::disconnect() {
+  // Disconnect legacy single device
   if (midiIn && isConnected) {
     midiIn->closePort();
+  }
+  
+  // Disconnect all multi-device inputs
+  for (auto* input : midiInputs) {
+    if (input && input->isPortOpen()) {
+      input->closePort();
+    }
+  }
+  
+  if (isConnected) {
     isConnected = false;
     currentController = MIDI_NONE;
-    log_info("MIDI", "MIDI device disconnected");
+    int deviceCount = midiInputs.empty() ? 1 : midiInputs.size();
+    log_info("MIDI", "Disconnected %d MIDI device(s)", deviceCount);
   }
+}
+
+bool MidiController::connectToAllDevices() {
+  // Close any existing connections
+  disconnect();
+  
+  // Clean up old multi-device inputs
+  for (auto* input : midiInputs) {
+    if (input) {
+      delete input;
+    }
+  }
+  midiInputs.clear();
+  
+  // Create a temporary RtMidiIn to enumerate ports
+  RtMidiIn tempMidi;
+  unsigned int nPorts = tempMidi.getPortCount();
+  
+  if (nPorts == 0) {
+    log_warning("MIDI", "No MIDI input devices found");
+    return false;
+  }
+  
+  log_info("MIDI", "Found %d MIDI input device(s), connecting to all...", nPorts);
+  
+  int connectedCount = 0;
+  
+  // Connect to each available port
+  for (unsigned int i = 0; i < nPorts; i++) {
+    try {
+      std::string portName = tempMidi.getPortName(i);
+      
+      // Create new RtMidiIn for this port
+      RtMidiIn* newInput = new RtMidiIn();
+      
+      // Open the port
+      newInput->openPort(i);
+      
+      // Don't ignore sysex, timing, or active sensing messages
+      newInput->ignoreTypes(false, false, false);
+      
+      // Set our callback function
+      newInput->setCallback(&MidiController::midiCallback, this);
+      
+      // Add to our list
+      midiInputs.push_back(newInput);
+      connectedCount++;
+      
+      log_info("MIDI", "  [%d] Connected: %s", i, portName.c_str());
+      
+    } catch (RtMidiError &error) {
+      log_error("MIDI", "Failed to connect to port %d: %s", i, error.getMessage().c_str());
+    }
+  }
+  
+  if (connectedCount > 0) {
+    isConnected = true;
+    currentController = MIDI_NONE; // Multiple devices, no single type
+    log_info("MIDI", "Successfully connected to %d/%d MIDI device(s)", connectedCount, nPorts);
+    return true;
+  }
+  
+  log_error("MIDI", "Failed to connect to any MIDI devices");
+  return false;
+}
+
+int MidiController::getConnectedDeviceCount() const {
+  if (midiInputs.empty()) {
+    // Legacy mode: single device
+    return isConnected ? 1 : 0;
+  }
+  // Multi-device mode
+  return midiInputs.size();
 }
 
 std::vector<std::string> MidiController::getAvailableDevices() {
@@ -350,6 +445,20 @@ void midi_Cleanup() {
 int midi_Connect() {
   if (gMidiController) {
     return gMidiController->connect() ? 1 : 0;
+  }
+  return 0;
+}
+
+int midi_ConnectAll() {
+  if (gMidiController) {
+    return gMidiController->connectToAllDevices() ? 1 : 0;
+  }
+  return 0;
+}
+
+int midi_GetConnectedDeviceCount() {
+  if (gMidiController) {
+    return gMidiController->getConnectedDeviceCount();
   }
   return 0;
 }

@@ -30,7 +30,8 @@ typedef struct {
 
 class MidiController {
 private:
-  RtMidiIn *midiIn;
+  RtMidiIn *midiIn; // Legacy: single device (deprecated)
+  std::vector<RtMidiIn*> midiInputs; // NEW: Multiple MIDI inputs
   bool isConnected;
   MidiControllerType currentController;
 
@@ -63,10 +64,12 @@ public:
   bool connect();
   bool connectToDevice(unsigned int portNumber);
   bool connectToDeviceByName(const std::string &deviceName);
+  bool connectToAllDevices(); // NEW: Connect to all available MIDI devices
   void disconnect();
 
   // Get list of available MIDI input devices
   std::vector<std::string> getAvailableDevices();
+  int getConnectedDeviceCount() const; // NEW: Get number of connected devices
 
   // Set callback for volume changes
   void setVolumeChangeCallback(std::function<void(float)> callback);
@@ -92,6 +95,8 @@ extern "C" {
 void midi_Init();
 void midi_Cleanup();
 int midi_Connect();
+int midi_ConnectAll(); // NEW: Connect to all available MIDI devices
+int midi_GetConnectedDeviceCount(); // NEW: Get number of connected devices
 void midi_Disconnect();
 void midi_SetupVolumeControl(); // Nouvelle fonction pour le contrôle du volume
                                 // en mode CLI
