@@ -18,6 +18,13 @@
 #define PHOTOWAVE_DEFAULT_SCAN_MODE     0
 
 /**************************************************************************************
+ * Continuous Mode Configuration
+ **************************************************************************************/
+// Default continuous mode (can be overridden by config file)
+// 0 = Only generate on MIDI notes, 1 = Always generating
+#define PHOTOWAVE_DEFAULT_CONTINUOUS_MODE   0
+
+/**************************************************************************************
  * Interpolation Configuration
  **************************************************************************************/
 // Default interpolation mode (can be overridden by MIDI CC74 or config file)
@@ -35,22 +42,6 @@
 #define PHOTOWAVE_MAX_AMPLITUDE         1.0f
 
 /**************************************************************************************
- * Spatial Blur Filter Configuration
- **************************************************************************************/
-// Default blur radius in pixels (can be overridden by MIDI CC71 or config file)
-// 0 = no blur, higher values = more smoothing
-#define PHOTOWAVE_DEFAULT_BLUR_RADIUS   0
-
-// Default blur amount (dry/wet mix: 0.0 = dry, 1.0 = fully blurred)
-#define PHOTOWAVE_DEFAULT_BLUR_AMOUNT   0.0f
-
-// Blur parameter limits
-#define PHOTOWAVE_MIN_BLUR_RADIUS       0
-#define PHOTOWAVE_MAX_BLUR_RADIUS       50
-#define PHOTOWAVE_MIN_BLUR_AMOUNT       0.0f
-#define PHOTOWAVE_MAX_BLUR_AMOUNT       1.0f
-
-/**************************************************************************************
  * Frequency Range Configuration
  **************************************************************************************/
 // Maximum frequency limit (Hz) - prevents aliasing and excessive high frequencies
@@ -66,7 +57,6 @@
 // MIDI CC mappings (standard MIDI controller numbers)
 #define PHOTOWAVE_CC_SCAN_MODE          1       // CC1: Modulation wheel → Scan mode
 #define PHOTOWAVE_CC_AMPLITUDE          7       // CC7: Volume → Amplitude
-#define PHOTOWAVE_CC_BLUR_AMOUNT        71      // CC71: Resonance → Blur amount
 #define PHOTOWAVE_CC_INTERPOLATION      74      // CC74: Brightness → Interpolation mode
 
 /**************************************************************************************

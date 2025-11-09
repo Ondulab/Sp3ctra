@@ -300,6 +300,9 @@ void midi_cb_synth_photowave_volume(const MidiParameterValue *param, void *user_
     // Set mix level directly (thread-safe)
     setSynthPhotowaveMixLevel(param->value);
     
+    log_info("PHOTOWAVE_DEBUG", "MIDI Callback: Volume changed - mix_level=%.2f (%.0f%%)", 
+             param->value, param->value * 100.0f);
+    
     if (is_startup_verbose()) {
         log_info("MIDI", "PHOTOWAVE SYNTH VOLUME: %d%%", (int)(param->value * 100));
     }
@@ -313,6 +316,8 @@ void midi_cb_synth_photowave_note_on(const MidiParameterValue *param, void *user
     // param->value contains normalized velocity (0.0 to 1.0)
     int velocity = (int)(param->value * 127.0f);
     
+    log_info("PHOTOWAVE_DEBUG", "MIDI Callback: Note On received - note=%d, velocity=%d", note_number, velocity);
+    
     synth_photowave_note_on(&g_photowave_state, (uint8_t)note_number, (uint8_t)velocity);
     
     log_debug("MIDI", "Photowave Note On: %d (velocity %d)", note_number, velocity);
@@ -323,6 +328,8 @@ void midi_cb_synth_photowave_note_off(const MidiParameterValue *param, void *use
     
     // Note handling is special - raw_value contains note number
     int note_number = (int)param->raw_value;
+    
+    log_info("PHOTOWAVE_DEBUG", "MIDI Callback: Note Off received - note=%d", note_number);
     
     synth_photowave_note_off(&g_photowave_state, (uint8_t)note_number);
     

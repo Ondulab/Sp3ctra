@@ -106,16 +106,14 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  gamma_value, 0.1f, 5.0f),
     
     // Photowave synthesis section
+    CONFIG_PARAM("photowave", "continuous_mode", PARAM_TYPE_BOOL, 
+                 photowave_continuous_mode, 0, 1),
     CONFIG_PARAM("photowave", "scan_mode", PARAM_TYPE_INT, 
                  photowave_scan_mode, 0, 2),
     CONFIG_PARAM("photowave", "interp_mode", PARAM_TYPE_INT, 
                  photowave_interp_mode, 0, 1),
     CONFIG_PARAM("photowave", "amplitude", PARAM_TYPE_FLOAT, 
                  photowave_amplitude, 0.0f, 1.0f),
-    CONFIG_PARAM("photowave", "blur_radius", PARAM_TYPE_INT, 
-                 photowave_blur_radius, 0, 50),
-    CONFIG_PARAM("photowave", "blur_amount", PARAM_TYPE_FLOAT, 
-                 photowave_blur_amount, 0.0f, 1.0f),
 };
 
 #define CONFIG_PARAMS_COUNT (sizeof(CONFIG_PARAMS) / sizeof(CONFIG_PARAMS[0]))
