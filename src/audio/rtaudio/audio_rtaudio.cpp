@@ -35,7 +35,7 @@ AudioSystem *gAudioSystem = nullptr;
 // Volatile ensures thread visibility on modern architectures
 static volatile float g_synth_additive_mix_level = 1.0f;
 static volatile float g_synth_polyphonic_mix_level = 0.5f;
-static volatile float g_synth_photowave_mix_level = 0.5f;
+static volatile float g_synth_photowave_mix_level = 0.0f;  // Photowave disabled by default
 
 // Global variables to store requested audio device before AudioSystem is created
 extern "C" {
@@ -188,7 +188,8 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       }
 
       // Add Photowave contribution (same for both channels)
-      if (source_photowave) {
+      // CPU OPTIMIZATION: Skip photowave processing if mix level is essentially zero
+      if (source_photowave && cached_level_photowave > 0.01f) {
         dry_sample_left += source_photowave[i] * cached_level_photowave;
         dry_sample_right += source_photowave[i] * cached_level_photowave;
       }

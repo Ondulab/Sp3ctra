@@ -955,6 +955,15 @@ int midi_mapping_load_mappings(const char *config_file) {
         MidiControl control;
         if (parse_midi_control(value, &control) == 0) {
             if (control.type != MIDI_MSG_NONE) {
+                // BUGFIX: If parameter name ends with "_note_off", change type to NOTE_OFF
+                // This allows note_on and note_off to share the same MIDI control but respond to different message types
+                size_t param_len = strlen(full_param_name);
+                if (param_len > 9 && strcmp(full_param_name + param_len - 9, "_note_off") == 0) {
+                    if (control.type == MIDI_MSG_NOTE_ON) {
+                        control.type = MIDI_MSG_NOTE_OFF;
+                    }
+                }
+                
                 param->control = control;
                 param->is_mapped = 1;
                 mappings_loaded++;
@@ -1052,10 +1061,74 @@ void midi_mapping_dispatch(MidiMessageType type, int channel, int number, int va
         return;
     }
     
-    // Find parameter mapped to this MIDI control
-    ParameterEntry *param = find_parameter_by_control(type, channel, number);
+    // BUGFIX: Find ALL parameters mapped to this MIDI control (not just the first one)
+    // This allows multiple synths to respond to the same MIDI notes
+    int matches_found = 0;
     
-    if (!param) {
+    for (int i = 0; i < g_midi_system.num_parameters; i++) {
+        ParameterEntry *param = &g_midi_system.parameters[i];
+        
+        if (!param->is_mapped) continue;
+        
+        // Check if this parameter matches the MIDI control
+        // Support wildcard matching: number=-1 means "any note/CC number"
+        int number_matches = (param->control.number == number) || (param->control.number == -1);
+        
+        if (param->control.type == type && number_matches) {
+            // Check channel (-1 means any channel)
+            if (param->control.channel == -1 || param->control.channel == channel) {
+                matches_found++;
+                
+                // Log mapped message at INFO level (user wants to see these)
+                log_info("MIDI_MAP", "Mapped to '%s': val=%d", param->name, value);
+                
+                // BUGFIX: For NOTE_ON and NOTE_OFF messages, we need to pass both note number and velocity
+                // The callback expects: raw_value = note number, value = normalized velocity
+                if (type == MIDI_MSG_NOTE_ON || type == MIDI_MSG_NOTE_OFF) {
+                    // For notes: raw_value = note number, value = normalized velocity
+                    param->current_raw_value = (float)number;  // Note number (0-127)
+                    param->current_value = midi_to_normalized(value);  // Normalized velocity (0.0-1.0)
+                    
+                    // Prepare callback data with note-specific values
+                    MidiParameterValue callback_data = {
+                        .value = param->current_value,           // Normalized velocity
+                        .raw_value = param->current_raw_value,   // Note number
+                        .param_name = param->name,
+                        .is_button = param->spec.is_button
+                    };
+                    
+                    // Trigger all registered callbacks for this parameter
+                    for (int j = 0; j < g_midi_system.num_callbacks; j++) {
+                        CallbackEntry *cb = &g_midi_system.callbacks[j];
+                        
+                        if (cb->is_active && strcmp(cb->param_name, param->name) == 0) {
+                            if (cb->callback) {
+                                cb->callback(&callback_data, cb->user_data);
+                            }
+                        }
+                    }
+                } else {
+                    // For CC and other messages: use standard parameter update
+                    float normalized = midi_to_normalized(value);
+                    
+                    // Handle button triggers differently
+                    if (param->spec.is_button) {
+                        // For buttons, trigger on value > threshold (typically 64)
+                        if (value > 64) {
+                            normalized = 1.0f;
+                        } else {
+                            continue; // Don't trigger callback on button release
+                        }
+                    }
+                    
+                    // Update parameter and trigger callbacks
+                    update_parameter_value(param, normalized);
+                }
+            }
+        }
+    }
+    
+    if (matches_found == 0) {
         // No mapping for this control - log at debug level
         const char *type_str = "UNKNOWN";
         if (type == MIDI_MSG_CC) type_str = "CC";
@@ -1064,27 +1137,7 @@ void midi_mapping_dispatch(MidiMessageType type, int channel, int number, int va
         else if (type == MIDI_MSG_PITCHBEND) type_str = "PITCHBEND";
         
         log_debug("MIDI_MAP", "Unmapped: %s:%d (ch=%d, val=%d)", type_str, number, channel, value);
-        return;
     }
-    
-    // Log mapped message at INFO level (user wants to see these)
-    log_info("MIDI_MAP", "Mapped to '%s': val=%d", param->name, value);
-    
-    // Convert MIDI value to normalized value
-    float normalized = midi_to_normalized(value);
-    
-    // Handle button triggers differently
-    if (param->spec.is_button) {
-        // For buttons, trigger on value > threshold (typically 64)
-        if (value > 64) {
-            normalized = 1.0f;
-        } else {
-            return; // Don't trigger callback on button release
-        }
-    }
-    
-    // Update parameter and trigger callbacks
-    update_parameter_value(param, normalized);
 }
 
 /* ============================================================================
@@ -1244,21 +1297,70 @@ int midi_mapping_validate(void) {
         if (!g_midi_system.parameters[i].is_mapped) continue;
         
         MidiControl *ctrl1 = &g_midi_system.parameters[i].control;
+        const char *name1 = g_midi_system.parameters[i].name;
         
         for (int j = i + 1; j < g_midi_system.num_parameters; j++) {
             if (!g_midi_system.parameters[j].is_mapped) continue;
             
             MidiControl *ctrl2 = &g_midi_system.parameters[j].control;
+            const char *name2 = g_midi_system.parameters[j].name;
             
             // Check if same MIDI control
             if (ctrl1->type == ctrl2->type && ctrl1->number == ctrl2->number) {
                 // Check channel conflict
                 if (ctrl1->channel == ctrl2->channel || 
                     ctrl1->channel == -1 || ctrl2->channel == -1) {
-                    log_warning("MIDI_MAP", "MIDI conflict: %s and %s both use same control",
-                                g_midi_system.parameters[i].name,
-                                g_midi_system.parameters[j].name);
-                    conflicts++;
+                    
+                    // BUGFIX: Allow note_on/note_off pairs to share the same MIDI control
+                    // This is a valid and common configuration for note-based synthesis
+                    int is_note_on_off_pair = 0;
+                    
+                    // Check if one ends with "_note_on" and the other with "_note_off"
+                    size_t len1 = strlen(name1);
+                    size_t len2 = strlen(name2);
+                    
+                    if (len1 > 8 && len2 > 9) {
+                        int name1_is_note_on = (strcmp(name1 + len1 - 8, "_note_on") == 0);
+                        int name1_is_note_off = (strcmp(name1 + len1 - 9, "_note_off") == 0);
+                        int name2_is_note_on = (strcmp(name2 + len2 - 8, "_note_on") == 0);
+                        int name2_is_note_off = (strcmp(name2 + len2 - 9, "_note_off") == 0);
+                        
+                        // Check if they form a note_on/note_off pair
+                        if ((name1_is_note_on && name2_is_note_off) || 
+                            (name1_is_note_off && name2_is_note_on)) {
+                            // Extract base names (everything before _note_on/_note_off)
+                            char base1[MIDI_MAX_PARAM_NAME];
+                            char base2[MIDI_MAX_PARAM_NAME];
+                            
+                            if (name1_is_note_on) {
+                                strncpy(base1, name1, len1 - 8);
+                                base1[len1 - 8] = '\0';
+                            } else {
+                                strncpy(base1, name1, len1 - 9);
+                                base1[len1 - 9] = '\0';
+                            }
+                            
+                            if (name2_is_note_on) {
+                                strncpy(base2, name2, len2 - 8);
+                                base2[len2 - 8] = '\0';
+                            } else {
+                                strncpy(base2, name2, len2 - 9);
+                                base2[len2 - 9] = '\0';
+                            }
+                            
+                            // If base names match, this is a valid note_on/note_off pair
+                            if (strcmp(base1, base2) == 0) {
+                                is_note_on_off_pair = 1;
+                            }
+                        }
+                    }
+                    
+                    // Only report conflict if it's not a note_on/note_off pair
+                    if (!is_note_on_off_pair) {
+                        log_warning("MIDI_MAP", "MIDI conflict: %s and %s both use same control",
+                                    name1, name2);
+                        conflicts++;
+                    }
                 }
             }
         }

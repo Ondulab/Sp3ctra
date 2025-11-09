@@ -10,8 +10,8 @@
  * Key features:
  * - MIDI-controlled pitch (exponential mapping from f_min to 12kHz)
  * - 3 scanning modes: Left→Right, Right→Left, Dual/Ping-Pong
- * - Spatial blur filter for waveform smoothing
  * - Linear and cubic interpolation
+ * - Continuous or note-triggered modes
  * - Real-time safe (no allocations, no locks in audio callback)
  */
 
@@ -51,7 +51,6 @@ typedef struct {
 #define PHOTOWAVE_MIN_FREQUENCY 10.0f   // Minimum frequency (Hz)
 #define PHOTOWAVE_MAX_FREQUENCY 12000.0f // Maximum frequency (Hz)
 #define PHOTOWAVE_DEFAULT_AMPLITUDE 0.5f // Default amplitude (0.0 to 1.0)
-#define PHOTOWAVE_MAX_BLUR_RADIUS 10    // Maximum blur kernel radius
 
 /* ============================================================================
  * ENUMERATIONS
@@ -88,8 +87,6 @@ typedef struct {
     PhotowaveScanMode scan_mode;      // Scanning direction mode
     PhotowaveInterpMode interp_mode;  // Interpolation method
     float amplitude;                  // Master amplitude (0.0 to 1.0)
-    int blur_radius;                  // Spatial blur kernel radius (0 to MAX_BLUR_RADIUS)
-    float blur_amount;                // Blur mix amount (0.0 = dry, 1.0 = full blur)
 } PhotowaveConfig;
 
 /**
@@ -105,10 +102,6 @@ typedef struct {
     // Image data (read-only in audio callback)
     const uint8_t *image_line;        // Pointer to current image line (grayscale)
     int pixel_count;                  // Number of pixels in image line
-    
-    // Preallocated buffers for RT processing
-    float *blur_buffer;               // Blurred waveform buffer [PHOTOWAVE_MAX_PIXELS]
-    float *temp_buffer;               // Temporary buffer for blur computation [PHOTOWAVE_MAX_PIXELS]
     
     // Playback state
     float phase;                      // Current phase position (0.0 to 1.0)
@@ -225,15 +218,6 @@ void synth_photowave_set_interp_mode(PhotowaveState *state, PhotowaveInterpMode 
 void synth_photowave_set_amplitude(PhotowaveState *state, float amplitude);
 
 /**
- * @brief Set blur filter parameters
- * 
- * @param state Pointer to PhotowaveState structure
- * @param radius Blur kernel radius (0 to PHOTOWAVE_MAX_BLUR_RADIUS)
- * @param amount Blur mix amount (0.0 = dry, 1.0 = full blur)
- */
-void synth_photowave_set_blur(PhotowaveState *state, int radius, float amount);
-
-/**
  * @brief Set playback frequency directly (for continuous oscillator mode)
  * 
  * Sets the frequency without using the note on/off system.
@@ -287,7 +271,6 @@ void synth_photowave_note_off(PhotowaveState *state, uint8_t note);
  * Supported CC mappings:
  * - CC1 (Modulation): Scan mode (0-42=L→R, 43-84=R→L, 85-127=Dual)
  * - CC7 (Volume): Amplitude (0-127 → 0.0-1.0)
- * - CC71 (Resonance): Blur amount (0-127 → 0.0-1.0)
  * - CC74 (Brightness): Interpolation mode (0-63=Linear, 64-127=Cubic)
  * 
  * @param state Pointer to PhotowaveState structure

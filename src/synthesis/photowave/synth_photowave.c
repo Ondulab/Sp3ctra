@@ -54,15 +54,36 @@ static inline int clamp_int(int value, int min, int max) {
 }
 
 /**
- * @brief Convert MIDI note number to frequency using exponential mapping
+ * @brief Convert MIDI note number to frequency using standard MIDI tuning
  * 
- * Maps MIDI note 0-127 exponentially from f_min to f_max.
- * Formula: f = f_min * (f_max/f_min)^(note/127)
+ * Uses equal temperament tuning with A4 (note 69) = 440 Hz.
+ * Formula: f = 440 × 2^((note - 69) / 12)
+ * 
+ * This ensures proper musical pitch correspondence:
+ * - Note 60 (C4) = 261.63 Hz
+ * - Note 69 (A4) = 440.00 Hz (reference)
+ * - Note 72 (C5) = 523.25 Hz
+ * 
+ * @param note MIDI note number (0-127)
+ * @param f_min Minimum frequency limit (unused, kept for API compatibility)
+ * @param f_max Maximum frequency limit (clamps result if exceeded)
+ * @return Frequency in Hz, clamped to [f_min, f_max]
  */
 static float midi_note_to_frequency(uint8_t note, float f_min, float f_max) {
-    float normalized = (float)note / 127.0f;
-    float ratio = f_max / f_min;
-    return f_min * powf(ratio, normalized);
+    // Standard MIDI tuning: A4 (note 69) = 440 Hz
+    // Formula: f = 440 × 2^((note - 69) / 12)
+    const float A4_FREQ = 440.0f;
+    const int A4_NOTE = 69;
+    
+    // Calculate frequency using equal temperament
+    float semitones_from_a4 = (float)(note - A4_NOTE);
+    float frequency = A4_FREQ * powf(2.0f, semitones_from_a4 / 12.0f);
+    
+    // Clamp to valid range to avoid aliasing or subsonic frequencies
+    if (frequency < f_min) frequency = f_min;
+    if (frequency > f_max) frequency = f_max;
+    
+    return frequency;
 }
 
 /* ============================================================================
@@ -77,21 +98,10 @@ int synth_photowave_init(PhotowaveState *state, float sample_rate, int pixel_cou
     // Zero out the entire structure
     memset(state, 0, sizeof(PhotowaveState));
     
-    // Allocate buffers
-    state->blur_buffer = (float*)calloc(PHOTOWAVE_MAX_PIXELS, sizeof(float));
-    state->temp_buffer = (float*)calloc(PHOTOWAVE_MAX_PIXELS, sizeof(float));
-    
-    if (!state->blur_buffer || !state->temp_buffer) {
-        synth_photowave_cleanup(state);
-        return -4; // Allocation failed
-    }
-    
     // Initialize configuration with defaults
     state->config.scan_mode = PHOTOWAVE_SCAN_LEFT_TO_RIGHT;
     state->config.interp_mode = PHOTOWAVE_INTERP_LINEAR;
     state->config.amplitude = PHOTOWAVE_DEFAULT_AMPLITUDE;
-    state->config.blur_radius = 0;
-    state->config.blur_amount = 0.0f;
     
     // Initialize audio parameters
     state->sample_rate = sample_rate;
@@ -104,7 +114,7 @@ int synth_photowave_init(PhotowaveState *state, float sample_rate, int pixel_cou
     state->current_frequency = state->f_min;
     state->target_frequency = state->f_min;
     state->note_active = false;
-    state->continuous_mode = true;  // Enable continuous mode by default
+    state->continuous_mode = true;  // Enable continuous mode by default for photowave
     state->current_note = 0;
     state->current_velocity = 100;  // Default velocity for continuous mode
     
@@ -121,16 +131,6 @@ int synth_photowave_init(PhotowaveState *state, float sample_rate, int pixel_cou
 
 void synth_photowave_cleanup(PhotowaveState *state) {
     if (!state) return;
-    
-    if (state->blur_buffer) {
-        free(state->blur_buffer);
-        state->blur_buffer = NULL;
-    }
-    
-    if (state->temp_buffer) {
-        free(state->temp_buffer);
-        state->temp_buffer = NULL;
-    }
     
     // Zero out the structure
     memset(state, 0, sizeof(PhotowaveState));
@@ -202,101 +202,6 @@ static float sample_waveform_linear(const uint8_t *image_line, int pixel_count,
     return sample0 + frac * (sample1 - sample0);
 }
 
-/**
- * @brief Apply spatial blur filter to the waveform
- * 
- * This function applies a simple box blur to smooth the waveform.
- * The blur is computed once per buffer and cached in blur_buffer.
- * 
- * @param state Pointer to PhotowaveState structure
- */
-static void apply_blur_filter(PhotowaveState *state) {
-    if (!state || !state->image_line || state->config.blur_radius <= 0) return;
-    
-    const int radius = state->config.blur_radius;
-    const int pixel_count = state->pixel_count;
-    const uint8_t *src = state->image_line;
-    float *temp = state->temp_buffer;
-    float *blur = state->blur_buffer;
-    
-    // Convert uint8_t to float and normalize to [-1.0, 1.0]
-    for (int i = 0; i < pixel_count; i++) {
-        temp[i] = ((float)src[i] / 127.5f) - 1.0f;
-    }
-    
-    // Apply box blur (simple moving average)
-    for (int i = 0; i < pixel_count; i++) {
-        float sum = 0.0f;
-        int count = 0;
-        
-        // Sum pixels within radius
-        for (int j = -radius; j <= radius; j++) {
-            int idx = i + j;
-            if (idx >= 0 && idx < pixel_count) {
-                sum += temp[idx];
-                count++;
-            }
-        }
-        
-        // Average
-        blur[i] = (count > 0) ? (sum / (float)count) : temp[i];
-    }
-}
-
-/**
- * @brief Sample from the blurred waveform buffer
- * 
- * @param blur_buffer Pointer to blurred waveform data
- * @param pixel_count Number of pixels
- * @param phase Phase position (0.0 to 1.0)
- * @param scan_mode Scanning mode
- * @return Interpolated sample value (-1.0 to 1.0)
- */
-static float sample_blur_buffer(const float *blur_buffer, int pixel_count,
-                               float phase, PhotowaveScanMode scan_mode) {
-    if (!blur_buffer || pixel_count <= 0) return 0.0f;
-    
-    // Wrap phase to [0.0, 1.0)
-    phase = phase - floorf(phase);
-    
-    // Map phase to pixel position based on scan mode
-    float pixel_pos;
-    
-    switch (scan_mode) {
-        case PHOTOWAVE_SCAN_LEFT_TO_RIGHT:
-            pixel_pos = phase * (float)(pixel_count - 1);
-            break;
-            
-        case PHOTOWAVE_SCAN_RIGHT_TO_LEFT:
-            pixel_pos = (1.0f - phase) * (float)(pixel_count - 1);
-            break;
-            
-        case PHOTOWAVE_SCAN_DUAL:
-            if (phase < 0.5f) {
-                pixel_pos = (phase * 2.0f) * (float)(pixel_count - 1);
-            } else {
-                pixel_pos = ((1.0f - phase) * 2.0f) * (float)(pixel_count - 1);
-            }
-            break;
-            
-        default:
-            pixel_pos = phase * (float)(pixel_count - 1);
-            break;
-    }
-    
-    // Linear interpolation
-    int pixel_index = (int)pixel_pos;
-    float frac = pixel_pos - (float)pixel_index;
-    
-    if (pixel_index < 0) pixel_index = 0;
-    if (pixel_index >= pixel_count - 1) pixel_index = pixel_count - 2;
-    
-    float sample0 = blur_buffer[pixel_index];
-    float sample1 = blur_buffer[pixel_index + 1];
-    
-    return sample0 + frac * (sample1 - sample0);
-}
-
 /* ============================================================================
  * AUDIO PROCESSING (RT-SAFE)
  * ========================================================================== */
@@ -305,64 +210,63 @@ void synth_photowave_process(PhotowaveState *state,
                              float *output_left,
                              float *output_right,
                              int num_frames) {
+    static int debug_counter = 0;
+    int should_generate;
+    int i;
+    
     if (!state || !output_left || !output_right) return;
     
     // In continuous mode, generate audio even without note_active
     // In note mode, only generate if note is active
-    bool should_generate = state->continuous_mode || state->note_active;
+    should_generate = state->continuous_mode || state->note_active;
+    
+    // Debug log every 1000 calls (~23 times per second at 44.1kHz with 512 buffer)
+    if (++debug_counter >= 1000) {
+        log_info("PHOTOWAVE_DEBUG", "Process: should_gen=%d (cont=%d, note_act=%d), has_image=%d, pixels=%d",
+                 should_generate, state->continuous_mode, state->note_active,
+                 (state->image_line != NULL), state->pixel_count);
+        debug_counter = 0;
+    }
     
     // If no image line or shouldn't generate, output silence
     if (!should_generate || !state->image_line || state->pixel_count <= 0) {
-        for (int i = 0; i < num_frames; i++) {
+        for (i = 0; i < num_frames; i++) {
             output_left[i] = 0.0f;
             output_right[i] = 0.0f;
         }
         return;
     }
     
-    // Apply blur filter if needed (only when blur amount > 0)
-    const bool use_blur = (state->config.blur_amount > 0.0f && state->config.blur_radius > 0);
-    if (use_blur) {
-        apply_blur_filter(state);
-    }
-    
-    // Get configuration parameters
-    const float amplitude = state->config.amplitude;
-    const float velocity_scale = (float)state->current_velocity / 127.0f;
-    const float final_amplitude = amplitude * velocity_scale;
-    const PhotowaveScanMode scan_mode = state->config.scan_mode;
-    const float blur_amount = state->config.blur_amount;
-    
-    // Generate audio samples
-    for (int i = 0; i < num_frames; i++) {
-        // Sample the waveform at current phase
-        float sample_dry = sample_waveform_linear(state->image_line, state->pixel_count,
-                                                  state->phase, scan_mode);
+    {
+        // Get configuration parameters
+        const float amplitude = state->config.amplitude;
+        const float velocity_scale = (float)state->current_velocity / 127.0f;
+        const float final_amplitude = amplitude * velocity_scale;
+        const PhotowaveScanMode scan_mode = state->config.scan_mode;
+        int i;
         
-        // Mix with blurred version if blur is enabled
-        float sample;
-        if (use_blur) {
-            float sample_wet = sample_blur_buffer(state->blur_buffer, state->pixel_count,
+        // Generate audio samples
+        for (i = 0; i < num_frames; i++) {
+            float sample;
+            
+            // Sample the waveform at current phase
+            sample = sample_waveform_linear(state->image_line, state->pixel_count,
                                                  state->phase, scan_mode);
-            // Linear crossfade between dry and wet
-            sample = sample_dry * (1.0f - blur_amount) + sample_wet * blur_amount;
-        } else {
-            sample = sample_dry;
-        }
-        
-        // Apply amplitude and velocity
-        sample *= final_amplitude;
-        
-        // Output to both channels (mono for now)
-        output_left[i] = sample;
-        output_right[i] = sample;
-        
-        // Advance phase
-        state->phase += state->phase_increment;
-        
-        // Wrap phase to [0.0, 1.0)
-        if (state->phase >= 1.0f) {
-            state->phase -= 1.0f;
+            
+            // Apply amplitude and velocity
+            sample *= final_amplitude;
+            
+            // Output to both channels (mono for now)
+            output_left[i] = sample;
+            output_right[i] = sample;
+            
+            // Advance phase
+            state->phase += state->phase_increment;
+            
+            // Wrap phase to [0.0, 1.0)
+            if (state->phase >= 1.0f) {
+                state->phase -= 1.0f;
+            }
         }
     }
     
@@ -401,12 +305,6 @@ void synth_photowave_set_amplitude(PhotowaveState *state, float amplitude) {
     state->config.amplitude = clamp_float(amplitude, 0.0f, 1.0f);
 }
 
-void synth_photowave_set_blur(PhotowaveState *state, int radius, float amount) {
-    if (!state) return;
-    state->config.blur_radius = clamp_int(radius, 0, PHOTOWAVE_MAX_BLUR_RADIUS);
-    state->config.blur_amount = clamp_float(amount, 0.0f, 1.0f);
-}
-
 void synth_photowave_set_frequency(PhotowaveState *state, float frequency) {
     if (!state) return;
     
@@ -434,6 +332,9 @@ void synth_photowave_set_continuous_mode(PhotowaveState *state, bool enabled) {
 void synth_photowave_note_on(PhotowaveState *state, uint8_t note, uint8_t velocity) {
     if (!state) return;
     
+    log_info("PHOTOWAVE_DEBUG", "Note On BEFORE: note_active=%d, continuous=%d, freq=%.1f Hz",
+             state->note_active, state->continuous_mode, state->current_frequency);
+    
     state->note_active = true;
     state->current_note = note;
     state->current_velocity = velocity;
@@ -449,14 +350,21 @@ void synth_photowave_note_on(PhotowaveState *state, uint8_t note, uint8_t veloci
     
     // Reset phase to start of waveform
     state->phase = 0.0f;
+    
+    log_info("PHOTOWAVE_DEBUG", "Note On AFTER: note=%d, vel=%d, freq=%.1f Hz, note_active=%d, has_image=%d",
+             note, velocity, state->current_frequency, state->note_active, (state->image_line != NULL));
 }
 
 void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
     if (!state) return;
     
+    log_info("PHOTOWAVE_DEBUG", "Note Off: note=%d, current_note=%d, will_deactivate=%d",
+             note, state->current_note, (state->current_note == note));
+    
     // Only turn off if this is the current note
     if (state->current_note == note) {
         state->note_active = false;
+        log_info("PHOTOWAVE_DEBUG", "Note deactivated: note_active=%d", state->note_active);
     }
 }
 
@@ -476,10 +384,6 @@ void synth_photowave_control_change(PhotowaveState *state, uint8_t cc_number, ui
             
         case 7: // CC7 (Volume): Amplitude
             state->config.amplitude = (float)cc_value / 127.0f;
-            break;
-            
-        case 71: // CC71 (Resonance): Blur amount
-            state->config.blur_amount = (float)cc_value / 127.0f;
             break;
             
         case 74: // CC74 (Brightness): Interpolation mode
@@ -521,15 +425,13 @@ void synth_photowave_apply_config(PhotowaveState *state) {
     if (!state) return;
     
     // Apply configuration from g_sp3ctra_config
+    state->continuous_mode = (g_sp3ctra_config.photowave_continuous_mode != 0);
     state->config.scan_mode = (PhotowaveScanMode)g_sp3ctra_config.photowave_scan_mode;
     state->config.interp_mode = (PhotowaveInterpMode)g_sp3ctra_config.photowave_interp_mode;
     state->config.amplitude = g_sp3ctra_config.photowave_amplitude;
-    state->config.blur_radius = g_sp3ctra_config.photowave_blur_radius;
-    state->config.blur_amount = g_sp3ctra_config.photowave_blur_amount;
     
-    log_info("PHOTOWAVE", "Configuration applied: scan_mode=%d, interp_mode=%d, amplitude=%.2f, blur_radius=%d, blur_amount=%.2f",
-             state->config.scan_mode, state->config.interp_mode, state->config.amplitude,
-             state->config.blur_radius, state->config.blur_amount);
+    log_info("PHOTOWAVE", "Configuration applied: continuous_mode=%d, scan_mode=%d, interp_mode=%d, amplitude=%.2f",
+             state->continuous_mode, state->config.scan_mode, state->config.interp_mode, state->config.amplitude);
 }
 
 void synth_photowave_mode_init(void) {
@@ -609,6 +511,14 @@ void *synth_photowave_thread_func(void *arg) {
     }
     
     while (photowave_thread_running) {
+        // CPU OPTIMIZATION: If mix level is essentially zero, sleep instead of generating buffers
+        // This prevents wasting CPU cycles when photowave is not being used
+        extern float getSynthPhotowaveMixLevel(void);
+        if (getSynthPhotowaveMixLevel() < 0.01f) {
+            usleep(10000);  // 10ms sleep - reduce CPU waste
+            continue;
+        }
+        
         // Get current write buffer index
         pthread_mutex_lock(&photowave_buffer_index_mutex);
         int write_index = photowave_current_buffer_index;

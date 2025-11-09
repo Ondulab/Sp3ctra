@@ -783,6 +783,11 @@ int main(int argc, char **argv) {
   // This ensures Photowave generates audible sound immediately
   synth_photowave_set_frequency(&g_photowave_state, 440.0f);
   log_info("PHOTOWAVE", "Default frequency set to 440 Hz (A4)");
+  
+  // Log initial mix level for debugging
+  extern float getSynthPhotowaveMixLevel(void);
+  log_info("PHOTOWAVE_DEBUG", "Initial mix level at startup: %.2f (%.0f%%)", 
+           getSynthPhotowaveMixLevel(), getSynthPhotowaveMixLevel() * 100.0f);
 
   /* Main loop (gestion des événements et rendu) */
   // sfEvent event; // Unused variable

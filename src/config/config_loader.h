@@ -82,11 +82,10 @@ typedef struct {
     float gamma_value;                         // Gamma value for non-linear intensity correction
     
     // Photowave synthesis parameters
+    int photowave_continuous_mode;             // Continuous mode (0=MIDI notes only, 1=always generating)
     int photowave_scan_mode;                   // Scanning mode (0=L→R, 1=R→L, 2=Dual)
     int photowave_interp_mode;                 // Interpolation mode (0=Linear, 1=Cubic)
     float photowave_amplitude;                 // Amplitude (0.0-1.0)
-    int photowave_blur_radius;                 // Blur radius in pixels (0-50)
-    float photowave_blur_amount;               // Blur amount/dry-wet mix (0.0-1.0)
 } sp3ctra_config_t;
 
 /**************************************************************************************

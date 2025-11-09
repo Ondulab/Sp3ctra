@@ -86,11 +86,10 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     .gamma_value = GAMMA_VALUE,
     
     // Photowave synthesis parameters
+    .photowave_continuous_mode = 0,     // 0 = Only on MIDI notes
     .photowave_scan_mode = 0,           // 0 = Left to Right
     .photowave_interp_mode = 0,         // 0 = Linear interpolation
-    .photowave_amplitude = 0.5f,        // 50% amplitude
-    .photowave_blur_radius = 0,         // No blur by default
-    .photowave_blur_amount = 0.0f       // Dry signal (no blur mix)
+    .photowave_amplitude = 0.5f         // 50% amplitude
 };
 
 /**************************************************************************************
@@ -501,6 +500,9 @@ int create_default_config_file(const char* config_file_path) {
     
     fprintf(file, "[photowave]\n");
     fprintf(file, "# Photowave synthesis - transforms image lines into audio waveforms\n");
+    fprintf(file, "# Continuous mode: 0=only on MIDI notes, 1=always generating\n");
+    fprintf(file, "continuous_mode = %d\n", DEFAULT_CONFIG.photowave_continuous_mode);
+    fprintf(file, "\n");
     fprintf(file, "# Scanning mode: 0=Left to Right, 1=Right to Left, 2=Dual (ping-pong)\n");
     fprintf(file, "scan_mode = %d\n", DEFAULT_CONFIG.photowave_scan_mode);
     fprintf(file, "\n");
@@ -509,12 +511,6 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "\n");
     fprintf(file, "# Amplitude (0.0-1.0)\n");
     fprintf(file, "amplitude = %.2f\n", DEFAULT_CONFIG.photowave_amplitude);
-    fprintf(file, "\n");
-    fprintf(file, "# Spatial blur filter radius in pixels (0-50, 0=no blur)\n");
-    fprintf(file, "blur_radius = %d\n", DEFAULT_CONFIG.photowave_blur_radius);
-    fprintf(file, "\n");
-    fprintf(file, "# Blur amount - dry/wet mix (0.0=dry, 1.0=fully blurred)\n");
-    fprintf(file, "blur_amount = %.2f\n", DEFAULT_CONFIG.photowave_blur_amount);
     fprintf(file, "\n");
     
     fclose(file);
