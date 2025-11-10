@@ -1,6 +1,6 @@
 /**
  * @file synth_photowave.c
- * @brief Photowave synthesis engine implementation
+ * @brief Photowave synthesis engine implementation with polyphony, ADSR, and LFO
  */
 
 #include "synth_photowave.h"
@@ -11,6 +11,11 @@
 #include <string.h>
 #include <math.h>
 #include <unistd.h>         // For usleep
+
+#ifndef M_PI
+#define M_PI (3.14159265358979323846)
+#endif
+#define TWO_PI (2.0 * M_PI)
 
 /* ============================================================================
  * GLOBAL VARIABLES (for thread integration)
@@ -32,6 +37,30 @@ PhotowaveState g_photowave_state = {0};
 static volatile int photowave_thread_running = 0;
 
 /* ============================================================================
+ * GLOBAL ADSR/LFO/FILTER PARAMETERS
+ * ========================================================================== */
+
+// Volume ADSR defaults
+static float G_PHOTOWAVE_VOLUME_ATTACK_S = 0.01f;
+static float G_PHOTOWAVE_VOLUME_DECAY_S = 0.1f;
+static float G_PHOTOWAVE_VOLUME_SUSTAIN = 0.8f;
+static float G_PHOTOWAVE_VOLUME_RELEASE_S = 0.2f;
+
+// Filter ADSR defaults
+static float G_PHOTOWAVE_FILTER_ATTACK_S = 0.02f;
+static float G_PHOTOWAVE_FILTER_DECAY_S = 0.2f;
+static float G_PHOTOWAVE_FILTER_SUSTAIN = 0.3f;
+static float G_PHOTOWAVE_FILTER_RELEASE_S = 0.3f;
+
+// LFO defaults
+static float G_PHOTOWAVE_LFO_RATE_HZ = 5.0f;
+static float G_PHOTOWAVE_LFO_DEPTH_SEMITONES = 0.25f;
+
+// Filter defaults
+static float G_PHOTOWAVE_FILTER_CUTOFF_HZ = 8000.0f;
+static float G_PHOTOWAVE_FILTER_ENV_DEPTH = -6000.0f;
+
+/* ============================================================================
  * PRIVATE HELPER FUNCTIONS
  * ========================================================================== */
 
@@ -45,41 +74,23 @@ static inline float clamp_float(float value, float min, float max) {
 }
 
 /**
- * @brief Clamp an integer value between min and max
- */
-static inline int clamp_int(int value, int min, int max) {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
-}
-
-/**
  * @brief Convert MIDI note number to frequency using standard MIDI tuning
  * 
  * Uses equal temperament tuning with A4 (note 69) = 440 Hz.
  * Formula: f = 440 × 2^((note - 69) / 12)
  * 
- * This ensures proper musical pitch correspondence:
- * - Note 60 (C4) = 261.63 Hz
- * - Note 69 (A4) = 440.00 Hz (reference)
- * - Note 72 (C5) = 523.25 Hz
- * 
  * @param note MIDI note number (0-127)
- * @param f_min Minimum frequency limit (unused, kept for API compatibility)
+ * @param f_min Minimum frequency limit (clamps result if below)
  * @param f_max Maximum frequency limit (clamps result if exceeded)
  * @return Frequency in Hz, clamped to [f_min, f_max]
  */
 static float midi_note_to_frequency(uint8_t note, float f_min, float f_max) {
-    // Standard MIDI tuning: A4 (note 69) = 440 Hz
-    // Formula: f = 440 × 2^((note - 69) / 12)
     const float A4_FREQ = 440.0f;
     const int A4_NOTE = 69;
     
-    // Calculate frequency using equal temperament
     float semitones_from_a4 = (float)(note - A4_NOTE);
     float frequency = A4_FREQ * powf(2.0f, semitones_from_a4 / 12.0f);
     
-    // Clamp to valid range to avoid aliasing or subsonic frequencies
     if (frequency < f_min) frequency = f_min;
     if (frequency > f_max) frequency = f_max;
     
@@ -87,119 +98,357 @@ static float midi_note_to_frequency(uint8_t note, float f_min, float f_max) {
 }
 
 /* ============================================================================
- * INITIALIZATION & CLEANUP
+ * ADSR ENVELOPE IMPLEMENTATION
  * ========================================================================== */
 
-int synth_photowave_init(PhotowaveState *state, float sample_rate, int pixel_count) {
-    if (!state) return -1;
-    if (sample_rate <= 0.0f) return -2;
-    if (pixel_count <= 0 || pixel_count > PHOTOWAVE_MAX_PIXELS) return -3;
-    
-    // Zero out the entire structure
-    memset(state, 0, sizeof(PhotowaveState));
-    
-    // Initialize configuration with defaults
-    state->config.scan_mode = PHOTOWAVE_SCAN_LEFT_TO_RIGHT;
-    state->config.interp_mode = PHOTOWAVE_INTERP_LINEAR;
-    state->config.amplitude = PHOTOWAVE_DEFAULT_AMPLITUDE;
-    
-    // Initialize audio parameters
-    state->sample_rate = sample_rate;
-    state->pixel_count = pixel_count;
-    state->f_min = sample_rate / (float)pixel_count;
-    state->f_max = PHOTOWAVE_MAX_FREQUENCY;
-    
-    // Initialize playback state
-    state->phase = 0.0f;
-    state->current_frequency = state->f_min;
-    state->target_frequency = state->f_min;
-    state->note_active = false;
-    state->continuous_mode = true;  // Enable continuous mode by default for photowave
-    state->current_note = 0;
-    state->current_velocity = 100;  // Default velocity for continuous mode
-    
-    // Calculate initial phase increment for f_min
-    float period_samples = state->sample_rate / state->f_min;
-    state->phase_increment = 1.0f / period_samples;
-    
-    // Initialize statistics
-    state->samples_generated = 0;
-    state->buffer_underruns = 0;
-    
-    return 0; // Success
+static void adsr_init_envelope(AdsrEnvelope *env, float attack_s, float decay_s,
+                               float sustain_level, float release_s,
+                               float sample_rate) {
+    env->attack_s = attack_s;
+    env->decay_s = decay_s;
+    env->sustain_level = sustain_level;
+    env->release_s = release_s;
+    env->attack_time_samples = (attack_s > 0.0f) ? fmaxf(1.0f, attack_s * sample_rate) : 0.0f;
+    env->decay_time_samples = (decay_s > 0.0f) ? fmaxf(1.0f, decay_s * sample_rate) : 0.0f;
+    env->release_time_samples = (release_s > 0.0f) ? fmaxf(1.0f, release_s * sample_rate) : 0.0f;
+    env->attack_increment = (env->attack_time_samples > 0.0f) ? (1.0f / env->attack_time_samples) : 1.0f;
+    env->decay_decrement = (env->decay_time_samples > 0.0f && (1.0f - sustain_level) > 0.0f) ?
+                          ((1.0f - sustain_level) / env->decay_time_samples) : (1.0f - sustain_level);
+    env->state = ADSR_STATE_IDLE;
+    env->current_output = 0.0f;
+    env->current_samples = 0;
 }
 
-void synth_photowave_cleanup(PhotowaveState *state) {
-    if (!state) return;
+static void adsr_trigger_attack(AdsrEnvelope *env) {
+    env->state = ADSR_STATE_ATTACK;
+    env->current_samples = 0;
+    env->current_output = 0.0f;
     
-    // Zero out the structure
-    memset(state, 0, sizeof(PhotowaveState));
+    if (env->attack_time_samples > 0.0f) {
+        env->attack_increment = 1.0f / env->attack_time_samples;
+    } else {
+        env->current_output = 1.0f;
+        env->attack_increment = 0.0f;
+        if (env->sustain_level < 1.0f && env->decay_time_samples > 0.0f) {
+            env->state = ADSR_STATE_DECAY;
+            env->decay_decrement = (1.0f - env->sustain_level) / env->decay_time_samples;
+        } else {
+            env->state = ADSR_STATE_SUSTAIN;
+        }
+    }
+}
+
+static void adsr_trigger_release(AdsrEnvelope *env) {
+    env->state = ADSR_STATE_RELEASE;
+    env->current_samples = 0;
+    if (env->release_time_samples > 0.0f && env->current_output > 0.0f) {
+        env->release_decrement = env->current_output / env->release_time_samples;
+    } else {
+        env->release_decrement = env->current_output;
+        env->current_output = 0.0f;
+        env->state = ADSR_STATE_IDLE;
+    }
+}
+
+static float adsr_get_output(AdsrEnvelope *env) {
+    switch (env->state) {
+    case ADSR_STATE_IDLE:
+        break;
+    case ADSR_STATE_ATTACK:
+        env->current_output += env->attack_increment;
+        env->current_samples++;
+        if (env->current_output >= 1.0f || 
+            (env->attack_time_samples > 0.0f && env->current_samples >= env->attack_time_samples)) {
+            env->current_output = 1.0f;
+            env->state = ADSR_STATE_DECAY;
+            env->current_samples = 0;
+            if (env->decay_time_samples > 0.0f) {
+                env->decay_decrement = (1.0f - env->sustain_level) / env->decay_time_samples;
+            } else {
+                env->current_output = env->sustain_level;
+                env->state = ADSR_STATE_SUSTAIN;
+            }
+        }
+        break;
+    case ADSR_STATE_DECAY:
+        env->current_output -= env->decay_decrement;
+        env->current_samples++;
+        if (env->current_output <= env->sustain_level || 
+            (env->decay_time_samples > 0.0f && env->current_samples >= env->decay_time_samples)) {
+            env->current_output = env->sustain_level;
+            env->state = ADSR_STATE_SUSTAIN;
+        }
+        break;
+    case ADSR_STATE_SUSTAIN:
+        break;
+    case ADSR_STATE_RELEASE:
+        env->current_output -= env->release_decrement;
+        env->current_samples++;
+        if (env->current_output <= 0.0f || 
+            (env->release_time_samples > 0.0f && env->current_samples >= env->release_time_samples)) {
+            env->current_output = 0.0f;
+            env->state = ADSR_STATE_IDLE;
+        }
+        break;
+    }
+    if (env->current_output > 1.0f) env->current_output = 1.0f;
+    if (env->current_output < 0.0f) env->current_output = 0.0f;
+    return env->current_output;
+}
+
+static void adsr_update_settings_and_recalculate_rates(AdsrEnvelope *env, float attack_s,
+                                                       float decay_s, float sustain_level,
+                                                       float release_s, float sample_rate) {
+    env->attack_s = attack_s;
+    env->decay_s = decay_s;
+    env->sustain_level = sustain_level;
+    env->release_s = release_s;
+    
+    env->attack_time_samples = (attack_s > 0.0f) ? fmaxf(1.0f, attack_s * sample_rate) : 0.0f;
+    env->decay_time_samples = (decay_s > 0.0f) ? fmaxf(1.0f, decay_s * sample_rate) : 0.0f;
+    env->release_time_samples = (release_s > 0.0f) ? fmaxf(1.0f, release_s * sample_rate) : 0.0f;
+    
+    env->attack_increment = (env->attack_time_samples > 0.0f) ? (1.0f / env->attack_time_samples) : 1.0f;
+    
+    if (env->state == ADSR_STATE_DECAY && env->current_output > env->sustain_level) {
+        float time_remaining = env->decay_time_samples - env->current_samples;
+        if (time_remaining > 0.0f) {
+            env->decay_decrement = (env->current_output - env->sustain_level) / time_remaining;
+        } else {
+            env->decay_decrement = (env->current_output - env->sustain_level);
+        }
+    } else {
+        env->decay_decrement = (env->decay_time_samples > 0.0f && (1.0f - env->sustain_level) > 0.00001f) ?
+                              ((1.0f - env->sustain_level) / env->decay_time_samples) : (1.0f - env->sustain_level);
+        if (env->decay_decrement < 0.0f) env->decay_decrement = 0.0f;
+    }
+    
+    if (env->state == ADSR_STATE_RELEASE && env->current_output > 0.0f) {
+        float time_remaining = env->release_time_samples - env->current_samples;
+        if (time_remaining > 0.0f) {
+            env->release_decrement = env->current_output / time_remaining;
+        } else {
+            env->release_decrement = env->current_output;
+        }
+    } else {
+        env->release_decrement = (env->release_time_samples > 0.0f && env->current_output > 0.00001f) ?
+                                (env->current_output / env->release_time_samples) : env->current_output;
+        if (env->release_decrement < 0.0f) env->release_decrement = 0.0f;
+    }
 }
 
 /* ============================================================================
- * PRIVATE SYNTHESIS FUNCTIONS
+ * LFO IMPLEMENTATION
  * ========================================================================== */
 
-/**
- * @brief Sample the waveform at a given phase position using linear interpolation
- * 
- * @param image_line Pointer to grayscale image data (uint8_t array)
- * @param pixel_count Number of pixels in the line
- * @param phase Phase position (0.0 to 1.0)
- * @param scan_mode Scanning mode (affects how phase maps to pixel position)
- * @return Interpolated sample value (-1.0 to 1.0)
- */
+static void lfo_init(LfoState *lfo, float rate_hz, float depth_semitones, float sample_rate) {
+    lfo->rate_hz = rate_hz;
+    lfo->depth_semitones = depth_semitones;
+    lfo->phase = 0.0f;
+    lfo->phase_increment = TWO_PI * rate_hz / sample_rate;
+    lfo->current_output = 0.0f;
+}
+
+static float lfo_process(LfoState *lfo) {
+    lfo->current_output = sinf(lfo->phase);
+    lfo->phase += lfo->phase_increment;
+    if (lfo->phase >= TWO_PI) {
+        lfo->phase -= TWO_PI;
+    }
+    return lfo->current_output;
+}
+
+/* ============================================================================
+ * LOWPASS FILTER IMPLEMENTATION
+ * ========================================================================== */
+
+static void lowpass_init(PhotowaveLowpassFilter *filter, float sample_rate) {
+    filter->base_cutoff_hz = G_PHOTOWAVE_FILTER_CUTOFF_HZ;
+    filter->filter_env_depth = G_PHOTOWAVE_FILTER_ENV_DEPTH;
+    filter->prev_output = 0.0f;
+    
+    float rc = 1.0f / (TWO_PI * filter->base_cutoff_hz);
+    float dt = 1.0f / sample_rate;
+    filter->alpha = dt / (rc + dt);
+}
+
+static float lowpass_process(PhotowaveLowpassFilter *filter, float input, 
+                            float modulated_cutoff, float sample_rate) {
+    float rc = 1.0f / (TWO_PI * modulated_cutoff);
+    float dt = 1.0f / sample_rate;
+    float alpha = dt / (rc + dt);
+    
+    filter->prev_output = alpha * input + (1.0f - alpha) * filter->prev_output;
+    return filter->prev_output;
+}
+
+/* ============================================================================
+ * WAVEFORM SAMPLING
+ * ========================================================================== */
+
 static float sample_waveform_linear(const uint8_t *image_line, int pixel_count,
                                    float phase, PhotowaveScanMode scan_mode) {
     if (!image_line || pixel_count <= 0) return 0.0f;
     
-    // Wrap phase to [0.0, 1.0)
     phase = phase - floorf(phase);
     
-    // Map phase to pixel position based on scan mode
     float pixel_pos;
-    
     switch (scan_mode) {
         case PHOTOWAVE_SCAN_LEFT_TO_RIGHT:
-            // Standard left-to-right scan
             pixel_pos = phase * (float)(pixel_count - 1);
             break;
-            
         case PHOTOWAVE_SCAN_RIGHT_TO_LEFT:
-            // Reverse scan (right-to-left)
             pixel_pos = (1.0f - phase) * (float)(pixel_count - 1);
             break;
-            
         case PHOTOWAVE_SCAN_DUAL:
-            // Ping-pong: first half L→R, second half R→L
             if (phase < 0.5f) {
-                // First half: L→R
                 pixel_pos = (phase * 2.0f) * (float)(pixel_count - 1);
             } else {
-                // Second half: R→L
                 pixel_pos = ((1.0f - phase) * 2.0f) * (float)(pixel_count - 1);
             }
             break;
-            
         default:
             pixel_pos = phase * (float)(pixel_count - 1);
             break;
     }
     
-    // Linear interpolation between adjacent pixels
     int pixel_index = (int)pixel_pos;
     float frac = pixel_pos - (float)pixel_index;
     
-    // Clamp indices to valid range
     if (pixel_index < 0) pixel_index = 0;
     if (pixel_index >= pixel_count - 1) pixel_index = pixel_count - 2;
     
-    // Get adjacent pixel values and normalize to [-1.0, 1.0]
     float sample0 = ((float)image_line[pixel_index] / 127.5f) - 1.0f;
     float sample1 = ((float)image_line[pixel_index + 1] / 127.5f) - 1.0f;
     
-    // Linear interpolation
     return sample0 + frac * (sample1 - sample0);
+}
+
+/**
+ * @brief Sample waveform using cubic (Catmull-Rom) interpolation
+ * 
+ * Provides smoother interpolation than linear, reducing aliasing artifacts.
+ * Uses Catmull-Rom spline which passes through control points.
+ * 
+ * @param image_line Pointer to grayscale image line data
+ * @param pixel_count Number of pixels in the line
+ * @param phase Current phase position (0.0 to 1.0)
+ * @param scan_mode Scanning direction mode
+ * @return Interpolated sample value (-1.0 to 1.0)
+ */
+static float sample_waveform_cubic(const uint8_t *image_line, int pixel_count,
+                                  float phase, PhotowaveScanMode scan_mode) {
+    if (!image_line || pixel_count <= 0) return 0.0f;
+    
+    phase = phase - floorf(phase);
+    
+    float pixel_pos;
+    switch (scan_mode) {
+        case PHOTOWAVE_SCAN_LEFT_TO_RIGHT:
+            pixel_pos = phase * (float)(pixel_count - 1);
+            break;
+        case PHOTOWAVE_SCAN_RIGHT_TO_LEFT:
+            pixel_pos = (1.0f - phase) * (float)(pixel_count - 1);
+            break;
+        case PHOTOWAVE_SCAN_DUAL:
+            if (phase < 0.5f) {
+                pixel_pos = (phase * 2.0f) * (float)(pixel_count - 1);
+            } else {
+                pixel_pos = ((1.0f - phase) * 2.0f) * (float)(pixel_count - 1);
+            }
+            break;
+        default:
+            pixel_pos = phase * (float)(pixel_count - 1);
+            break;
+    }
+    
+    int pixel_index = (int)pixel_pos;
+    float frac = pixel_pos - (float)pixel_index;
+    
+    // Clamp indices for boundary conditions
+    if (pixel_index < 0) pixel_index = 0;
+    if (pixel_index >= pixel_count - 1) pixel_index = pixel_count - 2;
+    
+    // Get 4 samples for cubic interpolation (with boundary handling)
+    int idx_m1 = (pixel_index > 0) ? pixel_index - 1 : pixel_index;
+    int idx_0 = pixel_index;
+    int idx_1 = pixel_index + 1;
+    int idx_2 = (pixel_index + 2 < pixel_count) ? pixel_index + 2 : pixel_index + 1;
+    
+    // Convert to normalized float samples [-1.0, 1.0]
+    float y_m1 = ((float)image_line[idx_m1] / 127.5f) - 1.0f;
+    float y_0 = ((float)image_line[idx_0] / 127.5f) - 1.0f;
+    float y_1 = ((float)image_line[idx_1] / 127.5f) - 1.0f;
+    float y_2 = ((float)image_line[idx_2] / 127.5f) - 1.0f;
+    
+    // Catmull-Rom cubic interpolation
+    // P(t) = 0.5 * [(2*P1) + (-P0 + P2)*t + (2*P0 - 5*P1 + 4*P2 - P3)*t^2 + (-P0 + 3*P1 - 3*P2 + P3)*t^3]
+    float t = frac;
+    float t2 = t * t;
+    float t3 = t2 * t;
+    
+    float a0 = -0.5f * y_m1 + 1.5f * y_0 - 1.5f * y_1 + 0.5f * y_2;
+    float a1 = y_m1 - 2.5f * y_0 + 2.0f * y_1 - 0.5f * y_2;
+    float a2 = -0.5f * y_m1 + 0.5f * y_1;
+    float a3 = y_0;
+    
+    return a0 * t3 + a1 * t2 + a2 * t + a3;
+}
+
+/* ============================================================================
+ * INITIALIZATION & CLEANUP
+ * ========================================================================== */
+
+int synth_photowave_init(PhotowaveState *state, float sample_rate, int pixel_count) {
+    int i;
+    
+    if (!state) return -1;
+    if (sample_rate <= 0.0f) return -2;
+    if (pixel_count <= 0 || pixel_count > PHOTOWAVE_MAX_PIXELS) return -3;
+    
+    memset(state, 0, sizeof(PhotowaveState));
+    
+    state->config.scan_mode = PHOTOWAVE_SCAN_LEFT_TO_RIGHT;
+    state->config.interp_mode = PHOTOWAVE_INTERP_LINEAR;
+    state->config.amplitude = PHOTOWAVE_DEFAULT_AMPLITUDE;
+    
+    state->sample_rate = sample_rate;
+    state->pixel_count = pixel_count;
+    state->f_min = sample_rate / (float)pixel_count;
+    state->f_max = PHOTOWAVE_MAX_FREQUENCY;
+    
+    state->current_trigger_order = 0;
+    
+    lfo_init(&state->global_vibrato_lfo, G_PHOTOWAVE_LFO_RATE_HZ, 
+             G_PHOTOWAVE_LFO_DEPTH_SEMITONES, sample_rate);
+    
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        state->voices[i].phase = 0.0f;
+        state->voices[i].frequency = state->f_min;
+        state->voices[i].midi_note = 0;
+        state->voices[i].velocity = 100;
+        state->voices[i].active = false;
+        state->voices[i].trigger_order = 0;
+        
+        adsr_init_envelope(&state->voices[i].volume_adsr, G_PHOTOWAVE_VOLUME_ATTACK_S,
+                          G_PHOTOWAVE_VOLUME_DECAY_S, G_PHOTOWAVE_VOLUME_SUSTAIN,
+                          G_PHOTOWAVE_VOLUME_RELEASE_S, sample_rate);
+        adsr_init_envelope(&state->voices[i].filter_adsr, G_PHOTOWAVE_FILTER_ATTACK_S,
+                          G_PHOTOWAVE_FILTER_DECAY_S, G_PHOTOWAVE_FILTER_SUSTAIN,
+                          G_PHOTOWAVE_FILTER_RELEASE_S, sample_rate);
+        
+        lowpass_init(&state->voices[i].lowpass, sample_rate);
+    }
+    
+    state->samples_generated = 0;
+    state->buffer_underruns = 0;
+    
+    return 0;
+}
+
+void synth_photowave_cleanup(PhotowaveState *state) {
+    if (!state) return;
+    memset(state, 0, sizeof(PhotowaveState));
 }
 
 /* ============================================================================
@@ -210,26 +459,11 @@ void synth_photowave_process(PhotowaveState *state,
                              float *output_left,
                              float *output_right,
                              int num_frames) {
-    static int debug_counter = 0;
-    int should_generate;
-    int i;
+    int i, v;
     
     if (!state || !output_left || !output_right) return;
     
-    // In continuous mode, generate audio even without note_active
-    // In note mode, only generate if note is active
-    should_generate = state->continuous_mode || state->note_active;
-    
-    // Debug log every 1000 calls (~23 times per second at 44.1kHz with 512 buffer)
-    if (++debug_counter >= 1000) {
-        log_info("PHOTOWAVE_DEBUG", "Process: should_gen=%d (cont=%d, note_act=%d), has_image=%d, pixels=%d",
-                 should_generate, state->continuous_mode, state->note_active,
-                 (state->image_line != NULL), state->pixel_count);
-        debug_counter = 0;
-    }
-    
-    // If no image line or shouldn't generate, output silence
-    if (!should_generate || !state->image_line || state->pixel_count <= 0) {
+    if (!state->image_line || state->pixel_count <= 0) {
         for (i = 0; i < num_frames; i++) {
             output_left[i] = 0.0f;
             output_right[i] = 0.0f;
@@ -237,37 +471,66 @@ void synth_photowave_process(PhotowaveState *state,
         return;
     }
     
-    {
-        // Get configuration parameters
-        const float amplitude = state->config.amplitude;
-        const float velocity_scale = (float)state->current_velocity / 127.0f;
-        const float final_amplitude = amplitude * velocity_scale;
-        const PhotowaveScanMode scan_mode = state->config.scan_mode;
-        int i;
+    for (i = 0; i < num_frames; i++) {
+        float master_sum = 0.0f;
+        int active_voices = 0;
+        float lfo_output = lfo_process(&state->global_vibrato_lfo);
         
-        // Generate audio samples
-        for (i = 0; i < num_frames; i++) {
-            float sample;
+        for (v = 0; v < NUM_PHOTOWAVE_VOICES; v++) {
+            PhotowaveVoice *voice = &state->voices[v];
             
-            // Sample the waveform at current phase
-            sample = sample_waveform_linear(state->image_line, state->pixel_count,
-                                                 state->phase, scan_mode);
+            float vol_adsr = adsr_get_output(&voice->volume_adsr);
+            float filt_adsr = adsr_get_output(&voice->filter_adsr);
             
-            // Apply amplitude and velocity
-            sample *= final_amplitude;
-            
-            // Output to both channels (mono for now)
-            output_left[i] = sample;
-            output_right[i] = sample;
-            
-            // Advance phase
-            state->phase += state->phase_increment;
-            
-            // Wrap phase to [0.0, 1.0)
-            if (state->phase >= 1.0f) {
-                state->phase -= 1.0f;
+            if (vol_adsr < MIN_AUDIBLE_AMPLITUDE && voice->volume_adsr.state == ADSR_STATE_IDLE) {
+                voice->active = false;
+                continue;
             }
+            
+            active_voices++;
+            
+            float freq_ratio = powf(2.0f, (lfo_output * state->global_vibrato_lfo.depth_semitones) / 12.0f);
+            float modulated_freq = voice->frequency * freq_ratio;
+            
+            float base_cutoff = voice->lowpass.base_cutoff_hz;
+            float modulated_cutoff = base_cutoff + filt_adsr * voice->lowpass.filter_env_depth;
+            modulated_cutoff = clamp_float(modulated_cutoff, 20.0f, state->sample_rate / 2.0f);
+            
+            // Select interpolation method based on configuration
+            float raw_sample;
+            if (state->config.interp_mode == PHOTOWAVE_INTERP_CUBIC) {
+                raw_sample = sample_waveform_cubic(state->image_line, state->pixel_count,
+                                                   voice->phase, state->config.scan_mode);
+            } else {
+                raw_sample = sample_waveform_linear(state->image_line, state->pixel_count,
+                                                   voice->phase, state->config.scan_mode);
+            }
+            
+            float filtered = lowpass_process(&voice->lowpass, raw_sample, modulated_cutoff, state->sample_rate);
+            
+            float velocity_scale = voice->velocity / 127.0f;
+            float final_sample = filtered * vol_adsr * velocity_scale;
+            
+            master_sum += final_sample;
+            
+            float phase_incr = modulated_freq / state->sample_rate;
+            if (state->config.scan_mode == PHOTOWAVE_SCAN_DUAL) {
+                phase_incr *= 2.0f;
+            }
+            voice->phase += phase_incr;
+            if (voice->phase >= 1.0f) voice->phase -= 1.0f;
         }
+        
+        // Normalize by number of active voices to prevent clipping
+        if (active_voices > 1) {
+            master_sum /= sqrtf((float)active_voices);  // Use sqrt for better perceived loudness
+        }
+        
+        master_sum *= state->config.amplitude;
+        master_sum = clamp_float(master_sum, -1.0f, 1.0f);
+        
+        output_left[i] = master_sum;
+        output_right[i] = master_sum;
     }
     
     state->samples_generated += num_frames;
@@ -285,7 +548,6 @@ void synth_photowave_set_image_line(PhotowaveState *state,
     state->image_line = image_line;
     if (pixel_count > 0 && pixel_count <= PHOTOWAVE_MAX_PIXELS) {
         state->pixel_count = pixel_count;
-        // Recalculate f_min based on new pixel count
         state->f_min = state->sample_rate / (float)pixel_count;
     }
 }
@@ -305,24 +567,145 @@ void synth_photowave_set_amplitude(PhotowaveState *state, float amplitude) {
     state->config.amplitude = clamp_float(amplitude, 0.0f, 1.0f);
 }
 
-void synth_photowave_set_frequency(PhotowaveState *state, float frequency) {
-    if (!state) return;
-    
-    // Clamp frequency to valid range
-    frequency = clamp_float(frequency, state->f_min, state->f_max);
-    
-    state->target_frequency = frequency;
-    state->current_frequency = frequency;
-    
-    // Calculate phase increment
-    float period_samples = state->sample_rate / frequency;
-    float period_multiplier = (state->config.scan_mode == PHOTOWAVE_SCAN_DUAL) ? 2.0f : 1.0f;
-    state->phase_increment = period_multiplier / period_samples;
+/* ============================================================================
+ * ADSR PARAMETER SETTERS
+ * ========================================================================== */
+
+void synth_photowave_set_volume_adsr_attack(float attack_s) {
+    int i;
+    if (attack_s < 0.0f) attack_s = 0.0f;
+    G_PHOTOWAVE_VOLUME_ATTACK_S = attack_s;
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].volume_adsr,
+            G_PHOTOWAVE_VOLUME_ATTACK_S, G_PHOTOWAVE_VOLUME_DECAY_S,
+            G_PHOTOWAVE_VOLUME_SUSTAIN, G_PHOTOWAVE_VOLUME_RELEASE_S,
+            g_photowave_state.sample_rate);
+    }
 }
 
-void synth_photowave_set_continuous_mode(PhotowaveState *state, bool enabled) {
-    if (!state) return;
-    state->continuous_mode = enabled;
+void synth_photowave_set_volume_adsr_decay(float decay_s) {
+    int i;
+    if (decay_s < 0.0f) decay_s = 0.0f;
+    G_PHOTOWAVE_VOLUME_DECAY_S = decay_s;
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].volume_adsr,
+            G_PHOTOWAVE_VOLUME_ATTACK_S, G_PHOTOWAVE_VOLUME_DECAY_S,
+            G_PHOTOWAVE_VOLUME_SUSTAIN, G_PHOTOWAVE_VOLUME_RELEASE_S,
+            g_photowave_state.sample_rate);
+    }
+}
+
+void synth_photowave_set_volume_adsr_sustain(float sustain_level) {
+    int i;
+    if (sustain_level < 0.0f) sustain_level = 0.0f;
+    if (sustain_level > 1.0f) sustain_level = 1.0f;
+    G_PHOTOWAVE_VOLUME_SUSTAIN = sustain_level;
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].volume_adsr,
+            G_PHOTOWAVE_VOLUME_ATTACK_S, G_PHOTOWAVE_VOLUME_DECAY_S,
+            G_PHOTOWAVE_VOLUME_SUSTAIN, G_PHOTOWAVE_VOLUME_RELEASE_S,
+            g_photowave_state.sample_rate);
+    }
+}
+
+void synth_photowave_set_volume_adsr_release(float release_s) {
+    int i;
+    if (release_s < 0.0f) release_s = 0.0f;
+    G_PHOTOWAVE_VOLUME_RELEASE_S = release_s;
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].volume_adsr,
+            G_PHOTOWAVE_VOLUME_ATTACK_S, G_PHOTOWAVE_VOLUME_DECAY_S,
+            G_PHOTOWAVE_VOLUME_SUSTAIN, G_PHOTOWAVE_VOLUME_RELEASE_S,
+            g_photowave_state.sample_rate);
+    }
+}
+
+void synth_photowave_set_filter_adsr_attack(float attack_s) {
+    int i;
+    if (attack_s < 0.0f) attack_s = 0.0f;
+    G_PHOTOWAVE_FILTER_ATTACK_S = attack_s;
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].filter_adsr,
+            G_PHOTOWAVE_FILTER_ATTACK_S, G_PHOTOWAVE_FILTER_DECAY_S,
+            G_PHOTOWAVE_FILTER_SUSTAIN, G_PHOTOWAVE_FILTER_RELEASE_S,
+            g_photowave_state.sample_rate);
+    }
+}
+
+void synth_photowave_set_filter_adsr_decay(float decay_s) {
+    int i;
+    if (decay_s < 0.0f) decay_s = 0.0f;
+    G_PHOTOWAVE_FILTER_DECAY_S = decay_s;
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].filter_adsr,
+            G_PHOTOWAVE_FILTER_ATTACK_S, G_PHOTOWAVE_FILTER_DECAY_S,
+            G_PHOTOWAVE_FILTER_SUSTAIN, G_PHOTOWAVE_FILTER_RELEASE_S,
+            g_photowave_state.sample_rate);
+    }
+}
+
+void synth_photowave_set_filter_adsr_sustain(float sustain_level) {
+    int i;
+    if (sustain_level < 0.0f) sustain_level = 0.0f;
+    if (sustain_level > 1.0f) sustain_level = 1.0f;
+    G_PHOTOWAVE_FILTER_SUSTAIN = sustain_level;
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].filter_adsr,
+            G_PHOTOWAVE_FILTER_ATTACK_S, G_PHOTOWAVE_FILTER_DECAY_S,
+            G_PHOTOWAVE_FILTER_SUSTAIN, G_PHOTOWAVE_FILTER_RELEASE_S,
+            g_photowave_state.sample_rate);
+    }
+}
+
+void synth_photowave_set_filter_adsr_release(float release_s) {
+    int i;
+    if (release_s < 0.0f) release_s = 0.0f;
+    G_PHOTOWAVE_FILTER_RELEASE_S = release_s;
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].filter_adsr,
+            G_PHOTOWAVE_FILTER_ATTACK_S, G_PHOTOWAVE_FILTER_DECAY_S,
+            G_PHOTOWAVE_FILTER_SUSTAIN, G_PHOTOWAVE_FILTER_RELEASE_S,
+            g_photowave_state.sample_rate);
+    }
+}
+
+/* ============================================================================
+ * LFO PARAMETER SETTERS
+ * ========================================================================== */
+
+void synth_photowave_set_vibrato_rate(float rate_hz) {
+    if (rate_hz < 0.0f) rate_hz = 0.0f;
+    g_photowave_state.global_vibrato_lfo.rate_hz = rate_hz;
+    g_photowave_state.global_vibrato_lfo.phase_increment = 
+        TWO_PI * rate_hz / g_photowave_state.sample_rate;
+}
+
+void synth_photowave_set_vibrato_depth(float depth_semitones) {
+    g_photowave_state.global_vibrato_lfo.depth_semitones = depth_semitones;
+}
+
+/* ============================================================================
+ * FILTER PARAMETER SETTERS
+ * ========================================================================== */
+
+void synth_photowave_set_filter_cutoff(float cutoff_hz) {
+    int i;
+    if (cutoff_hz < 20.0f) cutoff_hz = 20.0f;
+    if (cutoff_hz > g_photowave_state.sample_rate / 2.0f) {
+        cutoff_hz = g_photowave_state.sample_rate / 2.0f;
+    }
+    G_PHOTOWAVE_FILTER_CUTOFF_HZ = cutoff_hz;
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        g_photowave_state.voices[i].lowpass.base_cutoff_hz = cutoff_hz;
+    }
+}
+
+void synth_photowave_set_filter_env_depth(float depth_hz) {
+    int i;
+    G_PHOTOWAVE_FILTER_ENV_DEPTH = depth_hz;
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        g_photowave_state.voices[i].lowpass.filter_env_depth = depth_hz;
+    }
 }
 
 /* ============================================================================
@@ -330,41 +713,105 @@ void synth_photowave_set_continuous_mode(PhotowaveState *state, bool enabled) {
  * ========================================================================== */
 
 void synth_photowave_note_on(PhotowaveState *state, uint8_t note, uint8_t velocity) {
+    int i, voice_idx;
+    unsigned long long oldest_order;
+    float quietest_env;
+    PhotowaveVoice *voice;
+    
     if (!state) return;
     
-    log_info("PHOTOWAVE_DEBUG", "Note On BEFORE: note_active=%d, continuous=%d, freq=%.1f Hz",
-             state->note_active, state->continuous_mode, state->current_frequency);
+    // MIDI protocol: Note On with velocity=0 is actually a Note Off
+    if (velocity == 0) {
+        synth_photowave_note_off(state, note);
+        return;
+    }
     
-    state->note_active = true;
-    state->current_note = note;
-    state->current_velocity = velocity;
+    state->current_trigger_order++;
+    voice_idx = -1;
     
-    // Calculate target frequency from MIDI note
-    state->target_frequency = midi_note_to_frequency(note, state->f_min, state->f_max);
-    state->current_frequency = state->target_frequency;
+    // Priority 1: Find IDLE voice
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        if (state->voices[i].volume_adsr.state == ADSR_STATE_IDLE) {
+            voice_idx = i;
+            break;
+        }
+    }
     
-    // Calculate phase increment
-    float period_samples = state->sample_rate / state->current_frequency;
-    float period_multiplier = (state->config.scan_mode == PHOTOWAVE_SCAN_DUAL) ? 2.0f : 1.0f;
-    state->phase_increment = period_multiplier / period_samples;
+    // Priority 2: Steal oldest active (non-release) voice
+    if (voice_idx == -1) {
+        oldest_order = state->current_trigger_order + 1;
+        for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+            if (state->voices[i].volume_adsr.state != ADSR_STATE_RELEASE &&
+                state->voices[i].volume_adsr.state != ADSR_STATE_IDLE) {
+                if (state->voices[i].trigger_order < oldest_order) {
+                    oldest_order = state->voices[i].trigger_order;
+                    voice_idx = i;
+                }
+            }
+        }
+    }
     
-    // Reset phase to start of waveform
-    state->phase = 0.0f;
+    // Priority 3: Steal quietest release voice
+    if (voice_idx == -1) {
+        quietest_env = 2.0f;
+        for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+            if (state->voices[i].volume_adsr.state == ADSR_STATE_RELEASE) {
+                if (state->voices[i].volume_adsr.current_output < quietest_env) {
+                    quietest_env = state->voices[i].volume_adsr.current_output;
+                    voice_idx = i;
+                }
+            }
+        }
+    }
     
-    log_info("PHOTOWAVE_DEBUG", "Note On AFTER: note=%d, vel=%d, freq=%.1f Hz, note_active=%d, has_image=%d",
-             note, velocity, state->current_frequency, state->note_active, (state->image_line != NULL));
+    // Fallback: steal voice 0
+    if (voice_idx == -1) voice_idx = 0;
+    
+    voice = &state->voices[voice_idx];
+    
+    // Initialize voice
+    voice->midi_note = note;
+    voice->velocity = velocity;
+    voice->frequency = midi_note_to_frequency(note, state->f_min, state->f_max);
+    voice->phase = 0.0f;
+    voice->active = true;
+    voice->trigger_order = state->current_trigger_order;
+    
+    // Initialize ADSR with current global parameters
+    adsr_init_envelope(&voice->volume_adsr, G_PHOTOWAVE_VOLUME_ATTACK_S,
+                      G_PHOTOWAVE_VOLUME_DECAY_S, G_PHOTOWAVE_VOLUME_SUSTAIN,
+                      G_PHOTOWAVE_VOLUME_RELEASE_S, state->sample_rate);
+    adsr_init_envelope(&voice->filter_adsr, G_PHOTOWAVE_FILTER_ATTACK_S,
+                      G_PHOTOWAVE_FILTER_DECAY_S, G_PHOTOWAVE_FILTER_SUSTAIN,
+                      G_PHOTOWAVE_FILTER_RELEASE_S, state->sample_rate);
+    
+    // Trigger attacks
+    adsr_trigger_attack(&voice->volume_adsr);
+    adsr_trigger_attack(&voice->filter_adsr);
+    
+    // Reset filter state
+    voice->lowpass.prev_output = 0.0f;
+    
+    log_debug("PHOTOWAVE", "Note On: voice=%d, note=%d, vel=%d, freq=%.1f Hz",
+             voice_idx, note, velocity, voice->frequency);
 }
 
 void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
+    int i;
+    
     if (!state) return;
     
-    log_info("PHOTOWAVE_DEBUG", "Note Off: note=%d, current_note=%d, will_deactivate=%d",
-             note, state->current_note, (state->current_note == note));
-    
-    // Only turn off if this is the current note
-    if (state->current_note == note) {
-        state->note_active = false;
-        log_info("PHOTOWAVE_DEBUG", "Note deactivated: note_active=%d", state->note_active);
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        if (state->voices[i].midi_note == note &&
+            state->voices[i].active &&
+            state->voices[i].volume_adsr.state != ADSR_STATE_IDLE &&
+            state->voices[i].volume_adsr.state != ADSR_STATE_RELEASE) {
+            
+            adsr_trigger_release(&state->voices[i].volume_adsr);
+            adsr_trigger_release(&state->voices[i].filter_adsr);
+            
+            log_debug("PHOTOWAVE", "Note Off: voice=%d, note=%d", i, note);
+        }
     }
 }
 
@@ -375,10 +822,13 @@ void synth_photowave_control_change(PhotowaveState *state, uint8_t cc_number, ui
         case 1: // CC1 (Modulation): Scan mode
             if (cc_value < 43) {
                 state->config.scan_mode = PHOTOWAVE_SCAN_LEFT_TO_RIGHT;
+                log_info("PHOTOWAVE", "Scan mode: L→R (CC1=%d, range 0-42)", cc_value);
             } else if (cc_value < 85) {
                 state->config.scan_mode = PHOTOWAVE_SCAN_RIGHT_TO_LEFT;
+                log_info("PHOTOWAVE", "Scan mode: R→L (CC1=%d, range 43-84)", cc_value);
             } else {
                 state->config.scan_mode = PHOTOWAVE_SCAN_DUAL;
+                log_info("PHOTOWAVE", "Scan mode: Dual (CC1=%d, range 85-127)", cc_value);
             }
             break;
             
@@ -389,10 +839,11 @@ void synth_photowave_control_change(PhotowaveState *state, uint8_t cc_number, ui
         case 74: // CC74 (Brightness): Interpolation mode
             state->config.interp_mode = (cc_value < 64) ? 
                 PHOTOWAVE_INTERP_LINEAR : PHOTOWAVE_INTERP_CUBIC;
+            log_info("PHOTOWAVE", "Interpolation: %s (CC74=%d)", 
+                     (cc_value < 64) ? "Linear" : "Cubic", cc_value);
             break;
             
         default:
-            // Ignore unknown CC numbers
             break;
     }
 }
@@ -409,12 +860,17 @@ PhotowaveConfig synth_photowave_get_config(const PhotowaveState *state) {
     return config;
 }
 
-float synth_photowave_get_frequency(const PhotowaveState *state) {
-    return state ? state->current_frequency : 0.0f;
-}
-
 bool synth_photowave_is_note_active(const PhotowaveState *state) {
-    return state ? state->note_active : false;
+    int i;
+    if (!state) return false;
+    
+    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        if (state->voices[i].active && 
+            state->voices[i].volume_adsr.state != ADSR_STATE_IDLE) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /* ============================================================================
@@ -424,45 +880,41 @@ bool synth_photowave_is_note_active(const PhotowaveState *state) {
 void synth_photowave_apply_config(PhotowaveState *state) {
     if (!state) return;
     
-    // Apply configuration from g_sp3ctra_config
-    state->continuous_mode = (g_sp3ctra_config.photowave_continuous_mode != 0);
     state->config.scan_mode = (PhotowaveScanMode)g_sp3ctra_config.photowave_scan_mode;
     state->config.interp_mode = (PhotowaveInterpMode)g_sp3ctra_config.photowave_interp_mode;
     state->config.amplitude = g_sp3ctra_config.photowave_amplitude;
     
-    log_info("PHOTOWAVE", "Configuration applied: continuous_mode=%d, scan_mode=%d, interp_mode=%d, amplitude=%.2f",
-             state->continuous_mode, state->config.scan_mode, state->config.interp_mode, state->config.amplitude);
+    log_info("PHOTOWAVE", "Configuration applied: scan_mode=%d, interp_mode=%d, amplitude=%.2f",
+             state->config.scan_mode, state->config.interp_mode, state->config.amplitude);
 }
 
 void synth_photowave_mode_init(void) {
-    // Initialize double buffers
-    for (int i = 0; i < 2; i++) {
+    int i, pixel_count, result;
+    
+    log_info("PHOTOWAVE", "Initializing polyphonic photowave synthesis mode");
+    
+    for (i = 0; i < 2; i++) {
         pthread_mutex_init(&photowave_audio_buffers[i].mutex, NULL);
         pthread_cond_init(&photowave_audio_buffers[i].cond, NULL);
         
-        // Initialize ready state atomically for RT-safe operation
         __atomic_store_n(&photowave_audio_buffers[i].ready, 0, __ATOMIC_SEQ_CST);
         
-        // Allocate dynamic audio buffer based on runtime configuration
         if (!photowave_audio_buffers[i].data) {
             photowave_audio_buffers[i].data = (float *)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
-            // Ensure buffer is zeroed
             memset(photowave_audio_buffers[i].data, 0, g_sp3ctra_config.audio_buffer_size * sizeof(float));
         }
     }
     
-    // Initialize buffer index atomically
     __atomic_store_n(&photowave_current_buffer_index, 0, __ATOMIC_SEQ_CST);
     
-    // Initialize global Photowave state
-    int pixel_count = get_cis_pixels_nb();  // Get runtime pixel count
-    int result = synth_photowave_init(&g_photowave_state, g_sp3ctra_config.sampling_frequency, pixel_count);
+    pixel_count = get_cis_pixels_nb();
+    result = synth_photowave_init(&g_photowave_state, g_sp3ctra_config.sampling_frequency, pixel_count);
     
     if (result == 0) {
-        log_info("PHOTOWAVE", "Initialized: %.1f Hz sample rate, %d pixels, f_min=%.2f Hz",
-                 g_sp3ctra_config.sampling_frequency, pixel_count, g_photowave_state.f_min);
+        log_info("PHOTOWAVE", "Initialized: %.1f Hz sample rate, %d pixels, %d voices, f_min=%.2f Hz",
+                 g_sp3ctra_config.sampling_frequency, pixel_count, NUM_PHOTOWAVE_VOICES, 
+                 g_photowave_state.f_min);
         
-        // Apply configuration from loaded config file
         synth_photowave_apply_config(&g_photowave_state);
     } else {
         log_error("PHOTOWAVE", "Initialization failed with error code %d", result);
@@ -470,17 +922,16 @@ void synth_photowave_mode_init(void) {
 }
 
 void synth_photowave_thread_stop(void) {
-    // Signal thread to stop
     photowave_thread_running = 0;
     log_info("PHOTOWAVE", "Thread stop signal sent");
 }
 
 void synth_photowave_mode_cleanup(void) {
-    // Cleanup global state
+    int i;
+    
     synth_photowave_cleanup(&g_photowave_state);
     
-    // Free buffers
-    for (int i = 0; i < 2; i++) {
+    for (i = 0; i < 2; i++) {
         if (photowave_audio_buffers[i].data) {
             free(photowave_audio_buffers[i].data);
             photowave_audio_buffers[i].data = NULL;
@@ -493,15 +944,18 @@ void synth_photowave_mode_cleanup(void) {
 }
 
 void *synth_photowave_thread_func(void *arg) {
-    (void)arg;  // Unused parameter
+    int buffer_size, write_index, buffer_ready;
+    float *temp_left, *temp_right;
+    extern float getSynthPhotowaveMixLevel(void);
+    
+    (void)arg;
     
     log_info("PHOTOWAVE", "Thread started");
     photowave_thread_running = 1;
     
-    // Local buffer for stereo generation
-    int buffer_size = g_sp3ctra_config.audio_buffer_size;
-    float *temp_left = (float *)malloc(buffer_size * sizeof(float));
-    float *temp_right = (float *)malloc(buffer_size * sizeof(float));
+    buffer_size = g_sp3ctra_config.audio_buffer_size;
+    temp_left = (float *)malloc(buffer_size * sizeof(float));
+    temp_right = (float *)malloc(buffer_size * sizeof(float));
     
     if (!temp_left || !temp_right) {
         log_error("PHOTOWAVE", "Failed to allocate temporary buffers");
@@ -511,44 +965,32 @@ void *synth_photowave_thread_func(void *arg) {
     }
     
     while (photowave_thread_running) {
-        // CPU OPTIMIZATION: If mix level is essentially zero, sleep instead of generating buffers
-        // This prevents wasting CPU cycles when photowave is not being used
-        extern float getSynthPhotowaveMixLevel(void);
         if (getSynthPhotowaveMixLevel() < 0.01f) {
-            usleep(10000);  // 10ms sleep - reduce CPU waste
+            usleep(10000);
             continue;
         }
         
-        // Get current write buffer index
         pthread_mutex_lock(&photowave_buffer_index_mutex);
-        int write_index = photowave_current_buffer_index;
+        write_index = photowave_current_buffer_index;
         pthread_mutex_unlock(&photowave_buffer_index_mutex);
         
-        // Check if buffer is available (not ready = available for writing)
-        int buffer_ready = __atomic_load_n(&photowave_audio_buffers[write_index].ready, __ATOMIC_ACQUIRE);
+        buffer_ready = __atomic_load_n(&photowave_audio_buffers[write_index].ready, __ATOMIC_ACQUIRE);
         
         if (buffer_ready == 0) {
-            // Buffer is available, generate audio
             synth_photowave_process(&g_photowave_state, temp_left, temp_right, buffer_size);
             
-            // Mix stereo to mono for output buffer (or keep stereo if needed)
-            // For now, just use left channel
             memcpy(photowave_audio_buffers[write_index].data, temp_left, buffer_size * sizeof(float));
             
-            // Mark buffer as ready atomically
             __atomic_store_n(&photowave_audio_buffers[write_index].ready, 1, __ATOMIC_RELEASE);
             
-            // Switch to next buffer
             pthread_mutex_lock(&photowave_buffer_index_mutex);
             photowave_current_buffer_index = (write_index == 0) ? 1 : 0;
             pthread_mutex_unlock(&photowave_buffer_index_mutex);
         } else {
-            // Buffer not yet consumed, wait a bit
-            usleep(100);  // 100 microseconds
+            usleep(100);
         }
     }
     
-    // Cleanup
     free(temp_left);
     free(temp_right);
     
