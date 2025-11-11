@@ -143,7 +143,7 @@ static void init_sequence_player(SequencePlayer *player, int buffer_capacity) {
     
     player->playback_speed = 1.0f;
     player->playback_direction = 1;
-    player->blend_level = 0.5f;  // Default 50% blend level
+    player->exposure = 0.5f;  // Default 50% exposure (normal)
     player->brightness = 1.0f;   // Default 100% brightness (neutral)
     player->mix_enabled = 1;     // Default enabled in mix
     player->loop_mode = LOOP_MODE_SIMPLE;
@@ -421,13 +421,13 @@ void image_sequencer_set_trigger_mode(ImageSequencer *seq, int player_id, Trigge
     }
 }
 
-void image_sequencer_set_blend_level(ImageSequencer *seq, int player_id, float level) {
+void image_sequencer_set_exposure(ImageSequencer *seq, int player_id, float level) {
     if (!seq || player_id < 0 || player_id >= seq->num_players) return;
     level = clamp_f(level, 0.0f, 1.0f);
     pthread_mutex_lock(&seq->mutex);
-    seq->players[player_id].blend_level = level;
+    seq->players[player_id].exposure = level;
     pthread_mutex_unlock(&seq->mutex);
-    log_info("SEQUENCER", "Player %d: Blend level %d%%", player_id, (int)(level * 100));
+    log_info("SEQUENCER", "Player %d: Exposure %d%%", player_id, (int)(level * 100));
 }
 
 void image_sequencer_set_brightness(ImageSequencer *seq, int player_id, float brightness) {
@@ -774,7 +774,7 @@ int image_sequencer_process_frame(
             if (i == 0 && (int)player->playback_position % 100 == 0) {  // Log every 100 frames for player 0
                 log_debug("SEQUENCER", "Player %d: pos=%.1f/%d (%.1f%%), env=%.3f, blend=%.2f",
                           i, player->playback_position, player->recorded_frames,
-                          normalized_pos * 100.0f, env_level, player->blend_level);
+                          normalized_pos * 100.0f, env_level, player->exposure);
             }
             #endif
             
@@ -866,7 +866,7 @@ int image_sequencer_process_frame(
                         goto skip_player;
                     }
                     
-                    /* 🎨 EXPOSURE CONTROL: blend_level controls exposure */
+                    /* 🎨 EXPOSURE CONTROL: exposure parameter controls exposure */
                     /* 0% = underexposed (-2 stops), 50% = normal (0 stops), 100% = overexposed (+4 stops) */
                     for (p = 0; p < nb_pixels; p++) {
                         /* Step 1: Apply brightness boost */
@@ -879,20 +879,20 @@ int image_sequencer_process_frame(
                         boosted_G = (boosted_G > 255.0f) ? 255.0f : boosted_G;
                         boosted_B = (boosted_B > 255.0f) ? 255.0f : boosted_B;
                         
-                        /* Step 2: Apply EXTREME exposure control via blend_level */
-                        /* Map blend_level: 0.0 → 0.1x (très sous-exposé), 0.5 → 1.0x (normal), 1.0 → 16.0x (complètement cramé) */
-                        float exposure;
-                        if (player->blend_level < 0.5f) {
+                        /* Step 2: Apply EXTREME exposure control via exposure parameter */
+                        /* Map exposure: 0.0 → 0.1x (très sous-exposé), 0.5 → 1.0x (normal), 1.0 → 16.0x (complètement cramé) */
+                        float exposure_mult;
+                        if (player->exposure < 0.5f) {
                             /* 0% to 50%: très sous-exposé → normal (0.1x to 1.0x) */
-                            exposure = 0.1f + (player->blend_level * 2.0f) * 0.9f;
+                            exposure_mult = 0.1f + (player->exposure * 2.0f) * 0.9f;
                         } else {
                             /* 50% to 100%: normal → complètement cramé (1.0x to 16.0x) */
-                            exposure = 1.0f + ((player->blend_level - 0.5f) * 2.0f) * 15.0f;
+                            exposure_mult = 1.0f + ((player->exposure - 0.5f) * 2.0f) * 15.0f;
                         }
                         
-                        float exposed_R = boosted_R * exposure;
-                        float exposed_G = boosted_G * exposure;
-                        float exposed_B = boosted_B * exposure;
+                        float exposed_R = boosted_R * exposure_mult;
+                        float exposed_G = boosted_G * exposure_mult;
+                        float exposed_B = boosted_B * exposure_mult;
                         
                         /* Clamp after exposure (creates the "blown out" white effect) */
                         exposed_R = (exposed_R > 255.0f) ? 255.0f : exposed_R;

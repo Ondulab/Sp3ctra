@@ -91,7 +91,7 @@ void midi_cb_sequencer_player_record_toggle(const MidiParameterValue *param, voi
 void midi_cb_sequencer_player_play_stop(const MidiParameterValue *param, void *user_data);
 void midi_cb_sequencer_player_mute_toggle(const MidiParameterValue *param, void *user_data);
 void midi_cb_sequencer_player_speed(const MidiParameterValue *param, void *user_data);
-void midi_cb_sequencer_player_blend_level(const MidiParameterValue *param, void *user_data);
+void midi_cb_sequencer_player_exposure(const MidiParameterValue *param, void *user_data);
 void midi_cb_sequencer_player_offset(const MidiParameterValue *param, void *user_data);
 void midi_cb_sequencer_player_attack(const MidiParameterValue *param, void *user_data);
 void midi_cb_sequencer_player_decay(const MidiParameterValue *param, void *user_data);
