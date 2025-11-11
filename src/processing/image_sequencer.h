@@ -24,12 +24,13 @@ typedef struct {
 
 /* Player state machine */
 typedef enum {
-    PLAYER_STATE_IDLE,       // No sequence loaded
-    PLAYER_STATE_RECORDING,  // Recording from live
-    PLAYER_STATE_READY,      // Sequence loaded, ready to play
-    PLAYER_STATE_PLAYING,    // Active playback
-    PLAYER_STATE_STOPPED,    // Paused but still in mix (frame frozen)
-    PLAYER_STATE_MUTED       // Muted, removed from mix
+    PLAYER_STATE_IDLE,              // No sequence loaded
+    PLAYER_STATE_RECORDING,         // Recording from live
+    PLAYER_STATE_READY,             // Sequence loaded, ready to play
+    PLAYER_STATE_PLAYING,           // Active playback
+    PLAYER_STATE_STOPPED,           // Paused but still in mix (frame frozen)
+    PLAYER_STATE_MUTED,             // Muted, removed from mix
+    PLAYER_STATE_RECORDING_PLAYING  // Recording AND playing simultaneously
 } PlayerState;
 
 /* Loop modes */

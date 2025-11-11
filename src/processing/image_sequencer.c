@@ -262,12 +262,16 @@ int image_sequencer_start_recording(ImageSequencer *seq, int player_id) {
     pthread_mutex_lock(&seq->mutex);
     SequencePlayer *player = &seq->players[player_id];
     
-    // Auto-stop playback if currently playing
+    // If currently playing, switch to RECORDING_PLAYING state (simultaneous record+playback)
     if (player->state == PLAYER_STATE_PLAYING) {
-        log_info("SEQUENCER", "Player %d: Auto-stopping playback to start recording", player_id);
-        player->state = PLAYER_STATE_STOPPED;
+        player->state = PLAYER_STATE_RECORDING_PLAYING;
+        pthread_mutex_unlock(&seq->mutex);
+        log_info("SEQUENCER", "Player %d: Started recording while playing (simultaneous mode, %d frames existing)", 
+                 player_id, player->recorded_frames);
+        return 0;
     }
     
+    // Otherwise, only allow recording from IDLE, READY, or STOPPED states
     if (player->state != PLAYER_STATE_IDLE && 
         player->state != PLAYER_STATE_READY && 
         player->state != PLAYER_STATE_STOPPED) {
@@ -291,6 +295,16 @@ int image_sequencer_stop_recording(ImageSequencer *seq, int player_id) {
     
     pthread_mutex_lock(&seq->mutex);
     SequencePlayer *player = &seq->players[player_id];
+    
+    // Handle both RECORDING and RECORDING_PLAYING states
+    if (player->state == PLAYER_STATE_RECORDING_PLAYING) {
+        // Was recording while playing, return to PLAYING state
+        player->state = PLAYER_STATE_PLAYING;
+        log_info("SEQUENCER", "Player %d: Stopped recording, continuing playback (%d frames)", 
+                 player_id, player->recorded_frames);
+        pthread_mutex_unlock(&seq->mutex);
+        return 0;
+    }
     
     if (player->state != PLAYER_STATE_RECORDING) {
         pthread_mutex_unlock(&seq->mutex);
@@ -707,7 +721,8 @@ int image_sequencer_process_frame(
         SequencePlayer *player = &seq->players[i];
         
         /* Handle recording - Ring buffer mode (additive with wrap-around) */
-        if (player->state == PLAYER_STATE_RECORDING) {
+        /* Record if in RECORDING or RECORDING_PLAYING state */
+        if (player->state == PLAYER_STATE_RECORDING || player->state == PLAYER_STATE_RECORDING_PLAYING) {
             /* Calculate write index using modulo for ring buffer behavior */
             int write_index = player->recorded_frames % player->buffer_capacity;
             
@@ -728,7 +743,8 @@ int image_sequencer_process_frame(
         }
         
         /* Handle playback */
-        if (player->state == PLAYER_STATE_PLAYING) {
+        /* Play if in PLAYING or RECORDING_PLAYING state */
+        if (player->state == PLAYER_STATE_PLAYING || player->state == PLAYER_STATE_RECORDING_PLAYING) {
             if (player->recorded_frames == 0) continue;
             
             // Calculate normalized position for ASR envelope
@@ -1017,6 +1033,7 @@ void image_sequencer_print_status(ImageSequencer *seq) {
             case PLAYER_STATE_PLAYING: state_str = "PLAYING"; break;
             case PLAYER_STATE_STOPPED: state_str = "STOPPED"; break;
             case PLAYER_STATE_MUTED: state_str = "MUTED"; break;
+            case PLAYER_STATE_RECORDING_PLAYING: state_str = "RECORDING+PLAYING"; break;
         }
         printf("Player %d: %s (%d frames)\n", i, state_str, player->recorded_frames);
     }
