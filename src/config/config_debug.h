@@ -15,4 +15,12 @@
 // Configuration pour le debug d'images
 #define DEBUG_IMAGE_OUTPUT_DIR "./debug_images/"              // Debug image output directory (relative to executable)
 
+/**************************************************************************************
+ * DEBUG AUDIO REVERB
+ * 
+ * Enable detailed reverb debugging traces
+ **************************************************************************************/
+#define DEBUG_AUDIO_REVERB     1    // Enable reverb debug traces (0=off, 1=on)
+#define DEBUG_AUDIO_SIGNAL     1    // Enable audio signal debug traces (0=off, 1=on)
+
 #endif // __CONFIG_DEBUG_H__

@@ -9,8 +9,8 @@
  * Audio Effects Definitions
  **************************************************************************************/
 // Reverb Configuration - Optimized for Sp3ctra Synthesis
-#define ENABLE_REVERB                0       // Set to 1 to enable reverb, 0 to disable
-#define DEFAULT_REVERB_MIX           0.8f    // Default dry/wet mix (0.0 - 1.0) - 0 = no reverb, 0.3 = 30% wet + 70% dry
+#define ENABLE_REVERB                1       // Set to 1 to enable reverb, 0 to disable
+#define DEFAULT_REVERB_MIX           0.3f    // Default dry/wet mix (0.0 - 1.0) - 0 = no reverb, 0.3 = 30% wet + 70% dry
 #define DEFAULT_REVERB_ROOM_SIZE     0.75f   // Default room size (0.0 - 1.0) - Optimized for ~1.6s reverb time
 #define DEFAULT_REVERB_DAMPING       0.65f   // Default damping (0.0 - 1.0) - Enhanced high-frequency absorption
 #define DEFAULT_REVERB_WIDTH         0.8f    // Default stereo width (0.0 - 1.0)

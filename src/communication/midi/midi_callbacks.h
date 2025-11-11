@@ -56,6 +56,7 @@ void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *us
  * ============================================================================ */
 
 void midi_cb_synth_photowave_volume(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_reverb_send(const MidiParameterValue *param, void *user_data);
 void midi_cb_synth_photowave_note_on(const MidiParameterValue *param, void *user_data);
 void midi_cb_synth_photowave_note_off(const MidiParameterValue *param, void *user_data);
 void midi_cb_synth_photowave_pitch(const MidiParameterValue *param, void *user_data);

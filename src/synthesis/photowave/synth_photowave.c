@@ -57,7 +57,7 @@ static float G_PHOTOWAVE_LFO_RATE_HZ = 5.0f;
 static float G_PHOTOWAVE_LFO_DEPTH_SEMITONES = 0.25f;
 
 // Filter defaults
-static float G_PHOTOWAVE_FILTER_CUTOFF_HZ = 8000.0f;
+static float G_PHOTOWAVE_FILTER_CUTOFF_HZ = 20000.0f;  // Maximum cutoff (will be clamped to Nyquist)
 static float G_PHOTOWAVE_FILTER_ENV_DEPTH = -6000.0f;
 
 /* ============================================================================
