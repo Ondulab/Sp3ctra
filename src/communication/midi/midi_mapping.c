@@ -456,7 +456,7 @@ static int create_default_midi_mapping_file(const char *mapping_file) {
         fprintf(file, "play_stop=none                # Toggle playback/pause\n");
         fprintf(file, "mute_toggle=none              # Toggle mute\n");
         fprintf(file, "speed=none                    # Playback speed multiplier\n");
-        fprintf(file, "blend_level=none              # Player contribution to mix\n");
+        fprintf(file, "exposure=none                 # Exposure control (0%=dark, 50%=normal, 100%=blown out)\n");
         fprintf(file, "offset=none                   # Playback start offset\n");
         fprintf(file, "attack=none                   # ADSR attack time\n");
         fprintf(file, "decay=none                    # ADSR decay time\n");
@@ -605,8 +605,8 @@ static int create_default_midi_params_file(const char *params_file) {
     fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.speed]\n");
     fprintf(file, "default=1.0\nmin=0.1\nmax=4.0\nscaling=exponential\n\n");
     
-    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.blend_level]\n");
-    fprintf(file, "default=1.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.exposure]\n");
+    fprintf(file, "default=0.5\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
     
     fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.offset]\n");
     fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");

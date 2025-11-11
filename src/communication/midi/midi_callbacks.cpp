@@ -547,14 +547,14 @@ void midi_cb_sequencer_player_speed(const MidiParameterValue *param, void *user_
     }
 }
 
-void midi_cb_sequencer_player_blend_level(const MidiParameterValue *param, void *user_data) {
+void midi_cb_sequencer_player_exposure(const MidiParameterValue *param, void *user_data) {
     if (!g_image_sequencer || !user_data) return;
     
     int player_id = *(int*)user_data;
-    image_sequencer_set_blend_level(g_image_sequencer, player_id, param->value);
+    image_sequencer_set_exposure(g_image_sequencer, player_id, param->value);
     
     if (is_startup_verbose()) {
-        log_info("MIDI", "SEQ Player %d: Blend %d%%", player_id, (int)(param->value * 100));
+        log_info("MIDI", "SEQ Player %d: Exposure %d%%", player_id, (int)(param->value * 100));
     }
 }
 
@@ -838,9 +838,9 @@ void midi_callbacks_register_sequencer(void *sequencer_instance) {
         snprintf(param_name, sizeof(param_name), "sequencer_player_%d_speed", i + 1);
         midi_mapping_register_callback(param_name, midi_cb_sequencer_player_speed, &player_ids[i]);
         
-        // Blend level
-        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_blend_level", i + 1);
-        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_blend_level, &player_ids[i]);
+        // Exposure
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_exposure", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_exposure, &player_ids[i]);
         
         // Offset
         snprintf(param_name, sizeof(param_name), "sequencer_player_%d_offset", i + 1);

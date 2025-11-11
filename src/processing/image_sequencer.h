@@ -92,7 +92,7 @@ typedef struct {
     ADSREnvelope envelope;
     
     /* Mix parameters */
-    float blend_level;               // Player's contribution to mix [0.0, 1.0]
+    float exposure;                  // Exposure control: 0.0=underexposed, 0.5=normal, 1.0=blown out
     float brightness;                // Brightness/saturation boost [0.5, 2.0] (default 1.0)
     int mix_enabled;                 // Enable/disable in mix (0=off, 1=on)
     
@@ -151,7 +151,7 @@ void image_sequencer_set_speed(ImageSequencer *seq, int player_id, float speed);
 void image_sequencer_set_offset(ImageSequencer *seq, int player_id, int offset_frames);
 void image_sequencer_set_loop_mode(ImageSequencer *seq, int player_id, LoopMode mode);
 void image_sequencer_set_trigger_mode(ImageSequencer *seq, int player_id, TriggerMode mode);
-void image_sequencer_set_blend_level(ImageSequencer *seq, int player_id, float level);
+void image_sequencer_set_exposure(ImageSequencer *seq, int player_id, float level);
 void image_sequencer_set_brightness(ImageSequencer *seq, int player_id, float brightness);
 void image_sequencer_set_mix_enabled(ImageSequencer *seq, int player_id, int enabled);
 void image_sequencer_set_playback_direction(ImageSequencer *seq, int player_id, int direction);
