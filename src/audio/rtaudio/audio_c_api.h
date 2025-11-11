@@ -60,6 +60,14 @@ float getSynthAdditiveMixLevel(void);
 float getSynthPolyphonicMixLevel(void);
 float getSynthPhotowaveMixLevel(void);
 
+// Control reverb send levels (thread-safe)
+void setReverbSendAdditive(float level);     // 0.0 - 1.0
+void setReverbSendPolyphonic(float level);   // 0.0 - 1.0
+void setReverbSendPhotowave(float level);    // 0.0 - 1.0
+float getReverbSendAdditive(void);
+float getReverbSendPolyphonic(void);
+float getReverbSendPhotowave(void);
+
 #ifdef __cplusplus
 }
 #endif

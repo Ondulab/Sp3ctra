@@ -37,6 +37,11 @@ static volatile float g_synth_additive_mix_level = 1.0f;
 static volatile float g_synth_polyphonic_mix_level = 0.5f;
 static volatile float g_synth_photowave_mix_level = 0.0f;  // Photowave disabled by default
 
+// Global variables for reverb send levels (accessed from audio callback)
+static volatile float g_reverb_send_additive = 1.0f;   // 100% reverb send for additive by default
+static volatile float g_reverb_send_polyphonic = 0.5f; // 50% reverb send for polyphonic by default
+static volatile float g_reverb_send_photowave = 0.0f;  // No reverb send for photowave by default
+
 // Global variables to store requested audio device before AudioSystem is created
 extern "C" {
 int g_requested_audio_device_id = -1;
@@ -111,6 +116,11 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   float cached_level_additive = g_synth_additive_mix_level;
   float cached_level_polyphonic = g_synth_polyphonic_mix_level;
   float cached_level_photowave = g_synth_photowave_mix_level;
+  
+  // Read reverb send levels from global variables (controlled via MIDI)
+  float cached_reverb_send_additive = g_reverb_send_additive;
+  float cached_reverb_send_polyphonic = g_reverb_send_polyphonic;
+  float cached_reverb_send_photowave = g_reverb_send_photowave;
 
   unsigned int framesToRender = nFrames;
 
@@ -322,6 +332,10 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
   for (int i = 0; i < REVERB_BUFFER_SIZE; i++) {
     reverbBuffer[i] = 0.0f;
   }
+  
+  // CRITICAL: Initialize reverb mix with DEFAULT value from config
+  reverbMix = DEFAULT_REVERB_MIX;
+  log_info("AUDIO", "Reverb mix initialized to %.1f%% (%.2f)", reverbMix * 100.0f, reverbMix);
 
   // Configuration des délais pour la réverbération (pour compatibilité)
   reverbDelays[0] = 1116;
@@ -343,7 +357,9 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
   zitaRev.set_width(1.0f);   // Largeur stéréo maximale
   zitaRev.set_delay(
       0.08f);            // Pre-delay plus important pour clarté et séparation
-  zitaRev.set_mix(0.7f); // 70% wet pour équilibre entre clarté et présence
+  zitaRev.set_mix(1.0f); // CRITICAL: 100% wet - we handle dry/wet mixing ourselves in processReverbOptimized
+  
+  log_info("AUDIO", "ZitaRev1 configured: roomsize=0.95, damping=0.4, width=1.0, mix=1.0 (100%% wet)");
 }
 
 // Destructeur
@@ -1422,6 +1438,45 @@ void setSynthPhotowaveMixLevel(float level) {
 
 float getSynthPhotowaveMixLevel(void) {
   return g_synth_photowave_mix_level;
+}
+
+void setReverbSendAdditive(float level) {
+  // Clamp to valid range
+  if (level < 0.0f) level = 0.0f;
+  if (level > 1.0f) level = 1.0f;
+  
+  // Volatile write (thread-safe for float on modern architectures)
+  g_reverb_send_additive = level;
+}
+
+float getReverbSendAdditive(void) {
+  return g_reverb_send_additive;
+}
+
+void setReverbSendPolyphonic(float level) {
+  // Clamp to valid range
+  if (level < 0.0f) level = 0.0f;
+  if (level > 1.0f) level = 1.0f;
+  
+  // Volatile write (thread-safe for float on modern architectures)
+  g_reverb_send_polyphonic = level;
+}
+
+float getReverbSendPolyphonic(void) {
+  return g_reverb_send_polyphonic;
+}
+
+void setReverbSendPhotowave(float level) {
+  // Clamp to valid range
+  if (level < 0.0f) level = 0.0f;
+  if (level > 1.0f) level = 1.0f;
+  
+  // Volatile write (thread-safe for float on modern architectures)
+  g_reverb_send_photowave = level;
+}
+
+float getReverbSendPhotowave(void) {
+  return g_reverb_send_photowave;
 }
 
 } // extern "C"

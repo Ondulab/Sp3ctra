@@ -105,6 +105,15 @@ void ZitaRev1::process(float *inputL, float *inputR, float *outputL,
   const float g1 = 1.0f - mix; // Gain dry
   const float g2 = mix;        // Gain wet
 
+#ifdef DEBUG_AUDIO_REVERB
+  static int zita_debug_counter = 0;
+  if (++zita_debug_counter >= 4800) {
+    zita_debug_counter = 0;
+    printf("ZITA DEBUG: mix=%.3f, width=%.3f, roomsize=%.3f, damping=%.3f, gain0=%.6f\n",
+           mix, width, _parameters[ROOMSIZE], _parameters[DAMPING], _gain0);
+  }
+#endif
+
   // Pour chaque échantillon
   for (unsigned int i = 0; i < numSamples; i++) {
     // Mixer les entrées
@@ -170,9 +179,19 @@ void ZitaRev1::process(float *inputL, float *inputR, float *outputL,
       writeDelay(j, preDelayed + processed * 0.5f);
     }
 
-    // Normaliser les réflexions
-    leftReflections *= 0.25f;
-    rightReflections *= 0.25f;
+    // Normaliser les réflexions - Increased gain for audible reverb
+    // Previous value of 0.25f was too aggressive, resulting in barely audible reverb
+    leftReflections *= 1.5f;
+    rightReflections *= 1.5f;
+
+#ifdef DEBUG_AUDIO_REVERB
+    static int zita_sample_counter = 0;
+    if (++zita_sample_counter >= 4800) {
+      zita_sample_counter = 0;
+      printf("ZITA PROCESS: input=%.6f, preDelayed=%.6f, leftRefl=%.6f, rightRefl=%.6f\n",
+             input, preDelayed, leftReflections, rightReflections);
+    }
+#endif
 
     // Appliquer la largeur stéréo
     float centerComponent = (leftReflections + rightReflections) * 0.7071f;

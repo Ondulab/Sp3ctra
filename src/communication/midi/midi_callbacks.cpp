@@ -56,10 +56,7 @@ void midi_cb_audio_reverb_mix(const MidiParameterValue *param, void *user_data) 
             gAudioSystem->enableReverb(true);
         }
         gAudioSystem->setReverbMix(param->value);
-        
-        if (is_startup_verbose()) {
-            log_info("MIDI", "REVERB MIX: %d%%", (int)(param->value * 100));
-        }
+        log_info("AUDIO", "Reverb mix set to %d%%", (int)(param->value * 100));
     }
 }
 
@@ -71,10 +68,7 @@ void midi_cb_audio_reverb_size(const MidiParameterValue *param, void *user_data)
             gAudioSystem->enableReverb(true);
         }
         gAudioSystem->setReverbRoomSize(param->value);
-        
-        if (is_startup_verbose()) {
-            log_info("MIDI", "REVERB SIZE: %.2f", param->value);
-        }
+        log_info("AUDIO", "Reverb size set to %.2f", param->value);
     }
 }
 
@@ -86,10 +80,7 @@ void midi_cb_audio_reverb_damp(const MidiParameterValue *param, void *user_data)
             gAudioSystem->enableReverb(true);
         }
         gAudioSystem->setReverbDamping(param->value);
-        
-        if (is_startup_verbose()) {
-            log_info("MIDI", "REVERB DAMP: %.2f", param->value);
-        }
+        log_info("AUDIO", "Reverb damping set to %.2f", param->value);
     }
 }
 
@@ -101,10 +92,7 @@ void midi_cb_audio_reverb_width(const MidiParameterValue *param, void *user_data
             gAudioSystem->enableReverb(true);
         }
         gAudioSystem->setReverbWidth(param->value);
-        
-        if (is_startup_verbose()) {
-            log_info("MIDI", "REVERB WIDTH: %.2f", param->value);
-        }
+        log_info("AUDIO", "Reverb width set to %.2f", param->value);
     }
 }
 
@@ -116,10 +104,7 @@ void midi_cb_audio_eq_low_gain(const MidiParameterValue *param, void *user_data)
             gEqualizer->setEnabled(true);
         }
         gEqualizer->setLowGain(param->raw_value);
-        
-        if (is_startup_verbose()) {
-            log_info("MIDI", "EQ LOW GAIN: %.1f dB", param->raw_value);
-        }
+        log_info("AUDIO", "EQ Low gain set to %.1f dB", param->raw_value);
     }
 }
 
@@ -131,10 +116,7 @@ void midi_cb_audio_eq_mid_gain(const MidiParameterValue *param, void *user_data)
             gEqualizer->setEnabled(true);
         }
         gEqualizer->setMidGain(param->raw_value);
-        
-        if (is_startup_verbose()) {
-            log_info("MIDI", "EQ MID GAIN: %.1f dB", param->raw_value);
-        }
+        log_info("AUDIO", "EQ Mid gain set to %.1f dB", param->raw_value);
     }
 }
 
@@ -146,10 +128,7 @@ void midi_cb_audio_eq_high_gain(const MidiParameterValue *param, void *user_data
             gEqualizer->setEnabled(true);
         }
         gEqualizer->setHighGain(param->raw_value);
-        
-        if (is_startup_verbose()) {
-            log_info("MIDI", "EQ HIGH GAIN: %.1f dB", param->raw_value);
-        }
+        log_info("AUDIO", "EQ High gain set to %.1f dB", param->raw_value);
     }
 }
 
@@ -161,10 +140,7 @@ void midi_cb_audio_eq_mid_freq(const MidiParameterValue *param, void *user_data)
             gEqualizer->setEnabled(true);
         }
         gEqualizer->setMidFrequency(param->raw_value);
-        
-        if (is_startup_verbose()) {
-            log_info("MIDI", "EQ MID FREQ: %.0f Hz", param->raw_value);
-        }
+        log_info("AUDIO", "EQ Mid frequency set to %.0f Hz", param->raw_value);
     }
 }
 
@@ -192,9 +168,7 @@ void midi_cb_synth_additive_reverb_send(const MidiParameterValue *param, void *u
         }
     }
     
-    if (is_startup_verbose()) {
-        log_info("MIDI", "ADDITIVE REVERB SEND: %d%%", (int)(param->value * 100));
-    }
+    log_info("ADDITIVE", "Reverb send: %d%%", (int)(param->value * 100));
 }
 
 /* ============================================================================
@@ -221,9 +195,7 @@ void midi_cb_synth_polyphonic_reverb_send(const MidiParameterValue *param, void 
         }
     }
     
-    if (is_startup_verbose()) {
-        log_info("MIDI", "POLYPHONIC REVERB SEND: %d%%", (int)(param->value * 100));
-    }
+    log_info("POLYPHONIC", "Reverb send: %d%%", (int)(param->value * 100));
 }
 
 void midi_cb_synth_polyphonic_lfo_vibrato(const MidiParameterValue *param, void *user_data) {
@@ -301,6 +273,18 @@ void midi_cb_synth_photowave_volume(const MidiParameterValue *param, void *user_
     setSynthPhotowaveMixLevel(param->value);
     
     log_info("PHOTOWAVE", "Volume: %d%%", (int)(param->value * 100));
+}
+
+void midi_cb_synth_photowave_reverb_send(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    if (gAudioSystem && param->value > 0.0f) {
+        if (!gAudioSystem->isReverbEnabled()) {
+            gAudioSystem->enableReverb(true);
+        }
+    }
+    
+    log_info("PHOTOWAVE", "Reverb send: %d%%", (int)(param->value * 100));
 }
 
 void midi_cb_synth_photowave_note_on(const MidiParameterValue *param, void *user_data) {
@@ -779,6 +763,7 @@ void midi_callbacks_register_synth_polyphonic(void) {
 
 void midi_callbacks_register_synth_photowave(void) {
     midi_mapping_register_callback("synth_photowave_volume", midi_cb_synth_photowave_volume, NULL);
+    midi_mapping_register_callback("synth_photowave_reverb_send", midi_cb_synth_photowave_reverb_send, NULL);
     midi_mapping_register_callback("synth_photowave_note_on", midi_cb_synth_photowave_note_on, NULL);
     midi_mapping_register_callback("synth_photowave_note_off", midi_cb_synth_photowave_note_off, NULL);
     midi_mapping_register_callback("synth_photowave_pitch", midi_cb_synth_photowave_pitch, NULL);
@@ -806,7 +791,7 @@ void midi_callbacks_register_synth_photowave(void) {
     midi_mapping_register_callback("synth_photowave_filter_cutoff", midi_cb_synth_photowave_filter_cutoff, NULL);
     midi_mapping_register_callback("synth_photowave_filter_env_depth", midi_cb_synth_photowave_filter_env_depth, NULL);
     
-    log_info("MIDI", "Callbacks: Photowave synth registered (with ADSR/LFO/Filter)");
+    log_info("MIDI", "Callbacks: Photowave synth registered (with reverb send, ADSR/LFO/Filter)");
 }
 
 void midi_callbacks_register_sequencer(void *sequencer_instance) {

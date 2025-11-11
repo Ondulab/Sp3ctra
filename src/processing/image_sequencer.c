@@ -705,16 +705,25 @@ int image_sequencer_process_frame(
     
     nb_pixels = get_cis_pixels_nb();
     
-    /* Initialize output accumulators (float for additive blending) */
-    accum_R = (float *)calloc(nb_pixels, sizeof(float));
-    accum_G = (float *)calloc(nb_pixels, sizeof(float));
-    accum_B = (float *)calloc(nb_pixels, sizeof(float));
+    /* Initialize output accumulators (float for multiplicative blending) */
+    /* Start at 1.0 (white) for multiply mode - will darken as players are multiplied */
+    accum_R = (float *)malloc(nb_pixels * sizeof(float));
+    accum_G = (float *)malloc(nb_pixels * sizeof(float));
+    accum_B = (float *)malloc(nb_pixels * sizeof(float));
     
     if (!accum_R || !accum_G || !accum_B) {
         pthread_mutex_unlock(&seq->mutex);
         free(accum_R); free(accum_G); free(accum_B);
         return -1;
     }
+    
+    /* Initialize to white (1.0) for multiplicative blending */
+    for (i = 0; i < nb_pixels; i++) {
+        accum_R[i] = 1.0f;
+        accum_G[i] = 1.0f;
+        accum_B[i] = 1.0f;
+    }
+    
     
     /* Process each player */
     for (i = 0; i < seq->num_players; i++) {
@@ -907,10 +916,16 @@ int image_sequencer_process_frame(
                         float final_G = enveloped_G * (1.0f - player->player_mix) + masked_G * player->player_mix;
                         float final_B = enveloped_B * (1.0f - player->player_mix) + masked_B * player->player_mix;
                         
-                        /* Step 5: Accumulate to output */
-                        accum_R[p] += final_R;
-                        accum_G[p] += final_G;
-                        accum_B[p] += final_B;
+                        /* Step 5: Multiply to output (preserves dark pixels) */
+                        /* Normalize to [0, 1] range for multiplication */
+                        float norm_R = final_R / 255.0f;
+                        float norm_G = final_G / 255.0f;
+                        float norm_B = final_B / 255.0f;
+                        
+                        /* Multiplicative blending */
+                        accum_R[p] *= norm_R;
+                        accum_G[p] *= norm_G;
+                        accum_B[p] *= norm_B;
                     }
                     
                     has_active_players = 1;
@@ -929,16 +944,15 @@ int image_sequencer_process_frame(
         }
     }
     
-    /* Write accumulated output (no global mix, each player has its own player_mix) */
+    /* Write accumulated output (multiplicative blending) */
     if (has_active_players) {
         int p;
         
-        /* Direct output from accumulator (players already mixed with general via player_mix) */
         for (p = 0; p < nb_pixels; p++) {
-            /* Clamp and write output */
-            output_R[p] = clamp_u8((int)accum_R[p]);
-            output_G[p] = clamp_u8((int)accum_G[p]);
-            output_B[p] = clamp_u8((int)accum_B[p]);
+            /* Convert back from [0, 1] to [0, 255] range */
+            output_R[p] = clamp_u8((int)(accum_R[p] * 255.0f));
+            output_G[p] = clamp_u8((int)(accum_G[p] * 255.0f));
+            output_B[p] = clamp_u8((int)(accum_B[p] * 255.0f));
         }
     } else {
         /* No active players, just pass through live */
