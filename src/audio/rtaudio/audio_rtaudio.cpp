@@ -90,13 +90,12 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   float *outLeft = outputBuffer;
   float *outRight = outputBuffer + nFrames;
 
-  // Variables statiques pour maintenir l'état entre les appels
-  static unsigned int readOffset = 0;
-  static int localReadIndex = 0;
-  static unsigned int polyphonic_readOffset = 0;
-  static int polyphonic_localReadIndex = 0;
-  static unsigned int photowave_readOffset = 0;
-  static int photowave_localReadIndex = 0;
+  // SYNCHRONIZED BUFFER READING - Single offset for all synths to prevent desync
+  // This ensures all synthesizers read from the same temporal position
+  static unsigned int global_read_offset = 0;
+  static int additive_read_buffer = 0;
+  static int polyphonic_read_buffer = 0;
+  static int photowave_read_buffer = 0;
 
   // Cache volume level to avoid repeated access
   static float cached_volume = 1.0f;
@@ -117,8 +116,8 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 
   // Process frames using multiple buffers if needed
   while (framesToRender > 0) {
-    // How many frames available in current buffer?
-    unsigned int framesAvailable = g_sp3ctra_config.audio_buffer_size - readOffset;
+    // SYNCHRONIZED: All synths use the same offset for temporal alignment
+    unsigned int framesAvailable = g_sp3ctra_config.audio_buffer_size - global_read_offset;
     unsigned int chunk =
         (framesToRender < framesAvailable) ? framesToRender : framesAvailable;
 
@@ -128,30 +127,27 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     float *source_fft = nullptr;
     float *source_photowave = nullptr;
 
-    // Always use stereo mode with both left and right channels
-    if (buffers_L[localReadIndex].ready == 1) {
-      source_additive_left = &buffers_L[localReadIndex].data[readOffset];
+    // SYNCHRONIZED BUFFER ACCESS: All synths read from same offset
+    // This prevents temporal desynchronization and audio artifacts
+    
+    // Additive synthesis (stereo)
+    if (buffers_L[additive_read_buffer].ready == 1) {
+      source_additive_left = &buffers_L[additive_read_buffer].data[global_read_offset];
     }
-    if (buffers_R[localReadIndex].ready == 1) {
-      source_additive_right = &buffers_R[localReadIndex].data[readOffset];
-    }
-
-    if (polyphonic_audio_buffers[polyphonic_localReadIndex].ready == 1) {
-      unsigned int polyphonic_framesAvailable =
-          g_sp3ctra_config.audio_buffer_size - polyphonic_readOffset;
-      if (polyphonic_framesAvailable >= chunk) {
-        source_fft = &polyphonic_audio_buffers[polyphonic_localReadIndex]
-                          .data[polyphonic_readOffset];
-      }
+    if (buffers_R[additive_read_buffer].ready == 1) {
+      source_additive_right = &buffers_R[additive_read_buffer].data[global_read_offset];
     }
 
-    if (photowave_audio_buffers[photowave_localReadIndex].ready == 1) {
-      unsigned int photowave_framesAvailable =
-          g_sp3ctra_config.audio_buffer_size - photowave_readOffset;
-      if (photowave_framesAvailable >= chunk) {
-        source_photowave = &photowave_audio_buffers[photowave_localReadIndex]
-                               .data[photowave_readOffset];
-      }
+    // Polyphonic synthesis (mono)
+    if (polyphonic_audio_buffers[polyphonic_read_buffer].ready == 1) {
+      source_fft = &polyphonic_audio_buffers[polyphonic_read_buffer]
+                        .data[global_read_offset];
+    }
+
+    // Photowave synthesis (mono)
+    if (photowave_audio_buffers[photowave_read_buffer].ready == 1) {
+      source_photowave = &photowave_audio_buffers[photowave_read_buffer]
+                             .data[global_read_offset];
     }
 
   // OPTIMIZED MIXING - Direct to output with threaded reverb
@@ -264,46 +260,40 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     // Advance pointers
     outLeft += chunk;
     outRight += chunk;
-    readOffset += chunk;
-    polyphonic_readOffset += chunk;
-    photowave_readOffset += chunk;
+    global_read_offset += chunk;
     framesToRender -= chunk;
 
-    // Handle buffer transitions - Additive synthesis (RT-SAFE VERSION)
-    if (readOffset >= (unsigned int)g_sp3ctra_config.audio_buffer_size) {
-      // RT-SAFE: Use atomic store instead of mutex for buffer ready state
-      if (buffers_L[localReadIndex].ready == 1) {
-        __atomic_store_n(&buffers_L[localReadIndex].ready, 0, __ATOMIC_RELEASE);
-        // Note: pthread_cond_signal removed - producer thread will poll ready state
+    // SYNCHRONIZED BUFFER TRANSITIONS - All synths switch together
+    // This is the key fix: all synthesizers transition at the same time
+    // preventing temporal desynchronization
+    if (global_read_offset >= (unsigned int)g_sp3ctra_config.audio_buffer_size) {
+      // Mark all current buffers as consumed (RT-SAFE atomic operations)
+      
+      // Additive synthesis buffers
+      if (buffers_L[additive_read_buffer].ready == 1) {
+        __atomic_store_n(&buffers_L[additive_read_buffer].ready, 0, __ATOMIC_RELEASE);
       }
-      if (buffers_R[localReadIndex].ready == 1) {
-        __atomic_store_n(&buffers_R[localReadIndex].ready, 0, __ATOMIC_RELEASE);
-        // Note: pthread_cond_signal removed - producer thread will poll ready state  
+      if (buffers_R[additive_read_buffer].ready == 1) {
+        __atomic_store_n(&buffers_R[additive_read_buffer].ready, 0, __ATOMIC_RELEASE);
       }
-      localReadIndex = (localReadIndex == 0) ? 1 : 0;
-      readOffset = 0;
-    }
-
-    // Handle buffer transitions - Polyphonic (RT-SAFE VERSION)
-    if (polyphonic_readOffset >= (unsigned int)g_sp3ctra_config.audio_buffer_size) {
-      if (polyphonic_audio_buffers[polyphonic_localReadIndex].ready == 1) {
-        // RT-SAFE: Use atomic store instead of mutex for buffer ready state
-        __atomic_store_n(&polyphonic_audio_buffers[polyphonic_localReadIndex].ready, 0, __ATOMIC_RELEASE);
-        // Note: pthread_cond_signal removed - producer thread will poll ready state
+      
+      // Polyphonic synthesis buffer
+      if (polyphonic_audio_buffers[polyphonic_read_buffer].ready == 1) {
+        __atomic_store_n(&polyphonic_audio_buffers[polyphonic_read_buffer].ready, 0, __ATOMIC_RELEASE);
       }
-      polyphonic_localReadIndex = (polyphonic_localReadIndex == 0) ? 1 : 0;
-      polyphonic_readOffset = 0;
-    }
-
-    // Handle buffer transitions - Photowave (RT-SAFE VERSION)
-    if (photowave_readOffset >= (unsigned int)g_sp3ctra_config.audio_buffer_size) {
-      if (photowave_audio_buffers[photowave_localReadIndex].ready == 1) {
-        // RT-SAFE: Use atomic store instead of mutex for buffer ready state
-        __atomic_store_n(&photowave_audio_buffers[photowave_localReadIndex].ready, 0, __ATOMIC_RELEASE);
-        // Note: pthread_cond_signal removed - producer thread will poll ready state
+      
+      // Photowave synthesis buffer
+      if (photowave_audio_buffers[photowave_read_buffer].ready == 1) {
+        __atomic_store_n(&photowave_audio_buffers[photowave_read_buffer].ready, 0, __ATOMIC_RELEASE);
       }
-      photowave_localReadIndex = (photowave_localReadIndex == 0) ? 1 : 0;
-      photowave_readOffset = 0;
+      
+      // Switch all buffers simultaneously
+      additive_read_buffer = (additive_read_buffer == 0) ? 1 : 0;
+      polyphonic_read_buffer = (polyphonic_read_buffer == 0) ? 1 : 0;
+      photowave_read_buffer = (photowave_read_buffer == 0) ? 1 : 0;
+      
+      // Reset global offset for next buffer
+      global_read_offset = 0;
     }
   }
 

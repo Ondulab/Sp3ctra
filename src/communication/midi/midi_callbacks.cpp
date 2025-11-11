@@ -300,12 +300,7 @@ void midi_cb_synth_photowave_volume(const MidiParameterValue *param, void *user_
     // Set mix level directly (thread-safe)
     setSynthPhotowaveMixLevel(param->value);
     
-    log_info("PHOTOWAVE_DEBUG", "MIDI Callback: Volume changed - mix_level=%.2f (%.0f%%)", 
-             param->value, param->value * 100.0f);
-    
-    if (is_startup_verbose()) {
-        log_info("MIDI", "PHOTOWAVE SYNTH VOLUME: %d%%", (int)(param->value * 100));
-    }
+    log_info("PHOTOWAVE", "Volume: %d%%", (int)(param->value * 100));
 }
 
 void midi_cb_synth_photowave_note_on(const MidiParameterValue *param, void *user_data) {
@@ -316,7 +311,7 @@ void midi_cb_synth_photowave_note_on(const MidiParameterValue *param, void *user
     // param->value contains normalized velocity (0.0 to 1.0)
     int velocity = (int)(param->value * 127.0f);
     
-    log_info("PHOTOWAVE_DEBUG", "MIDI Callback: Note On received - note=%d, velocity=%d", note_number, velocity);
+    log_debug("PHOTOWAVE_DEBUG", "MIDI Callback: Note On received - note=%d, velocity=%d", note_number, velocity);
     
     synth_photowave_note_on(&g_photowave_state, (uint8_t)note_number, (uint8_t)velocity);
     
@@ -329,7 +324,7 @@ void midi_cb_synth_photowave_note_off(const MidiParameterValue *param, void *use
     // Note handling is special - raw_value contains note number
     int note_number = (int)param->raw_value;
     
-    log_info("PHOTOWAVE_DEBUG", "MIDI Callback: Note Off received - note=%d", note_number);
+    log_debug("PHOTOWAVE_DEBUG", "MIDI Callback: Note Off received - note=%d", note_number);
     
     synth_photowave_note_off(&g_photowave_state, (uint8_t)note_number);
     
@@ -370,21 +365,96 @@ void midi_cb_synth_photowave_brightness(const MidiParameterValue *param, void *u
 }
 
 void midi_cb_synth_photowave_pitch(const MidiParameterValue *param, void *user_data) {
+    (void)param;
     (void)user_data;
-    
-    // Convert CC value (0.0-1.0) to frequency using exponential mapping
-    // CC=0 → f_min, CC=127 → f_max
-    float f_min = g_photowave_state.f_min;
-    float f_max = g_photowave_state.f_max;
-    float ratio = f_max / f_min;
-    float frequency = f_min * powf(ratio, param->value);
-    
-    // Set frequency directly (continuous oscillator mode)
-    synth_photowave_set_frequency(&g_photowave_state, frequency);
+
+    // Photowave is now polyphonic and controlled via MIDI notes
+    // This pitch CC callback is deprecated - use MIDI Note On/Off instead
+    // Keeping function for backward compatibility but it does nothing
     
     if (is_startup_verbose()) {
-        log_info("MIDI", "PHOTOWAVE PITCH: CC=%d (%.1f Hz)", (int)(param->value * 127), frequency);
+        log_info("MIDI", "PHOTOWAVE PITCH CC ignored (use MIDI notes for polyphonic control)");
     }
+}
+
+void midi_cb_synth_photowave_volume_env_attack(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    synth_photowave_set_volume_adsr_attack(param->raw_value);
+    log_info("PHOTOWAVE", "ADSR Attack: %d ms", (int)(param->raw_value * 1000));
+}
+
+void midi_cb_synth_photowave_volume_env_decay(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    synth_photowave_set_volume_adsr_decay(param->raw_value);
+    log_info("PHOTOWAVE", "ADSR Decay: %d ms", (int)(param->raw_value * 1000));
+}
+
+void midi_cb_synth_photowave_volume_env_sustain(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    synth_photowave_set_volume_adsr_sustain(param->value);
+    log_info("PHOTOWAVE", "ADSR Sustain: %.0f%%", param->value * 100.0f);
+}
+
+void midi_cb_synth_photowave_volume_env_release(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    synth_photowave_set_volume_adsr_release(param->raw_value);
+    log_info("PHOTOWAVE", "ADSR Release: %d ms", (int)(param->raw_value * 1000));
+}
+
+void midi_cb_synth_photowave_filter_env_attack(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    synth_photowave_set_filter_adsr_attack(param->raw_value);
+    if (is_startup_verbose()) {
+        log_info("MIDI", "PHOTOWAVE FILT ENV ATTACK: %d ms", (int)(param->raw_value * 1000));
+    }
+}
+
+void midi_cb_synth_photowave_filter_env_decay(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    synth_photowave_set_filter_adsr_decay(param->raw_value);
+    if (is_startup_verbose()) {
+        log_info("MIDI", "PHOTOWAVE FILT ENV DECAY: %d ms", (int)(param->raw_value * 1000));
+    }
+}
+
+void midi_cb_synth_photowave_filter_env_sustain(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    synth_photowave_set_filter_adsr_sustain(param->value);
+    if (is_startup_verbose()) {
+        log_info("MIDI", "PHOTOWAVE FILT ENV SUSTAIN: %.0f%%", param->value * 100.0f);
+    }
+}
+
+void midi_cb_synth_photowave_filter_env_release(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    synth_photowave_set_filter_adsr_release(param->raw_value);
+    if (is_startup_verbose()) {
+        log_info("MIDI", "PHOTOWAVE FILT ENV RELEASE: %d ms", (int)(param->raw_value * 1000));
+    }
+}
+
+void midi_cb_synth_photowave_lfo_vibrato_rate(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    synth_photowave_set_vibrato_rate(param->raw_value);
+    log_info("PHOTOWAVE", "LFO Rate: %.2f Hz", param->raw_value);
+}
+
+void midi_cb_synth_photowave_lfo_vibrato_depth(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    synth_photowave_set_vibrato_depth(param->raw_value);
+    log_info("PHOTOWAVE", "LFO Depth: %.2f semitones", param->raw_value);
+}
+
+void midi_cb_synth_photowave_filter_cutoff(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    synth_photowave_set_filter_cutoff(param->raw_value);
+    log_info("PHOTOWAVE", "Filter Cutoff: %.0f Hz", param->raw_value);
+}
+
+void midi_cb_synth_photowave_filter_env_depth(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    synth_photowave_set_filter_env_depth(param->raw_value);
+    log_info("PHOTOWAVE", "Filter Env Depth: %.0f Hz", param->raw_value);
 }
 
 /* ============================================================================
@@ -393,7 +463,6 @@ void midi_cb_synth_photowave_pitch(const MidiParameterValue *param, void *user_d
 
 void midi_cb_sequencer_player_record_toggle(const MidiParameterValue *param, void *user_data) {
     log_debug("MIDI", "SEQUENCER CALLBACK CALLED: record_toggle");
-    (void)param;
     
     if (!g_image_sequencer) {
         log_error("MIDI", "g_image_sequencer is NULL");
@@ -406,23 +475,20 @@ void midi_cb_sequencer_player_record_toggle(const MidiParameterValue *param, voi
     }
     
     int player_id = *(int*)user_data;
-    log_debug("MIDI", "Player ID: %d", player_id);
+    log_debug("MIDI", "Player ID: %d, button_pressed: %d", player_id, param->button_pressed);
     
-    PlayerState state = image_sequencer_get_player_state(g_image_sequencer, player_id);
-    log_debug("MIDI", "Current state: %d", state);
-    
-    if (state == PLAYER_STATE_RECORDING) {
-        log_debug("MIDI", "Stopping recording");
-        image_sequencer_stop_recording(g_image_sequencer, player_id);
-    } else {
-        log_debug("MIDI", "Starting recording");
+    // Monostable behavior: press = start recording, release = stop recording
+    if (param->button_pressed) {
+        log_debug("MIDI", "Button pressed: Starting recording");
         image_sequencer_start_recording(g_image_sequencer, player_id);
+    } else {
+        log_debug("MIDI", "Button released: Stopping recording");
+        image_sequencer_stop_recording(g_image_sequencer, player_id);
     }
 }
 
 void midi_cb_sequencer_player_play_stop(const MidiParameterValue *param, void *user_data) {
     log_debug("MIDI", "SEQUENCER CALLBACK CALLED: play_stop");
-    (void)param;
     
     if (!g_image_sequencer) {
         log_error("MIDI", "g_image_sequencer is NULL");
@@ -435,12 +501,16 @@ void midi_cb_sequencer_player_play_stop(const MidiParameterValue *param, void *u
     }
     
     int player_id = *(int*)user_data;
-    log_debug("MIDI", "Player ID: %d", player_id);
+    log_debug("MIDI", "Player ID: %d, button_pressed: %d", player_id, param->button_pressed);
     
-    PlayerState state = image_sequencer_get_player_state(g_image_sequencer, player_id);
-    log_debug("MIDI", "Current state: %d, toggling playback", state);
-    
-    image_sequencer_toggle_playback(g_image_sequencer, player_id);
+    // Monostable behavior: press = start playback, release = stop playback
+    if (param->button_pressed) {
+        log_debug("MIDI", "Button pressed: Starting playback");
+        image_sequencer_start_playback(g_image_sequencer, player_id);
+    } else {
+        log_debug("MIDI", "Button released: Stopping playback");
+        image_sequencer_stop_playback(g_image_sequencer, player_id);
+    }
 }
 
 void midi_cb_sequencer_player_mute_toggle(const MidiParameterValue *param, void *user_data) {
@@ -709,7 +779,27 @@ void midi_callbacks_register_synth_photowave(void) {
     midi_mapping_register_callback("synth_photowave_resonance", midi_cb_synth_photowave_resonance, NULL);
     midi_mapping_register_callback("synth_photowave_brightness", midi_cb_synth_photowave_brightness, NULL);
     
-    log_info("MIDI", "Callbacks: Photowave synth registered");
+    // ADSR Volume Envelope
+    midi_mapping_register_callback("synth_photowave_volume_env_attack", midi_cb_synth_photowave_volume_env_attack, NULL);
+    midi_mapping_register_callback("synth_photowave_volume_env_decay", midi_cb_synth_photowave_volume_env_decay, NULL);
+    midi_mapping_register_callback("synth_photowave_volume_env_sustain", midi_cb_synth_photowave_volume_env_sustain, NULL);
+    midi_mapping_register_callback("synth_photowave_volume_env_release", midi_cb_synth_photowave_volume_env_release, NULL);
+    
+    // ADSR Filter Envelope
+    midi_mapping_register_callback("synth_photowave_filter_env_attack", midi_cb_synth_photowave_filter_env_attack, NULL);
+    midi_mapping_register_callback("synth_photowave_filter_env_decay", midi_cb_synth_photowave_filter_env_decay, NULL);
+    midi_mapping_register_callback("synth_photowave_filter_env_sustain", midi_cb_synth_photowave_filter_env_sustain, NULL);
+    midi_mapping_register_callback("synth_photowave_filter_env_release", midi_cb_synth_photowave_filter_env_release, NULL);
+    
+    // LFO Vibrato
+    midi_mapping_register_callback("synth_photowave_lfo_vibrato_rate", midi_cb_synth_photowave_lfo_vibrato_rate, NULL);
+    midi_mapping_register_callback("synth_photowave_lfo_vibrato_depth", midi_cb_synth_photowave_lfo_vibrato_depth, NULL);
+    
+    // Filter Parameters
+    midi_mapping_register_callback("synth_photowave_filter_cutoff", midi_cb_synth_photowave_filter_cutoff, NULL);
+    midi_mapping_register_callback("synth_photowave_filter_env_depth", midi_cb_synth_photowave_filter_env_depth, NULL);
+    
+    log_info("MIDI", "Callbacks: Photowave synth registered (with ADSR/LFO/Filter)");
 }
 
 void midi_callbacks_register_sequencer(void *sequencer_instance) {

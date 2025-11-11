@@ -25,7 +25,8 @@ ifeq ($(UNAME_S),Darwin)
     INCLUDES = -I/opt/homebrew/include -I$(SFML_INCLUDE) \
                -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects \
                -Isrc/audio/pan -Isrc/synthesis/additive -Isrc/synthesis/polyphonic \
-               -Isrc/synthesis/polyphonic/kissfft -Isrc/synthesis/photowave -Isrc/communication/network -Isrc/communication/midi \
+               -Isrc/synthesis/polyphonic/kissfft -Isrc/synthesis/photowave -Isrc/synthesis/common \
+               -Isrc/communication/network -Isrc/communication/midi \
                -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
     
     # macOS Libraries - Use SFML@2 exclusively to avoid version conflicts
@@ -48,7 +49,8 @@ else
     INCLUDES = -I/usr/include -I/usr/local/include $(LIBFTDI_CFLAGS) \
                -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects \
                -Isrc/audio/pan -Isrc/synthesis/additive -Isrc/synthesis/polyphonic \
-               -Isrc/synthesis/polyphonic/kissfft -Isrc/synthesis/photowave -Isrc/communication/network -Isrc/communication/midi \
+               -Isrc/synthesis/polyphonic/kissfft -Isrc/synthesis/photowave -Isrc/synthesis/common \
+               -Isrc/communication/network -Isrc/communication/midi \
                -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
     
     # Linux Libraries (including libftdi1 for DMX support)

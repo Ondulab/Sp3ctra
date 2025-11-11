@@ -73,6 +73,7 @@ typedef struct {
     float raw_value;       // Raw value in parameter's native unit
     const char *param_name;
     int is_button;         // 1 if button/trigger, 0 if continuous
+    int button_pressed;    // For buttons: 1 = pressed, 0 = released
 } MidiParameterValue;
 
 /* Callback function type */
