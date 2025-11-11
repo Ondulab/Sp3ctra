@@ -94,6 +94,7 @@ typedef struct {
     /* Mix parameters */
     float exposure;                  // Exposure control: 0.0=underexposed, 0.5=normal, 1.0=blown out
     float brightness;                // Brightness/saturation boost [0.5, 2.0] (default 1.0)
+    float player_mix;                // Mix with general: 0.0=100% player, 1.0=100% multiplicative mask
     int mix_enabled;                 // Enable/disable in mix (0=off, 1=on)
     
 } SequencePlayer;
@@ -106,7 +107,6 @@ typedef struct {
     
     /* Global mix control */
     BlendMode blend_mode;            // Current blending mode
-    float live_mix_level;            // Live input mix level [0.0, 1.0]
     
     /* MIDI clock sync */
     float bpm;                       // Current BPM (from MIDI or manual)
@@ -153,13 +153,12 @@ void image_sequencer_set_loop_mode(ImageSequencer *seq, int player_id, LoopMode 
 void image_sequencer_set_trigger_mode(ImageSequencer *seq, int player_id, TriggerMode mode);
 void image_sequencer_set_exposure(ImageSequencer *seq, int player_id, float level);
 void image_sequencer_set_brightness(ImageSequencer *seq, int player_id, float brightness);
+void image_sequencer_set_player_mix(ImageSequencer *seq, int player_id, float mix);
 void image_sequencer_set_mix_enabled(ImageSequencer *seq, int player_id, int enabled);
 void image_sequencer_set_playback_direction(ImageSequencer *seq, int player_id, int direction);
 
 /* Player state control */
-int image_sequencer_mute_player(ImageSequencer *seq, int player_id);
-int image_sequencer_unmute_player(ImageSequencer *seq, int player_id);
-int image_sequencer_toggle_mute(ImageSequencer *seq, int player_id);
+int image_sequencer_clear_buffer(ImageSequencer *seq, int player_id);
 
 /* ADSR envelope control (positional) */
 void image_sequencer_set_adsr(ImageSequencer *seq, int player_id, 
@@ -173,7 +172,6 @@ void image_sequencer_set_release(ImageSequencer *seq, int player_id, float relea
 /* Global control */
 void image_sequencer_set_enabled(ImageSequencer *seq, int enabled);
 void image_sequencer_set_blend_mode(ImageSequencer *seq, BlendMode mode);
-void image_sequencer_set_live_mix_level(ImageSequencer *seq, float level);
 void image_sequencer_set_bpm(ImageSequencer *seq, float bpm);
 void image_sequencer_enable_midi_sync(ImageSequencer *seq, int enable);
 

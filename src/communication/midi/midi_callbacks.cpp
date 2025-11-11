@@ -513,8 +513,8 @@ void midi_cb_sequencer_player_play_stop(const MidiParameterValue *param, void *u
     }
 }
 
-void midi_cb_sequencer_player_mute_toggle(const MidiParameterValue *param, void *user_data) {
-    log_debug("MIDI", "SEQUENCER CALLBACK CALLED: mute_toggle");
+void midi_cb_sequencer_player_clear(const MidiParameterValue *param, void *user_data) {
+    log_debug("MIDI", "SEQUENCER CALLBACK CALLED: clear");
     (void)param;
     
     if (!g_image_sequencer) {
@@ -530,10 +530,7 @@ void midi_cb_sequencer_player_mute_toggle(const MidiParameterValue *param, void 
     int player_id = *(int*)user_data;
     log_debug("MIDI", "Player ID: %d", player_id);
     
-    PlayerState state = image_sequencer_get_player_state(g_image_sequencer, player_id);
-    log_debug("MIDI", "Current state: %d, toggling mute", state);
-    
-    image_sequencer_toggle_mute(g_image_sequencer, player_id);
+    image_sequencer_clear_buffer(g_image_sequencer, player_id);
 }
 
 void midi_cb_sequencer_player_speed(const MidiParameterValue *param, void *user_data) {
@@ -555,6 +552,28 @@ void midi_cb_sequencer_player_exposure(const MidiParameterValue *param, void *us
     
     if (is_startup_verbose()) {
         log_info("MIDI", "SEQ Player %d: Exposure %d%%", player_id, (int)(param->value * 100));
+    }
+}
+
+void midi_cb_sequencer_player_brightness(const MidiParameterValue *param, void *user_data) {
+    if (!g_image_sequencer || !user_data) return;
+    
+    int player_id = *(int*)user_data;
+    image_sequencer_set_brightness(g_image_sequencer, player_id, param->raw_value);
+    
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SEQ Player %d: Brightness %.0f%%", player_id, param->raw_value * 100);
+    }
+}
+
+void midi_cb_sequencer_player_mix(const MidiParameterValue *param, void *user_data) {
+    if (!g_image_sequencer || !user_data) return;
+    
+    int player_id = *(int*)user_data;
+    image_sequencer_set_player_mix(g_image_sequencer, player_id, param->value);
+    
+    if (is_startup_verbose()) {
+        log_info("MIDI", "SEQ Player %d: Player mix %d%% (0%%=player, 100%%=mask)", player_id, (int)(param->value * 100));
     }
 }
 
@@ -647,18 +666,6 @@ void midi_cb_sequencer_player_playback_direction(const MidiParameterValue *param
 /* ============================================================================
  * SEQUENCER GLOBAL CALLBACKS
  * ============================================================================ */
-
-void midi_cb_sequencer_live_mix_level(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    if (!g_image_sequencer) return;
-    
-    image_sequencer_set_live_mix_level(g_image_sequencer, param->value);
-    
-    if (is_startup_verbose()) {
-        log_info("MIDI", "SEQUENCER: Live mix %d%%", (int)(param->value * 100));
-    }
-}
 
 void midi_cb_sequencer_blend_mode(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
@@ -811,7 +818,6 @@ void midi_callbacks_register_sequencer(void *sequencer_instance) {
     }
     
     // Register global sequencer controls
-    midi_mapping_register_callback("sequencer_global_live_mix_level", midi_cb_sequencer_live_mix_level, NULL);
     midi_mapping_register_callback("sequencer_global_blend_mode", midi_cb_sequencer_blend_mode, NULL);
     midi_mapping_register_callback("sequencer_global_master_tempo", midi_cb_sequencer_master_tempo, NULL);
     midi_mapping_register_callback("sequencer_global_quantize_res", midi_cb_sequencer_quantize_res, NULL);
@@ -830,9 +836,9 @@ void midi_callbacks_register_sequencer(void *sequencer_instance) {
         snprintf(param_name, sizeof(param_name), "sequencer_player_%d_play_stop", i + 1);
         midi_mapping_register_callback(param_name, midi_cb_sequencer_player_play_stop, &player_ids[i]);
         
-        // Mute toggle
-        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_mute_toggle", i + 1);
-        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_mute_toggle, &player_ids[i]);
+        // Clear buffer
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_clear", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_clear, &player_ids[i]);
         
         // Speed
         snprintf(param_name, sizeof(param_name), "sequencer_player_%d_speed", i + 1);
@@ -841,6 +847,14 @@ void midi_callbacks_register_sequencer(void *sequencer_instance) {
         // Exposure
         snprintf(param_name, sizeof(param_name), "sequencer_player_%d_exposure", i + 1);
         midi_mapping_register_callback(param_name, midi_cb_sequencer_player_exposure, &player_ids[i]);
+        
+        // Brightness
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_brightness", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_brightness, &player_ids[i]);
+        
+        // Player mix
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_player_mix", i + 1);
+        midi_mapping_register_callback(param_name, midi_cb_sequencer_player_mix, &player_ids[i]);
         
         // Offset
         snprintf(param_name, sizeof(param_name), "sequencer_player_%d_offset", i + 1);

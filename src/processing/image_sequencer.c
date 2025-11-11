@@ -145,6 +145,7 @@ static void init_sequence_player(SequencePlayer *player, int buffer_capacity) {
     player->playback_direction = 1;
     player->exposure = 0.5f;  // Default 50% exposure (normal)
     player->brightness = 1.0f;   // Default 100% brightness (neutral)
+    player->player_mix = 0.0f;   // Default 0% = 100% player (no masking)
     player->mix_enabled = 1;     // Default enabled in mix
     player->loop_mode = LOOP_MODE_SIMPLE;
     player->trigger_mode = TRIGGER_MODE_MANUAL;
@@ -195,7 +196,6 @@ ImageSequencer *image_sequencer_create(int num_players, float max_duration_s) {
     seq->max_duration_s = max_duration_s;
     seq->enabled = 0;
     seq->blend_mode = BLEND_MODE_MASK;  // Default MASK blend mode
-    seq->live_mix_level = 0.5f;  /* Default 50% mix (0.0 = 100% sequencer, 1.0 = 100% live) */
     seq->bpm = 120.0f;
     
     if (pthread_mutex_init(&seq->mutex, NULL) != 0) {
@@ -276,11 +276,13 @@ int image_sequencer_start_recording(ImageSequencer *seq, int player_id) {
     }
     
     player->state = PLAYER_STATE_RECORDING;
-    player->recorded_frames = 0;
-    player->playback_position = 0.0f;
+    // NOTE: recorded_frames is NOT reset - additive recording behavior
+    // Frames will be added starting from current recorded_frames position
+    // playback_position is also NOT reset to allow continuing from where we are
     
     pthread_mutex_unlock(&seq->mutex);
-    log_info("SEQUENCER", "Player %d: Started recording", player_id);
+    log_info("SEQUENCER", "Player %d: Started recording (additive mode, %d frames existing)", 
+             player_id, player->recorded_frames);
     return 0;
 }
 
@@ -296,17 +298,8 @@ int image_sequencer_stop_recording(ImageSequencer *seq, int player_id) {
     }
     
     player->state = PLAYER_STATE_READY;
-    
-    // Auto-play if trigger mode is auto
-    if (player->trigger_mode == TRIGGER_MODE_AUTO && player->recorded_frames > 0) {
-        player->state = PLAYER_STATE_PLAYING;
-        player->playback_position = 0.0f;
-        log_info("SEQUENCER", "Player %d: Stopped recording, auto-playing (%d frames)", 
-                 player_id, player->recorded_frames);
-    } else {
-        log_info("SEQUENCER", "Player %d: Stopped recording, ready (%d frames)", 
-                 player_id, player->recorded_frames);
-    }
+    log_info("SEQUENCER", "Player %d: Stopped recording, ready (%d frames)", 
+             player_id, player->recorded_frames);
     
     pthread_mutex_unlock(&seq->mutex);
     return 0;
@@ -439,6 +432,15 @@ void image_sequencer_set_brightness(ImageSequencer *seq, int player_id, float br
     log_info("SEQUENCER", "Player %d: Brightness %.0f%%", player_id, brightness * 100);
 }
 
+void image_sequencer_set_player_mix(ImageSequencer *seq, int player_id, float mix) {
+    if (!seq || player_id < 0 || player_id >= seq->num_players) return;
+    mix = clamp_f(mix, 0.0f, 1.0f);
+    pthread_mutex_lock(&seq->mutex);
+    seq->players[player_id].player_mix = mix;
+    pthread_mutex_unlock(&seq->mutex);
+    log_info("SEQUENCER", "Player %d: Player mix %d%% (0%%=player, 100%%=mask)", player_id, (int)(mix * 100));
+}
+
 void image_sequencer_set_mix_enabled(ImageSequencer *seq, int player_id, int enabled) {
     if (!seq || player_id < 0 || player_id >= seq->num_players) return;
     pthread_mutex_lock(&seq->mutex);
@@ -456,52 +458,21 @@ void image_sequencer_set_playback_direction(ImageSequencer *seq, int player_id, 
 }
 
 // Player State Control
-int image_sequencer_mute_player(ImageSequencer *seq, int player_id) {
+int image_sequencer_clear_buffer(ImageSequencer *seq, int player_id) {
     if (!seq || player_id < 0 || player_id >= seq->num_players) return -1;
     
     pthread_mutex_lock(&seq->mutex);
     SequencePlayer *player = &seq->players[player_id];
     
-    if (player->state == PLAYER_STATE_PLAYING) {
-        player->state = PLAYER_STATE_MUTED;
-        pthread_mutex_unlock(&seq->mutex);
-        log_info("SEQUENCER", "Player %d: Muted", player_id);
-        return 0;
-    }
+    // Clear all recorded frames
+    player->recorded_frames = 0;
+    player->playback_position = 0.0f;
+    player->playback_offset = 0;
+    player->state = PLAYER_STATE_IDLE;
     
     pthread_mutex_unlock(&seq->mutex);
-    return -1;
-}
-
-int image_sequencer_unmute_player(ImageSequencer *seq, int player_id) {
-    if (!seq || player_id < 0 || player_id >= seq->num_players) return -1;
-    
-    pthread_mutex_lock(&seq->mutex);
-    SequencePlayer *player = &seq->players[player_id];
-    
-    if (player->state == PLAYER_STATE_MUTED && player->recorded_frames > 0) {
-        player->state = PLAYER_STATE_PLAYING;
-        pthread_mutex_unlock(&seq->mutex);
-        log_info("SEQUENCER", "Player %d: Unmuted", player_id);
-        return 0;
-    }
-    
-    pthread_mutex_unlock(&seq->mutex);
-    return -1;
-}
-
-int image_sequencer_toggle_mute(ImageSequencer *seq, int player_id) {
-    if (!seq || player_id < 0 || player_id >= seq->num_players) return -1;
-    
-    pthread_mutex_lock(&seq->mutex);
-    int is_muted = (seq->players[player_id].state == PLAYER_STATE_MUTED);
-    pthread_mutex_unlock(&seq->mutex);
-    
-    if (is_muted) {
-        return image_sequencer_unmute_player(seq, player_id);
-    } else {
-        return image_sequencer_mute_player(seq, player_id);
-    }
+    log_info("SEQUENCER", "Player %d: Buffer cleared", player_id);
+    return 0;
 }
 
 // ADSR Control (positional envelope)
@@ -634,13 +605,6 @@ void image_sequencer_set_blend_mode(ImageSequencer *seq, BlendMode mode) {
     }
 }
 
-void image_sequencer_set_live_mix_level(ImageSequencer *seq, float level) {
-    if (!seq) return;
-    pthread_mutex_lock(&seq->mutex);
-    seq->live_mix_level = clamp_f(level, 0.0f, 1.0f);
-    pthread_mutex_unlock(&seq->mutex);
-    log_info("SEQUENCER", "Live mix level: %d%%", (int)(level * 100));
-}
 
 void image_sequencer_set_bpm(ImageSequencer *seq, float bpm) {
     if (!seq) return;
@@ -742,18 +706,24 @@ int image_sequencer_process_frame(
     for (i = 0; i < seq->num_players; i++) {
         SequencePlayer *player = &seq->players[i];
         
-        /* Handle recording */
+        /* Handle recording - Ring buffer mode (additive with wrap-around) */
         if (player->state == PLAYER_STATE_RECORDING) {
-            if (player->recorded_frames < player->buffer_capacity) {
-                memcpy(player->frames[player->recorded_frames].buffer_R, live_R, nb_pixels);
-                memcpy(player->frames[player->recorded_frames].buffer_G, live_G, nb_pixels);
-                memcpy(player->frames[player->recorded_frames].buffer_B, live_B, nb_pixels);
-                player->frames[player->recorded_frames].timestamp_us = get_time_us();
-                player->recorded_frames++;
-            } else {
-                /* Buffer full, auto-stop recording */
-                player->state = PLAYER_STATE_READY;
-                log_info("SEQUENCER", "Player %d: Buffer full, stopped recording", i);
+            /* Calculate write index using modulo for ring buffer behavior */
+            int write_index = player->recorded_frames % player->buffer_capacity;
+            
+            /* Write frame at calculated index */
+            memcpy(player->frames[write_index].buffer_R, live_R, nb_pixels);
+            memcpy(player->frames[write_index].buffer_G, live_G, nb_pixels);
+            memcpy(player->frames[write_index].buffer_B, live_B, nb_pixels);
+            player->frames[write_index].timestamp_us = get_time_us();
+            
+            /* Increment recorded_frames counter */
+            player->recorded_frames++;
+            
+            /* Clamp recorded_frames to buffer_capacity for playback purposes */
+            /* This ensures playback never tries to read beyond buffer_capacity */
+            if (player->recorded_frames > player->buffer_capacity) {
+                player->recorded_frames = player->buffer_capacity;
             }
         }
         
@@ -900,11 +870,28 @@ int image_sequencer_process_frame(
                         exposed_B = (exposed_B > 255.0f) ? 255.0f : exposed_B;
                         
                         /* Step 3: Apply envelope for temporal control */
-                        float final_R = exposed_R * env_level;
-                        float final_G = exposed_G * env_level;
-                        float final_B = exposed_B * env_level;
+                        float enveloped_R = exposed_R * env_level;
+                        float enveloped_G = exposed_G * env_level;
+                        float enveloped_B = exposed_B * env_level;
                         
-                        /* Step 4: Direct accumulation */
+                        /* Step 4: Apply player_mix with multiplicative masking */
+                        /* player_mix = 0.0 → 100% player (no masking) */
+                        /* player_mix = 1.0 → 100% multiplicative mask (player filters general) */
+                        float mask_R = enveloped_R / 255.0f;  // Normalize to [0, 1]
+                        float mask_G = enveloped_G / 255.0f;
+                        float mask_B = enveloped_B / 255.0f;
+                        
+                        /* Multiplicative masking: player acts as color filter on general */
+                        float masked_R = live_R[p] * mask_R;
+                        float masked_G = live_G[p] * mask_G;
+                        float masked_B = live_B[p] * mask_B;
+                        
+                        /* Crossfade between pure player and masked general */
+                        float final_R = enveloped_R * (1.0f - player->player_mix) + masked_R * player->player_mix;
+                        float final_G = enveloped_G * (1.0f - player->player_mix) + masked_G * player->player_mix;
+                        float final_B = enveloped_B * (1.0f - player->player_mix) + masked_B * player->player_mix;
+                        
+                        /* Step 5: Accumulate to output */
                         accum_R[p] += final_R;
                         accum_G[p] += final_G;
                         accum_B[p] += final_B;
@@ -926,27 +913,16 @@ int image_sequencer_process_frame(
         }
     }
     
-    /* Mix with live input and write output */
+    /* Write accumulated output (no global mix, each player has its own player_mix) */
     if (has_active_players) {
-        /* Simple crossfade controlled by live_mix_level only */
-        /* live_mix_level: 0.0 = 100% sequencer, 1.0 = 100% live */
-        float seq_weight = 1.0f - seq->live_mix_level;
-        float live_weight = seq->live_mix_level;
-        
         int p;
         
-        /* 🎨 SIMPLIFIED MIX: Only live_mix_level controls looper↔live crossfade */
-        /* accum contains: pixel * env * alpha (with colors preserved and fade-to-white applied) */
+        /* Direct output from accumulator (players already mixed with general via player_mix) */
         for (p = 0; p < nb_pixels; p++) {
-            /* Crossfade between sequencer and live */
-            float mixed_R = accum_R[p] * seq_weight + live_R[p] * live_weight;
-            float mixed_G = accum_G[p] * seq_weight + live_G[p] * live_weight;
-            float mixed_B = accum_B[p] * seq_weight + live_B[p] * live_weight;
-            
             /* Clamp and write output */
-            output_R[p] = clamp_u8((int)mixed_R);
-            output_G[p] = clamp_u8((int)mixed_G);
-            output_B[p] = clamp_u8((int)mixed_B);
+            output_R[p] = clamp_u8((int)accum_R[p]);
+            output_G[p] = clamp_u8((int)accum_G[p]);
+            output_B[p] = clamp_u8((int)accum_B[p]);
         }
     } else {
         /* No active players, just pass through live */
@@ -1026,7 +1002,6 @@ void image_sequencer_print_status(ImageSequencer *seq) {
     printf("\n========== IMAGE SEQUENCER STATUS ==========\n");
     printf("Enabled: %s\n", seq->enabled ? "YES" : "NO");
     printf("Blend Mode: %d\n", seq->blend_mode);
-    printf("Live Mix Level: %.2f\n", seq->live_mix_level);
     printf("BPM: %.1f\n", seq->bpm);
     printf("MIDI Sync: %s\n", seq->midi_clock_sync ? "ON" : "OFF");
     printf("Frames Processed: %llu\n", (unsigned long long)seq->frames_processed);
