@@ -12,40 +12,13 @@
 #include "kissfft/kiss_fftr.h" // Pour la FFT réelle
 #include <pthread.h>           // For mutex and cond
 #include <stdint.h>            // For uint32_t, etc.
+#include "../common/synth_common.h"  // For AdsrState and AdsrEnvelope
 
 /* Synth Definitions */
 #define MAX_MAPPED_OSCILLATORS                                                 \
   128                     // Max FFT bins/harmonics to map to oscillators
 #define NUM_POLY_VOICES 8 // Increased to 32 polyphonic voices
 #define DEFAULT_FUNDAMENTAL_FREQUENCY 440.0f // A4 for testing
-
-/* ADSR Envelope Definitions */
-typedef enum {
-  ADSR_STATE_IDLE,
-  ADSR_STATE_ATTACK,
-  ADSR_STATE_DECAY,
-  ADSR_STATE_SUSTAIN,
-  ADSR_STATE_RELEASE
-} AdsrState;
-
-typedef struct {
-  AdsrState state;
-  float attack_time_samples;  // Attack time in samples
-  float decay_time_samples;   // Decay time in samples
-  float sustain_level;        // Sustain level (0.0 to 1.0)
-  float release_time_samples; // Release time in samples
-
-  float current_output;      // Current envelope output value (0.0 to 1.0)
-  long long current_samples; // Counter for samples in current state
-  float attack_increment;    // Value to add per sample in attack phase
-  float decay_decrement;     // Value to subtract per sample in decay phase
-  float release_decrement;   // Value to subtract per sample in release phase
-  // Default ADSR values (can be made configurable later)
-  // Times in seconds, will be converted to samples in init
-  float attack_s;
-  float decay_s;
-  float release_s;
-} AdsrEnvelope;
 
 /* Filter Definitions */
 typedef struct S_SpectralFilterParams { // Renamed struct tag
@@ -132,16 +105,6 @@ extern FftContext polyphonic_context;
 extern SynthVoice poly_voices[NUM_POLY_VOICES];
 extern float global_smoothed_magnitudes[MAX_MAPPED_OSCILLATORS];
 extern SpectralFilterParams global_spectral_filter_params;
-
-/* LFO State Definition */
-typedef struct {
-  float phase;
-  float phase_increment;
-  float current_output; // Output of LFO, typically -1.0 to 1.0
-  // Parameters
-  float rate_hz;
-  float depth_semitones; // Modulation depth in semitones
-} LfoState;
 
 extern LfoState global_vibrato_lfo; // Global LFO for vibrato
 

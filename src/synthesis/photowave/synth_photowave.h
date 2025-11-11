@@ -8,10 +8,13 @@
  * and directions to produce pitched audio.
  * 
  * Key features:
- * - MIDI-controlled pitch (exponential mapping from f_min to 12kHz)
+ * - 8-voice polyphony with intelligent voice stealing
+ * - MIDI-controlled pitch (standard MIDI tuning A4=440Hz)
+ * - ADSR envelope for volume and filter modulation
+ * - LFO for vibrato effect
+ * - Lowpass filter with envelope modulation
  * - 3 scanning modes: Left→Right, Right→Left, Dual/Ping-Pong
  * - Linear and cubic interpolation
- * - Continuous or note-triggered modes
  * - Real-time safe (no allocations, no locks in audio callback)
  */
 
@@ -21,36 +24,23 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include "../common/synth_common.h"  // For AdsrState and AdsrEnvelope
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* ============================================================================
- * AUDIO BUFFER STRUCTURE (for thread integration)
- * ========================================================================== */
-
-/**
- * @brief Audio buffer structure for double-buffering with producer thread
- * 
- * This structure is used to pass audio data from the Photowave generation
- * thread to the audio callback in a thread-safe manner.
- */
-typedef struct {
-    float *data;              // Dynamically allocated buffer (size = audio_buffer_size)
-    volatile int ready;       // 0 = not ready, 1 = ready for consumption
-    pthread_mutex_t mutex;    // Mutex for thread synchronization
-    pthread_cond_t cond;      // Condition variable for signaling
-} PhotowaveAudioBuffer;
-
-/* ============================================================================
  * CONSTANTS
  * ========================================================================== */
 
-#define PHOTOWAVE_MAX_PIXELS 4096  // Maximum supported DPI (400 DPI = 3456 pixels)
-#define PHOTOWAVE_MIN_FREQUENCY 10.0f   // Minimum frequency (Hz)
-#define PHOTOWAVE_MAX_FREQUENCY 12000.0f // Maximum frequency (Hz)
-#define PHOTOWAVE_DEFAULT_AMPLITUDE 0.5f // Default amplitude (0.0 to 1.0)
+#define PHOTOWAVE_MAX_PIXELS 4096           // Maximum supported DPI (400 DPI = 3456 pixels)
+#define PHOTOWAVE_MIN_FREQUENCY 10.0f       // Minimum frequency (Hz)
+#define PHOTOWAVE_MAX_FREQUENCY 12000.0f    // Maximum frequency (Hz)
+#define PHOTOWAVE_DEFAULT_AMPLITUDE 0.5f    // Default amplitude (0.0 to 1.0)
+
+#define NUM_PHOTOWAVE_VOICES 8              // Number of polyphonic voices
+#define MIN_AUDIBLE_AMPLITUDE 0.001f        // Skip voices below this threshold
 
 /* ============================================================================
  * ENUMERATIONS
@@ -78,6 +68,42 @@ typedef enum {
  * ========================================================================== */
 
 /**
+ * @brief Simple first-order lowpass filter with envelope modulation
+ * 
+ * Implements a basic RC lowpass filter with cutoff frequency modulated by ADSR.
+ */
+typedef struct {
+    float base_cutoff_hz;       // Base cutoff frequency when ADSR is at 0
+    float filter_env_depth;     // How much ADSR modulates cutoff (Hz, can be negative)
+    float prev_output;          // Previous output sample (filter state)
+    float alpha;                // Smoothing coefficient (recalculated per sample)
+} PhotowaveLowpassFilter;
+
+/**
+ * @brief Single polyphonic voice for Photowave synthesis
+ * 
+ * Each voice maintains its own playback state, ADSR envelopes, and filter state.
+ */
+typedef struct {
+    // Playback state
+    float phase;                    // Current phase position (0.0 to 1.0)
+    float frequency;                // Current playback frequency (Hz)
+    
+    // MIDI information
+    uint8_t midi_note;              // MIDI note number (0-127)
+    uint8_t velocity;               // MIDI velocity (0-127)
+    bool active;                    // True if voice is in use
+    unsigned long long trigger_order; // Order in which voice was triggered (for stealing)
+    
+    // ADSR envelopes
+    AdsrEnvelope volume_adsr;       // Volume envelope
+    AdsrEnvelope filter_adsr;       // Filter envelope
+    
+    // Filter state (per-voice)
+    PhotowaveLowpassFilter lowpass; // Lowpass filter with state
+} PhotowaveVoice;
+
+/**
  * @brief Configuration parameters for Photowave synthesis
  * 
  * These parameters can be loaded from sp3ctra.ini [photowave] section
@@ -103,15 +129,12 @@ typedef struct {
     const uint8_t *image_line;        // Pointer to current image line (grayscale)
     int pixel_count;                  // Number of pixels in image line
     
-    // Playback state
-    float phase;                      // Current phase position (0.0 to 1.0)
-    float phase_increment;            // Phase increment per sample
-    float current_frequency;          // Current playback frequency (Hz)
-    float target_frequency;           // Target frequency for smooth transitions
-    bool note_active;                 // True when a MIDI note is active
-    bool continuous_mode;             // True for continuous oscillator mode (always on)
-    uint8_t current_note;             // Current MIDI note number (0-127)
-    uint8_t current_velocity;         // Current MIDI velocity (0-127)
+    // Polyphonic voices
+    PhotowaveVoice voices[NUM_PHOTOWAVE_VOICES]; // Array of polyphonic voices
+    unsigned long long current_trigger_order;    // Global trigger order counter
+    
+    // Global modulation
+    LfoState global_vibrato_lfo;      // Global LFO for vibrato (shared by all voices)
     
     // Audio parameters
     float sample_rate;                // Audio sample rate (Hz)
@@ -122,6 +145,19 @@ typedef struct {
     uint64_t samples_generated;       // Total samples generated
     uint32_t buffer_underruns;        // Count of buffer underruns (should be 0)
 } PhotowaveState;
+
+/**
+ * @brief Audio buffer structure for double-buffering with producer thread
+ * 
+ * This structure is used to pass audio data from the Photowave generation
+ * thread to the audio callback in a thread-safe manner.
+ */
+typedef struct {
+    float *data;              // Dynamically allocated buffer (size = audio_buffer_size)
+    volatile int ready;       // 0 = not ready, 1 = ready for consumption
+    pthread_mutex_t mutex;    // Mutex for thread synchronization
+    pthread_cond_t cond;      // Condition variable for signaling
+} PhotowaveAudioBuffer;
 
 /* ============================================================================
  * PUBLIC API - INITIALIZATION & CLEANUP
@@ -217,27 +253,89 @@ void synth_photowave_set_interp_mode(PhotowaveState *state, PhotowaveInterpMode 
  */
 void synth_photowave_set_amplitude(PhotowaveState *state, float amplitude);
 
-/**
- * @brief Set playback frequency directly (for continuous oscillator mode)
- * 
- * Sets the frequency without using the note on/off system.
- * Useful for continuous pitch control via CC.
- * 
- * @param state Pointer to PhotowaveState structure
- * @param frequency Frequency in Hz (will be clamped to f_min-f_max range)
- */
-void synth_photowave_set_frequency(PhotowaveState *state, float frequency);
+/* ============================================================================
+ * PUBLIC API - ADSR PARAMETER SETTERS (RT-SAFE)
+ * ========================================================================== */
 
 /**
- * @brief Enable or disable continuous oscillator mode
- * 
- * In continuous mode, Photowave generates audio continuously without
- * requiring note_active to be true. Frequency is controlled directly.
- * 
- * @param state Pointer to PhotowaveState structure
- * @param enabled True to enable continuous mode, false for note-based mode
+ * @brief Set volume ADSR attack time
+ * @param attack_s Attack time in seconds
  */
-void synth_photowave_set_continuous_mode(PhotowaveState *state, bool enabled);
+void synth_photowave_set_volume_adsr_attack(float attack_s);
+
+/**
+ * @brief Set volume ADSR decay time
+ * @param decay_s Decay time in seconds
+ */
+void synth_photowave_set_volume_adsr_decay(float decay_s);
+
+/**
+ * @brief Set volume ADSR sustain level
+ * @param sustain_level Sustain level (0.0 to 1.0)
+ */
+void synth_photowave_set_volume_adsr_sustain(float sustain_level);
+
+/**
+ * @brief Set volume ADSR release time
+ * @param release_s Release time in seconds
+ */
+void synth_photowave_set_volume_adsr_release(float release_s);
+
+/**
+ * @brief Set filter ADSR attack time
+ * @param attack_s Attack time in seconds
+ */
+void synth_photowave_set_filter_adsr_attack(float attack_s);
+
+/**
+ * @brief Set filter ADSR decay time
+ * @param decay_s Decay time in seconds
+ */
+void synth_photowave_set_filter_adsr_decay(float decay_s);
+
+/**
+ * @brief Set filter ADSR sustain level
+ * @param sustain_level Sustain level (0.0 to 1.0)
+ */
+void synth_photowave_set_filter_adsr_sustain(float sustain_level);
+
+/**
+ * @brief Set filter ADSR release time
+ * @param release_s Release time in seconds
+ */
+void synth_photowave_set_filter_adsr_release(float release_s);
+
+/* ============================================================================
+ * PUBLIC API - LFO PARAMETER SETTERS (RT-SAFE)
+ * ========================================================================== */
+
+/**
+ * @brief Set vibrato LFO rate
+ * @param rate_hz LFO frequency in Hz
+ */
+void synth_photowave_set_vibrato_rate(float rate_hz);
+
+/**
+ * @brief Set vibrato LFO depth
+ * @param depth_semitones Modulation depth in semitones
+ */
+void synth_photowave_set_vibrato_depth(float depth_semitones);
+
+/* ============================================================================
+ * PUBLIC API - FILTER PARAMETER SETTERS (RT-SAFE)
+ * ========================================================================== */
+
+/**
+ * @brief Set global filter base cutoff frequency
+ * @param cutoff_hz Base cutoff frequency in Hz
+ */
+void synth_photowave_set_filter_cutoff(float cutoff_hz);
+
+/**
+ * @brief Set global filter envelope depth
+ * @param depth_hz Envelope modulation depth in Hz (can be negative)
+ */
+void synth_photowave_set_filter_env_depth(float depth_hz);
 
 /* ============================================================================
  * PUBLIC API - MIDI CONTROL (RT-SAFE)
@@ -247,7 +345,7 @@ void synth_photowave_set_continuous_mode(PhotowaveState *state, bool enabled);
  * @brief Handle MIDI Note On event
  * 
  * Starts playback at the frequency corresponding to the MIDI note.
- * Uses exponential mapping from f_min to f_max.
+ * Uses standard MIDI tuning with A4 (note 69) = 440 Hz.
  * 
  * @param state Pointer to PhotowaveState structure
  * @param note MIDI note number (0-127, typically 21-108 for piano range)
@@ -258,7 +356,7 @@ void synth_photowave_note_on(PhotowaveState *state, uint8_t note, uint8_t veloci
 /**
  * @brief Handle MIDI Note Off event
  * 
- * Stops playback (sets note_active to false).
+ * Triggers release phase of ADSR envelopes for matching note.
  * 
  * @param state Pointer to PhotowaveState structure
  * @param note MIDI note number (0-127)
@@ -292,18 +390,10 @@ void synth_photowave_control_change(PhotowaveState *state, uint8_t cc_number, ui
 PhotowaveConfig synth_photowave_get_config(const PhotowaveState *state);
 
 /**
- * @brief Get current playback frequency
+ * @brief Check if any voice is currently active
  * 
  * @param state Pointer to PhotowaveState structure
- * @return Current frequency in Hz
- */
-float synth_photowave_get_frequency(const PhotowaveState *state);
-
-/**
- * @brief Check if a note is currently active
- * 
- * @param state Pointer to PhotowaveState structure
- * @return true if note is active, false otherwise
+ * @return true if at least one voice is active, false otherwise
  */
 bool synth_photowave_is_note_active(const PhotowaveState *state);
 

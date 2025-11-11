@@ -52,6 +52,38 @@ void midi_cb_synth_polyphonic_note_on(const MidiParameterValue *param, void *use
 void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *user_data);
 
 /* ============================================================================
+ * SYNTHESIS PHOTOWAVE CALLBACKS
+ * ============================================================================ */
+
+void midi_cb_synth_photowave_volume(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_note_on(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_note_off(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_pitch(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_modulation(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_resonance(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_brightness(const MidiParameterValue *param, void *user_data);
+
+// ADSR Volume Envelope
+void midi_cb_synth_photowave_volume_env_attack(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_volume_env_decay(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_volume_env_sustain(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_volume_env_release(const MidiParameterValue *param, void *user_data);
+
+// ADSR Filter Envelope
+void midi_cb_synth_photowave_filter_env_attack(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_filter_env_decay(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_filter_env_sustain(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_filter_env_release(const MidiParameterValue *param, void *user_data);
+
+// LFO Vibrato
+void midi_cb_synth_photowave_lfo_vibrato_rate(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_lfo_vibrato_depth(const MidiParameterValue *param, void *user_data);
+
+// Filter Parameters
+void midi_cb_synth_photowave_filter_cutoff(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_photowave_filter_env_depth(const MidiParameterValue *param, void *user_data);
+
+/* ============================================================================
  * SEQUENCER PLAYER CALLBACKS (generic, player ID in user_data)
  * ============================================================================ */
 
@@ -105,6 +137,12 @@ void midi_callbacks_register_synth_additive(void);
  * Should be called after polyphonic synth initialization
  */
 void midi_callbacks_register_synth_polyphonic(void);
+
+/**
+ * Register all photowave synthesis callbacks
+ * Should be called after photowave synth initialization
+ */
+void midi_callbacks_register_synth_photowave(void);
 
 /**
  * Register all sequencer callbacks

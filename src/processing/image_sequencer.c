@@ -143,7 +143,9 @@ static void init_sequence_player(SequencePlayer *player, int buffer_capacity) {
     
     player->playback_speed = 1.0f;
     player->playback_direction = 1;
-    player->blend_level = 1.0f;
+    player->blend_level = 0.5f;  // Default 50% blend level
+    player->brightness = 1.0f;   // Default 100% brightness (neutral)
+    player->mix_enabled = 1;     // Default enabled in mix
     player->loop_mode = LOOP_MODE_SIMPLE;
     player->trigger_mode = TRIGGER_MODE_MANUAL;
     
@@ -192,8 +194,8 @@ ImageSequencer *image_sequencer_create(int num_players, float max_duration_s) {
     seq->num_players = num_players;
     seq->max_duration_s = max_duration_s;
     seq->enabled = 0;
-    seq->blend_mode = BLEND_MODE_MIX;
-    seq->live_mix_level = 0.0f;  /* 0.0 = 100% sequencer, 1.0 = 100% live */
+    seq->blend_mode = BLEND_MODE_MASK;  // Default MASK blend mode
+    seq->live_mix_level = 0.5f;  /* Default 50% mix (0.0 = 100% sequencer, 1.0 = 100% live) */
     seq->bpm = 120.0f;
     
     if (pthread_mutex_init(&seq->mutex, NULL) != 0) {
@@ -377,6 +379,7 @@ void image_sequencer_set_speed(ImageSequencer *seq, int player_id, float speed) 
     pthread_mutex_lock(&seq->mutex);
     seq->players[player_id].playback_speed = speed;
     pthread_mutex_unlock(&seq->mutex);
+    log_info("SEQUENCER", "Player %d: Speed %.2fx", player_id, speed);
 }
 
 void image_sequencer_set_offset(ImageSequencer *seq, int player_id, int offset_frames) {
@@ -388,6 +391,7 @@ void image_sequencer_set_offset(ImageSequencer *seq, int player_id, int offset_f
     if (offset_frames >= 0 && offset_frames < player->recorded_frames) {
         player->playback_offset = offset_frames;
         player->playback_position = (float)offset_frames;
+        log_info("SEQUENCER", "Player %d: Offset %d frames", player_id, offset_frames);
     }
     
     pthread_mutex_unlock(&seq->mutex);
@@ -398,6 +402,11 @@ void image_sequencer_set_loop_mode(ImageSequencer *seq, int player_id, LoopMode 
     pthread_mutex_lock(&seq->mutex);
     seq->players[player_id].loop_mode = mode;
     pthread_mutex_unlock(&seq->mutex);
+    
+    const char *mode_names[] = {"SIMPLE", "PINGPONG", "ONESHOT"};
+    if (mode >= 0 && mode <= 2) {
+        log_info("SEQUENCER", "Player %d: Loop mode %s", player_id, mode_names[mode]);
+    }
 }
 
 void image_sequencer_set_trigger_mode(ImageSequencer *seq, int player_id, TriggerMode mode) {
@@ -405,6 +414,11 @@ void image_sequencer_set_trigger_mode(ImageSequencer *seq, int player_id, Trigge
     pthread_mutex_lock(&seq->mutex);
     seq->players[player_id].trigger_mode = mode;
     pthread_mutex_unlock(&seq->mutex);
+    
+    const char *mode_names[] = {"MANUAL", "AUTO", "SYNC"};
+    if (mode >= 0 && mode <= 2) {
+        log_info("SEQUENCER", "Player %d: Trigger mode %s", player_id, mode_names[mode]);
+    }
 }
 
 void image_sequencer_set_blend_level(ImageSequencer *seq, int player_id, float level) {
@@ -413,6 +427,24 @@ void image_sequencer_set_blend_level(ImageSequencer *seq, int player_id, float l
     pthread_mutex_lock(&seq->mutex);
     seq->players[player_id].blend_level = level;
     pthread_mutex_unlock(&seq->mutex);
+    log_info("SEQUENCER", "Player %d: Blend level %d%%", player_id, (int)(level * 100));
+}
+
+void image_sequencer_set_brightness(ImageSequencer *seq, int player_id, float brightness) {
+    if (!seq || player_id < 0 || player_id >= seq->num_players) return;
+    brightness = clamp_f(brightness, 0.5f, 2.0f);
+    pthread_mutex_lock(&seq->mutex);
+    seq->players[player_id].brightness = brightness;
+    pthread_mutex_unlock(&seq->mutex);
+    log_info("SEQUENCER", "Player %d: Brightness %.0f%%", player_id, brightness * 100);
+}
+
+void image_sequencer_set_mix_enabled(ImageSequencer *seq, int player_id, int enabled) {
+    if (!seq || player_id < 0 || player_id >= seq->num_players) return;
+    pthread_mutex_lock(&seq->mutex);
+    seq->players[player_id].mix_enabled = enabled ? 1 : 0;
+    pthread_mutex_unlock(&seq->mutex);
+    log_info("SEQUENCER", "Player %d: Mix %s", player_id, enabled ? "ENABLED" : "DISABLED");
 }
 
 void image_sequencer_set_playback_direction(ImageSequencer *seq, int player_id, int direction) {
@@ -420,6 +452,7 @@ void image_sequencer_set_playback_direction(ImageSequencer *seq, int player_id, 
     pthread_mutex_lock(&seq->mutex);
     seq->players[player_id].playback_direction = (direction >= 0) ? 1 : -1;
     pthread_mutex_unlock(&seq->mutex);
+    log_info("SEQUENCER", "Player %d: Direction %s", player_id, (direction >= 0) ? "FORWARD" : "REVERSE");
 }
 
 // Player State Control
@@ -497,6 +530,9 @@ void image_sequencer_set_adsr(ImageSequencer *seq, int player_id,
     env->sustain_level = sustain_level;
     env->release_ratio = release_ratio;
     pthread_mutex_unlock(&seq->mutex);
+    
+    log_info("SEQUENCER", "Player %d: ADSR A=%.0f%% D=%.0f%% S=%.0f%% R=%.0f%%", 
+             player_id, attack_ratio * 100, decay_ratio * 100, sustain_level * 100, release_ratio * 100);
 }
 
 void image_sequencer_set_attack(ImageSequencer *seq, int player_id, float attack_ratio) {
@@ -517,6 +553,8 @@ void image_sequencer_set_attack(ImageSequencer *seq, int player_id, float attack
         env->release_ratio *= scale;
     }
     pthread_mutex_unlock(&seq->mutex);
+    
+    log_info("SEQUENCER", "Player %d: Attack %.0f%%", player_id, attack_ratio * 100);
 }
 
 void image_sequencer_set_decay(ImageSequencer *seq, int player_id, float decay_ratio) {
@@ -537,6 +575,8 @@ void image_sequencer_set_decay(ImageSequencer *seq, int player_id, float decay_r
         env->release_ratio *= scale;
     }
     pthread_mutex_unlock(&seq->mutex);
+    
+    log_info("SEQUENCER", "Player %d: Decay %.0f%%", player_id, decay_ratio * 100);
 }
 
 void image_sequencer_set_sustain(ImageSequencer *seq, int player_id, float sustain_level) {
@@ -547,6 +587,8 @@ void image_sequencer_set_sustain(ImageSequencer *seq, int player_id, float susta
     pthread_mutex_lock(&seq->mutex);
     seq->players[player_id].envelope.sustain_level = sustain_level;
     pthread_mutex_unlock(&seq->mutex);
+    
+    log_info("SEQUENCER", "Player %d: Sustain %.0f%%", player_id, sustain_level * 100);
 }
 
 void image_sequencer_set_release(ImageSequencer *seq, int player_id, float release_ratio) {
@@ -567,6 +609,8 @@ void image_sequencer_set_release(ImageSequencer *seq, int player_id, float relea
         env->release_ratio *= scale;
     }
     pthread_mutex_unlock(&seq->mutex);
+    
+    log_info("SEQUENCER", "Player %d: Release %.0f%%", player_id, release_ratio * 100);
 }
 
 // Global Control
@@ -575,6 +619,7 @@ void image_sequencer_set_enabled(ImageSequencer *seq, int enabled) {
     pthread_mutex_lock(&seq->mutex);
     seq->enabled = enabled;
     pthread_mutex_unlock(&seq->mutex);
+    log_info("SEQUENCER", "Sequencer %s", enabled ? "ENABLED" : "DISABLED");
 }
 
 void image_sequencer_set_blend_mode(ImageSequencer *seq, BlendMode mode) {
@@ -582,6 +627,11 @@ void image_sequencer_set_blend_mode(ImageSequencer *seq, BlendMode mode) {
     pthread_mutex_lock(&seq->mutex);
     seq->blend_mode = mode;
     pthread_mutex_unlock(&seq->mutex);
+    
+    const char *mode_names[] = {"MIX", "ADD", "SCREEN", "MASK"};
+    if (mode >= 0 && mode <= 3) {
+        log_info("SEQUENCER", "Blend mode: %s", mode_names[mode]);
+    }
 }
 
 void image_sequencer_set_live_mix_level(ImageSequencer *seq, float level) {
@@ -589,6 +639,7 @@ void image_sequencer_set_live_mix_level(ImageSequencer *seq, float level) {
     pthread_mutex_lock(&seq->mutex);
     seq->live_mix_level = clamp_f(level, 0.0f, 1.0f);
     pthread_mutex_unlock(&seq->mutex);
+    log_info("SEQUENCER", "Live mix level: %d%%", (int)(level * 100));
 }
 
 void image_sequencer_set_bpm(ImageSequencer *seq, float bpm) {
@@ -596,6 +647,7 @@ void image_sequencer_set_bpm(ImageSequencer *seq, float bpm) {
     pthread_mutex_lock(&seq->mutex);
     seq->bpm = clamp_f(bpm, 60.0f, 240.0f);
     pthread_mutex_unlock(&seq->mutex);
+    log_info("SEQUENCER", "BPM: %.0f", bpm);
 }
 
 void image_sequencer_enable_midi_sync(ImageSequencer *seq, int enable) {
@@ -603,6 +655,7 @@ void image_sequencer_enable_midi_sync(ImageSequencer *seq, int enable) {
     pthread_mutex_lock(&seq->mutex);
     seq->midi_clock_sync = enable;
     pthread_mutex_unlock(&seq->mutex);
+    log_info("SEQUENCER", "MIDI sync: %s", enable ? "ON" : "OFF");
 }
 
 // MIDI Clock Integration
@@ -670,16 +723,14 @@ int image_sequencer_process_frame(
     float *accum_R;
     float *accum_G;
     float *accum_B;
-    float total_weight;
     int i;
     
     nb_pixels = get_cis_pixels_nb();
     
-    /* Initialize output accumulators (float for weighted sum) */
+    /* Initialize output accumulators (float for additive blending) */
     accum_R = (float *)calloc(nb_pixels, sizeof(float));
     accum_G = (float *)calloc(nb_pixels, sizeof(float));
     accum_B = (float *)calloc(nb_pixels, sizeof(float));
-    total_weight = 0.0f;
     
     if (!accum_R || !accum_G || !accum_B) {
         pthread_mutex_unlock(&seq->mutex);
@@ -731,10 +782,9 @@ int image_sequencer_process_frame(
             int frame_idx = (int)player->playback_position;
             float frac = player->playback_position - (float)frame_idx;
             
-            // Clamp to valid range
-            if (frame_idx < 0) frame_idx = 0;
+            // Handle loop modes at sequence boundaries
             if (frame_idx >= player->recorded_frames) {
-                // Handle loop modes
+                // Reached end of sequence (forward playback)
                 if (player->loop_mode == LOOP_MODE_SIMPLE) {
                     frame_idx = 0;
                     player->playback_position = 0.0f;
@@ -742,6 +792,19 @@ int image_sequencer_process_frame(
                     player->playback_direction *= -1;
                     frame_idx = player->recorded_frames - 1;
                     player->playback_position = (float)frame_idx;
+                } else { // LOOP_MODE_ONESHOT
+                    player->state = PLAYER_STATE_STOPPED;
+                    continue;
+                }
+            } else if (frame_idx < 0) {
+                // Reached beginning of sequence (reverse playback)
+                if (player->loop_mode == LOOP_MODE_SIMPLE) {
+                    frame_idx = player->recorded_frames - 1;
+                    player->playback_position = (float)frame_idx;
+                } else if (player->loop_mode == LOOP_MODE_PINGPONG) {
+                    player->playback_direction *= -1;
+                    frame_idx = 0;
+                    player->playback_position = 0.0f;
                 } else { // LOOP_MODE_ONESHOT
                     player->state = PLAYER_STATE_STOPPED;
                     continue;
@@ -792,29 +855,68 @@ int image_sequencer_process_frame(
                     player_B = player->frames[frame_idx].buffer_B;
                 }
             
-                /* Apply envelope and blend level */
+                /* Apply envelope, brightness, and blend level with alpha-blending */
                 {
-                    float total_level;
                     int p;
                     
-                    total_level = env_level * player->blend_level;
-                    
-                    /* 🎨 ADSR FIX: Accumulate RGB with envelope modulation */
-                    /* IMPORTANT: We must accumulate even when level is low (for fade-out effect) */
-                    /* The level will naturally reduce pixel brightness, creating the fade */
-                    for (p = 0; p < nb_pixels; p++) {
-                        accum_R[p] += player_R[p] * total_level;
-                        accum_G[p] += player_G[p] * total_level;
-                        accum_B[p] += player_B[p] * total_level;
+                    /* Skip if player is disabled in mix */
+                    if (!player->mix_enabled) {
+                        /* Advance playback position even if disabled */
+                        player->playback_position += player->playback_speed * player->playback_direction;
+                        goto skip_player;
                     }
-                    /* Don't add env_level to total_weight - only count blend_level for multi-player normalization */
-                    total_weight += player->blend_level;
+                    
+                    /* 🎨 EXPOSURE CONTROL: blend_level controls exposure */
+                    /* 0% = underexposed (-2 stops), 50% = normal (0 stops), 100% = overexposed (+4 stops) */
+                    for (p = 0; p < nb_pixels; p++) {
+                        /* Step 1: Apply brightness boost */
+                        float boosted_R = player_R[p] * player->brightness;
+                        float boosted_G = player_G[p] * player->brightness;
+                        float boosted_B = player_B[p] * player->brightness;
+                        
+                        /* Clamp after brightness */
+                        boosted_R = (boosted_R > 255.0f) ? 255.0f : boosted_R;
+                        boosted_G = (boosted_G > 255.0f) ? 255.0f : boosted_G;
+                        boosted_B = (boosted_B > 255.0f) ? 255.0f : boosted_B;
+                        
+                        /* Step 2: Apply EXTREME exposure control via blend_level */
+                        /* Map blend_level: 0.0 → 0.1x (très sous-exposé), 0.5 → 1.0x (normal), 1.0 → 16.0x (complètement cramé) */
+                        float exposure;
+                        if (player->blend_level < 0.5f) {
+                            /* 0% to 50%: très sous-exposé → normal (0.1x to 1.0x) */
+                            exposure = 0.1f + (player->blend_level * 2.0f) * 0.9f;
+                        } else {
+                            /* 50% to 100%: normal → complètement cramé (1.0x to 16.0x) */
+                            exposure = 1.0f + ((player->blend_level - 0.5f) * 2.0f) * 15.0f;
+                        }
+                        
+                        float exposed_R = boosted_R * exposure;
+                        float exposed_G = boosted_G * exposure;
+                        float exposed_B = boosted_B * exposure;
+                        
+                        /* Clamp after exposure (creates the "blown out" white effect) */
+                        exposed_R = (exposed_R > 255.0f) ? 255.0f : exposed_R;
+                        exposed_G = (exposed_G > 255.0f) ? 255.0f : exposed_G;
+                        exposed_B = (exposed_B > 255.0f) ? 255.0f : exposed_B;
+                        
+                        /* Step 3: Apply envelope for temporal control */
+                        float final_R = exposed_R * env_level;
+                        float final_G = exposed_G * env_level;
+                        float final_B = exposed_B * env_level;
+                        
+                        /* Step 4: Direct accumulation */
+                        accum_R[p] += final_R;
+                        accum_G[p] += final_G;
+                        accum_B[p] += final_B;
+                    }
                     
                     has_active_players = 1;
                     
                     /* Advance playback position */
                     player->playback_position += player->playback_speed * player->playback_direction;
                 }
+                
+                skip_player:
                 
                 /* Free temporary interpolation buffers if allocated */
                 if (temp_R) free(temp_R);
@@ -826,163 +928,25 @@ int image_sequencer_process_frame(
     
     /* Mix with live input and write output */
     if (has_active_players) {
-        /* Normalize accumulated values and blend with live */
-        float seq_weight;
-        float live_weight;
+        /* Simple crossfade controlled by live_mix_level only */
+        /* live_mix_level: 0.0 = 100% sequencer, 1.0 = 100% live */
+        float seq_weight = 1.0f - seq->live_mix_level;
+        float live_weight = seq->live_mix_level;
         
-        seq_weight = 1.0f - seq->live_mix_level;
-        live_weight = seq->live_mix_level;
+        int p;
         
-        /* If we have active players, normalize and blend */
-        if (total_weight > 0.0f) {
-            int p;
+        /* 🎨 SIMPLIFIED MIX: Only live_mix_level controls looper↔live crossfade */
+        /* accum contains: pixel * env * alpha (with colors preserved and fade-to-white applied) */
+        for (p = 0; p < nb_pixels; p++) {
+            /* Crossfade between sequencer and live */
+            float mixed_R = accum_R[p] * seq_weight + live_R[p] * live_weight;
+            float mixed_G = accum_G[p] * seq_weight + live_G[p] * live_weight;
+            float mixed_B = accum_B[p] * seq_weight + live_B[p] * live_weight;
             
-            /* Apply blend mode */
-            switch (seq->blend_mode) {
-                case BLEND_MODE_MIX: {
-                    /* Weighted average - classic crossfade */
-                    for (p = 0; p < nb_pixels; p++) {
-                        /* Normalize only for multi-player mixing (not for ADSR envelope) */
-                        /* The envelope effect is already baked into accum values */
-                        float norm_R = accum_R[p] / total_weight;
-                        float norm_G = accum_G[p] / total_weight;
-                        float norm_B = accum_B[p] / total_weight;
-                        
-                        /* Mix with live */
-                        float mixed_R = norm_R * seq_weight + live_R[p] * live_weight;
-                        float mixed_G = norm_G * seq_weight + live_G[p] * live_weight;
-                        float mixed_B = norm_B * seq_weight + live_B[p] * live_weight;
-                        
-                        /* Clamp and write output */
-                        output_R[p] = clamp_u8((int)mixed_R);
-                        output_G[p] = clamp_u8((int)mixed_G);
-                        output_B[p] = clamp_u8((int)mixed_B);
-                    }
-                    break;
-                }
-                
-                case BLEND_MODE_ADD: {
-                    /* Additive blend - both sources at max in center
-                     * live_mix_level=0.0 → 100% looper, 0% live
-                     * live_mix_level=0.5 → 100% looper, 100% live (BOTH AT MAX!)
-                     * live_mix_level=1.0 → 0% looper, 100% live
-                     */
-                    for (p = 0; p < nb_pixels; p++) {
-                        float norm_R = accum_R[p] / total_weight;
-                        float norm_G = accum_G[p] / total_weight;
-                        float norm_B = accum_B[p] / total_weight;
-                        
-                        /* Calculate additive weights
-                         * At center (0.5): both weights = 1.0
-                         * looper_weight: 1.0 at left, 1.0 at center, 0.0 at right
-                         * live_weight: 0.0 at left, 1.0 at center, 1.0 at right
-                         */
-                        float t = seq->live_mix_level;
-                        float looper_weight = (t < 0.5f) ? 1.0f : (1.0f - (t - 0.5f) * 2.0f);
-                        float live_weight = (t < 0.5f) ? (t * 2.0f) : 1.0f;
-                        
-                        /* Add both sources with their weights */
-                        float mixed_R = norm_R * looper_weight + live_R[p] * live_weight;
-                        float mixed_G = norm_G * looper_weight + live_G[p] * live_weight;
-                        float mixed_B = norm_B * looper_weight + live_B[p] * live_weight;
-                        
-                        /* Clamp to [0, 255] - can exceed due to addition */
-                        output_R[p] = clamp_u8((int)mixed_R);
-                        output_G[p] = clamp_u8((int)mixed_G);
-                        output_B[p] = clamp_u8((int)mixed_B);
-                    }
-                    break;
-                }
-                
-                case BLEND_MODE_SCREEN: {
-                    /* Screen blend - like Photoshop screen mode
-                     * Formula: 1 - (1-a) * (1-b)
-                     * Brightens the image, never makes it darker
-                     * Great for light effects and overlays
-                     */
-                    for (p = 0; p < nb_pixels; p++) {
-                        float norm_R = accum_R[p] / total_weight;
-                        float norm_G = accum_G[p] / total_weight;
-                        float norm_B = accum_B[p] / total_weight;
-                        
-                        /* Normalize to [0.0, 1.0] for screen formula */
-                        float seq_R = norm_R / 255.0f;
-                        float seq_G = norm_G / 255.0f;
-                        float seq_B = norm_B / 255.0f;
-                        
-                        float live_R_norm = live_R[p] / 255.0f;
-                        float live_G_norm = live_G[p] / 255.0f;
-                        float live_B_norm = live_B[p] / 255.0f;
-                        
-                        /* Apply screen formula: 1 - (1-a) * (1-b) */
-                        float screen_R = 1.0f - (1.0f - seq_R) * (1.0f - live_R_norm);
-                        float screen_G = 1.0f - (1.0f - seq_G) * (1.0f - live_G_norm);
-                        float screen_B = 1.0f - (1.0f - seq_B) * (1.0f - live_B_norm);
-                        
-                        /* Mix between screen result and original based on live_mix_level */
-                        float mixed_R = screen_R * 255.0f * seq_weight + live_R[p] * live_weight;
-                        float mixed_G = screen_G * 255.0f * seq_weight + live_G[p] * live_weight;
-                        float mixed_B = screen_B * 255.0f * seq_weight + live_B[p] * live_weight;
-                        
-                        output_R[p] = clamp_u8((int)mixed_R);
-                        output_G[p] = clamp_u8((int)mixed_G);
-                        output_B[p] = clamp_u8((int)mixed_B);
-                    }
-                    break;
-                }
-                
-                case BLEND_MODE_MASK: {
-                    /* Multiplicative masking - dark areas mask other layers */
-                    for (p = 0; p < nb_pixels; p++) {
-                        /* Normalize to [0.0, 1.0] for multiplication */
-                        float norm_R = (accum_R[p] / total_weight) / 255.0f;
-                        float norm_G = (accum_G[p] / total_weight) / 255.0f;
-                        float norm_B = (accum_B[p] / total_weight) / 255.0f;
-                        
-                        /* Apply multiplicative mask to live input */
-                        float live_norm_R = live_R[p] / 255.0f;
-                        float live_norm_G = live_G[p] / 255.0f;
-                        float live_norm_B = live_B[p] / 255.0f;
-                        
-                        /* Multiply normalized values */
-                        float masked_R = norm_R * live_norm_R;
-                        float masked_G = norm_G * live_norm_G;
-                        float masked_B = norm_B * live_norm_B;
-                        
-                        /* Mix between masked result and original based on live_mix_level */
-                        float mixed_R = masked_R * 255.0f * seq_weight + live_R[p] * live_weight;
-                        float mixed_G = masked_G * 255.0f * seq_weight + live_G[p] * live_weight;
-                        float mixed_B = masked_B * 255.0f * seq_weight + live_B[p] * live_weight;
-                        
-                        output_R[p] = clamp_u8((int)mixed_R);
-                        output_G[p] = clamp_u8((int)mixed_G);
-                        output_B[p] = clamp_u8((int)mixed_B);
-                    }
-                    break;
-                }
-                
-                default:
-                    /* Fallback to MIX mode */
-                    for (p = 0; p < nb_pixels; p++) {
-                        float norm_R = accum_R[p] / total_weight;
-                        float norm_G = accum_G[p] / total_weight;
-                        float norm_B = accum_B[p] / total_weight;
-                        
-                        float mixed_R = norm_R * seq_weight + live_R[p] * live_weight;
-                        float mixed_G = norm_G * seq_weight + live_G[p] * live_weight;
-                        float mixed_B = norm_B * seq_weight + live_B[p] * live_weight;
-                        
-                        output_R[p] = clamp_u8((int)mixed_R);
-                        output_G[p] = clamp_u8((int)mixed_G);
-                        output_B[p] = clamp_u8((int)mixed_B);
-                    }
-                    break;
-            }
-        } else {
-            /* No weight, just pass through live */
-            memcpy(output_R, live_R, nb_pixels);
-            memcpy(output_G, live_G, nb_pixels);
-            memcpy(output_B, live_B, nb_pixels);
+            /* Clamp and write output */
+            output_R[p] = clamp_u8((int)mixed_R);
+            output_G[p] = clamp_u8((int)mixed_G);
+            output_B[p] = clamp_u8((int)mixed_B);
         }
     } else {
         /* No active players, just pass through live */

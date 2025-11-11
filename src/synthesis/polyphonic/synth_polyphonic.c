@@ -508,14 +508,30 @@ void *synth_polyphonicMode_thread_func(void *arg) {
     local_producer_idx = polyphonic_current_buffer_index;
     pthread_mutex_unlock(&polyphonic_buffer_index_mutex);
 
-    // RT-SAFE: Use atomic load instead of mutex wait - MUCH FASTER
-    // Busy-wait with short sleep if buffer not consumed yet
-    while (__atomic_load_n(&polyphonic_audio_buffers[local_producer_idx].ready, __ATOMIC_ACQUIRE) == 1 && keepRunning) {
-      usleep(100); // Sleep 100µs to avoid burning CPU
+    // RT-SAFE: Wait for buffer to be consumed with timeout and exponential backoff
+    int wait_iterations = 0;
+    const int MAX_WAIT_ITERATIONS = 100; // ~10ms max wait
+    
+    while (__atomic_load_n(&polyphonic_audio_buffers[local_producer_idx].ready, __ATOMIC_ACQUIRE) == 1 && 
+           keepRunning && wait_iterations < MAX_WAIT_ITERATIONS) {
+      // Exponential backoff: start with short sleeps, increase if needed
+      int sleep_us = (wait_iterations < 10) ? 10 : 
+                     (wait_iterations < 50) ? 50 : 100;
+      struct timespec sleep_time = {0, sleep_us * 1000}; // Convert µs to ns
+      nanosleep(&sleep_time, NULL);
+      wait_iterations++;
     }
     
     if (!keepRunning) {
       goto cleanup_thread;
+    }
+    
+    // If timeout, log warning but continue (graceful degradation)
+    if (wait_iterations >= MAX_WAIT_ITERATIONS) {
+      static int timeout_counter = 0;
+      if (++timeout_counter % 100 == 0) {
+        log_warning("SYNTH", "Polyphonic: Buffer wait timeout (callback too slow)");
+      }
     }
     
     pthread_mutex_lock(&polyphonic_audio_buffers[local_producer_idx].mutex);

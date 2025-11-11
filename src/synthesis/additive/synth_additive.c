@@ -647,16 +647,28 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     }
   }
 
-  // RT-SAFE: Poll buffer ready state atomically (no mutex/cond needed)
-  // Increased sleep time to reduce CPU contention and improve startup stability
-  while (__atomic_load_n(&buffers_R[index].ready, __ATOMIC_ACQUIRE) != 0) {
-    struct timespec sleep_time = {0, 10000}; // 10 microseconds (more stable)
+  // RT-SAFE: Wait for buffer to be consumed with timeout
+  // Use exponential backoff to reduce CPU usage while maintaining responsiveness
+  int wait_iterations = 0;
+  const int MAX_WAIT_ITERATIONS = 100; // ~10ms max wait
+  
+  while ((__atomic_load_n(&buffers_R[index].ready, __ATOMIC_ACQUIRE) != 0 ||
+          __atomic_load_n(&buffers_L[index].ready, __ATOMIC_ACQUIRE) != 0) &&
+         wait_iterations < MAX_WAIT_ITERATIONS) {
+    // Exponential backoff: start with short sleeps, increase if needed
+    int sleep_us = (wait_iterations < 10) ? 10 : 
+                   (wait_iterations < 50) ? 50 : 100;
+    struct timespec sleep_time = {0, sleep_us * 1000}; // Convert µs to ns
     nanosleep(&sleep_time, NULL);
+    wait_iterations++;
   }
-  // Also wait for L buffer to be ready
-  while (__atomic_load_n(&buffers_L[index].ready, __ATOMIC_ACQUIRE) != 0) {
-    struct timespec sleep_time = {0, 10000}; // 10 microseconds (more stable)
-    nanosleep(&sleep_time, NULL);
+  
+  // If timeout, log warning but continue (graceful degradation)
+  if (wait_iterations >= MAX_WAIT_ITERATIONS) {
+    static int timeout_counter = 0;
+    if (++timeout_counter % 100 == 0) {
+      log_warning("SYNTH", "Additive: Buffer wait timeout (callback too slow)");
+    }
   }
 
   // 🎯 USE PREPROCESSED DATA: Get all preprocessed data in single mutex lock (optimized)

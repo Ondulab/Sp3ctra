@@ -779,10 +779,9 @@ int main(int argc, char **argv) {
   // Apply Photowave configuration from sp3ctra.ini
   synth_photowave_apply_config(&g_photowave_state);
   
-  // Set audible default frequency (440 Hz = A4 note)
-  // This ensures Photowave generates audible sound immediately
-  synth_photowave_set_frequency(&g_photowave_state, 440.0f);
-  log_info("PHOTOWAVE", "Default frequency set to 440 Hz (A4)");
+  // Photowave is now polyphonic and controlled via MIDI notes
+  // No need to set a default frequency - it will respond to MIDI Note On events
+  log_info("PHOTOWAVE", "Polyphonic photowave synthesis initialized (8 voices)");
   
   // Log initial mix level for debugging
   extern float getSynthPhotowaveMixLevel(void);

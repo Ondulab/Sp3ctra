@@ -1079,8 +1079,11 @@ void midi_mapping_dispatch(MidiMessageType type, int channel, int number, int va
             if (param->control.channel == -1 || param->control.channel == channel) {
                 matches_found++;
                 
-                // Log mapped message at INFO level (user wants to see these)
-                log_info("MIDI_MAP", "Mapped to '%s': val=%d", param->name, value);
+                // Log mapped message at DEBUG level with real parameter value
+                float real_value = normalized_to_raw(midi_to_normalized(value), &param->spec);
+                log_debug("MIDI_MAP", "Mapped to '%s': MIDI=%d → %.2f %s", 
+                         param->name, value, real_value,
+                         param->spec.is_button ? "(trigger)" : "");
                 
                 // BUGFIX: For NOTE_ON and NOTE_OFF messages, we need to pass both note number and velocity
                 // The callback expects: raw_value = note number, value = normalized velocity
@@ -1113,16 +1116,33 @@ void midi_mapping_dispatch(MidiMessageType type, int channel, int number, int va
                     
                     // Handle button triggers differently
                     if (param->spec.is_button) {
-                        // For buttons, trigger on value > threshold (typically 64)
-                        if (value > 64) {
-                            normalized = 1.0f;
-                        } else {
-                            continue; // Don't trigger callback on button release
+                        // For buttons, trigger on both press AND release
+                        // Prepare callback data with button state
+                        MidiParameterValue callback_data = {
+                            .value = (value > 64) ? 1.0f : 0.0f,
+                            .raw_value = param->current_raw_value,
+                            .param_name = param->name,
+                            .is_button = 1,
+                            .button_pressed = (value > 64) ? 1 : 0
+                        };
+                        
+                        // Update internal state
+                        param->current_value = callback_data.value;
+                        
+                        // Trigger all registered callbacks for this parameter
+                        for (int j = 0; j < g_midi_system.num_callbacks; j++) {
+                            CallbackEntry *cb = &g_midi_system.callbacks[j];
+                            
+                            if (cb->is_active && strcmp(cb->param_name, param->name) == 0) {
+                                if (cb->callback) {
+                                    cb->callback(&callback_data, cb->user_data);
+                                }
+                            }
                         }
+                    } else {
+                        // For continuous parameters: use standard parameter update
+                        update_parameter_value(param, normalized);
                     }
-                    
-                    // Update parameter and trigger callbacks
-                    update_parameter_value(param, normalized);
                 }
             }
         }

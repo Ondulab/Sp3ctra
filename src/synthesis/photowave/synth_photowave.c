@@ -944,7 +944,7 @@ void synth_photowave_mode_cleanup(void) {
 }
 
 void *synth_photowave_thread_func(void *arg) {
-    int buffer_size, write_index, buffer_ready;
+    int buffer_size, write_index;
     float *temp_left, *temp_right;
     extern float getSynthPhotowaveMixLevel(void);
     
@@ -974,21 +974,42 @@ void *synth_photowave_thread_func(void *arg) {
         write_index = photowave_current_buffer_index;
         pthread_mutex_unlock(&photowave_buffer_index_mutex);
         
-        buffer_ready = __atomic_load_n(&photowave_audio_buffers[write_index].ready, __ATOMIC_ACQUIRE);
+        // RT-SAFE: Wait for buffer to be consumed with timeout and exponential backoff
+        int wait_iterations = 0;
+        const int MAX_WAIT_ITERATIONS = 100; // ~10ms max wait
         
-        if (buffer_ready == 0) {
-            synth_photowave_process(&g_photowave_state, temp_left, temp_right, buffer_size);
-            
-            memcpy(photowave_audio_buffers[write_index].data, temp_left, buffer_size * sizeof(float));
-            
-            __atomic_store_n(&photowave_audio_buffers[write_index].ready, 1, __ATOMIC_RELEASE);
-            
-            pthread_mutex_lock(&photowave_buffer_index_mutex);
-            photowave_current_buffer_index = (write_index == 0) ? 1 : 0;
-            pthread_mutex_unlock(&photowave_buffer_index_mutex);
-        } else {
-            usleep(100);
+        while (__atomic_load_n(&photowave_audio_buffers[write_index].ready, __ATOMIC_ACQUIRE) == 1 && 
+               photowave_thread_running && wait_iterations < MAX_WAIT_ITERATIONS) {
+            // Exponential backoff: start with short sleeps, increase if needed
+            int sleep_us = (wait_iterations < 10) ? 10 : 
+                           (wait_iterations < 50) ? 50 : 100;
+            struct timespec sleep_time = {0, sleep_us * 1000}; // Convert µs to ns
+            nanosleep(&sleep_time, NULL);
+            wait_iterations++;
         }
+        
+        if (!photowave_thread_running) {
+            break;
+        }
+        
+        // If timeout, log warning but continue (graceful degradation)
+        if (wait_iterations >= MAX_WAIT_ITERATIONS) {
+            static int timeout_counter = 0;
+            if (++timeout_counter % 100 == 0) {
+                log_warning("PHOTOWAVE", "Buffer wait timeout (callback too slow)");
+            }
+        }
+        
+        // Process audio
+        synth_photowave_process(&g_photowave_state, temp_left, temp_right, buffer_size);
+        
+        memcpy(photowave_audio_buffers[write_index].data, temp_left, buffer_size * sizeof(float));
+        
+        __atomic_store_n(&photowave_audio_buffers[write_index].ready, 1, __ATOMIC_RELEASE);
+        
+        pthread_mutex_lock(&photowave_buffer_index_mutex);
+        photowave_current_buffer_index = (write_index == 0) ? 1 : 0;
+        pthread_mutex_unlock(&photowave_buffer_index_mutex);
     }
     
     free(temp_left);
