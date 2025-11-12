@@ -105,7 +105,7 @@ void ZitaRev1::process(float *inputL, float *inputR, float *outputL,
   const float g1 = 1.0f - mix; // Gain dry
   const float g2 = mix;        // Gain wet
 
-#ifdef DEBUG_AUDIO_REVERB
+#if DEBUG_AUDIO_REVERB
   static int zita_debug_counter = 0;
   if (++zita_debug_counter >= 4800) {
     zita_debug_counter = 0;
@@ -184,7 +184,7 @@ void ZitaRev1::process(float *inputL, float *inputR, float *outputL,
     leftReflections *= 1.5f;
     rightReflections *= 1.5f;
 
-#ifdef DEBUG_AUDIO_REVERB
+#if DEBUG_AUDIO_REVERB
     static int zita_sample_counter = 0;
     if (++zita_sample_counter >= 4800) {
       zita_sample_counter = 0;

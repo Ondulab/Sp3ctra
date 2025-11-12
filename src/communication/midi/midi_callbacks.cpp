@@ -42,9 +42,7 @@ void midi_cb_audio_master_volume(const MidiParameterValue *param, void *user_dat
     if (gAudioSystem) {
         gAudioSystem->setMasterVolume(param->value);
         
-        if (is_startup_verbose()) {
-            log_info("MIDI", "VOLUME: %d%%", (int)(param->value * 100));
-        }
+        log_info("MASTER", "Volume: %d%%", (int)(param->value * 100));
     }
 }
 
@@ -154,13 +152,14 @@ void midi_cb_synth_additive_volume(const MidiParameterValue *param, void *user_d
     // Set mix level directly (thread-safe)
     setSynthAdditiveMixLevel(param->value);
     
-    if (is_startup_verbose()) {
-        log_info("MIDI", "ADDITIVE SYNTH VOLUME: %d%%", (int)(param->value * 100));
-    }
+    log_info("ADDITIVE", "Volume: %d%%", (int)(param->value * 100));
 }
 
 void midi_cb_synth_additive_reverb_send(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
+    
+    // Set reverb send level for additive synth
+    setReverbSendAdditive(param->value);
     
     if (gAudioSystem && param->value > 0.0f) {
         if (!gAudioSystem->isReverbEnabled()) {
@@ -181,13 +180,14 @@ void midi_cb_synth_polyphonic_volume(const MidiParameterValue *param, void *user
     // Set mix level directly (thread-safe)
     setSynthPolyphonicMixLevel(param->value);
     
-    if (is_startup_verbose()) {
-        log_info("MIDI", "POLYPHONIC SYNTH VOLUME: %d%%", (int)(param->value * 100));
-    }
+    log_info("POLYPHONIC", "Volume: %d%%", (int)(param->value * 100));
 }
 
 void midi_cb_synth_polyphonic_reverb_send(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
+    
+    // Set reverb send level for polyphonic synth
+    setReverbSendPolyphonic(param->value);
     
     if (gAudioSystem && param->value > 0.0f) {
         if (!gAudioSystem->isReverbEnabled()) {
@@ -277,6 +277,9 @@ void midi_cb_synth_photowave_volume(const MidiParameterValue *param, void *user_
 
 void midi_cb_synth_photowave_reverb_send(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
+    
+    // Set reverb send level for photowave synth
+    setReverbSendPhotowave(param->value);
     
     if (gAudioSystem && param->value > 0.0f) {
         if (!gAudioSystem->isReverbEnabled()) {
