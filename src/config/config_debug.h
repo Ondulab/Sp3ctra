@@ -20,7 +20,7 @@
  * 
  * Enable detailed reverb debugging traces
  **************************************************************************************/
-#define DEBUG_AUDIO_REVERB     1    // Enable reverb debug traces (0=off, 1=on)
-#define DEBUG_AUDIO_SIGNAL     1    // Enable audio signal debug traces (0=off, 1=on)
+#define DEBUG_AUDIO_REVERB     0    // Enable reverb debug traces (0=off, 1=on)
+#define DEBUG_AUDIO_SIGNAL     0    // Enable audio signal debug traces (0=off, 1=on)
 
 #endif // __CONFIG_DEBUG_H__
