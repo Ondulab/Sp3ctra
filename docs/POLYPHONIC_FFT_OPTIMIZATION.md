@@ -252,327 +252,285 @@ git revert <commit-hash>
 
 Or disable FFT preprocessing by defining `DISABLE_POLYPHONIC` in build flags.
 
-## Future Optimizations
+## FFT Temporal Smoothing Architecture
 
-### Potential Improvements
-1. Remove legacy moving average code (cleanup)
-2. Test without smoothing to measure impact
-3. Consider lock-free queue for FFT data transfer
-4. Profile actual performance gains on Raspberry Pi 5
+### Problem: Low-Frequency Crackling
 
-### Monitoring
-- Add performance counters for FFT computation time
-- Track buffer underrun statistics
-- Monitor CPU usage per thread
+**Date Added:** 2025-11-14  
+**Status:** 🔄 Migration Planned
 
-## FFT Temporal Smoothing Architecture (Phase 2 - PLANNED)
+#### Root Cause Analysis
 
-**Date:** 2025-11-14  
-**Status:** 📋 Planned - Not Yet Implemented
+While the current implementation successfully moved FFT computation to the UDP thread, testing revealed **low-frequency crackling** (bass frequencies, bins 0-10). Analysis shows:
 
-### Problem Analysis: Low-Frequency Crackling
+**Why Bass Frequencies Crack:**
+1. **Long periods**: A 50Hz bass has a 20ms period. Magnitude discontinuities create audible "clacks" lasting multiple cycles
+2. **High energy concentration**: Bass bins contain significant energy. Abrupt changes = loud artifacts
+3. **No temporal continuity**: Current implementation calculates FFT on each individual image without historical context
+4. **Temporal aliasing**: UDP reception rate (~1kHz) creates beating patterns with bass frequencies
 
-#### Root Cause
-While Phase 1 successfully moved FFT computation out of the RT thread, testing revealed **low-frequency crackling** (bass frequencies, bins 0-10) due to:
+**Comparison with Working Polyphonic Implementation:**
 
-1. **Lack of temporal continuity**: Each UDP frame (1ms) computes FFT independently
-2. **Abrupt magnitude transitions**: No smoothing between consecutive FFT frames
-3. **Bass frequency sensitivity**: Low frequencies have long periods (50Hz = 20ms)
-   - A sudden magnitude change lasts multiple complete cycles
-   - Creates audible "clac" or "pop" sounds
-4. **Temporal aliasing**: UDP frame rate (~1kHz) creates beating with bass frequencies
+The original polyphonic thread (`synth_polyphonic.c`) **did not have this problem** because it used:
+- **Moving average window** (`MOVING_AVERAGE_WINDOW_SIZE = 8`)
+- **Circular buffer** of historical image lines
+- **Temporal smoothing** before FFT computation
+- **Pre-filled history** with white lines at startup (prevents transients)
 
-#### Why Bass Frequencies Crack Specifically
-
-| Frequency | Period | Impact of Discontinuity |
-|-----------|--------|------------------------|
-| 50 Hz | 20ms | Discontinuity lasts 20 complete cycles |
-| 100 Hz | 10ms | Discontinuity lasts 10 complete cycles |
-| 500 Hz | 2ms | Discontinuity lasts 2 cycles (less audible) |
-| 2000 Hz | 0.5ms | Discontinuity barely noticeable |
-
-**Conclusion:** Bass frequencies need temporal smoothing to maintain continuity.
-
-### Solution: Dedicated FFT Thread with Temporal Smoothing
-
-#### Architecture Overview
-
-**New Thread:** `fftProcessingThread` (non-RT, dedicated to FFT computation)
-
-```
-UDP Thread                FFT Thread              Polyphonic Thread
-    |                         |                          |
-    |--[Image received]------>|                          |
-    |                         |--[FFT + smoothing]       |
-    |                         |--[Store magnitudes]----->|
-    |                         |                          |--[Generate audio]
-    |                         |                          |
-```
-
-#### Key Components
-
-**1. Circular History Buffer**
 ```c
-#define FFT_HISTORY_SIZE 5  /* 5ms @ 1kHz - optimal for bass smoothing */
+// Original working code (synth_polyphonic.c)
+for (j = 0; j < nb_pixels; ++j) {
+  sum = 0.0f;
+  for (k = 0; k < history_fill_count; ++k) {
+    idx = (history_write_index - 1 - k + MOVING_AVERAGE_WINDOW_SIZE) %
+          MOVING_AVERAGE_WINDOW_SIZE;
+    sum += image_line_history[idx].line_data[j];
+  }
+  polyphonic_context.fft_input[j] = sum / history_fill_count;  // Averaged!
+}
+kiss_fftr(polyphonic_context.fft_cfg, polyphonic_context.fft_input, ...);
+```
+
+**Current problematic flow:**
+```c
+// Current implementation (image_preprocessor.c)
+// Converts grayscale directly to FFT input - NO HISTORY!
+for (i = 0; i < nb_pixels; i++) {
+    fft_input[i] = data->grayscale[i] * 255.0f;  // Direct conversion
+}
+kiss_fftr(fft_cfg, fft_input, fft_output);  // FFT on single frame
+```
+
+### Solution: Add Temporal History Buffer
+
+#### Design Overview
+
+Add a **circular buffer** in `image_preprocessor.c` to maintain FFT temporal continuity:
+
+```c
+/* Private state for FFT temporal smoothing */
+#ifndef DISABLE_POLYPHONIC
+#define FFT_HISTORY_SIZE 5  /* 5ms @ 1kHz - good compromise */
 
 static struct {
     float history[FFT_HISTORY_SIZE][PREPROCESS_MAX_FFT_BINS];
     int write_index;
     int fill_count;
-    pthread_mutex_t mutex;
-} fft_history_state;
-```
-
-**2. FFT Processing Pipeline**
-```c
-void *fftProcessingThread(void *arg) {
-    while (keepRunning) {
-        // 1. Wait for new image data (condition variable)
-        // 2. Compute FFT on grayscale
-        // 3. Store in circular buffer
-        // 4. Compute moving average over FFT_HISTORY_SIZE frames
-        // 5. Apply exponential smoothing (AMPLITUDE_SMOOTHING_ALPHA = 0.1)
-        // 6. Store smoothed magnitudes in preprocessed_data
-        // 7. Signal polyphonic thread (data ready)
-    }
-}
-```
-
-**3. Temporal Smoothing Algorithm**
-```c
-// For each FFT bin:
-for (int bin = 0; bin < MAX_FFT_BINS; bin++) {
-    // Step 1: Moving average over history
-    float sum = 0.0f;
-    for (int h = 0; h < fft_history_state.fill_count; h++) {
-        int idx = (write_index - 1 - h + FFT_HISTORY_SIZE) % FFT_HISTORY_SIZE;
-        sum += fft_history_state.history[idx][bin];
-    }
-    float averaged = sum / fft_history_state.fill_count;
-    
-    // Step 2: Exponential smoothing
-    float smoothed = ALPHA * averaged + (1.0f - ALPHA) * previous_magnitude[bin];
-    
-    // Step 3: Store result
-    preprocessed_data.fft.magnitudes[bin] = smoothed;
-}
-```
-
-### Implementation Plan
-
-#### Phase 2.1: Data Structures (image_preprocessor.h)
-```c
-#ifndef DISABLE_POLYPHONIC
-
-/* FFT history for temporal smoothing */
-#define FFT_HISTORY_SIZE 5
-#define AMPLITUDE_SMOOTHING_ALPHA 0.1f
-
-typedef struct {
-    float history[FFT_HISTORY_SIZE][PREPROCESS_MAX_FFT_BINS];
-    int write_index;
-    int fill_count;
-    pthread_mutex_t mutex;
-    pthread_cond_t data_ready;
     int initialized;
-} FftHistoryState;
-
-/* Global FFT history state */
-extern FftHistoryState g_fft_history;
-
+} fft_history_state = {0};
 #endif
 ```
 
-#### Phase 2.2: FFT Thread Implementation (multithreading.c)
-```c
-void *fftProcessingThread(void *arg) {
-    Context *ctx = (Context *)arg;
-    DoubleBuffer *db = ctx->doubleBuffer;
-    
-    // Pre-fill history with white line (prevents startup transients)
-    fft_history_prefill_white();
-    
-    log_info("THREAD", "FFT processing thread started with temporal smoothing");
-    
-    while (ctx->running) {
-        // Wait for new image data
-        pthread_mutex_lock(&db->mutex);
-        while (!db->dataReady && ctx->running) {
-            pthread_cond_wait(&db->cond, &db->mutex);
-        }
-        
-        if (!ctx->running) {
-            pthread_mutex_unlock(&db->mutex);
-            break;
-        }
-        
-        // Get grayscale data
-        float grayscale[MAX_PIXELS];
-        memcpy(grayscale, db->preprocessed_data.grayscale, sizeof(grayscale));
-        pthread_mutex_unlock(&db->mutex);
-        
-        // Compute FFT with temporal smoothing
-        fft_compute_with_smoothing(grayscale, &db->preprocessed_data);
-    }
-    
-    log_info("THREAD", "FFT processing thread terminated");
-    return NULL;
-}
-```
+#### Modified FFT Processing Flow
 
-#### Phase 2.3: Smoothing Function (image_preprocessor.c)
 ```c
-int fft_compute_with_smoothing(const float *grayscale, PreprocessedImageData *out) {
-    // 1. Compute raw FFT
+int image_preprocess_fft(PreprocessedImageData *data) {
+    // 1. Calculate current frame FFT
     kiss_fftr(fft_cfg, fft_input, fft_output);
     
     // 2. Calculate raw magnitudes
-    float raw_magnitudes[MAX_FFT_BINS];
-    for (int i = 0; i < MAX_FFT_BINS; i++) {
+    float raw_magnitudes[PREPROCESS_MAX_FFT_BINS];
+    for (i = 0; i < PREPROCESS_MAX_FFT_BINS; i++) {
         float real = fft_output[i].r;
         float imag = fft_output[i].i;
-        raw_magnitudes[i] = sqrtf(real * real + imag * imag) / NORM_FACTOR;
+        raw_magnitudes[i] = sqrtf(real * real + imag * imag) / norm_factor;
     }
     
     // 3. Store in circular buffer
-    pthread_mutex_lock(&g_fft_history.mutex);
-    memcpy(g_fft_history.history[g_fft_history.write_index], 
+    memcpy(fft_history_state.history[fft_history_state.write_index],
            raw_magnitudes, sizeof(raw_magnitudes));
-    g_fft_history.write_index = (g_fft_history.write_index + 1) % FFT_HISTORY_SIZE;
-    if (g_fft_history.fill_count < FFT_HISTORY_SIZE) {
-        g_fft_history.fill_count++;
+    fft_history_state.write_index = 
+        (fft_history_state.write_index + 1) % FFT_HISTORY_SIZE;
+    if (fft_history_state.fill_count < FFT_HISTORY_SIZE) {
+        fft_history_state.fill_count++;
     }
     
-    // 4. Compute moving average + exponential smoothing
-    for (int bin = 0; bin < MAX_FFT_BINS; bin++) {
+    // 4. Calculate moving average
+    for (i = 0; i < PREPROCESS_MAX_FFT_BINS; i++) {
         float sum = 0.0f;
-        for (int h = 0; h < g_fft_history.fill_count; h++) {
-            int idx = (g_fft_history.write_index - 1 - h + FFT_HISTORY_SIZE) % FFT_HISTORY_SIZE;
-            sum += g_fft_history.history[idx][bin];
+        for (int h = 0; h < fft_history_state.fill_count; h++) {
+            int idx = (fft_history_state.write_index - 1 - h + FFT_HISTORY_SIZE) 
+                      % FFT_HISTORY_SIZE;
+            sum += fft_history_state.history[idx][i];
         }
-        float averaged = sum / g_fft_history.fill_count;
+        float averaged = sum / fft_history_state.fill_count;
         
-        // Exponential smoothing
-        static float prev_magnitudes[MAX_FFT_BINS] = {0};
-        float smoothed = AMPLITUDE_SMOOTHING_ALPHA * averaged + 
-                        (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * prev_magnitudes[bin];
-        prev_magnitudes[bin] = smoothed;
-        
-        out->fft.magnitudes[bin] = smoothed;
+        // 5. Apply exponential smoothing on top of moving average
+        data->fft.magnitudes[i] = 
+            AMPLITUDE_SMOOTHING_ALPHA * averaged +
+            (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * data->fft.magnitudes[i];
     }
-    
-    pthread_mutex_unlock(&g_fft_history.mutex);
-    out->fft.valid = 1;
-    return 0;
 }
 ```
 
-### Benefits of Dedicated FFT Thread
+#### Initialization Strategy
+
+Pre-fill history buffer at startup to prevent transients:
+
+```c
+void image_preprocess_init(void) {
+    #ifndef DISABLE_POLYPHONIC
+    // Pre-fill FFT history with "white" spectrum (all bins = 1.0)
+    for (int h = 0; h < FFT_HISTORY_SIZE; h++) {
+        for (int i = 0; i < PREPROCESS_MAX_FFT_BINS; i++) {
+            fft_history_state.history[h][i] = 1.0f;
+        }
+    }
+    fft_history_state.fill_count = FFT_HISTORY_SIZE;
+    fft_history_state.initialized = 1;
+    #endif
+}
+```
+
+### Benefits of This Approach
 
 | Aspect | Benefit |
 |--------|---------|
-| **Temporal Smoothing** | 5-frame moving average eliminates bass crackling |
-| **Thread Isolation** | FFT computation doesn't block UDP or audio threads |
-| **Scalability** | Can adjust FFT_HISTORY_SIZE without affecting other threads |
-| **RT-Safety** | No FFT computation in RT path (polyphonic thread) |
-| **Debugging** | Isolated thread makes profiling and optimization easier |
+| **Temporal continuity** | 5ms moving average smooths magnitude transitions |
+| **Bass stability** | Low frequencies no longer have abrupt changes |
+| **Memory overhead** | Minimal: 5 × 64 floats = 1.3 KB |
+| **CPU overhead** | Negligible: simple averaging loop |
+| **RT-safety** | All computation in non-RT UDP thread |
+| **Architecture** | Consistent with original working polyphonic design |
 
-### Performance Considerations
+### Performance Characteristics
 
-**Memory Overhead:**
-- History buffer: 5 frames × 64 bins × 4 bytes = **1.3 KB** (negligible)
-- Additional mutex/cond: **~100 bytes**
-- **Total: ~1.4 KB** (acceptable)
+**FFT History Size Trade-offs:**
 
-**CPU Overhead:**
-- Moving average: 5 additions + 1 division per bin = **~320 operations**
-- Exponential smoothing: 1 multiply + 1 add per bin = **~128 operations**
-- **Total: ~450 operations** (< 1µs on modern CPU)
+| Size | Latency | Smoothing | Memory | Recommendation |
+|------|---------|-----------|--------|----------------|
+| 3 frames | 3ms | Light | 768 bytes | Too reactive |
+| **5 frames** | **5ms** | **Good** | **1.3 KB** | **✅ Optimal** |
+| 8 frames | 8ms | Heavy | 2 KB | Excessive |
+| 10 frames | 10ms | Very heavy | 2.5 KB | Too sluggish |
 
-**Latency:**
-- FFT computation: ~1.5ms (unchanged)
-- Smoothing: < 0.01ms (negligible)
-- **Total: ~1.5ms** (acceptable for non-RT thread)
+**Rationale for FFT_HISTORY_SIZE = 5:**
+- Provides sufficient smoothing for bass frequencies (50-100Hz)
+- Latency (5ms) is imperceptible in musical context
+- Balances responsiveness vs. stability
+- Matches typical audio buffer sizes (128-256 frames @ 48kHz = 2.7-5.3ms)
 
-### Migration Steps
+## Migration Path - Phase 4: Temporal Smoothing
 
-#### Step 1: Add FFT History State
-- Extend `image_preprocessor.h` with `FftHistoryState`
-- Initialize in `image_preprocess_init()`
-- Add mutex and condition variable
+### Phase 4.1: Implementation (PLANNED)
 
-#### Step 2: Implement FFT Thread
-- Create `fftProcessingThread()` in `multithreading.c`
-- Add thread handle to `Context` structure
-- Start thread in `main.c` after UDP thread
+**Files to Modify:**
 
-#### Step 3: Implement Smoothing
-- Create `fft_compute_with_smoothing()` in `image_preprocessor.c`
-- Add `fft_history_prefill_white()` for startup
-- Implement circular buffer logic
+1. **`src/processing/image_preprocessor.c`**
+   - Add `fft_history_state` static structure
+   - Modify `image_preprocess_fft()` to use circular buffer
+   - Add history pre-fill in `image_preprocess_init()`
+   - Add cleanup in `image_preprocess_cleanup()`
 
-#### Step 4: Update UDP Thread
-- Remove direct FFT call from `udpThread()`
-- Signal FFT thread when new image arrives
-- FFT thread computes and stores results
+2. **`src/processing/image_preprocessor.h`**
+   - Add `FFT_HISTORY_SIZE` constant
+   - Document temporal smoothing in function comments
 
-#### Step 5: Testing
-- Verify bass frequencies no longer crack
-- Monitor CPU usage (should be similar to Phase 1)
-- Test on Raspberry Pi 5
+**Implementation Steps:**
 
-### Rollback Plan
+```bash
+# 1. Create feature branch
+git checkout -b feature/fft-temporal-smoothing
 
-If issues arise:
-1. Keep Phase 1 implementation (FFT in UDP thread)
-2. Disable temporal smoothing with compile flag
-3. Revert to original polyphonic thread architecture
+# 2. Implement changes in image_preprocessor.c
+# 3. Test compilation
+make clean && make
 
-### Expected Results
+# 4. Test with MIDI controller
+# 5. Verify bass frequencies are stable
+# 6. Commit changes
+git add src/processing/image_preprocessor.{c,h}
+git commit -m "feat(fft): add temporal smoothing with circular buffer
 
-**Before (Phase 1):**
-- ❌ Bass frequencies crack on magnitude transitions
-- ❌ Audible "pops" when image changes rapidly
-- ❌ Unstable low-frequency synthesis
+- Add FFT_HISTORY_SIZE=5 circular buffer for magnitude history
+- Implement moving average over 5 frames (5ms @ 1kHz)
+- Pre-fill history with white spectrum at startup
+- Prevents low-frequency crackling in polyphonic synthesis
 
-**After (Phase 2):**
-- ✅ Smooth bass frequency transitions
-- ✅ No audible artifacts on image changes
-- ✅ Stable, continuous low-frequency synthesis
-- ✅ Professional audio quality
+Fixes bass frequency artifacts caused by magnitude discontinuities.
+Maintains RT-safety by keeping all computation in UDP thread."
+```
 
-### Comparison with Original Polyphonic Architecture
+### Phase 4.2: Testing Checklist
 
-| Feature | Original Polyphonic | Phase 1 (UDP FFT) | Phase 2 (Dedicated Thread) |
-|---------|-------------------|------------------|---------------------------|
-| FFT Location | Polyphonic thread | UDP thread | Dedicated FFT thread |
-| Temporal Smoothing | ✅ Moving average (8 frames) | ❌ None | ✅ Moving average (5 frames) |
-| RT-Safety | ❌ FFT in RT path | ✅ FFT in non-RT | ✅ FFT in non-RT |
-| Bass Crackling | ✅ None | ❌ Present | ✅ None (expected) |
-| CPU Efficiency | ❌ Low (RT blocking) | ✅ High | ✅ High |
-| Architecture | ❌ Monolithic | ⚠️ Hybrid | ✅ Clean separation |
+**Functional Tests:**
+- [ ] No compilation errors or warnings
+- [ ] Application starts without crashes
+- [ ] Polyphonic synthesis produces sound
+- [ ] MIDI note on/off works correctly
+- [ ] No "[AUDIO] Polyphonic buffer missing!" messages
 
-### Conclusion (Phase 2)
+**Audio Quality Tests:**
+- [ ] **Bass frequencies (50-100Hz) are stable** ← PRIMARY GOAL
+- [ ] No crackling or popping sounds
+- [ ] Smooth transitions between notes
+- [ ] No startup "tac" or transient artifacts
+- [ ] Vibrato/LFO modulation works smoothly
 
-Phase 2 completes the FFT architecture refactoring by adding the missing temporal smoothing component. This addresses the bass crackling issue identified during Phase 1 testing while maintaining the performance benefits of moving FFT out of the RT thread.
+**Performance Tests:**
+- [ ] CPU usage remains acceptable
+- [ ] No increase in buffer underruns
+- [ ] FFT computation time < 1ms (measured)
+- [ ] Memory usage increase < 2KB
 
-**Key Innovation:** Dedicated FFT thread with circular history buffer provides optimal balance between:
-- Temporal continuity (smooth bass frequencies)
-- RT-safety (no FFT in audio callback)
-- Performance (efficient thread isolation)
-- Maintainability (clean architecture)
+**Platform Tests:**
+- [ ] macOS development environment
+- [ ] Raspberry Pi 5 production environment
+- [ ] Both platforms show stable bass frequencies
 
-**Next Steps:**
-1. Implement Phase 2 changes
-2. Test on macOS development environment
-3. Validate on Raspberry Pi 5 production environment
-4. Document performance metrics and audio quality improvements
+### Phase 4.3: Validation Metrics
 
----
+**Before Temporal Smoothing:**
+- Bass crackling: Present
+- Magnitude discontinuities: Frequent
+- Temporal coherence: None
 
-## Conclusion (Overall)
+**After Temporal Smoothing:**
+- Bass crackling: **Eliminated**
+- Magnitude discontinuities: **Smoothed over 5ms**
+- Temporal coherence: **Maintained**
+
+### Phase 4.4: Rollback Plan
+
+If temporal smoothing causes issues:
+
+```bash
+# Option 1: Revert commit
+git revert <commit-hash>
+
+# Option 2: Adjust FFT_HISTORY_SIZE
+# Edit image_preprocessor.c and change:
+#define FFT_HISTORY_SIZE 3  // Try smaller window
+
+# Option 3: Disable moving average, keep only exponential smoothing
+# Comment out moving average loop in image_preprocess_fft()
+```
+
+## Future Optimizations
+
+### Potential Improvements
+1. **Adaptive history size**: Adjust FFT_HISTORY_SIZE based on detected tempo/rhythm
+2. **Frequency-dependent smoothing**: More smoothing for bass, less for treble
+3. Remove legacy moving average code from `synth_polyphonic.c` (cleanup)
+4. Test without exponential smoothing to measure impact
+5. Consider lock-free queue for FFT data transfer
+6. Profile actual performance gains on Raspberry Pi 5
+
+### Advanced Optimizations
+- **Perceptual weighting**: Apply psychoacoustic model to FFT magnitudes
+- **Transient detection**: Reduce smoothing during note attacks
+- **Spectral envelope tracking**: Maintain harmonic structure during transitions
+
+### Monitoring
+- Add performance counters for FFT computation time
+- Track buffer underrun statistics
+- Monitor CPU usage per thread
+- **NEW:** Log FFT magnitude variance to detect instability
+
+## Conclusion
 
 This architectural refactoring addresses the root cause of polyphonic audio crackling by moving expensive FFT computation out of the RT-constrained audio thread. The implementation maintains code quality, RT-safety, and provides a clear migration path with minimal risk.
 
-**Phase 1 Result:** Stable polyphonic synthesis at 1kHz image rate (with minor bass crackling)  
-**Phase 2 Result (Expected):** Professional-quality, crackle-free polyphonic synthesis with smooth bass frequencies
+**Phase 4 Addition:** The temporal smoothing enhancement eliminates low-frequency crackling by maintaining FFT magnitude continuity through a circular history buffer, matching the proven architecture of the original polyphonic implementation.
+
+**Expected Result:** Stable, crackle-free polyphonic synthesis at 1kHz image rate with smooth bass frequencies.
