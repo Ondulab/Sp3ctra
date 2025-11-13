@@ -12,6 +12,10 @@
 #include "config.h"
 #include "../../synthesis/additive/synth_additive.h"  // For MAX_NUMBER_OF_NOTES
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Lock-free pan gains structure using atomic pointers for zero-contention access */
 typedef struct {
     /* Double buffers for panning gains (dynamically allocated) */
@@ -113,5 +117,9 @@ static inline uint32_t lock_free_pan_get_version(void) {
 
 /* Get statistics for performance monitoring */
 void lock_free_pan_get_stats(uint64_t* update_count, uint64_t* read_count);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* LOCK_FREE_PAN_H */

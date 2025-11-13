@@ -29,6 +29,11 @@
  */
 void update_gap_limiter_coefficients(void) {
 #ifdef GAP_LIMITER
+    // Safety check: waves array must be initialized before we can update coefficients
+    if (waves == NULL) {
+        return;  // Silently return if called before initialization
+    }
+    
     const float Fs = (float)g_sp3ctra_config.sampling_frequency;
     
 #if !INSTANT_ATTACK

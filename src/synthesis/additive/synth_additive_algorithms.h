@@ -16,6 +16,10 @@
 #include "../../config/config_synth_additive.h"
 #include "wave_generation.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Function prototypes -------------------------------------------------------*/
 
 /**
@@ -78,5 +82,9 @@ void apply_relative_mode(int32_t *imageBuffer_q31, int start_note, int end_note)
  * @retval None
  */
 void generate_waveform_samples(int note, float *waveBuffer, const float *precomputed_wave_data);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* SYNTH_ADDITIVE_ALGORITHMS_H */
