@@ -78,28 +78,28 @@ void ThreeBandEQ::setLowGain(float gain) {
   lowGain = gain;
   // Configure the low EQ as a low-shelf filter
   lowEQ.setparam(DEFAULT_LOW_FREQ, gain);
-  log_info("AUDIO", "EQ Low gain set to %.1f dB", gain);
+  // Log removed to avoid duplication with MIDI callback logs
 }
 
 void ThreeBandEQ::setMidGain(float gain) {
   midGain = gain;
   // Configure the mid EQ as a peaking filter
   midEQ.setparam(midFreq, gain);
-  log_info("AUDIO", "EQ Mid gain set to %.1f dB", gain);
+  // Log removed to avoid duplication with MIDI callback logs
 }
 
 void ThreeBandEQ::setHighGain(float gain) {
   highGain = gain;
   // Configure the high EQ as a high-shelf filter
   highEQ.setparam(DEFAULT_HIGH_FREQ, gain);
-  log_info("AUDIO", "EQ High gain set to %.1f dB", gain);
+  // Log removed to avoid duplication with MIDI callback logs
 }
 
 void ThreeBandEQ::setMidFrequency(float freq) {
   midFreq = freq;
   // Update the mid EQ with the new frequency
   midEQ.setparam(freq, midGain);
-  log_info("AUDIO", "EQ Mid frequency set to %.0f Hz", freq);
+  // Log removed to avoid duplication with MIDI callback logs
 }
 
 void ThreeBandEQ::process(int numSamples, int numChannels, float *data[]) {

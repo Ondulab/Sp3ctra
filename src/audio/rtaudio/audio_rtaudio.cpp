@@ -252,9 +252,26 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       }
 #endif
 
-      // Mix dry + reverb and apply volume
-      float final_left = (dry_sample_left + reverb_left) * cached_volume;
-      float final_right = (dry_sample_right + reverb_right) * cached_volume;
+      // Mix dry + reverb
+      float mixed_left = dry_sample_left + reverb_left;
+      float mixed_right = dry_sample_right + reverb_right;
+
+      // Store in output buffers for EQ processing
+      outLeft[i] = mixed_left;
+      outRight[i] = mixed_right;
+      
+    }
+
+    // Apply EQ to the chunk (after reverb, before master volume)
+    if (gEqualizer && gEqualizer->isEnabled()) {
+      float* eqData[2] = { outLeft, outRight };
+      eq_Process(chunk, 2, eqData);
+    }
+
+    // Apply master volume and limiting to the chunk
+    for (unsigned int i = 0; i < chunk; i++) {
+      float final_left = outLeft[i] * cached_volume;
+      float final_right = outRight[i] * cached_volume;
 
       // Limiting
       final_left = (final_left > 1.0f)    ? 1.0f
@@ -272,7 +289,6 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       outLeft[i] = final_left;    // Normal: left gets left
       outRight[i] = final_right;  // Normal: right gets right
 #endif
-      
     }
 
     // Advance pointers

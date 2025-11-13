@@ -63,6 +63,11 @@ Implémentation en cours du système MIDI unifié selon la spécification défin
 ### ✅ Callbacks Synthèse Additive
 - [x] Volume
 - [x] Reverb send
+- [x] Envelope attack (tau_up_base_ms)
+- [x] Envelope release (tau_down_base_ms)
+- [x] Decay frequency reference (decay_freq_ref_hz)
+- [x] Decay frequency beta (decay_freq_beta)
+- [x] Stereo mode toggle (with 20ms fade)
 
 ### ✅ Callbacks Synthèse Polyphonique
 - [x] Volume

@@ -15,6 +15,10 @@
 #include <stdint.h>
 #include <pthread.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Exported variables --------------------------------------------------------*/
 
 /* Synth Data Freeze Feature */
@@ -41,5 +45,9 @@ double synth_getCurrentTimeInSeconds(void);
 /* Display buffer management */
 void displayable_synth_buffers_init(void);
 void displayable_synth_buffers_cleanup(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __SYNTH_ADDITIVE_STATE_H__ */

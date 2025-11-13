@@ -12,7 +12,9 @@
 #include "../../audio/rtaudio/audio_rtaudio.h"
 #include "../../audio/rtaudio/audio_c_api.h"  // For setSynthAdditiveMixLevel, setSynthPolyphonicMixLevel, setSynthPhotowaveMixLevel
 #include "../../audio/effects/three_band_eq.h"
+#include "../../audio/pan/lock_free_pan.h"
 #include "../../synthesis/additive/synth_additive.h"
+#include "../../synthesis/additive/synth_additive_algorithms.h"  // For update_gap_limiter_coefficients
 #include "../../synthesis/polyphonic/synth_polyphonic.h"
 #include "../../synthesis/photowave/synth_photowave.h"
 #include "../../processing/image_sequencer.h"
@@ -168,6 +170,137 @@ void midi_cb_synth_additive_reverb_send(const MidiParameterValue *param, void *u
     }
     
     log_info("ADDITIVE", "Reverb send: %d%%", (int)(param->value * 100));
+}
+
+/* ============================================================================
+ * SYNTHESIS ADDITIVE ENVELOPE CALLBACKS
+ * ============================================================================ */
+
+void midi_cb_synth_additive_tau_up(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    // RT-safe: Direct atomic write to config structure
+    g_sp3ctra_config.tau_up_base_ms = param->raw_value;
+    
+    // Recalculate envelope coefficients for all oscillators
+    update_gap_limiter_coefficients();
+    
+    log_info("ADDITIVE", "Envelope attack: %.3f ms", param->raw_value);
+}
+
+void midi_cb_synth_additive_tau_down(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    // RT-safe: Direct atomic write to config structure
+    g_sp3ctra_config.tau_down_base_ms = param->raw_value;
+    
+    // Recalculate envelope coefficients for all oscillators
+    update_gap_limiter_coefficients();
+    
+    log_info("ADDITIVE", "Envelope release: %.3f ms", param->raw_value);
+}
+
+void midi_cb_synth_additive_decay_freq_ref(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    // RT-safe: Direct atomic write to config structure
+    g_sp3ctra_config.decay_freq_ref_hz = param->raw_value;
+    
+    // Recalculate envelope coefficients for all oscillators
+    update_gap_limiter_coefficients();
+    
+    log_info("ADDITIVE", "Decay freq ref: %.1f Hz", param->raw_value);
+}
+
+void midi_cb_synth_additive_decay_freq_beta(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    // RT-safe: Direct atomic write to config structure
+    g_sp3ctra_config.decay_freq_beta = param->raw_value;
+    
+    // Recalculate envelope coefficients for all oscillators
+    update_gap_limiter_coefficients();
+    
+    log_info("ADDITIVE", "Decay freq beta: %.2f", param->raw_value);
+}
+
+/* ============================================================================
+ * SYNTHESIS ADDITIVE STEREO CALLBACKS
+ * ============================================================================ */
+
+// Global variables for stereo fade (0.0 = mono, 1.0 = stereo)
+// Using volatile for thread visibility (simple case, no complex synchronization needed)
+static volatile float g_stereo_fade_factor = 0.0f;
+static volatile int g_stereo_fade_active = 0;
+static volatile double g_stereo_fade_start_time = 0.0;
+
+// Fade duration in seconds (20ms for smooth transition)
+#define STEREO_FADE_DURATION_S 0.020
+
+void midi_cb_synth_additive_stereo_toggle(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    int new_state = (int)param->raw_value;
+    int current_state = g_sp3ctra_config.stereo_mode_enabled;
+    
+    // DEBUG: Always log the received value
+    log_info("ADDITIVE", "Stereo toggle callback: raw_value=%.2f, new_state=%d, current_state=%d", 
+             param->raw_value, new_state, current_state);
+    
+    if (new_state != current_state) {
+        // Start fade transition
+        g_stereo_fade_active = 1;
+        g_stereo_fade_start_time = synth_getCurrentTimeInSeconds();
+        
+        // Update target state
+        g_sp3ctra_config.stereo_mode_enabled = new_state;
+        
+        if (new_state) {
+            // Initialize lock-free pan system if enabling stereo
+            lock_free_pan_init();
+            log_info("ADDITIVE", "Stereo mode ENABLED (fading in)");
+        } else {
+            log_info("ADDITIVE", "Stereo mode DISABLED (fading out)");
+        }
+    } else {
+        log_info("ADDITIVE", "Stereo mode unchanged (already %s)", new_state ? "ENABLED" : "DISABLED");
+    }
+}
+
+/**
+ * Get current stereo fade factor (called from audio thread)
+ * Returns 0.0 for mono, 1.0 for stereo, or intermediate value during fade
+ */
+float synth_additive_get_stereo_fade_factor(void) {
+    if (!g_stereo_fade_active) {
+        // No fade active, return target state directly
+        return g_sp3ctra_config.stereo_mode_enabled ? 1.0f : 0.0f;
+    }
+    
+    // Calculate fade progress
+    double elapsed = synth_getCurrentTimeInSeconds() - g_stereo_fade_start_time;
+    float progress = (float)(elapsed / STEREO_FADE_DURATION_S);
+    
+    if (progress >= 1.0f) {
+        // Fade complete
+        g_stereo_fade_active = 0;
+        g_stereo_fade_factor = g_sp3ctra_config.stereo_mode_enabled ? 1.0f : 0.0f;
+        return g_stereo_fade_factor;
+    }
+    
+    // Smooth fade curve (quadratic easing)
+    progress = progress * progress;
+    
+    // Calculate fade factor based on direction
+    if (g_sp3ctra_config.stereo_mode_enabled) {
+        // Fading in: 0.0 -> 1.0
+        g_stereo_fade_factor = progress;
+    } else {
+        // Fading out: 1.0 -> 0.0
+        g_stereo_fade_factor = 1.0f - progress;
+    }
+    
+    return g_stereo_fade_factor;
 }
 
 /* ============================================================================
@@ -748,7 +881,16 @@ void midi_callbacks_register_synth_additive(void) {
     midi_mapping_register_callback("synth_additive_volume", midi_cb_synth_additive_volume, NULL);
     midi_mapping_register_callback("synth_additive_reverb_send", midi_cb_synth_additive_reverb_send, NULL);
     
-    log_info("MIDI", "Callbacks: Additive synth registered");
+    // Envelope parameters
+    midi_mapping_register_callback("synth_additive_envelope_tau_up_base_ms", midi_cb_synth_additive_tau_up, NULL);
+    midi_mapping_register_callback("synth_additive_envelope_tau_down_base_ms", midi_cb_synth_additive_tau_down, NULL);
+    midi_mapping_register_callback("synth_additive_envelope_decay_freq_ref_hz", midi_cb_synth_additive_decay_freq_ref, NULL);
+    midi_mapping_register_callback("synth_additive_envelope_decay_freq_beta", midi_cb_synth_additive_decay_freq_beta, NULL);
+    
+    // Stereo toggle
+    midi_mapping_register_callback("synth_additive_stereo_mode_enabled", midi_cb_synth_additive_stereo_toggle, NULL);
+    
+    log_info("MIDI", "Callbacks: Additive synth registered (with envelope & stereo controls)");
 }
 
 void midi_callbacks_register_synth_polyphonic(void) {
