@@ -18,9 +18,15 @@
 #include <stdio.h>
 #include <time.h>
 #include <sys/time.h>
+#include <math.h>
+
+#ifndef DISABLE_POLYPHONIC
+#include "../../synthesis/polyphonic/kissfft/kiss_fftr.h"
+#endif
 
 /* Private variables */
 static int module_initialized = 0;
+
 
 /* Private helper function prototypes */
 static uint64_t get_timestamp_us(void);

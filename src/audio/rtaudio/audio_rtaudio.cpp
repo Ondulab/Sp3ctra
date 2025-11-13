@@ -18,6 +18,7 @@
 #include <stdexcept>         // For std::exception
 #include <set>               // For std::set
 #include <cstdlib>           // For malloc/calloc/free
+#include <sys/time.h>        // For gettimeofday
 
 // Global format selection variables for dynamic audio format
 static RtAudioFormat g_selected_audio_format = RTAUDIO_FLOAT32;
@@ -65,6 +66,31 @@ int AudioSystem::rtCallback(void *outputBuffer, void *inputBuffer,
 }
 
 int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
+  // RT CALLBACK WATCHDOG: Detect callback freeze/slowness
+  static uint64_t last_callback_time_us = 0;
+  static int freeze_warning_counter = 0;
+  
+  struct timeval tv_start;
+  gettimeofday(&tv_start, NULL);
+  uint64_t current_time_us = (uint64_t)tv_start.tv_sec * 1000000ULL + (uint64_t)tv_start.tv_usec;
+  
+  // Detect if callback hasn't been called for too long (freeze detection)
+  if (last_callback_time_us > 0) {
+    uint64_t time_since_last_call = current_time_us - last_callback_time_us;
+    // Expected time between callbacks at 48kHz with 512 frames: ~10.7ms (10700µs)
+    // At 96kHz with 512 frames: ~5.3ms (5300µs)
+    uint64_t expected_interval_us = ((uint64_t)nFrames * 1000000ULL) / g_sp3ctra_config.sampling_frequency;
+    uint64_t freeze_threshold_us = expected_interval_us * 5; // 5x expected = problem
+    
+    if (time_since_last_call > freeze_threshold_us) {
+      if (++freeze_warning_counter % 10 == 0) { // Rate limit to every 10th occurrence
+        log_warning("AUDIO", "RT callback freeze detected: %llu µs since last call (expected ~%llu µs)",
+                   time_since_last_call, expected_interval_us);
+      }
+    }
+  }
+  last_callback_time_us = current_time_us;
+  
   // MINIMAL CALLBACK MODE - for debugging audio dropouts
   if (use_minimal_callback) {
     float *outLeft = outputBuffer;
@@ -140,9 +166,23 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     // SYNCHRONIZED BUFFER ACCESS: All synths read from same offset
     // This prevents temporal desynchronization and audio artifacts
     
+    // BUFFER LATENCY MEASUREMENT: Measure time from buffer write to read
+    static int latency_warning_counter = 0;
+    
     // Additive synthesis (stereo)
     if (buffers_L[additive_read_buffer].ready == 1) {
       source_additive_left = &buffers_L[additive_read_buffer].data[global_read_offset];
+      
+      // Measure latency only at start of buffer read (global_read_offset == 0)
+      if (global_read_offset == 0 && buffers_L[additive_read_buffer].write_timestamp_us > 0) {
+        uint64_t latency_us = current_time_us - buffers_L[additive_read_buffer].write_timestamp_us;
+        // Critical threshold: >20ms latency indicates serious problem
+        if (latency_us > 20000) {
+          if (++latency_warning_counter % 10 == 0) { // Rate limit
+            log_warning("AUDIO", "High additive buffer latency: %llu µs (>20ms critical)", latency_us);
+          }
+        }
+      }
     }
     if (buffers_R[additive_read_buffer].ready == 1) {
       source_additive_right = &buffers_R[additive_read_buffer].data[global_read_offset];
@@ -152,6 +192,16 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     if (polyphonic_audio_buffers[polyphonic_read_buffer].ready == 1) {
       source_fft = &polyphonic_audio_buffers[polyphonic_read_buffer]
                         .data[global_read_offset];
+      
+      // Measure latency only at start of buffer read
+      if (global_read_offset == 0 && polyphonic_audio_buffers[polyphonic_read_buffer].write_timestamp_us > 0) {
+        uint64_t latency_us = current_time_us - polyphonic_audio_buffers[polyphonic_read_buffer].write_timestamp_us;
+        if (latency_us > 20000) {
+          if (++latency_warning_counter % 10 == 0) { // Rate limit
+            log_warning("AUDIO", "High polyphonic buffer latency: %llu µs (>20ms critical)", latency_us);
+          }
+        }
+      }
     }
 
     // Photowave synthesis (mono)
@@ -329,6 +379,49 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       // Reset global offset for next buffer
       global_read_offset = 0;
     }
+  }
+
+  // CALLBACK EXECUTION TIME MEASUREMENT
+  struct timeval tv_end;
+  gettimeofday(&tv_end, NULL);
+  uint64_t callback_end_us = (uint64_t)tv_end.tv_sec * 1000000ULL + (uint64_t)tv_end.tv_usec;
+  uint64_t callback_duration_us = callback_end_us - current_time_us;
+  
+  // Calculate time budget: time available for processing one buffer
+  // At 48kHz with 512 frames: 10666µs budget
+  // At 96kHz with 512 frames: 5333µs budget
+  uint64_t time_budget_us = ((uint64_t)nFrames * 1000000ULL) / g_sp3ctra_config.sampling_frequency;
+  
+  // LOWERED THRESHOLD: Warning if callback takes more than 10% of time budget (very sensitive)
+  uint64_t warning_threshold_us = time_budget_us / 10;
+  
+  static int callback_slow_counter = 0;
+  if (callback_duration_us > warning_threshold_us) {
+    float cpu_usage_percent = (float)callback_duration_us * 100.0f / (float)time_budget_us;
+    printf("[AUDIO] Callback slow: %llu µs (%.1f%% of %llu µs budget)\n",
+           callback_duration_us, cpu_usage_percent, time_budget_us);
+    fflush(stdout);
+    callback_slow_counter++;
+  }
+  
+  // BUFFER MISSING DETECTION: Count when buffers are not ready (underrun indicator)
+  static int buffer_missing_counter = 0;
+  static int total_callback_counter = 0;
+  total_callback_counter++;
+  
+  if (buffers_L[additive_read_buffer].ready != 1 || buffers_R[additive_read_buffer].ready != 1) {
+    buffer_missing_counter++;
+    if (buffer_missing_counter % 10 == 0) {
+      printf("[AUDIO] Additive buffer missing! (count: %d / %d callbacks = %.2f%%)\n",
+             buffer_missing_counter, total_callback_counter,
+             (float)buffer_missing_counter * 100.0f / (float)total_callback_counter);
+      fflush(stdout);
+    }
+  }
+  
+  if (polyphonic_audio_buffers[polyphonic_read_buffer].ready != 1) {
+    printf("[AUDIO] Polyphonic buffer missing!\n");
+    fflush(stdout);
   }
 
   return 0;
