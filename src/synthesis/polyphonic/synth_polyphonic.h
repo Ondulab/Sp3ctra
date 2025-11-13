@@ -80,6 +80,7 @@ typedef struct {
 typedef struct {
   float *data; // dynamically allocated with size = g_sp3ctra_config.audio_buffer_size
   volatile int ready; // 0 = not ready, 1 = ready for consumption
+  uint64_t write_timestamp_us; // Timestamp when buffer was written (microseconds)
   pthread_mutex_t mutex;
   pthread_cond_t cond;
 } FftAudioDataBuffer;

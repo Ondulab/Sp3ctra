@@ -18,6 +18,13 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <sys/time.h>
+
+#ifdef __APPLE__
+#include <mach/mach.h>
+#include <mach/thread_policy.h>
+#include <mach/mach_time.h>
+#endif
 
 #ifndef M_PI
 #define M_PI (3.14159265358979323846)
@@ -213,28 +220,9 @@ void synth_polyphonicMode_process(float *audio_buffer,
   }
   memset(audio_buffer, 0, buffer_size * sizeof(float));
 
-  // Calculate smoothed magnitudes (original logic)
-  global_smoothed_magnitudes[0] =
-      polyphonic_context.fft_output[0].r / NORM_FACTOR_BIN0;
-  if (global_smoothed_magnitudes[0] < 0.0f) {
-    global_smoothed_magnitudes[0] = 0.0f;
-  }
-
-  for (int i = 1; i < MAX_MAPPED_OSCILLATORS; ++i) {
-    float real = polyphonic_context.fft_output[i].r;
-    float imag = polyphonic_context.fft_output[i].i;
-    float magnitude = sqrtf(real * real + imag * imag);
-    float target_mag = fminf(1.0f, magnitude / NORM_FACTOR_HARMONICS);
-    if (target_mag < 0.0f) {
-      target_mag = 0.0f;
-    }
-    global_smoothed_magnitudes[i] =
-        AMPLITUDE_SMOOTHING_ALPHA * target_mag +
-        (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * global_smoothed_magnitudes[i];
-  }
-
-  // Polyphonic Debug logging disabled for performance
-  // (was causing audio dropouts due to printf() blocking)
+  // NOTE: global_smoothed_magnitudes is now pre-computed in udpThread
+  // via read_preprocessed_fft_magnitudes() which reads from preprocessed_data.fft.magnitudes
+  // No need to calculate FFT here anymore - just use the pre-computed values!
 
   for (unsigned int sample_idx = 0; sample_idx < buffer_size; ++sample_idx) {
     float master_sample_sum = 0.0f;
@@ -362,62 +350,52 @@ void synth_polyphonicMode_process(float *audio_buffer,
 }
 
 // --- Image & FFT Processing ---
+// Process image data and compute FFT for polyphonic synthesis
 static void process_image_data_for_fft(DoubleBuffer *image_db) {
   int nb_pixels, i, j, k, idx;
   float *current_grayscale_line;
   float sum;
-  struct timespec ts;
-  int wait_ret;
   
   if (image_db == NULL) {
-    fprintf(stderr, "process_image_data_for_fft: image_db is NULL\n");
+    log_error("SYNTH", "process_image_data_for_fft: image_db is NULL");
     return;
   }
   
   nb_pixels = get_cis_pixels_nb();
   
-  pthread_mutex_lock(&image_db->mutex);
-  while (!image_db->dataReady && keepRunning) {
-    clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec += 1;
-    wait_ret = pthread_cond_timedwait(&image_db->cond, &image_db->mutex, &ts);
-    if (wait_ret == ETIMEDOUT && !keepRunning) {
-      pthread_mutex_unlock(&image_db->mutex);
-      return;
-    }
-  }
-  if (!keepRunning) {
-    pthread_mutex_unlock(&image_db->mutex);
-    return;
-  }
-
+  // Allocate temporary buffer for current grayscale line
   current_grayscale_line = (float *)malloc(nb_pixels * sizeof(float));
   if (current_grayscale_line == NULL) {
-    fprintf(stderr, "Failed to allocate current_grayscale_line\n");
-    pthread_mutex_unlock(&image_db->mutex);
+    log_error("SYNTH", "Failed to allocate current_grayscale_line");
     return;
   }
   
+  pthread_mutex_lock(&image_db->mutex);
+  
+  // Convert RGB to grayscale [0-255]
   for (i = 0; i < nb_pixels; ++i) {
     current_grayscale_line[i] = 0.299f * image_db->activeBuffer_R[i] +
                                 0.587f * image_db->activeBuffer_G[i] +
                                 0.114f * image_db->activeBuffer_B[i];
   }
+  
   pthread_mutex_unlock(&image_db->mutex);
-
+  
+  // Store in history and compute moving average
   pthread_mutex_lock(&image_history_mutex);
-  memcpy(image_line_history[history_write_index].line_data,
-         current_grayscale_line, nb_pixels * sizeof(float));
+  
+  memcpy(image_line_history[history_write_index].line_data, current_grayscale_line,
+         nb_pixels * sizeof(float));
   free(current_grayscale_line);
   
   history_write_index = (history_write_index + 1) % MOVING_AVERAGE_WINDOW_SIZE;
   if (history_fill_count < MOVING_AVERAGE_WINDOW_SIZE) {
     history_fill_count++;
   }
-
+  
   if (history_fill_count > 0) {
-    memset(polyphonic_context.fft_input, 0,
-           nb_pixels * sizeof(kiss_fft_scalar));
+    // Compute moving average
+    memset(polyphonic_context.fft_input, 0, nb_pixels * sizeof(kiss_fft_scalar));
     for (j = 0; j < nb_pixels; ++j) {
       sum = 0.0f;
       for (k = 0; k < history_fill_count; ++k) {
@@ -427,9 +405,26 @@ static void process_image_data_for_fft(DoubleBuffer *image_db) {
       }
       polyphonic_context.fft_input[j] = sum / history_fill_count;
     }
+    
+    // Compute FFT
     kiss_fftr(polyphonic_context.fft_cfg, polyphonic_context.fft_input,
               polyphonic_context.fft_output);
+    
+    // Calculate magnitudes with smoothing
+    global_smoothed_magnitudes[0] = polyphonic_context.fft_output[0].r / NORM_FACTOR_BIN0;
+    
+    for (i = 1; i < MAX_MAPPED_OSCILLATORS; ++i) {
+      float real = polyphonic_context.fft_output[i].r;
+      float imag = polyphonic_context.fft_output[i].i;
+      float magnitude = sqrtf(real * real + imag * imag);
+      float target_mag = fminf(1.0f, magnitude / NORM_FACTOR_HARMONICS);
+      
+      global_smoothed_magnitudes[i] =
+          AMPLITUDE_SMOOTHING_ALPHA * target_mag +
+          (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * global_smoothed_magnitudes[i];
+    }
   }
+  
   pthread_mutex_unlock(&image_history_mutex);
 }
 
@@ -492,10 +487,49 @@ void *synth_polyphonicMode_thread_func(void *arg) {
   } else {
     log_warning("SYNTH", "Polyphonic thread: No context provided, no DoubleBuffer available");
   }
+  
+  // Set RT priority for polyphonic synthesis thread (priority 75, between callback at 70 and max 99)
+  #ifdef __linux__
+  struct sched_param param;
+  param.sched_priority = 75;
+  if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) == 0) {
+    log_info("SYNTH", "Polyphonic thread: RT priority set to 75 (SCHED_FIFO)");
+  } else {
+    log_warning("SYNTH", "Polyphonic thread: Failed to set RT priority (may need CAP_SYS_NICE capability)");
+  }
+  #elif defined(__APPLE__)
+  // macOS: Use thread_policy_set for RT priority
+  struct thread_time_constraint_policy ttcpolicy;
+  thread_port_t threadport = pthread_mach_thread_np(pthread_self());
+  
+  // Calculate time constraints for RT thread
+  // Period: ~10ms (typical audio buffer period at 48kHz/512 frames)
+  // Computation: 50% of period (5ms)
+  // Constraint: 80% of period (8ms)
+  // Preemptible: yes (1)
+  mach_timebase_info_data_t timebase_info;
+  mach_timebase_info(&timebase_info);
+  
+  double ms_to_abs_time = ((double)timebase_info.denom / (double)timebase_info.numer) * 1000000.0;
+  ttcpolicy.period = (uint32_t)(10.0 * ms_to_abs_time);      // 10ms period
+  ttcpolicy.computation = (uint32_t)(5.0 * ms_to_abs_time);  // 5ms computation
+  ttcpolicy.constraint = (uint32_t)(8.0 * ms_to_abs_time);   // 8ms constraint
+  ttcpolicy.preemptible = 1;
+  
+  if (thread_policy_set(threadport, THREAD_TIME_CONSTRAINT_POLICY,
+                       (thread_policy_t)&ttcpolicy,
+                       THREAD_TIME_CONSTRAINT_POLICY_COUNT) == KERN_SUCCESS) {
+    log_info("SYNTH", "Polyphonic thread: RT time constraint policy set (macOS)");
+  } else {
+    log_warning("SYNTH", "Polyphonic thread: Failed to set RT time constraint policy (macOS)");
+  }
+  #endif
+  
   log_info("SYNTH", "Polyphonic synthesis thread started");
   srand(time(NULL));
 
   while (keepRunning) {
+    // Process image data and compute FFT (original architecture restored)
     if (image_db != NULL) {
       process_image_data_for_fft(image_db);
     } else {
@@ -510,13 +544,15 @@ void *synth_polyphonicMode_thread_func(void *arg) {
 
     // RT-SAFE: Wait for buffer to be consumed with timeout and exponential backoff
     int wait_iterations = 0;
-    const int MAX_WAIT_ITERATIONS = 100; // ~10ms max wait
+    const int MAX_WAIT_ITERATIONS = 500; // ~50ms max wait (increased from 100)
     
     while (__atomic_load_n(&polyphonic_audio_buffers[local_producer_idx].ready, __ATOMIC_ACQUIRE) == 1 && 
            keepRunning && wait_iterations < MAX_WAIT_ITERATIONS) {
-      // Exponential backoff: start with short sleeps, increase if needed
-      int sleep_us = (wait_iterations < 10) ? 10 : 
-                     (wait_iterations < 50) ? 50 : 100;
+      // Optimized exponential backoff: more aggressive at start, then backs off
+      int sleep_us = (wait_iterations < 5) ? 5 :      // 5µs for first 5 iterations
+                     (wait_iterations < 20) ? 20 :     // 20µs for next 15 iterations
+                     (wait_iterations < 100) ? 50 :    // 50µs for next 80 iterations
+                     100;                              // 100µs for remaining iterations
       struct timespec sleep_time = {0, sleep_us * 1000}; // Convert µs to ns
       nanosleep(&sleep_time, NULL);
       wait_iterations++;
@@ -528,15 +564,19 @@ void *synth_polyphonicMode_thread_func(void *arg) {
     
     // If timeout, log warning but continue (graceful degradation)
     if (wait_iterations >= MAX_WAIT_ITERATIONS) {
-      static int timeout_counter = 0;
-      if (++timeout_counter % 100 == 0) {
-        log_warning("SYNTH", "Polyphonic: Buffer wait timeout (callback too slow)");
-      }
+      log_warning("SYNTH", "Polyphonic: Buffer wait timeout (callback too slow)");
     }
     
     pthread_mutex_lock(&polyphonic_audio_buffers[local_producer_idx].mutex);
     synth_polyphonicMode_process(
         polyphonic_audio_buffers[local_producer_idx].data, g_sp3ctra_config.audio_buffer_size);
+    
+    // Record timestamp when buffer is written
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    polyphonic_audio_buffers[local_producer_idx].write_timestamp_us = 
+        (uint64_t)tv.tv_sec * 1000000ULL + (uint64_t)tv.tv_usec;
+    
     polyphonic_audio_buffers[local_producer_idx].ready = 1;
     pthread_cond_signal(&polyphonic_audio_buffers[local_producer_idx].cond);
     pthread_mutex_unlock(&polyphonic_audio_buffers[local_producer_idx].mutex);

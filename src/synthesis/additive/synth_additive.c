@@ -41,6 +41,7 @@
 #include <string.h>
 #include <math.h>
 #include <pthread.h>
+#include <sys/time.h>
 
 // Project includes
 #include "audio_c_api.h"
@@ -665,10 +666,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   
   // If timeout, log warning but continue (graceful degradation)
   if (wait_iterations >= MAX_WAIT_ITERATIONS) {
-    static int timeout_counter = 0;
-    if (++timeout_counter % 100 == 0) {
-      log_warning("SYNTH", "Additive: Buffer wait timeout (callback too slow)");
-    }
+    log_warning("SYNTH", "Additive: Buffer wait timeout (callback too slow)");
   }
 
   // 🎯 USE PREPROCESSED DATA: Get all preprocessed data in single mutex lock (optimized)
@@ -770,7 +768,14 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // with the MIXED RGB colors from the sequencer (not grayscale conversion)
   // Additive synthesis finished
 
-  // RT-SAFE: Mark buffers as ready using atomic stores (no mutex needed)
+  // RT-SAFE: Record timestamp and mark buffers as ready using atomic stores (no mutex needed)
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  uint64_t timestamp_us = (uint64_t)tv.tv_sec * 1000000ULL + (uint64_t)tv.tv_usec;
+  
+  buffers_L[index].write_timestamp_us = timestamp_us;
+  buffers_R[index].write_timestamp_us = timestamp_us;
+  
   __atomic_store_n(&buffers_L[index].ready, 1, __ATOMIC_RELEASE);
   __atomic_store_n(&buffers_R[index].ready, 1, __ATOMIC_RELEASE);
   // pthread_cond_signal removed - RT callback polls atomically

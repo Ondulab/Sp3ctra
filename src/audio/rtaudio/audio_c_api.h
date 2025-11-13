@@ -25,6 +25,7 @@ typedef struct AudioData {
 typedef struct {
   float *data; // dynamically allocated with size = g_sp3ctra_config.audio_buffer_size
   int ready; // 0: libre, 1: rempli et en attente de lecture
+  uint64_t write_timestamp_us; // Timestamp when buffer was written (microseconds)
   pthread_mutex_t mutex;
   pthread_cond_t cond;
 } AudioDataBuffers;

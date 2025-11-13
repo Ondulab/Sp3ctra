@@ -48,6 +48,9 @@ typedef struct {
         uint8_t zone_b[DMX_NUM_SPOTS];
     } dmx;
     
+    /* FFT spectral data for polyphonic synthesis (only if polyphonic enabled) */
+    /* Note: MAX_MAPPED_OSCILLATORS is defined in synth_polyphonic.h (~64 bins) */
+    
     /* Timestamp for synchronization (microseconds) */
     uint64_t timestamp_us;
     
