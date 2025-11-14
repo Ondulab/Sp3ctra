@@ -50,18 +50,6 @@ static void lfo_init(LfoState *lfo, float rate_hz, float depth_semitones,
 static float lfo_process(LfoState *lfo);
 
 // --- Synth Parameters & Globals ---
-#define NORM_FACTOR_BIN0 881280.0f * 1.1f
-#define NORM_FACTOR_HARMONICS 220320.0f * 2.0f
-#define MASTER_VOLUME 0.20f
-#define AMPLITUDE_SMOOTHING_ALPHA 0.1f // Increased for more responsiveness
-#define AMPLITUDE_GAMMA 2.0f           // Increased to enhance variations
-
-// CPU optimization parameters
-#define MIN_AUDIBLE_AMPLITUDE 0.001f // Skip harmonics below this threshold
-#define MAX_HARMONICS_PER_VOICE 32 // Limit harmonics per voice for performance
-#define HIGH_FREQ_HARMONIC_LIMIT                                               \
-  8000.0f // Reduce harmonics above this frequency
-
 // Runtime-configurable polyphonic synthesis parameters
 int g_num_poly_voices = 8;           // Default: 8 voices (will be loaded from config)
 int g_max_mapped_oscillators = 128;  // Default: 128 oscillators (will be loaded from config)
@@ -73,21 +61,6 @@ SynthVoice poly_voices[MAX_POLY_VOICES];
 float global_smoothed_magnitudes[MAX_MAPPED_OSCILLATORS];
 SpectralFilterParams global_spectral_filter_params;
 LfoState global_vibrato_lfo; // Definition for the global LFO
-
-// Global default ADSR parameters
-static float G_VOLUME_ADSR_ATTACK_S = 0.01f;
-static float G_VOLUME_ADSR_DECAY_S = 0.1f;
-static float G_VOLUME_ADSR_SUSTAIN_LEVEL = 0.8f;
-static float G_VOLUME_ADSR_RELEASE_S = 0.2f;
-
-static float G_FILTER_ADSR_ATTACK_S = 0.02f;
-static float G_FILTER_ADSR_DECAY_S = 0.2f;
-static float G_FILTER_ADSR_SUSTAIN_LEVEL = 0.1f;
-static float G_FILTER_ADSR_RELEASE_S = 0.3f;
-
-// Default LFO parameters
-static float G_LFO_RATE_HZ = 5.0f;
-static float G_LFO_DEPTH_SEMITONES = 0.25f;
 
 // Polyphonic synthesis related globals
 FftAudioDataBuffer polyphonic_audio_buffers[2];
@@ -142,13 +115,15 @@ void synth_polyphonicMode_init(void) {
   polyphonic_current_buffer_index = 0;
 
   memset(global_smoothed_magnitudes, 0, sizeof(global_smoothed_magnitudes));
-  filter_init_spectral_params(&global_spectral_filter_params, 8000.0f,
-                              -7800.0f);
+  filter_init_spectral_params(&global_spectral_filter_params, 
+                              g_sp3ctra_config.poly_filter_cutoff_hz,
+                              g_sp3ctra_config.poly_filter_env_depth_hz);
   log_info("SYNTH", "Global Spectral Filter Params: BaseCutoff=%.0fHz, EnvDepth=%.0fHz",
            global_spectral_filter_params.base_cutoff_hz,
            global_spectral_filter_params.filter_env_depth);
 
-  lfo_init(&global_vibrato_lfo, G_LFO_RATE_HZ, G_LFO_DEPTH_SEMITONES,
+  lfo_init(&global_vibrato_lfo, g_sp3ctra_config.poly_lfo_rate_hz, 
+           g_sp3ctra_config.poly_lfo_depth_semitones,
            (float)g_sp3ctra_config.sampling_frequency);
   log_info("SYNTH", "Global Vibrato LFO initialized: Rate=%.2f Hz, Depth=%.2f semitones",
            global_vibrato_lfo.rate_hz, global_vibrato_lfo.depth_semitones);
@@ -162,12 +137,12 @@ void synth_polyphonicMode_init(void) {
     for (j = 0; j < MAX_MAPPED_OSCILLATORS; ++j) {
       poly_voices[i].oscillators[j].phase = 0.0f;
     }
-    adsr_init_envelope(&poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
-                       G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-                       G_VOLUME_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
-    adsr_init_envelope(&poly_voices[i].filter_adsr, G_FILTER_ADSR_ATTACK_S,
-                       G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
-                       G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+    adsr_init_envelope(&poly_voices[i].volume_adsr, g_sp3ctra_config.poly_volume_adsr_attack_s,
+                       g_sp3ctra_config.poly_volume_adsr_decay_s, g_sp3ctra_config.poly_volume_adsr_sustain_level,
+                       g_sp3ctra_config.poly_volume_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
+    adsr_init_envelope(&poly_voices[i].filter_adsr, g_sp3ctra_config.poly_filter_adsr_attack_s,
+                       g_sp3ctra_config.poly_filter_adsr_decay_s, g_sp3ctra_config.poly_filter_adsr_sustain_level,
+                       g_sp3ctra_config.poly_filter_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
   }
   log_info("SYNTH", "%d polyphonic voices initialized", g_num_poly_voices);
   log_info("SYNTH", "Polyphonic mode initialized (FFT computed in UDP thread)");
@@ -230,14 +205,14 @@ void synth_polyphonicMode_process(float *audio_buffer,
       float voice_sample_sum = 0.0f;
       // CPU Optimized harmonic processing loop
       // Calculate adaptive harmonic limits based on frequency and sample rate
-      int max_harmonics = MAX_MAPPED_OSCILLATORS;
+      int max_harmonics = g_max_mapped_oscillators;
 
       // Reduce harmonics for high frequencies to save CPU
-      if (actual_fundamental_freq > HIGH_FREQ_HARMONIC_LIMIT) {
+      if (actual_fundamental_freq > g_sp3ctra_config.poly_high_freq_harmonic_limit_hz) {
         max_harmonics =
-            fminf(MAX_HARMONICS_PER_VOICE / 2, MAX_MAPPED_OSCILLATORS);
-      } else if (actual_fundamental_freq > HIGH_FREQ_HARMONIC_LIMIT / 2) {
-        max_harmonics = fminf(MAX_HARMONICS_PER_VOICE, MAX_MAPPED_OSCILLATORS);
+            fminf(g_sp3ctra_config.poly_max_harmonics_per_voice / 2, MAX_MAPPED_OSCILLATORS);
+      } else if (actual_fundamental_freq > g_sp3ctra_config.poly_high_freq_harmonic_limit_hz / 2) {
+        max_harmonics = fminf(g_sp3ctra_config.poly_max_harmonics_per_voice, MAX_MAPPED_OSCILLATORS);
       }
 
       for (int osc_idx = 0; osc_idx < max_harmonics; ++osc_idx) {
@@ -258,7 +233,7 @@ void synth_polyphonicMode_process(float *audio_buffer,
         float smoothed_amplitude = global_smoothed_magnitudes[osc_idx];
 
         // CPU optimization: Skip harmonics with very low amplitude
-        if (smoothed_amplitude < MIN_AUDIBLE_AMPLITUDE) {
+        if (smoothed_amplitude < g_sp3ctra_config.poly_min_audible_amplitude) {
           // Still update phase to maintain continuity
           float phase_increment = TWO_PI * osc_freq / (float)g_sp3ctra_config.sampling_frequency;
           current_voice->oscillators[osc_idx].phase += phase_increment;
@@ -270,9 +245,9 @@ void synth_polyphonicMode_process(float *audio_buffer,
 
         float phase_increment = TWO_PI * osc_freq / (float)g_sp3ctra_config.sampling_frequency;
 
-        float amplitude_after_gamma = powf(smoothed_amplitude, AMPLITUDE_GAMMA);
+        float amplitude_after_gamma = powf(smoothed_amplitude, g_sp3ctra_config.poly_amplitude_gamma);
         if (smoothed_amplitude < 0.0f &&
-            (AMPLITUDE_GAMMA != floorf(AMPLITUDE_GAMMA))) {
+            (g_sp3ctra_config.poly_amplitude_gamma != floorf(g_sp3ctra_config.poly_amplitude_gamma))) {
           amplitude_after_gamma = 0.0f;
         }
 
@@ -289,7 +264,7 @@ void synth_polyphonicMode_process(float *audio_buffer,
         float final_amplitude = amplitude_after_gamma * attenuation;
 
         // Only calculate sine if amplitude is significant enough
-        if (final_amplitude > MIN_AUDIBLE_AMPLITUDE) {
+        if (final_amplitude > g_sp3ctra_config.poly_min_audible_amplitude) {
           float osc_sample =
               final_amplitude * sinf(current_voice->oscillators[osc_idx].phase);
           voice_sample_sum += osc_sample;
@@ -306,7 +281,7 @@ void synth_polyphonicMode_process(float *audio_buffer,
       master_sample_sum += voice_sample_sum;
     }
 
-    master_sample_sum *= MASTER_VOLUME;
+    master_sample_sum *= g_sp3ctra_config.poly_master_volume;
 
     if (master_sample_sum > 1.0f)
       master_sample_sum = 1.0f;
@@ -687,11 +662,28 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
     }
   }
 
-  // Priority 2: Find the oldest voice not in RELEASE or RECENT ATTACK
-  // "Recent attack" could be defined by comparing its trigger order to
-  // g_current_trigger_order For simplicity here, we'll consider any ATTACK,
-  // DECAY, SUSTAIN voice. We'll pick the one with the smallest
-  // last_triggered_order.
+  // Priority 2: Steal the voice in RELEASE with the lowest envelope output
+  // This allows notes to finish their release phase naturally before being stolen
+  if (voice_idx == -1) {
+    float lowest_env_output = 2.0f; // Greater than max envelope output (1.0)
+    int candidate_idx = -1;
+    for (int i = 0; i < g_num_poly_voices; ++i) {
+      if (poly_voices[i].voice_state == ADSR_STATE_RELEASE) {
+        if (poly_voices[i].volume_adsr.current_output < lowest_env_output) {
+          lowest_env_output = poly_voices[i].volume_adsr.current_output;
+          candidate_idx = i;
+        }
+      }
+    }
+    if (candidate_idx != -1) {
+      voice_idx = candidate_idx;
+      printf("SYNTH_POLY: Stealing quietest release voice %d for note %d (Env: %.2f)\n",
+             voice_idx, noteNumber, lowest_env_output);
+    }
+  }
+
+  // Priority 3: As last resort, find the oldest active voice (ATTACK, DECAY, SUSTAIN)
+  // This should rarely happen if release times are reasonable
   if (voice_idx == -1) {
     unsigned long long oldest_order =
         g_current_trigger_order +
@@ -709,31 +701,8 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
     }
     if (candidate_idx != -1) {
       voice_idx = candidate_idx;
-      // printf("SYNTH_FFT: No idle voice. Stealing oldest active (non-release)
-      // "
-      //        "voice %d for note %d (Order: %llu)\n",
-      //        voice_idx, noteNumber, oldest_order);
-    }
-  }
-
-  // Priority 3: If still no voice, steal the voice in RELEASE with the lowest
-  // envelope output
-  if (voice_idx == -1) {
-    float lowest_env_output = 2.0f; // Greater than max envelope output (1.0)
-    int candidate_idx = -1;
-    for (int i = 0; i < g_num_poly_voices; ++i) {
-      if (poly_voices[i].voice_state == ADSR_STATE_RELEASE) {
-        if (poly_voices[i].volume_adsr.current_output < lowest_env_output) {
-          lowest_env_output = poly_voices[i].volume_adsr.current_output;
-          candidate_idx = i;
-        }
-      }
-    }
-    if (candidate_idx != -1) {
-      voice_idx = candidate_idx;
-      // printf("SYNTH_FFT: No idle or active non-release voice. Stealing "
-      //        "quietest release voice %d for note %d (Env: %.2f)\n",
-      //        voice_idx, noteNumber, lowest_env_output);
+      printf("SYNTH_POLY: Last resort - stealing oldest active voice %d for note %d (Order: %llu)\n",
+             voice_idx, noteNumber, oldest_order);
     }
   }
 
@@ -745,20 +714,20 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
   // more complex fallback.
   if (voice_idx == -1) {
     voice_idx = 0; // Default to stealing voice 0 if no other candidate found
-    // printf("SYNTH_FFT: Critical fallback. Stealing voice 0 for note %d\n",
-    //        noteNumber);
+    printf("SYNTH_POLY: Critical fallback. Stealing voice 0 for note %d\n",
+           noteNumber);
   }
 
   SynthVoice *voice = &poly_voices[voice_idx];
 
   // Initialize the chosen voice's envelopes with current global ADSR settings
   // This ensures it starts fresh, respecting the latest global parameters.
-  adsr_init_envelope(&voice->volume_adsr, G_VOLUME_ADSR_ATTACK_S,
-                     G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-                     G_VOLUME_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
-  adsr_init_envelope(&voice->filter_adsr, G_FILTER_ADSR_ATTACK_S,
-                     G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
-                     G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+  adsr_init_envelope(&voice->volume_adsr, g_sp3ctra_config.poly_volume_adsr_attack_s,
+                     g_sp3ctra_config.poly_volume_adsr_decay_s, g_sp3ctra_config.poly_volume_adsr_sustain_level,
+                     g_sp3ctra_config.poly_volume_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
+  adsr_init_envelope(&voice->filter_adsr, g_sp3ctra_config.poly_filter_adsr_attack_s,
+                     g_sp3ctra_config.poly_filter_adsr_decay_s, g_sp3ctra_config.poly_filter_adsr_sustain_level,
+                     g_sp3ctra_config.poly_filter_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
 
   voice->fundamental_frequency = midi_note_to_frequency(noteNumber);
   voice->midi_note_number = noteNumber;
@@ -776,25 +745,37 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
   adsr_trigger_attack(
       &voice->filter_adsr); // and set state to ATTACK, current_output to 0
 
-  // printf("SYNTH_FFT: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f "
-  //        "Hz, Order: %llu -> ADSR Attack\n",
-  //        voice_idx, noteNumber, velocity, voice->last_velocity,
-  //        voice->fundamental_frequency, voice->last_triggered_order);
+  printf("SYNTH_POLY: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f "
+         "Hz, Order: %llu -> ADSR Attack\n",
+         voice_idx, noteNumber, velocity, voice->last_velocity,
+         voice->fundamental_frequency, voice->last_triggered_order);
 }
 
 void synth_polyphonic_note_off(int noteNumber) {
+  // Find the OLDEST voice with this note number that is not already in RELEASE or IDLE
+  // This ensures we only release the first instance of the note, not all of them
+  int oldest_voice_idx = -1;
+  unsigned long long oldest_order = g_current_trigger_order + 1;
+  
   for (int i = 0; i < g_num_poly_voices; ++i) {
     if (poly_voices[i].midi_note_number == noteNumber &&
         poly_voices[i].voice_state != ADSR_STATE_IDLE &&
         poly_voices[i].voice_state != ADSR_STATE_RELEASE) {
-      adsr_trigger_release(&poly_voices[i].volume_adsr);
-      adsr_trigger_release(&poly_voices[i].filter_adsr);
-      // voice_state will be set to IDLE by adsr_get_output when release
-      // finishes midi_note_number will be set to -1 when voice_state becomes
-      // IDLE in synth_fftMode_process
-      // printf("SYNTH_FFT: Voice %d Note Off: %d -> ADSR Release\n", i,
-      //        noteNumber);
+      // Find the oldest (lowest trigger order) voice with this note
+      if (poly_voices[i].last_triggered_order < oldest_order) {
+        oldest_order = poly_voices[i].last_triggered_order;
+        oldest_voice_idx = i;
+      }
     }
+  }
+  
+  // Only release the oldest voice found
+  if (oldest_voice_idx != -1) {
+    adsr_trigger_release(&poly_voices[oldest_voice_idx].volume_adsr);
+    adsr_trigger_release(&poly_voices[oldest_voice_idx].filter_adsr);
+    poly_voices[oldest_voice_idx].voice_state = ADSR_STATE_RELEASE;
+    printf("SYNTH_POLY: Voice %d Note Off: %d -> ADSR Release\n", 
+           oldest_voice_idx, noteNumber);
   }
 }
 
@@ -829,29 +810,26 @@ static float lfo_process(LfoState *lfo) {
 void synth_polyphonic_set_volume_adsr_attack(float attack_s) {
   if (attack_s < 0.0f)
     attack_s = 0.0f;
-  G_VOLUME_ADSR_ATTACK_S = attack_s;
+  g_sp3ctra_config.poly_volume_adsr_attack_s = attack_s;
   // printf("SYNTH_FFT: Global Volume ADSR Attack set to: %.3f s\n", attack_s);
   for (int i = 0; i < g_num_poly_voices; ++i) {
     adsr_update_settings_and_recalculate_rates(
-        &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
-        G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-        G_VOLUME_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
-    // Update filter ADSR similarly if desired
-    // adsr_update_settings_and_recalculate_rates(&poly_voices[i].filter_adsr,
-    // G_FILTER_ADSR_ATTACK_S, ...);
+        &poly_voices[i].volume_adsr, g_sp3ctra_config.poly_volume_adsr_attack_s,
+        g_sp3ctra_config.poly_volume_adsr_decay_s, g_sp3ctra_config.poly_volume_adsr_sustain_level,
+        g_sp3ctra_config.poly_volume_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
   }
 }
 
 void synth_polyphonic_set_volume_adsr_decay(float decay_s) {
   if (decay_s < 0.0f)
     decay_s = 0.0f;
-  G_VOLUME_ADSR_DECAY_S = decay_s;
+  g_sp3ctra_config.poly_volume_adsr_decay_s = decay_s;
   // printf("SYNTH_FFT: Global Volume ADSR Decay set to: %.3f s\n", decay_s);
   for (int i = 0; i < g_num_poly_voices; ++i) {
     adsr_update_settings_and_recalculate_rates(
-        &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
-        G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-        G_VOLUME_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+        &poly_voices[i].volume_adsr, g_sp3ctra_config.poly_volume_adsr_attack_s,
+        g_sp3ctra_config.poly_volume_adsr_decay_s, g_sp3ctra_config.poly_volume_adsr_sustain_level,
+        g_sp3ctra_config.poly_volume_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
   }
 }
 
@@ -860,28 +838,28 @@ void synth_polyphonic_set_volume_adsr_sustain(float sustain_level) {
     sustain_level = 0.0f;
   if (sustain_level > 1.0f)
     sustain_level = 1.0f;
-  G_VOLUME_ADSR_SUSTAIN_LEVEL = sustain_level;
+  g_sp3ctra_config.poly_volume_adsr_sustain_level = sustain_level;
   // printf("SYNTH_FFT: Global Volume ADSR Sustain set to: %.2f\n",
   // sustain_level);
   for (int i = 0; i < g_num_poly_voices; ++i) {
     adsr_update_settings_and_recalculate_rates(
-        &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
-        G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-        G_VOLUME_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+        &poly_voices[i].volume_adsr, g_sp3ctra_config.poly_volume_adsr_attack_s,
+        g_sp3ctra_config.poly_volume_adsr_decay_s, g_sp3ctra_config.poly_volume_adsr_sustain_level,
+        g_sp3ctra_config.poly_volume_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
   }
 }
 
 void synth_polyphonic_set_volume_adsr_release(float release_s) {
   if (release_s < 0.0f)
     release_s = 0.0f;
-  G_VOLUME_ADSR_RELEASE_S = release_s;
+  g_sp3ctra_config.poly_volume_adsr_release_s = release_s;
   // printf("SYNTH_FFT: Global Volume ADSR Release set to: %.3f s\n",
   // release_s);
   for (int i = 0; i < g_num_poly_voices; ++i) {
     adsr_update_settings_and_recalculate_rates(
-        &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
-        G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
-        G_VOLUME_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+        &poly_voices[i].volume_adsr, g_sp3ctra_config.poly_volume_adsr_attack_s,
+        g_sp3ctra_config.poly_volume_adsr_decay_s, g_sp3ctra_config.poly_volume_adsr_sustain_level,
+        g_sp3ctra_config.poly_volume_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
   }
 }
 
@@ -926,24 +904,24 @@ void synth_polyphonic_set_filter_env_depth(float depth_hz) {
 void synth_polyphonic_set_filter_adsr_attack(float attack_s) {
   if (attack_s < 0.0f)
     attack_s = 0.0f;
-  G_FILTER_ADSR_ATTACK_S = attack_s;
+  g_sp3ctra_config.poly_filter_adsr_attack_s = attack_s;
   for (int i = 0; i < g_num_poly_voices; ++i) {
     adsr_update_settings_and_recalculate_rates(
-        &poly_voices[i].filter_adsr, G_FILTER_ADSR_ATTACK_S,
-        G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
-        G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+        &poly_voices[i].filter_adsr, g_sp3ctra_config.poly_filter_adsr_attack_s,
+        g_sp3ctra_config.poly_filter_adsr_decay_s, g_sp3ctra_config.poly_filter_adsr_sustain_level,
+        g_sp3ctra_config.poly_filter_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
   }
 }
 
 void synth_polyphonic_set_filter_adsr_decay(float decay_s) {
   if (decay_s < 0.0f)
     decay_s = 0.0f;
-  G_FILTER_ADSR_DECAY_S = decay_s;
+  g_sp3ctra_config.poly_filter_adsr_decay_s = decay_s;
   for (int i = 0; i < g_num_poly_voices; ++i) {
     adsr_update_settings_and_recalculate_rates(
-        &poly_voices[i].filter_adsr, G_FILTER_ADSR_ATTACK_S,
-        G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
-        G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+        &poly_voices[i].filter_adsr, g_sp3ctra_config.poly_filter_adsr_attack_s,
+        g_sp3ctra_config.poly_filter_adsr_decay_s, g_sp3ctra_config.poly_filter_adsr_sustain_level,
+        g_sp3ctra_config.poly_filter_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
   }
 }
 
@@ -952,23 +930,23 @@ void synth_polyphonic_set_filter_adsr_sustain(float sustain_level) {
     sustain_level = 0.0f;
   if (sustain_level > 1.0f)
     sustain_level = 1.0f;
-  G_FILTER_ADSR_SUSTAIN_LEVEL = sustain_level;
+  g_sp3ctra_config.poly_filter_adsr_sustain_level = sustain_level;
   for (int i = 0; i < g_num_poly_voices; ++i) {
     adsr_update_settings_and_recalculate_rates(
-        &poly_voices[i].filter_adsr, G_FILTER_ADSR_ATTACK_S,
-        G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
-        G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+        &poly_voices[i].filter_adsr, g_sp3ctra_config.poly_filter_adsr_attack_s,
+        g_sp3ctra_config.poly_filter_adsr_decay_s, g_sp3ctra_config.poly_filter_adsr_sustain_level,
+        g_sp3ctra_config.poly_filter_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
   }
 }
 
 void synth_polyphonic_set_filter_adsr_release(float release_s) {
   if (release_s < 0.0f)
     release_s = 0.0f;
-  G_FILTER_ADSR_RELEASE_S = release_s;
+  g_sp3ctra_config.poly_filter_adsr_release_s = release_s;
   for (int i = 0; i < g_num_poly_voices; ++i) {
     adsr_update_settings_and_recalculate_rates(
-        &poly_voices[i].filter_adsr, G_FILTER_ADSR_ATTACK_S,
-        G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
-        G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+        &poly_voices[i].filter_adsr, g_sp3ctra_config.poly_filter_adsr_attack_s,
+        g_sp3ctra_config.poly_filter_adsr_decay_s, g_sp3ctra_config.poly_filter_adsr_sustain_level,
+        g_sp3ctra_config.poly_filter_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
   }
 }

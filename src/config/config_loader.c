@@ -93,7 +93,39 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     
     // Polyphonic synthesis parameters
     .poly_num_voices = 8,               // 8 polyphonic voices
-    .poly_max_oscillators = 128         // 128 oscillators per voice
+    .poly_max_oscillators = 128,        // 128 oscillators per voice
+    
+    // Polyphonic ADSR Volume parameters
+    .poly_volume_adsr_attack_s = 0.01f,
+    .poly_volume_adsr_decay_s = 0.1f,
+    .poly_volume_adsr_sustain_level = 0.8f,
+    .poly_volume_adsr_release_s = 0.2f,
+    
+    // Polyphonic ADSR Filter parameters
+    .poly_filter_adsr_attack_s = 0.02f,
+    .poly_filter_adsr_decay_s = 0.2f,
+    .poly_filter_adsr_sustain_level = 0.1f,
+    .poly_filter_adsr_release_s = 0.3f,
+    
+    // Polyphonic LFO parameters
+    .poly_lfo_rate_hz = 5.0f,
+    .poly_lfo_depth_semitones = 0.25f,
+    
+    // Polyphonic spectral filter parameters
+    .poly_filter_cutoff_hz = 8000.0f,
+    .poly_filter_env_depth_hz = -7800.0f,
+    
+    // Polyphonic performance parameters
+    .poly_master_volume = 0.20f,
+    .poly_amplitude_gamma = 2.0f,
+    .poly_min_audible_amplitude = 0.001f,
+    .poly_max_harmonics_per_voice = 32,
+    .poly_high_freq_harmonic_limit_hz = 8000.0f,
+    
+    // Polyphonic advanced parameters
+    .poly_amplitude_smoothing_alpha = 0.1f,
+    .poly_norm_factor_bin0 = 881280.0f * 1.1f,
+    .poly_norm_factor_harmonics = 220320.0f * 2.0f
 };
 
 /**************************************************************************************
@@ -253,7 +285,20 @@ static int parse_log_level(const char* value_str, log_level_t* result) {
  */
 static int parse_key_value(const char* section, const char* key, const char* value,
                           sp3ctra_config_t* config, int line_number) {
-    // Handle [LOGGING] section specially
+    // Handle Log_level as a global parameter (empty section) or in [system] section
+    if ((strcmp(section, "") == 0 || strcmp(section, "system") == 0) && 
+        (strcmp(key, "Log_level") == 0 || strcmp(key, "log_level") == 0)) {
+        log_level_t level;
+        if (parse_log_level(value, &level) != CONFIG_SUCCESS) {
+            config_log_error(line_number, 
+                "Invalid log level '%s' (valid: ERROR, WARNING, INFO, DEBUG)", value);
+            return CONFIG_ERROR_INVALID_VALUE;
+        }
+        config->log_level = level;
+        return CONFIG_SUCCESS;
+    }
+    
+    // Handle [LOGGING] section specially (backward compatibility)
     if (strcmp(section, "LOGGING") == 0) {
         if (strcmp(key, "log_level") == 0) {
             log_level_t level;
@@ -528,6 +573,69 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "# Higher values = richer timbre but higher CPU load\n");
     fprintf(file, "# Each oscillator represents one harmonic/FFT bin\n");
     fprintf(file, "max_oscillators = %d\n", DEFAULT_CONFIG.poly_max_oscillators);
+    fprintf(file, "\n");
+    
+    fprintf(file, "# Volume ADSR envelope (controls note amplitude over time)\n");
+    fprintf(file, "# Attack: time to reach full volume after note on (seconds)\n");
+    fprintf(file, "volume_adsr_attack_s = %.3f\n", DEFAULT_CONFIG.poly_volume_adsr_attack_s);
+    fprintf(file, "# Decay: time to fall from peak to sustain level (seconds)\n");
+    fprintf(file, "volume_adsr_decay_s = %.3f\n", DEFAULT_CONFIG.poly_volume_adsr_decay_s);
+    fprintf(file, "# Sustain: level maintained while note is held (0.0-1.0)\n");
+    fprintf(file, "volume_adsr_sustain_level = %.2f\n", DEFAULT_CONFIG.poly_volume_adsr_sustain_level);
+    fprintf(file, "# Release: time to fade to silence after note off (seconds)\n");
+    fprintf(file, "volume_adsr_release_s = %.3f\n", DEFAULT_CONFIG.poly_volume_adsr_release_s);
+    fprintf(file, "\n");
+    
+    fprintf(file, "# Filter ADSR envelope (controls spectral brightness over time)\n");
+    fprintf(file, "# Attack: time for filter to open after note on (seconds)\n");
+    fprintf(file, "filter_adsr_attack_s = %.3f\n", DEFAULT_CONFIG.poly_filter_adsr_attack_s);
+    fprintf(file, "# Decay: time for filter to close to sustain level (seconds)\n");
+    fprintf(file, "filter_adsr_decay_s = %.3f\n", DEFAULT_CONFIG.poly_filter_adsr_decay_s);
+    fprintf(file, "# Sustain: filter level maintained while note is held (0.0-1.0)\n");
+    fprintf(file, "filter_adsr_sustain_level = %.2f\n", DEFAULT_CONFIG.poly_filter_adsr_sustain_level);
+    fprintf(file, "# Release: time for filter to close after note off (seconds)\n");
+    fprintf(file, "filter_adsr_release_s = %.3f\n", DEFAULT_CONFIG.poly_filter_adsr_release_s);
+    fprintf(file, "\n");
+    
+    fprintf(file, "# LFO (Low Frequency Oscillator) for vibrato effect\n");
+    fprintf(file, "# Rate: vibrato speed in Hz (0.0-30.0)\n");
+    fprintf(file, "lfo_rate_hz = %.2f\n", DEFAULT_CONFIG.poly_lfo_rate_hz);
+    fprintf(file, "# Depth: vibrato intensity in semitones (-12.0 to 12.0)\n");
+    fprintf(file, "lfo_depth_semitones = %.2f\n", DEFAULT_CONFIG.poly_lfo_depth_semitones);
+    fprintf(file, "\n");
+    
+    fprintf(file, "# Spectral filter parameters\n");
+    fprintf(file, "# Base cutoff frequency in Hz (20.0-20000.0)\n");
+    fprintf(file, "filter_cutoff_hz = %.1f\n", DEFAULT_CONFIG.poly_filter_cutoff_hz);
+    fprintf(file, "# Filter envelope depth in Hz (-20000.0 to 20000.0)\n");
+    fprintf(file, "# Negative values close the filter, positive values open it\n");
+    fprintf(file, "filter_env_depth_hz = %.1f\n", DEFAULT_CONFIG.poly_filter_env_depth_hz);
+    fprintf(file, "\n");
+    
+    fprintf(file, "# Performance and sound shaping parameters\n");
+    fprintf(file, "# Master volume (0.0-1.0)\n");
+    fprintf(file, "master_volume = %.2f\n", DEFAULT_CONFIG.poly_master_volume);
+    fprintf(file, "# Amplitude gamma curve for harmonic shaping (0.1-5.0)\n");
+    fprintf(file, "# Higher values = more emphasis on strong harmonics\n");
+    fprintf(file, "amplitude_gamma = %.1f\n", DEFAULT_CONFIG.poly_amplitude_gamma);
+    fprintf(file, "# Minimum audible amplitude threshold (0.0-0.1)\n");
+    fprintf(file, "# Harmonics below this are skipped for CPU optimization\n");
+    fprintf(file, "min_audible_amplitude = %.4f\n", DEFAULT_CONFIG.poly_min_audible_amplitude);
+    fprintf(file, "# Maximum harmonics per voice for CPU optimization (1-256)\n");
+    fprintf(file, "max_harmonics_per_voice = %d\n", DEFAULT_CONFIG.poly_max_harmonics_per_voice);
+    fprintf(file, "# High frequency harmonic limit in Hz (1000.0-20000.0)\n");
+    fprintf(file, "# Reduces harmonics above this frequency to save CPU\n");
+    fprintf(file, "high_freq_harmonic_limit_hz = %.1f\n", DEFAULT_CONFIG.poly_high_freq_harmonic_limit_hz);
+    fprintf(file, "\n");
+    
+    fprintf(file, "# Advanced parameters (fine-tuning)\n");
+    fprintf(file, "# Amplitude smoothing factor (0.0-1.0)\n");
+    fprintf(file, "# Higher values = more smoothing, lower values = more responsive\n");
+    fprintf(file, "amplitude_smoothing_alpha = %.2f\n", DEFAULT_CONFIG.poly_amplitude_smoothing_alpha);
+    fprintf(file, "# Normalization factor for fundamental frequency bin\n");
+    fprintf(file, "norm_factor_bin0 = %.1f\n", DEFAULT_CONFIG.poly_norm_factor_bin0);
+    fprintf(file, "# Normalization factor for harmonic bins\n");
+    fprintf(file, "norm_factor_harmonics = %.1f\n", DEFAULT_CONFIG.poly_norm_factor_harmonics);
     fprintf(file, "\n");
     
     fclose(file);

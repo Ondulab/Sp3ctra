@@ -509,9 +509,9 @@ int main(int argc, char **argv) {
     log_info("MIDI", "Initializing unified MIDI system...");
     midi_mapping_init();
     
-    // Load MIDI parameter specifications from dedicated file
-    if (midi_mapping_load_parameters("midi_params.ini") != 0) {
-      log_warning("MIDI", "Failed to load MIDI parameter specifications");
+    // Load MIDI parameter specifications from sp3ctra.ini
+    if (midi_mapping_load_parameters("sp3ctra.ini") != 0) {
+      log_warning("MIDI", "Failed to load MIDI parameter specifications from sp3ctra.ini");
     } else {
       log_info("MIDI", "Parameter specifications loaded");
     }
