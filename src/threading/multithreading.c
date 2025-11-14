@@ -114,6 +114,12 @@ void initDoubleBuffer(DoubleBuffer *db) {
   // Initialize DMX with black
   memset(&db->preprocessed_data.dmx, 0, sizeof(db->preprocessed_data.dmx));
   
+  // Initialize FFT data with safe defaults
+  #ifndef DISABLE_POLYPHONIC
+  memset(db->preprocessed_data.fft.magnitudes, 0, sizeof(db->preprocessed_data.fft.magnitudes));
+  db->preprocessed_data.fft.valid = 0;
+  #endif
+  
   db->preprocessed_data.timestamp_us = 0;
   
   log_info("THREAD", "DoubleBuffer preprocessed_data initialized with safe defaults");
@@ -469,6 +475,14 @@ void *udpThread(void *arg) {
       if (image_preprocess_frame(mixed_R, mixed_G, mixed_B, &preprocessed_temp) != 0) {
         log_error("THREAD", "Image preprocessing failed");
       }
+      
+      /* Step 2.5: Calculate FFT for polyphonic synthesis (if enabled) */
+      #ifndef DISABLE_POLYPHONIC
+      if (image_preprocess_fft(&preprocessed_temp) != 0) {
+        log_warning("THREAD", "FFT preprocessing failed - polyphonic synthesis may glitch");
+        preprocessed_temp.fft.valid = 0;  /* Mark FFT as invalid */
+      }
+      #endif
 
       /* 🎵 PHOTOWAVE FIX: Pass grayscale image data to Photowave synthesis thread
        * This connects the scanner data pipeline to Photowave for audio generation

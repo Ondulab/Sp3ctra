@@ -22,6 +22,26 @@
 
 #ifndef DISABLE_POLYPHONIC
 #include "../../synthesis/polyphonic/kissfft/kiss_fftr.h"
+
+/* FFT temporal smoothing configuration */
+#define FFT_HISTORY_SIZE 5  /* 5ms @ 1kHz - good compromise for bass stability */
+#define AMPLITUDE_SMOOTHING_ALPHA 0.1f  /* Exponential smoothing factor */
+#define MAX_FFT_BINS 128  /* Must match MAX_MAPPED_OSCILLATORS */
+
+/* Normalization factors from original polyphonic implementation */
+#define NORM_FACTOR_BIN0 (881280.0f * 1.1f)
+#define NORM_FACTOR_HARMONICS (220320.0f * 2.0f)
+
+/* Private state for FFT temporal smoothing */
+static struct {
+    float history[FFT_HISTORY_SIZE][MAX_FFT_BINS];  /* Circular buffer for magnitude history */
+    int write_index;  /* Current write position in circular buffer */
+    int fill_count;   /* Number of valid frames in history (0 to FFT_HISTORY_SIZE) */
+    int initialized;  /* 1 if FFT state is initialized, 0 otherwise */
+    kiss_fftr_cfg fft_cfg;  /* KissFFT configuration (lazy init) */
+    kiss_fft_scalar *fft_input;  /* FFT input buffer (lazy alloc) */
+    kiss_fft_cpx *fft_output;    /* FFT output buffer (lazy alloc) */
+} fft_history_state = {0};
 #endif
 
 /* Private variables */
@@ -192,7 +212,7 @@ static void preprocess_stereo(const uint8_t *raw_r, const uint8_t *raw_g,
  */
 static void preprocess_dmx(const uint8_t *raw_r, const uint8_t *raw_g,
                             const uint8_t *raw_b, PreprocessedImageData *out) {
-    #ifdef USE_DMX
+#ifdef USE_DMX
     int nb_pixels;
     int pixels_per_zone;
     int zone;
@@ -232,5 +252,130 @@ static void preprocess_dmx(const uint8_t *raw_r, const uint8_t *raw_g,
             out->dmx.zone_b[zone] = 0;
         }
     }
-    #endif
+#endif
 }
+
+#ifndef DISABLE_POLYPHONIC
+/**
+ * @brief FFT preprocessing function for polyphonic synthesis
+ * Computes FFT magnitudes from grayscale data with temporal smoothing
+ * 
+ * Architecture:
+ * - Lazy initialization of KissFFT on first call
+ * - Converts grayscale [0.0-1.0] to FFT input [0-255]
+ * - Computes FFT using KissFFT
+ * - Calculates and normalizes magnitudes
+ * - Applies temporal smoothing via circular buffer (5 frames @ 1kHz = 5ms)
+ * - Applies exponential smoothing for additional stability
+ * 
+ * @param data PreprocessedImageData with grayscale already computed
+ * @return 0 on success, -1 on error
+ */
+int image_preprocess_fft(PreprocessedImageData *data) {
+    int nb_pixels;
+    int i, h, idx;
+    float real, imag, magnitude, target_mag;
+    float sum, averaged;
+    
+    if (!data) {
+        log_error("PREPROCESS", "FFT: NULL data pointer");
+        return -1;
+    }
+    
+    nb_pixels = get_cis_pixels_nb();
+    
+    /* Lazy initialization of FFT state */
+    if (!fft_history_state.initialized) {
+        log_info("PREPROCESS", "FFT: Initializing KissFFT for %d pixels", nb_pixels);
+        
+        /* Allocate FFT buffers */
+        fft_history_state.fft_input = (kiss_fft_scalar *)calloc(nb_pixels, sizeof(kiss_fft_scalar));
+        fft_history_state.fft_output = (kiss_fft_cpx *)calloc(nb_pixels / 2 + 1, sizeof(kiss_fft_cpx));
+        
+        if (!fft_history_state.fft_input || !fft_history_state.fft_output) {
+            log_error("PREPROCESS", "FFT: Failed to allocate FFT buffers");
+            if (fft_history_state.fft_input) free(fft_history_state.fft_input);
+            if (fft_history_state.fft_output) free(fft_history_state.fft_output);
+            return -1;
+        }
+        
+        /* Initialize KissFFT configuration */
+        fft_history_state.fft_cfg = kiss_fftr_alloc(nb_pixels, 0, NULL, NULL);
+        if (!fft_history_state.fft_cfg) {
+            log_error("PREPROCESS", "FFT: Failed to initialize KissFFT configuration");
+            free(fft_history_state.fft_input);
+            free(fft_history_state.fft_output);
+            return -1;
+        }
+        
+        /* Pre-fill history buffer with white spectrum (all bins = 1.0) */
+        /* This prevents transients at startup */
+        for (h = 0; h < FFT_HISTORY_SIZE; h++) {
+            for (i = 0; i < MAX_FFT_BINS; i++) {
+                fft_history_state.history[h][i] = 1.0f;
+            }
+        }
+        
+        fft_history_state.write_index = 0;
+        fft_history_state.fill_count = FFT_HISTORY_SIZE;  /* History pre-filled */
+        fft_history_state.initialized = 1;
+        
+        log_info("PREPROCESS", "FFT: Initialized with %d-frame temporal smoothing (%.1fms @ 1kHz)", 
+                 FFT_HISTORY_SIZE, FFT_HISTORY_SIZE * 1.0f);
+    }
+    
+    /* Convert grayscale [0.0-1.0] to FFT input [0-255] */
+    for (i = 0; i < nb_pixels; i++) {
+        fft_history_state.fft_input[i] = data->grayscale[i] * 255.0f;
+    }
+    
+    /* Compute FFT */
+    kiss_fftr(fft_history_state.fft_cfg, fft_history_state.fft_input, fft_history_state.fft_output);
+    
+    /* Calculate raw magnitudes and store in circular buffer */
+    /* Bin 0 (DC component) uses different normalization */
+    magnitude = fft_history_state.fft_output[0].r / NORM_FACTOR_BIN0;
+    fft_history_state.history[fft_history_state.write_index][0] = magnitude;
+    
+    /* Bins 1 to MAX_FFT_BINS-1 (harmonics) */
+    for (i = 1; i < MAX_FFT_BINS && i < (nb_pixels / 2 + 1); i++) {
+        real = fft_history_state.fft_output[i].r;
+        imag = fft_history_state.fft_output[i].i;
+        magnitude = sqrtf(real * real + imag * imag);
+        target_mag = fminf(1.0f, magnitude / NORM_FACTOR_HARMONICS);
+        fft_history_state.history[fft_history_state.write_index][i] = target_mag;
+    }
+    
+    /* Fill remaining bins with zero if nb_pixels is small */
+    for (i = (nb_pixels / 2 + 1); i < MAX_FFT_BINS; i++) {
+        fft_history_state.history[fft_history_state.write_index][i] = 0.0f;
+    }
+    
+    /* Update circular buffer indices */
+    fft_history_state.write_index = (fft_history_state.write_index + 1) % FFT_HISTORY_SIZE;
+    if (fft_history_state.fill_count < FFT_HISTORY_SIZE) {
+        fft_history_state.fill_count++;
+    }
+    
+    /* Calculate moving average over history buffer */
+    for (i = 0; i < MAX_FFT_BINS; i++) {
+        sum = 0.0f;
+        for (h = 0; h < fft_history_state.fill_count; h++) {
+            idx = (fft_history_state.write_index - 1 - h + FFT_HISTORY_SIZE) % FFT_HISTORY_SIZE;
+            sum += fft_history_state.history[idx][i];
+        }
+        averaged = sum / fft_history_state.fill_count;
+        
+        /* Apply exponential smoothing on top of moving average */
+        /* This provides additional temporal stability */
+        data->fft.magnitudes[i] = 
+            AMPLITUDE_SMOOTHING_ALPHA * averaged +
+            (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * data->fft.magnitudes[i];
+    }
+    
+    /* Mark FFT data as valid */
+    data->fft.valid = 1;
+    
+    return 0;
+}
+#endif

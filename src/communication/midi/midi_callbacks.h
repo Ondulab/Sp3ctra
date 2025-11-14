@@ -45,11 +45,19 @@ void midi_cb_synth_additive_reverb_send(const MidiParameterValue *param, void *u
 void midi_cb_synth_polyphonic_volume(const MidiParameterValue *param, void *user_data);
 void midi_cb_synth_polyphonic_reverb_send(const MidiParameterValue *param, void *user_data);
 void midi_cb_synth_polyphonic_lfo_vibrato(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_polyphonic_lfo_vibrato_depth(const MidiParameterValue *param, void *user_data);
 void midi_cb_synth_polyphonic_env_attack(const MidiParameterValue *param, void *user_data);
 void midi_cb_synth_polyphonic_env_decay(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_polyphonic_env_sustain(const MidiParameterValue *param, void *user_data);
 void midi_cb_synth_polyphonic_env_release(const MidiParameterValue *param, void *user_data);
 void midi_cb_synth_polyphonic_note_on(const MidiParameterValue *param, void *user_data);
 void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_polyphonic_filter_cutoff(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_polyphonic_filter_env_depth(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_polyphonic_filter_adsr_attack(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_polyphonic_filter_adsr_decay(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_polyphonic_filter_adsr_sustain(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_polyphonic_filter_adsr_release(const MidiParameterValue *param, void *user_data);
 
 /* ============================================================================
  * SYNTHESIS PHOTOWAVE CALLBACKS

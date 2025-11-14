@@ -114,6 +114,12 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  photowave_interp_mode, 0, 1),
     CONFIG_PARAM("photowave", "amplitude", PARAM_TYPE_FLOAT, 
                  photowave_amplitude, 0.0f, 1.0f),
+    
+    // Polyphonic synthesis section
+    CONFIG_PARAM("polyphonic", "num_voices", PARAM_TYPE_INT, 
+                 poly_num_voices, 1, 32),
+    CONFIG_PARAM("polyphonic", "max_oscillators", PARAM_TYPE_INT, 
+                 poly_max_oscillators, 1, 256),
 };
 
 #define CONFIG_PARAMS_COUNT (sizeof(CONFIG_PARAMS) / sizeof(CONFIG_PARAMS[0]))
