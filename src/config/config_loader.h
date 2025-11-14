@@ -90,6 +90,38 @@ typedef struct {
     // Polyphonic synthesis parameters
     int poly_num_voices;                       // Number of polyphonic voices (1-32)
     int poly_max_oscillators;                  // Max oscillators per voice (1-256)
+    
+    // Polyphonic ADSR Volume parameters
+    float poly_volume_adsr_attack_s;           // Volume ADSR attack time (seconds)
+    float poly_volume_adsr_decay_s;            // Volume ADSR decay time (seconds)
+    float poly_volume_adsr_sustain_level;      // Volume ADSR sustain level (0.0-1.0)
+    float poly_volume_adsr_release_s;          // Volume ADSR release time (seconds)
+    
+    // Polyphonic ADSR Filter parameters
+    float poly_filter_adsr_attack_s;           // Filter ADSR attack time (seconds)
+    float poly_filter_adsr_decay_s;            // Filter ADSR decay time (seconds)
+    float poly_filter_adsr_sustain_level;      // Filter ADSR sustain level (0.0-1.0)
+    float poly_filter_adsr_release_s;          // Filter ADSR release time (seconds)
+    
+    // Polyphonic LFO parameters
+    float poly_lfo_rate_hz;                    // LFO rate in Hz
+    float poly_lfo_depth_semitones;            // LFO depth in semitones
+    
+    // Polyphonic spectral filter parameters
+    float poly_filter_cutoff_hz;               // Base filter cutoff frequency (Hz)
+    float poly_filter_env_depth_hz;            // Filter envelope depth (Hz)
+    
+    // Polyphonic performance parameters
+    float poly_master_volume;                  // Master volume (0.0-1.0)
+    float poly_amplitude_gamma;                // Amplitude gamma curve (0.1-5.0)
+    float poly_min_audible_amplitude;          // Minimum audible amplitude threshold
+    int poly_max_harmonics_per_voice;          // Max harmonics per voice for CPU optimization
+    float poly_high_freq_harmonic_limit_hz;    // High frequency harmonic limit (Hz)
+    
+    // Polyphonic advanced parameters
+    float poly_amplitude_smoothing_alpha;      // Amplitude smoothing factor (0.0-1.0)
+    float poly_norm_factor_bin0;               // Normalization factor for fundamental
+    float poly_norm_factor_harmonics;          // Normalization factor for harmonics
 } sp3ctra_config_t;
 
 /**************************************************************************************

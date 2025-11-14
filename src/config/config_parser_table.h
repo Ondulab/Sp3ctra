@@ -120,6 +120,58 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  poly_num_voices, 1, 32),
     CONFIG_PARAM("polyphonic", "max_oscillators", PARAM_TYPE_INT, 
                  poly_max_oscillators, 1, 256),
+    
+    // Polyphonic ADSR Volume parameters
+    CONFIG_PARAM("polyphonic", "volume_adsr_attack_s", PARAM_TYPE_FLOAT,
+                 poly_volume_adsr_attack_s, 0.0f, 10.0f),
+    CONFIG_PARAM("polyphonic", "volume_adsr_decay_s", PARAM_TYPE_FLOAT,
+                 poly_volume_adsr_decay_s, 0.0f, 10.0f),
+    CONFIG_PARAM("polyphonic", "volume_adsr_sustain_level", PARAM_TYPE_FLOAT,
+                 poly_volume_adsr_sustain_level, 0.0f, 1.0f),
+    CONFIG_PARAM("polyphonic", "volume_adsr_release_s", PARAM_TYPE_FLOAT,
+                 poly_volume_adsr_release_s, 0.0f, 10.0f),
+    
+    // Polyphonic ADSR Filter parameters
+    CONFIG_PARAM("polyphonic", "filter_adsr_attack_s", PARAM_TYPE_FLOAT,
+                 poly_filter_adsr_attack_s, 0.0f, 10.0f),
+    CONFIG_PARAM("polyphonic", "filter_adsr_decay_s", PARAM_TYPE_FLOAT,
+                 poly_filter_adsr_decay_s, 0.0f, 10.0f),
+    CONFIG_PARAM("polyphonic", "filter_adsr_sustain_level", PARAM_TYPE_FLOAT,
+                 poly_filter_adsr_sustain_level, 0.0f, 1.0f),
+    CONFIG_PARAM("polyphonic", "filter_adsr_release_s", PARAM_TYPE_FLOAT,
+                 poly_filter_adsr_release_s, 0.0f, 10.0f),
+    
+    // Polyphonic LFO parameters
+    CONFIG_PARAM("polyphonic", "lfo_rate_hz", PARAM_TYPE_FLOAT,
+                 poly_lfo_rate_hz, 0.0f, 30.0f),
+    CONFIG_PARAM("polyphonic", "lfo_depth_semitones", PARAM_TYPE_FLOAT,
+                 poly_lfo_depth_semitones, -12.0f, 12.0f),
+    
+    // Polyphonic spectral filter parameters
+    CONFIG_PARAM("polyphonic", "filter_cutoff_hz", PARAM_TYPE_FLOAT,
+                 poly_filter_cutoff_hz, 20.0f, 20000.0f),
+    CONFIG_PARAM("polyphonic", "filter_env_depth_hz", PARAM_TYPE_FLOAT,
+                 poly_filter_env_depth_hz, -20000.0f, 20000.0f),
+    
+    // Polyphonic performance parameters
+    CONFIG_PARAM("polyphonic", "master_volume", PARAM_TYPE_FLOAT,
+                 poly_master_volume, 0.0f, 1.0f),
+    CONFIG_PARAM("polyphonic", "amplitude_gamma", PARAM_TYPE_FLOAT,
+                 poly_amplitude_gamma, 0.1f, 5.0f),
+    CONFIG_PARAM("polyphonic", "min_audible_amplitude", PARAM_TYPE_FLOAT,
+                 poly_min_audible_amplitude, 0.0f, 0.1f),
+    CONFIG_PARAM("polyphonic", "max_harmonics_per_voice", PARAM_TYPE_INT,
+                 poly_max_harmonics_per_voice, 1, 256),
+    CONFIG_PARAM("polyphonic", "high_freq_harmonic_limit_hz", PARAM_TYPE_FLOAT,
+                 poly_high_freq_harmonic_limit_hz, 1000.0f, 20000.0f),
+    
+    // Polyphonic advanced parameters
+    CONFIG_PARAM("polyphonic", "amplitude_smoothing_alpha", PARAM_TYPE_FLOAT,
+                 poly_amplitude_smoothing_alpha, 0.0f, 1.0f),
+    CONFIG_PARAM("polyphonic", "norm_factor_bin0", PARAM_TYPE_FLOAT,
+                 poly_norm_factor_bin0, 1.0f, 10000000.0f),
+    CONFIG_PARAM("polyphonic", "norm_factor_harmonics", PARAM_TYPE_FLOAT,
+                 poly_norm_factor_harmonics, 1.0f, 10000000.0f),
 };
 
 #define CONFIG_PARAMS_COUNT (sizeof(CONFIG_PARAMS) / sizeof(CONFIG_PARAMS[0]))

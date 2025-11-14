@@ -702,23 +702,30 @@ int midi_mapping_load_parameters(const char *params_file) {
     
     FILE *file = fopen(params_file, "r");
     if (!file) {
-        log_info("MIDI_MAP", "Parameters file '%s' not found, creating with defaults", params_file);
-        if (create_default_midi_params_file(params_file) != 0) {
-            return -1;
-        }
-        // Try to open again
-        file = fopen(params_file, "r");
-        if (!file) {
-            log_error("MIDI_MAP", "Cannot open MIDI parameters file '%s' after creation", params_file);
-            return -1;
-        }
+        log_error("MIDI_MAP", "Cannot open parameters file '%s': %s", params_file, strerror(errno));
+        return -1;
     }
     
-    char line[256];
-    char current_param[MIDI_MAX_PARAM_NAME] = "";
+    char line[512];
+    char current_section[128] = "";
     int line_number = 0;
     
-    ParameterEntry *current_entry = NULL;
+    // Temporary storage for parameter being built
+    typedef struct {
+        char name[MIDI_MAX_PARAM_NAME];
+        float value;
+        float min_value;
+        float max_value;
+        MidiScalingType scaling;
+        int is_button;
+        int has_value;
+        int has_min;
+        int has_max;
+        int has_scaling;
+    } TempParam;
+    
+    TempParam temp_params[MIDI_MAX_PARAMETERS];
+    int temp_count = 0;
     
     while (fgets(line, sizeof(line), file)) {
         line_number++;
@@ -729,53 +736,30 @@ int midi_mapping_load_parameters(const char *params_file) {
             continue;
         }
         
-        // Parse section headers [CATEGORY.parameter_name]
+        // Parse section headers [section_name]
         if (*trimmed == '[') {
             char *end = strchr(trimmed, ']');
             if (!end) {
                 log_error("MIDI_MAP", "Line %d: Invalid section header", line_number);
-                fclose(file);
-                return -1;
+                continue;
             }
             *end = '\0';
-            
-            // Extract full parameter name (convert CATEGORY.param to category_param)
             const char *section_name = trimmed + 1;
-            char full_name[MIDI_MAX_PARAM_NAME];
-            strncpy(full_name, section_name, MIDI_MAX_PARAM_NAME - 1);
-            full_name[MIDI_MAX_PARAM_NAME - 1] = '\0';
             
-            // Convert dots to underscores and lowercase
-            for (int i = 0; full_name[i]; i++) {
-                if (full_name[i] == '.') {
-                    full_name[i] = '_';
-                } else if (full_name[i] >= 'A' && full_name[i] <= 'Z') {
-                    full_name[i] = full_name[i] - 'A' + 'a';
+            // Convert to lowercase with underscores
+            strncpy(current_section, section_name, sizeof(current_section) - 1);
+            current_section[sizeof(current_section) - 1] = '\0';
+            for (int i = 0; current_section[i]; i++) {
+                if (current_section[i] >= 'A' && current_section[i] <= 'Z') {
+                    current_section[i] = current_section[i] - 'A' + 'a';
                 }
             }
-            
-            strncpy(current_param, full_name, MIDI_MAX_PARAM_NAME - 1);
-            current_param[MIDI_MAX_PARAM_NAME - 1] = '\0';
-            
-            // Find or create parameter entry
-            current_entry = find_parameter(current_param);
-            if (!current_entry) {
-                if (g_midi_system.num_parameters >= MIDI_MAX_PARAMETERS) {
-                    log_error("MIDI_MAP", "Maximum number of parameters reached");
-                    fclose(file);
-                    return -1;
-                }
-                current_entry = &g_midi_system.parameters[g_midi_system.num_parameters++];
-                strncpy(current_entry->name, current_param, MIDI_MAX_PARAM_NAME - 1);
-                current_entry->name[MIDI_MAX_PARAM_NAME - 1] = '\0';
-            }
-            
             continue;
         }
         
         // Parse key=value pairs
         char *equals = strchr(trimmed, '=');
-        if (!equals || !current_entry) {
+        if (!equals) {
             continue;
         }
         
@@ -783,29 +767,126 @@ int midi_mapping_load_parameters(const char *params_file) {
         char *key = trim_whitespace(trimmed);
         char *value = trim_whitespace(equals + 1);
         
-        // Parse parameter specification fields
-        if (strcmp(key, "default") == 0) {
-            current_entry->spec.default_value = strtof(value, NULL);
-            current_entry->current_value = current_entry->spec.default_value;
-        } else if (strcmp(key, "min") == 0) {
-            current_entry->spec.min_value = strtof(value, NULL);
-        } else if (strcmp(key, "max") == 0) {
-            current_entry->spec.max_value = strtof(value, NULL);
-        } else if (strcmp(key, "scaling") == 0) {
-            current_entry->spec.scaling = parse_scaling_type(value);
-        } else if (strcmp(key, "type") == 0 && strcmp(value, "button") == 0) {
-            current_entry->spec.is_button = 1;
+        // Remove inline comments
+        remove_inline_comment(value);
+        value = trim_whitespace(value);
+        
+        // Check if this is a parameter with suffix (_min, _max, _scaling, _type)
+        size_t key_len = strlen(key);
+        char base_param[MIDI_MAX_PARAM_NAME];
+        char *suffix = NULL;
+        
+        // Check for suffixes
+        if (key_len > 4 && strcmp(key + key_len - 4, "_min") == 0) {
+            strncpy(base_param, key, key_len - 4);
+            base_param[key_len - 4] = '\0';
+            suffix = "_min";
+        } else if (key_len > 4 && strcmp(key + key_len - 4, "_max") == 0) {
+            strncpy(base_param, key, key_len - 4);
+            base_param[key_len - 4] = '\0';
+            suffix = "_max";
+        } else if (key_len > 8 && strcmp(key + key_len - 8, "_scaling") == 0) {
+            strncpy(base_param, key, key_len - 8);
+            base_param[key_len - 8] = '\0';
+            suffix = "_scaling";
+        } else if (key_len > 5 && strcmp(key + key_len - 5, "_type") == 0) {
+            strncpy(base_param, key, key_len - 5);
+            base_param[key_len - 5] = '\0';
+            suffix = "_type";
+        } else {
+            // No suffix - this is the base parameter value
+            strncpy(base_param, key, MIDI_MAX_PARAM_NAME - 1);
+            base_param[MIDI_MAX_PARAM_NAME - 1] = '\0';
+            suffix = NULL;
+        }
+        
+        // Build full parameter name (section_param)
+        char full_param_name[MIDI_MAX_PARAM_NAME];
+        if (strlen(current_section) > 0) {
+            snprintf(full_param_name, MIDI_MAX_PARAM_NAME, "%s_%s", current_section, base_param);
+        } else {
+            strncpy(full_param_name, base_param, MIDI_MAX_PARAM_NAME - 1);
+            full_param_name[MIDI_MAX_PARAM_NAME - 1] = '\0';
+        }
+        
+        // Find or create temp parameter
+        TempParam *temp = NULL;
+        for (int i = 0; i < temp_count; i++) {
+            if (strcmp(temp_params[i].name, full_param_name) == 0) {
+                temp = &temp_params[i];
+                break;
+            }
+        }
+        
+        if (!temp) {
+            if (temp_count >= MIDI_MAX_PARAMETERS) {
+                log_error("MIDI_MAP", "Maximum number of parameters reached");
+                continue;
+            }
+            temp = &temp_params[temp_count++];
+            memset(temp, 0, sizeof(TempParam));
+            strncpy(temp->name, full_param_name, MIDI_MAX_PARAM_NAME - 1);
+            temp->name[MIDI_MAX_PARAM_NAME - 1] = '\0';
+            temp->scaling = MIDI_SCALE_LINEAR; // Default
+        }
+        
+        // Parse the value based on suffix
+        if (suffix == NULL) {
+            // Base value
+            temp->value = strtof(value, NULL);
+            temp->has_value = 1;
+        } else if (strcmp(suffix, "_min") == 0) {
+            temp->min_value = strtof(value, NULL);
+            temp->has_min = 1;
+        } else if (strcmp(suffix, "_max") == 0) {
+            temp->max_value = strtof(value, NULL);
+            temp->has_max = 1;
+        } else if (strcmp(suffix, "_scaling") == 0) {
+            temp->scaling = parse_scaling_type(value);
+            temp->has_scaling = 1;
+        } else if (strcmp(suffix, "_type") == 0) {
+            if (strcmp(value, "button") == 0) {
+                temp->is_button = 1;
+            }
         }
     }
     
     fclose(file);
     
-    // Post-processing: Expand SEQUENCER_PLAYER_DEFAULTS to individual players
-    // Find all DEFAULTS parameters and duplicate them for players 1-5
-    int defaults_count = 0;
-    ParameterEntry defaults_params[50]; // Temporary storage for defaults
+    // Convert temp parameters to actual parameters
+    for (int i = 0; i < temp_count; i++) {
+        TempParam *temp = &temp_params[i];
+        
+        // Skip if no value defined (might be just metadata)
+        if (!temp->has_value) {
+            continue;
+        }
+        
+        // Find or create parameter entry
+        ParameterEntry *param = find_parameter(temp->name);
+        if (!param) {
+            if (g_midi_system.num_parameters >= MIDI_MAX_PARAMETERS) {
+                log_error("MIDI_MAP", "Maximum number of parameters reached");
+                break;
+            }
+            param = &g_midi_system.parameters[g_midi_system.num_parameters++];
+            strncpy(param->name, temp->name, MIDI_MAX_PARAM_NAME - 1);
+            param->name[MIDI_MAX_PARAM_NAME - 1] = '\0';
+        }
+        
+        // Set parameter specification
+        param->spec.default_value = temp->value;
+        param->spec.min_value = temp->has_min ? temp->min_value : 0.0f;
+        param->spec.max_value = temp->has_max ? temp->max_value : 1.0f;
+        param->spec.scaling = temp->has_scaling ? temp->scaling : MIDI_SCALE_LINEAR;
+        param->spec.is_button = temp->is_button;
+        param->current_value = temp->value;
+    }
     
-    // First pass: collect all DEFAULTS parameters
+    // Post-processing: Expand SEQUENCER_PLAYER_DEFAULTS to individual players
+    int defaults_count = 0;
+    ParameterEntry defaults_params[50];
+    
     for (int i = 0; i < g_midi_system.num_parameters; i++) {
         if (strncmp(g_midi_system.parameters[i].name, "sequencer_player_defaults_", 26) == 0) {
             if (defaults_count < 50) {
@@ -814,37 +895,31 @@ int midi_mapping_load_parameters(const char *params_file) {
         }
     }
     
-    // Second pass: create individual player parameters from defaults
     if (defaults_count > 0) {
         log_info("MIDI_MAP", "Expanding %d SEQUENCER_PLAYER_DEFAULTS to 5 players", defaults_count);
         
         for (int player = 1; player <= 5; player++) {
             for (int d = 0; d < defaults_count; d++) {
-                // Extract parameter suffix (e.g., "speed" from "sequencer_player_defaults_speed")
-                const char *suffix = defaults_params[d].name + 26; // Skip "sequencer_player_defaults_"
+                const char *suffix = defaults_params[d].name + 26;
                 
-                // Build player-specific name (e.g., "sequencer_player_1_speed")
                 char player_param_name[MIDI_MAX_PARAM_NAME];
                 snprintf(player_param_name, MIDI_MAX_PARAM_NAME, "sequencer_player_%d_%s", player, suffix);
                 
-                // Check if this player parameter already exists (override case)
                 ParameterEntry *existing = find_parameter(player_param_name);
                 if (existing) {
-                    // Parameter already defined specifically for this player, skip
                     continue;
                 }
                 
-                // Create new parameter entry for this player
                 if (g_midi_system.num_parameters >= MIDI_MAX_PARAMETERS) {
                     log_warning("MIDI_MAP", "Maximum parameters reached while expanding defaults");
                     break;
                 }
                 
                 ParameterEntry *new_param = &g_midi_system.parameters[g_midi_system.num_parameters++];
-                *new_param = defaults_params[d]; // Copy all fields
+                *new_param = defaults_params[d];
                 strncpy(new_param->name, player_param_name, MIDI_MAX_PARAM_NAME - 1);
                 new_param->name[MIDI_MAX_PARAM_NAME - 1] = '\0';
-                new_param->is_mapped = 0; // Will be set by load_mappings if needed
+                new_param->is_mapped = 0;
             }
         }
         
