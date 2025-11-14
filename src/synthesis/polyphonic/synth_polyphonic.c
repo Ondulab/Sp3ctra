@@ -48,8 +48,6 @@ static void filter_init_spectral_params(SpectralFilterParams *fp,
 static void lfo_init(LfoState *lfo, float rate_hz, float depth_semitones,
                      float sample_rate);
 static float lfo_process(LfoState *lfo);
-static void process_image_data_for_fft(DoubleBuffer *image_db);
-static void generate_test_data_for_fft(void);
 
 // --- Synth Parameters & Globals ---
 #define NORM_FACTOR_BIN0 881280.0f * 1.1f
@@ -64,10 +62,14 @@ static void generate_test_data_for_fft(void);
 #define HIGH_FREQ_HARMONIC_LIMIT                                               \
   8000.0f // Reduce harmonics above this frequency
 
+// Runtime-configurable polyphonic synthesis parameters
+int g_num_poly_voices = 8;           // Default: 8 voices (will be loaded from config)
+int g_max_mapped_oscillators = 128;  // Default: 128 oscillators (will be loaded from config)
+
 // Polyphony related globals
 unsigned long long g_current_trigger_order =
     0; // Global trigger order counter, starts at 0
-SynthVoice poly_voices[NUM_POLY_VOICES];
+SynthVoice poly_voices[MAX_POLY_VOICES];
 float global_smoothed_magnitudes[MAX_MAPPED_OSCILLATORS];
 SpectralFilterParams global_spectral_filter_params;
 LfoState global_vibrato_lfo; // Definition for the global LFO
@@ -92,20 +94,33 @@ FftAudioDataBuffer polyphonic_audio_buffers[2];
 volatile int polyphonic_current_buffer_index = 0;
 pthread_mutex_t polyphonic_buffer_index_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-GrayscaleLine image_line_history[MOVING_AVERAGE_WINDOW_SIZE];
-int history_write_index = 0;
-int history_fill_count = 0;
-pthread_mutex_t image_history_mutex = PTHREAD_MUTEX_INITIALIZER;
-FftContext polyphonic_context;
-
 extern volatile int keepRunning;
 
 // --- Initialization ---
 void synth_polyphonicMode_init(void) {
-  int i, j, nb_pixels;
-  float *default_white_line;
+  int i, j;
+  
+  // Load runtime configuration values
+  g_num_poly_voices = g_sp3ctra_config.poly_num_voices;
+  g_max_mapped_oscillators = g_sp3ctra_config.poly_max_oscillators;
+  
+  // Validate configuration
+  if (g_num_poly_voices < 1 || g_num_poly_voices > MAX_POLY_VOICES) {
+    log_warning("SYNTH", "Invalid poly_num_voices (%d), clamping to [1, %d]", 
+                g_num_poly_voices, MAX_POLY_VOICES);
+    g_num_poly_voices = (g_num_poly_voices < 1) ? 1 : MAX_POLY_VOICES;
+  }
+  
+  if (g_max_mapped_oscillators < 1 || g_max_mapped_oscillators > MAX_MAPPED_OSCILLATORS) {
+    log_warning("SYNTH", "Invalid poly_max_oscillators (%d), clamping to [1, %d]", 
+                g_max_mapped_oscillators, MAX_MAPPED_OSCILLATORS);
+    g_max_mapped_oscillators = (g_max_mapped_oscillators < 1) ? 1 : MAX_MAPPED_OSCILLATORS;
+  }
   
   log_info("SYNTH", "Initializing polyphonic synthesis mode with LFO");
+  log_info("SYNTH", "Configuration: %d voices, %d oscillators per voice (total: %d oscillators)",
+           g_num_poly_voices, g_max_mapped_oscillators, 
+           g_num_poly_voices * g_max_mapped_oscillators);
 
   for (i = 0; i < 2; ++i) {
     if (pthread_mutex_init(&polyphonic_audio_buffers[i].mutex, NULL) != 0) {
@@ -125,53 +140,6 @@ void synth_polyphonicMode_init(void) {
     die("Failed to initialize polyphonic buffer index mutex");
   }
   polyphonic_current_buffer_index = 0;
-  if (pthread_mutex_init(&image_history_mutex, NULL) != 0) {
-    die("Failed to initialize image history mutex");
-  }
-  history_write_index = 0;
-  
-  // Get runtime pixel count
-  nb_pixels = get_cis_pixels_nb();
-  
-  // Allocate line_data for each history entry
-  for (i = 0; i < MOVING_AVERAGE_WINDOW_SIZE; ++i) {
-    image_line_history[i].line_data = (float *)calloc(nb_pixels, sizeof(float));
-    if (image_line_history[i].line_data == NULL) {
-      die("Failed to allocate image_line_history line_data");
-    }
-  }
-  
-  // Pre-fill image_line_history with a default white line
-  // This ensures that the FFT has valid, non-zero data from the start.
-  default_white_line = (float *)malloc(nb_pixels * sizeof(float));
-  if (default_white_line == NULL) {
-    die("Failed to allocate default_white_line");
-  }
-  for (i = 0; i < nb_pixels; ++i) {
-    default_white_line[i] = 255.0f; // Max brightness for a white line
-  }
-  for (i = 0; i < MOVING_AVERAGE_WINDOW_SIZE; ++i) {
-    memcpy(image_line_history[i].line_data, default_white_line,
-           nb_pixels * sizeof(float));
-  }
-  free(default_white_line);
-  
-  history_fill_count =
-      MOVING_AVERAGE_WINDOW_SIZE; // History is now full with default data
-  log_info("SYNTH", "Polyphonic: Image history pre-filled with default white lines (fill count: %d)", history_fill_count);
-
-  // Allocate FFT buffers dynamically
-  polyphonic_context.fft_input = (kiss_fft_scalar *)calloc(nb_pixels, sizeof(kiss_fft_scalar));
-  polyphonic_context.fft_output = (kiss_fft_cpx *)calloc(nb_pixels / 2 + 1, sizeof(kiss_fft_cpx));
-  if (polyphonic_context.fft_input == NULL || polyphonic_context.fft_output == NULL) {
-    die("Failed to allocate FFT buffers");
-  }
-  
-  polyphonic_context.fft_cfg =
-      kiss_fftr_alloc(nb_pixels, 0, NULL, NULL);
-  if (polyphonic_context.fft_cfg == NULL) {
-    die("Failed to initialize FFT configuration");
-  }
 
   memset(global_smoothed_magnitudes, 0, sizeof(global_smoothed_magnitudes));
   filter_init_spectral_params(&global_spectral_filter_params, 8000.0f,
@@ -185,7 +153,7 @@ void synth_polyphonicMode_init(void) {
   log_info("SYNTH", "Global Vibrato LFO initialized: Rate=%.2f Hz, Depth=%.2f semitones",
            global_vibrato_lfo.rate_hz, global_vibrato_lfo.depth_semitones);
 
-  for (i = 0; i < NUM_POLY_VOICES; ++i) {
+  for (i = 0; i < g_num_poly_voices; ++i) {
     poly_voices[i].fundamental_frequency = 0.0f;
     poly_voices[i].voice_state = ADSR_STATE_IDLE;
     poly_voices[i].midi_note_number = -1;
@@ -201,8 +169,8 @@ void synth_polyphonicMode_init(void) {
                        G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
                        G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
   }
-  log_info("SYNTH", "%d polyphonic voices initialized", NUM_POLY_VOICES);
-  log_info("SYNTH", "Polyphonic mode initialized with moving average window of %d frames", MOVING_AVERAGE_WINDOW_SIZE);
+  log_info("SYNTH", "%d polyphonic voices initialized", g_num_poly_voices);
+  log_info("SYNTH", "Polyphonic mode initialized (FFT computed in UDP thread)");
 }
 
 // --- Audio Processing ---
@@ -229,7 +197,7 @@ void synth_polyphonicMode_process(float *audio_buffer,
     float lfo_modulation_value =
         lfo_process(&global_vibrato_lfo); // Process LFO per sample
 
-    for (int v_idx = 0; v_idx < NUM_POLY_VOICES; ++v_idx) {
+    for (int v_idx = 0; v_idx < g_num_poly_voices; ++v_idx) {
       SynthVoice *current_voice = &poly_voices[v_idx];
       float volume_adsr_val = adsr_get_output(&current_voice->volume_adsr);
       float filter_adsr_val = adsr_get_output(&current_voice->filter_adsr);
@@ -350,132 +318,31 @@ void synth_polyphonicMode_process(float *audio_buffer,
 }
 
 // --- Image & FFT Processing ---
-// Process image data and compute FFT for polyphonic synthesis
-static void process_image_data_for_fft(DoubleBuffer *image_db) {
-  int nb_pixels, i, j, k, idx;
-  float *current_grayscale_line;
-  float sum;
-  
+/**
+ * @brief Read pre-computed FFT magnitudes from preprocessed data
+ * This replaces the old process_image_data_for_fft() function
+ * FFT is now computed in UDP thread for better performance
+ */
+static void read_preprocessed_fft_magnitudes(DoubleBuffer *image_db) {
   if (image_db == NULL) {
-    log_error("SYNTH", "process_image_data_for_fft: image_db is NULL");
-    return;
-  }
-  
-  nb_pixels = get_cis_pixels_nb();
-  
-  // Allocate temporary buffer for current grayscale line
-  current_grayscale_line = (float *)malloc(nb_pixels * sizeof(float));
-  if (current_grayscale_line == NULL) {
-    log_error("SYNTH", "Failed to allocate current_grayscale_line");
+    log_error("SYNTH", "read_preprocessed_fft_magnitudes: image_db is NULL");
     return;
   }
   
   pthread_mutex_lock(&image_db->mutex);
   
-  // Convert RGB to grayscale [0-255]
-  for (i = 0; i < nb_pixels; ++i) {
-    current_grayscale_line[i] = 0.299f * image_db->activeBuffer_R[i] +
-                                0.587f * image_db->activeBuffer_G[i] +
-                                0.114f * image_db->activeBuffer_B[i];
+  /* Check if FFT data is valid */
+  if (image_db->preprocessed_data.fft.valid) {
+    /* Copy pre-computed magnitudes to global array */
+    memcpy(global_smoothed_magnitudes, 
+           image_db->preprocessed_data.fft.magnitudes,
+           sizeof(global_smoothed_magnitudes));
+  } else {
+    /* FFT data not valid - use silence (all zeros) */
+    memset(global_smoothed_magnitudes, 0, sizeof(global_smoothed_magnitudes));
   }
   
   pthread_mutex_unlock(&image_db->mutex);
-  
-  // Store in history and compute moving average
-  pthread_mutex_lock(&image_history_mutex);
-  
-  memcpy(image_line_history[history_write_index].line_data, current_grayscale_line,
-         nb_pixels * sizeof(float));
-  free(current_grayscale_line);
-  
-  history_write_index = (history_write_index + 1) % MOVING_AVERAGE_WINDOW_SIZE;
-  if (history_fill_count < MOVING_AVERAGE_WINDOW_SIZE) {
-    history_fill_count++;
-  }
-  
-  if (history_fill_count > 0) {
-    // Compute moving average
-    memset(polyphonic_context.fft_input, 0, nb_pixels * sizeof(kiss_fft_scalar));
-    for (j = 0; j < nb_pixels; ++j) {
-      sum = 0.0f;
-      for (k = 0; k < history_fill_count; ++k) {
-        idx = (history_write_index - 1 - k + MOVING_AVERAGE_WINDOW_SIZE) %
-              MOVING_AVERAGE_WINDOW_SIZE;
-        sum += image_line_history[idx].line_data[j];
-      }
-      polyphonic_context.fft_input[j] = sum / history_fill_count;
-    }
-    
-    // Compute FFT
-    kiss_fftr(polyphonic_context.fft_cfg, polyphonic_context.fft_input,
-              polyphonic_context.fft_output);
-    
-    // Calculate magnitudes with smoothing
-    global_smoothed_magnitudes[0] = polyphonic_context.fft_output[0].r / NORM_FACTOR_BIN0;
-    
-    for (i = 1; i < MAX_MAPPED_OSCILLATORS; ++i) {
-      float real = polyphonic_context.fft_output[i].r;
-      float imag = polyphonic_context.fft_output[i].i;
-      float magnitude = sqrtf(real * real + imag * imag);
-      float target_mag = fminf(1.0f, magnitude / NORM_FACTOR_HARMONICS);
-      
-      global_smoothed_magnitudes[i] =
-          AMPLITUDE_SMOOTHING_ALPHA * target_mag +
-          (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * global_smoothed_magnitudes[i];
-    }
-  }
-  
-  pthread_mutex_unlock(&image_history_mutex);
-}
-
-static void generate_test_data_for_fft(void) {
-  static int call_count = 0;
-  int nb_pixels, i, j, k, idx;
-  float *test_line;
-  float phase, sum;
-  
-  printf("Génération de données de test pour la FFT (%d)...\n", call_count++);
-  
-  nb_pixels = get_cis_pixels_nb();
-  
-  pthread_mutex_lock(&image_history_mutex);
-  test_line = (float *)malloc(nb_pixels * sizeof(float));
-  if (test_line == NULL) {
-    fprintf(stderr, "Failed to allocate test_line\n");
-    pthread_mutex_unlock(&image_history_mutex);
-    return;
-  }
-  
-  for (i = 0; i < nb_pixels; i++) {
-    phase = 10.0f * 2.0f * M_PI * (float)i / (float)nb_pixels;
-    test_line[i] = sinf(phase) * 100.0f;
-    test_line[i] += sinf(5.0f * phase) * 50.0f;
-    test_line[i] += (rand() % 100) / 100.0f * 20.0f;
-  }
-  memcpy(image_line_history[history_write_index].line_data, test_line,
-         nb_pixels * sizeof(float));
-  free(test_line);
-  
-  history_write_index = (history_write_index + 1) % MOVING_AVERAGE_WINDOW_SIZE;
-  if (history_fill_count < MOVING_AVERAGE_WINDOW_SIZE) {
-    history_fill_count++;
-  }
-  if (history_fill_count > 0) {
-    memset(polyphonic_context.fft_input, 0,
-           nb_pixels * sizeof(kiss_fft_scalar));
-    for (j = 0; j < nb_pixels; ++j) {
-      sum = 0.0f;
-      for (k = 0; k < history_fill_count; ++k) {
-        idx = (history_write_index - 1 - k + MOVING_AVERAGE_WINDOW_SIZE) %
-              MOVING_AVERAGE_WINDOW_SIZE;
-        sum += image_line_history[idx].line_data[j];
-      }
-      polyphonic_context.fft_input[j] = sum / history_fill_count;
-    }
-    kiss_fftr(polyphonic_context.fft_cfg, polyphonic_context.fft_input,
-              polyphonic_context.fft_output);
-  }
-  pthread_mutex_unlock(&image_history_mutex);
 }
 
 // --- Main Thread Function ---
@@ -529,12 +396,13 @@ void *synth_polyphonicMode_thread_func(void *arg) {
   srand(time(NULL));
 
   while (keepRunning) {
-    // Process image data and compute FFT (original architecture restored)
+    // Read pre-computed FFT magnitudes from UDP thread preprocessing
+    // NEW ARCHITECTURE: FFT is now computed in UDP thread for better RT performance
     if (image_db != NULL) {
-      process_image_data_for_fft(image_db);
+      read_preprocessed_fft_magnitudes(image_db);
     } else {
-      log_warning("SYNTH", "Polyphonic thread: No DoubleBuffer, using test data");
-      generate_test_data_for_fft();
+      log_warning("SYNTH", "Polyphonic thread: No DoubleBuffer, using silence");
+      memset(global_smoothed_magnitudes, 0, sizeof(global_smoothed_magnitudes));
     }
 
     int local_producer_idx;
@@ -588,10 +456,6 @@ void *synth_polyphonicMode_thread_func(void *arg) {
 
 cleanup_thread:
   log_info("SYNTH", "Polyphonic synthesis thread stopping");
-  if (polyphonic_context.fft_cfg != NULL) {
-    kiss_fftr_free(polyphonic_context.fft_cfg);
-    polyphonic_context.fft_cfg = NULL;
-  }
   return NULL;
 }
 
@@ -816,7 +680,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
   int voice_idx = -1;
 
   // Priority 1: Find an IDLE voice
-  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+  for (int i = 0; i < g_num_poly_voices; ++i) {
     if (poly_voices[i].voice_state == ADSR_STATE_IDLE) {
       voice_idx = i;
       break;
@@ -833,7 +697,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
         g_current_trigger_order +
         1; // Initialize with a value guaranteed to be newer
     int candidate_idx = -1;
-    for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+    for (int i = 0; i < g_num_poly_voices; ++i) {
       if (poly_voices[i].voice_state != ADSR_STATE_RELEASE &&
           poly_voices[i].voice_state !=
               ADSR_STATE_IDLE) { // i.e., ATTACK, DECAY, SUSTAIN
@@ -857,7 +721,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
   if (voice_idx == -1) {
     float lowest_env_output = 2.0f; // Greater than max envelope output (1.0)
     int candidate_idx = -1;
-    for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+    for (int i = 0; i < g_num_poly_voices; ++i) {
       if (poly_voices[i].voice_state == ADSR_STATE_RELEASE) {
         if (poly_voices[i].volume_adsr.current_output < lowest_env_output) {
           lowest_env_output = poly_voices[i].volume_adsr.current_output;
@@ -874,7 +738,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
   }
 
   // Fallback: If absolutely no voice found (e.g., all voices are in very recent
-  // ATTACK and NUM_POLY_VOICES is small) or if all voices are in RELEASE but
+  // ATTACK and g_num_poly_voices is small) or if all voices are in RELEASE but
   // none were selected by prio 3 (should not happen if there's at least one
   // release voice) For now, we'll just steal voice 0 as a last resort if
   // voice_idx is still -1. A more robust system might refuse the note or have a
@@ -919,7 +783,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
 }
 
 void synth_polyphonic_note_off(int noteNumber) {
-  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+  for (int i = 0; i < g_num_poly_voices; ++i) {
     if (poly_voices[i].midi_note_number == noteNumber &&
         poly_voices[i].voice_state != ADSR_STATE_IDLE &&
         poly_voices[i].voice_state != ADSR_STATE_RELEASE) {
@@ -967,7 +831,7 @@ void synth_polyphonic_set_volume_adsr_attack(float attack_s) {
     attack_s = 0.0f;
   G_VOLUME_ADSR_ATTACK_S = attack_s;
   // printf("SYNTH_FFT: Global Volume ADSR Attack set to: %.3f s\n", attack_s);
-  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+  for (int i = 0; i < g_num_poly_voices; ++i) {
     adsr_update_settings_and_recalculate_rates(
         &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
         G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
@@ -983,7 +847,7 @@ void synth_polyphonic_set_volume_adsr_decay(float decay_s) {
     decay_s = 0.0f;
   G_VOLUME_ADSR_DECAY_S = decay_s;
   // printf("SYNTH_FFT: Global Volume ADSR Decay set to: %.3f s\n", decay_s);
-  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+  for (int i = 0; i < g_num_poly_voices; ++i) {
     adsr_update_settings_and_recalculate_rates(
         &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
         G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
@@ -999,7 +863,7 @@ void synth_polyphonic_set_volume_adsr_sustain(float sustain_level) {
   G_VOLUME_ADSR_SUSTAIN_LEVEL = sustain_level;
   // printf("SYNTH_FFT: Global Volume ADSR Sustain set to: %.2f\n",
   // sustain_level);
-  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+  for (int i = 0; i < g_num_poly_voices; ++i) {
     adsr_update_settings_and_recalculate_rates(
         &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
         G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
@@ -1013,7 +877,7 @@ void synth_polyphonic_set_volume_adsr_release(float release_s) {
   G_VOLUME_ADSR_RELEASE_S = release_s;
   // printf("SYNTH_FFT: Global Volume ADSR Release set to: %.3f s\n",
   // release_s);
-  for (int i = 0; i < NUM_POLY_VOICES; ++i) {
+  for (int i = 0; i < g_num_poly_voices; ++i) {
     adsr_update_settings_and_recalculate_rates(
         &poly_voices[i].volume_adsr, G_VOLUME_ADSR_ATTACK_S,
         G_VOLUME_ADSR_DECAY_S, G_VOLUME_ADSR_SUSTAIN_LEVEL,
@@ -1038,4 +902,73 @@ void synth_polyphonic_set_vibrato_depth(float depth_semitones) {
   global_vibrato_lfo.depth_semitones = depth_semitones;
   // printf("SYNTH_FFT: Global Vibrato LFO Depth set to: %.2f semitones\n",
   //        depth_semitones);
+}
+
+// --- Filter Parameter Setters ---
+void synth_polyphonic_set_filter_cutoff(float cutoff_hz) {
+  if (cutoff_hz < 20.0f)
+    cutoff_hz = 20.0f;
+  if (cutoff_hz > (float)g_sp3ctra_config.sampling_frequency / 2.0f)
+    cutoff_hz = (float)g_sp3ctra_config.sampling_frequency / 2.0f;
+  
+  global_spectral_filter_params.base_cutoff_hz = cutoff_hz;
+  // printf("SYNTH_FFT: Global Filter Cutoff set to: %.0f Hz\n", cutoff_hz);
+}
+
+void synth_polyphonic_set_filter_env_depth(float depth_hz) {
+  // Depth can be positive or negative
+  // Typical range: -10000 to +10000 Hz
+  global_spectral_filter_params.filter_env_depth = depth_hz;
+  // printf("SYNTH_FFT: Global Filter Env Depth set to: %.0f Hz\n", depth_hz);
+}
+
+// --- Filter ADSR Parameter Setters ---
+void synth_polyphonic_set_filter_adsr_attack(float attack_s) {
+  if (attack_s < 0.0f)
+    attack_s = 0.0f;
+  G_FILTER_ADSR_ATTACK_S = attack_s;
+  for (int i = 0; i < g_num_poly_voices; ++i) {
+    adsr_update_settings_and_recalculate_rates(
+        &poly_voices[i].filter_adsr, G_FILTER_ADSR_ATTACK_S,
+        G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
+        G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+  }
+}
+
+void synth_polyphonic_set_filter_adsr_decay(float decay_s) {
+  if (decay_s < 0.0f)
+    decay_s = 0.0f;
+  G_FILTER_ADSR_DECAY_S = decay_s;
+  for (int i = 0; i < g_num_poly_voices; ++i) {
+    adsr_update_settings_and_recalculate_rates(
+        &poly_voices[i].filter_adsr, G_FILTER_ADSR_ATTACK_S,
+        G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
+        G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+  }
+}
+
+void synth_polyphonic_set_filter_adsr_sustain(float sustain_level) {
+  if (sustain_level < 0.0f)
+    sustain_level = 0.0f;
+  if (sustain_level > 1.0f)
+    sustain_level = 1.0f;
+  G_FILTER_ADSR_SUSTAIN_LEVEL = sustain_level;
+  for (int i = 0; i < g_num_poly_voices; ++i) {
+    adsr_update_settings_and_recalculate_rates(
+        &poly_voices[i].filter_adsr, G_FILTER_ADSR_ATTACK_S,
+        G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
+        G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+  }
+}
+
+void synth_polyphonic_set_filter_adsr_release(float release_s) {
+  if (release_s < 0.0f)
+    release_s = 0.0f;
+  G_FILTER_ADSR_RELEASE_S = release_s;
+  for (int i = 0; i < g_num_poly_voices; ++i) {
+    adsr_update_settings_and_recalculate_rates(
+        &poly_voices[i].filter_adsr, G_FILTER_ADSR_ATTACK_S,
+        G_FILTER_ADSR_DECAY_S, G_FILTER_ADSR_SUSTAIN_LEVEL,
+        G_FILTER_ADSR_RELEASE_S, (float)g_sp3ctra_config.sampling_frequency);
+  }
 }

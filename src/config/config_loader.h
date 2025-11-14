@@ -86,6 +86,10 @@ typedef struct {
     int photowave_scan_mode;                   // Scanning mode (0=L→R, 1=R→L, 2=Dual)
     int photowave_interp_mode;                 // Interpolation mode (0=Linear, 1=Cubic)
     float photowave_amplitude;                 // Amplitude (0.0-1.0)
+    
+    // Polyphonic synthesis parameters
+    int poly_num_voices;                       // Number of polyphonic voices (1-32)
+    int poly_max_oscillators;                  // Max oscillators per voice (1-256)
 } sp3ctra_config_t;
 
 /**************************************************************************************

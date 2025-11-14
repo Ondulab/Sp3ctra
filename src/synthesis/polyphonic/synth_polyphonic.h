@@ -15,9 +15,15 @@
 #include "../common/synth_common.h"  // For AdsrState and AdsrEnvelope
 
 /* Synth Definitions */
-#define MAX_MAPPED_OSCILLATORS                                                 \
-  128                     // Max FFT bins/harmonics to map to oscillators
-#define NUM_POLY_VOICES 8 // Increased to 32 polyphonic voices
+// Maximum compile-time limits for static array allocation
+#define MAX_POLY_VOICES 32              // Maximum number of polyphonic voices
+#define MAX_MAPPED_OSCILLATORS 256      // Maximum oscillators per voice
+
+// Runtime-configurable polyphonic synthesis parameters (loaded from sp3ctra.ini)
+// These will be <= the MAX_ values above
+extern int g_num_poly_voices;           // Actual number of voices to use (1-32)
+extern int g_max_mapped_oscillators;    // Actual oscillators per voice (1-256)
+
 #define DEFAULT_FUNDAMENTAL_FREQUENCY 440.0f // A4 for testing
 
 /* Filter Definitions */
@@ -60,22 +66,6 @@ typedef struct {
       last_triggered_order; // Order in which this voice was triggered
 } SynthVoice;
 
-/* Définitions pour la moyenne glissante */
-#define MOVING_AVERAGE_WINDOW_SIZE                                             \
-  1 // Set to 1 to process each line individually
-
-/* Structure pour stocker une ligne d'image en niveaux de gris */
-typedef struct {
-  float *line_data;  // Dynamic allocation
-} GrayscaleLine;
-
-/* Structure pour la FFT */
-typedef struct {
-  kiss_fftr_cfg fft_cfg;                        // Configuration de KissFFT
-  kiss_fft_scalar *fft_input;  // Dynamic allocation - Buffer d'entrée pour la FFT
-  kiss_fft_cpx *fft_output;    // Dynamic allocation - Buffer de sortie pour la FFT
-} FftContext;
-
 /* Exported types ------------------------------------------------------------*/
 typedef struct {
   float *data; // dynamically allocated with size = g_sp3ctra_config.audio_buffer_size
@@ -95,15 +85,8 @@ extern volatile int polyphonic_current_buffer_index; // Index of the buffer to
 extern pthread_mutex_t
     polyphonic_buffer_index_mutex; // Mutex for polyphonic_current_buffer_index
 
-/* Variables pour la moyenne glissante et la synthèse polyphonique */
-extern GrayscaleLine image_line_history[MOVING_AVERAGE_WINDOW_SIZE];
-extern int history_write_index;
-extern int history_fill_count;
-extern pthread_mutex_t image_history_mutex;
-extern FftContext polyphonic_context;
-
 // Polyphony related globals
-extern SynthVoice poly_voices[NUM_POLY_VOICES];
+extern SynthVoice poly_voices[MAX_POLY_VOICES];
 extern float global_smoothed_magnitudes[MAX_MAPPED_OSCILLATORS];
 extern SpectralFilterParams global_spectral_filter_params;
 
@@ -135,6 +118,16 @@ void synth_polyphonic_set_volume_adsr_release(float release_s);
 // Functions to set LFO parameters
 void synth_polyphonic_set_vibrato_rate(float rate_hz);
 void synth_polyphonic_set_vibrato_depth(float depth_semitones);
+
+// Functions to set filter parameters
+void synth_polyphonic_set_filter_cutoff(float cutoff_hz);
+void synth_polyphonic_set_filter_env_depth(float depth_hz);
+
+// Functions to set filter ADSR parameters
+void synth_polyphonic_set_filter_adsr_attack(float attack_s);
+void synth_polyphonic_set_filter_adsr_decay(float decay_s);
+void synth_polyphonic_set_filter_adsr_sustain(float sustain_level);
+void synth_polyphonic_set_filter_adsr_release(float release_s);
 
 #ifdef __cplusplus
 }

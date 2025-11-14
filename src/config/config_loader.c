@@ -89,7 +89,11 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     .photowave_continuous_mode = 0,     // 0 = Only on MIDI notes
     .photowave_scan_mode = 0,           // 0 = Left to Right
     .photowave_interp_mode = 0,         // 0 = Linear interpolation
-    .photowave_amplitude = 0.5f         // 50% amplitude
+    .photowave_amplitude = 0.5f,        // 50% amplitude
+    
+    // Polyphonic synthesis parameters
+    .poly_num_voices = 8,               // 8 polyphonic voices
+    .poly_max_oscillators = 128         // 128 oscillators per voice
 };
 
 /**************************************************************************************
@@ -511,6 +515,19 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "\n");
     fprintf(file, "# Amplitude (0.0-1.0)\n");
     fprintf(file, "amplitude = %.2f\n", DEFAULT_CONFIG.photowave_amplitude);
+    fprintf(file, "\n");
+    
+    fprintf(file, "[polyphonic]\n");
+    fprintf(file, "# Polyphonic synthesis configuration\n");
+    fprintf(file, "# Number of simultaneous polyphonic voices (1-32)\n");
+    fprintf(file, "# Higher values = more notes but higher CPU load\n");
+    fprintf(file, "# Total oscillators = num_voices × max_oscillators\n");
+    fprintf(file, "num_voices = %d\n", DEFAULT_CONFIG.poly_num_voices);
+    fprintf(file, "\n");
+    fprintf(file, "# Maximum oscillators per voice (1-256)\n");
+    fprintf(file, "# Higher values = richer timbre but higher CPU load\n");
+    fprintf(file, "# Each oscillator represents one harmonic/FFT bin\n");
+    fprintf(file, "max_oscillators = %d\n", DEFAULT_CONFIG.poly_max_oscillators);
     fprintf(file, "\n");
     
     fclose(file);

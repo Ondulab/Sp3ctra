@@ -341,14 +341,20 @@ void midi_cb_synth_polyphonic_lfo_vibrato(const MidiParameterValue *param, void 
     }
 }
 
+void midi_cb_synth_polyphonic_lfo_vibrato_depth(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    synth_polyphonic_set_vibrato_depth(param->raw_value);
+    
+    log_info("POLYPHONIC", "LFO Vibrato Depth: %.2f semitones", param->raw_value);
+}
+
 void midi_cb_synth_polyphonic_env_attack(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     synth_polyphonic_set_volume_adsr_attack(param->raw_value);
     
-    if (is_startup_verbose()) {
-        log_info("MIDI", "POLYPHONIC ENV ATTACK: %d ms", (int)(param->raw_value * 1000));
-    }
+    log_info("POLYPHONIC", "Volume ADSR Attack: %d ms", (int)(param->raw_value * 1000));
 }
 
 void midi_cb_synth_polyphonic_env_decay(const MidiParameterValue *param, void *user_data) {
@@ -356,9 +362,15 @@ void midi_cb_synth_polyphonic_env_decay(const MidiParameterValue *param, void *u
     
     synth_polyphonic_set_volume_adsr_decay(param->raw_value);
     
-    if (is_startup_verbose()) {
-        log_info("MIDI", "POLYPHONIC ENV DECAY: %d ms", (int)(param->raw_value * 1000));
-    }
+    log_info("POLYPHONIC", "Volume ADSR Decay: %d ms", (int)(param->raw_value * 1000));
+}
+
+void midi_cb_synth_polyphonic_env_sustain(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    synth_polyphonic_set_volume_adsr_sustain(param->value);
+    
+    log_info("POLYPHONIC", "Volume ADSR Sustain: %.0f%%", param->value * 100.0f);
 }
 
 void midi_cb_synth_polyphonic_env_release(const MidiParameterValue *param, void *user_data) {
@@ -366,9 +378,7 @@ void midi_cb_synth_polyphonic_env_release(const MidiParameterValue *param, void 
     
     synth_polyphonic_set_volume_adsr_release(param->raw_value);
     
-    if (is_startup_verbose()) {
-        log_info("MIDI", "POLYPHONIC ENV RELEASE: %d ms", (int)(param->raw_value * 1000));
-    }
+    log_info("POLYPHONIC", "Volume ADSR Release: %d ms", (int)(param->raw_value * 1000));
 }
 
 void midi_cb_synth_polyphonic_note_on(const MidiParameterValue *param, void *user_data) {
@@ -393,6 +403,54 @@ void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *us
     synth_polyphonic_note_off(note_number);
     
     log_debug("MIDI", "Note Off: %d", note_number);
+}
+
+void midi_cb_synth_polyphonic_filter_cutoff(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    synth_polyphonic_set_filter_cutoff(param->raw_value);
+    
+    log_info("POLYPHONIC", "Filter Cutoff: %.0f Hz", param->raw_value);
+}
+
+void midi_cb_synth_polyphonic_filter_env_depth(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    synth_polyphonic_set_filter_env_depth(param->raw_value);
+    
+    log_info("POLYPHONIC", "Filter Env Depth: %.0f Hz", param->raw_value);
+}
+
+void midi_cb_synth_polyphonic_filter_adsr_attack(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    synth_polyphonic_set_filter_adsr_attack(param->raw_value);
+    
+    log_info("POLYPHONIC", "Filter ADSR Attack: %d ms", (int)(param->raw_value * 1000));
+}
+
+void midi_cb_synth_polyphonic_filter_adsr_decay(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    synth_polyphonic_set_filter_adsr_decay(param->raw_value);
+    
+    log_info("POLYPHONIC", "Filter ADSR Decay: %d ms", (int)(param->raw_value * 1000));
+}
+
+void midi_cb_synth_polyphonic_filter_adsr_sustain(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    synth_polyphonic_set_filter_adsr_sustain(param->value);
+    
+    log_info("POLYPHONIC", "Filter ADSR Sustain: %.0f%%", param->value * 100.0f);
+}
+
+void midi_cb_synth_polyphonic_filter_adsr_release(const MidiParameterValue *param, void *user_data) {
+    (void)user_data;
+    
+    synth_polyphonic_set_filter_adsr_release(param->raw_value);
+    
+    log_info("POLYPHONIC", "Filter ADSR Release: %d ms", (int)(param->raw_value * 1000));
 }
 
 /* ============================================================================
@@ -896,14 +954,30 @@ void midi_callbacks_register_synth_additive(void) {
 void midi_callbacks_register_synth_polyphonic(void) {
     midi_mapping_register_callback("synth_polyphonic_volume", midi_cb_synth_polyphonic_volume, NULL);
     midi_mapping_register_callback("synth_polyphonic_reverb_send", midi_cb_synth_polyphonic_reverb_send, NULL);
-    midi_mapping_register_callback("synth_polyphonic_lfo_vibrato", midi_cb_synth_polyphonic_lfo_vibrato, NULL);
-    midi_mapping_register_callback("synth_polyphonic_env_attack", midi_cb_synth_polyphonic_env_attack, NULL);
-    midi_mapping_register_callback("synth_polyphonic_env_decay", midi_cb_synth_polyphonic_env_decay, NULL);
-    midi_mapping_register_callback("synth_polyphonic_env_release", midi_cb_synth_polyphonic_env_release, NULL);
     midi_mapping_register_callback("synth_polyphonic_note_on", midi_cb_synth_polyphonic_note_on, NULL);
     midi_mapping_register_callback("synth_polyphonic_note_off", midi_cb_synth_polyphonic_note_off, NULL);
     
-    log_info("MIDI", "Callbacks: Polyphonic synth registered");
+    // Volume ADSR Envelope
+    midi_mapping_register_callback("synth_polyphonic_volume_env_attack", midi_cb_synth_polyphonic_env_attack, NULL);
+    midi_mapping_register_callback("synth_polyphonic_volume_env_decay", midi_cb_synth_polyphonic_env_decay, NULL);
+    midi_mapping_register_callback("synth_polyphonic_volume_env_sustain", midi_cb_synth_polyphonic_env_sustain, NULL);
+    midi_mapping_register_callback("synth_polyphonic_volume_env_release", midi_cb_synth_polyphonic_env_release, NULL);
+    
+    // Filter ADSR Envelope
+    midi_mapping_register_callback("synth_polyphonic_filter_env_attack", midi_cb_synth_polyphonic_filter_adsr_attack, NULL);
+    midi_mapping_register_callback("synth_polyphonic_filter_env_decay", midi_cb_synth_polyphonic_filter_adsr_decay, NULL);
+    midi_mapping_register_callback("synth_polyphonic_filter_env_sustain", midi_cb_synth_polyphonic_filter_adsr_sustain, NULL);
+    midi_mapping_register_callback("synth_polyphonic_filter_env_release", midi_cb_synth_polyphonic_filter_adsr_release, NULL);
+    
+    // LFO Vibrato
+    midi_mapping_register_callback("synth_polyphonic_lfo_vibrato_rate", midi_cb_synth_polyphonic_lfo_vibrato, NULL);
+    midi_mapping_register_callback("synth_polyphonic_lfo_vibrato_depth", midi_cb_synth_polyphonic_lfo_vibrato_depth, NULL);
+    
+    // Filter Parameters
+    midi_mapping_register_callback("synth_polyphonic_filter_cutoff", midi_cb_synth_polyphonic_filter_cutoff, NULL);
+    midi_mapping_register_callback("synth_polyphonic_filter_env_depth", midi_cb_synth_polyphonic_filter_env_depth, NULL);
+    
+    log_info("MIDI", "Callbacks: Polyphonic synth registered (with filter & ADSR controls)");
 }
 
 void midi_callbacks_register_synth_photowave(void) {
@@ -990,20 +1064,17 @@ void midi_callbacks_register_sequencer(void *sequencer_instance) {
         snprintf(param_name, sizeof(param_name), "sequencer_player_%d_offset", i + 1);
         midi_mapping_register_callback(param_name, midi_cb_sequencer_player_offset, &player_ids[i]);
         
-        // Attack
-        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_attack", i + 1);
+        // ADSR Envelope
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_env_attack", i + 1);
         midi_mapping_register_callback(param_name, midi_cb_sequencer_player_attack, &player_ids[i]);
         
-        // Decay
-        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_decay", i + 1);
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_env_decay", i + 1);
         midi_mapping_register_callback(param_name, midi_cb_sequencer_player_decay, &player_ids[i]);
         
-        // Sustain
-        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_sustain", i + 1);
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_env_sustain", i + 1);
         midi_mapping_register_callback(param_name, midi_cb_sequencer_player_sustain, &player_ids[i]);
         
-        // Release
-        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_release", i + 1);
+        snprintf(param_name, sizeof(param_name), "sequencer_player_%d_env_release", i + 1);
         midi_mapping_register_callback(param_name, midi_cb_sequencer_player_release, &player_ids[i]);
         
         // Loop mode

@@ -49,7 +49,13 @@ typedef struct {
     } dmx;
     
     /* FFT spectral data for polyphonic synthesis (only if polyphonic enabled) */
-    /* Note: MAX_MAPPED_OSCILLATORS is defined in synth_polyphonic.h (~64 bins) */
+    /* Note: MAX_MAPPED_OSCILLATORS is defined in synth_polyphonic.h (~128 bins) */
+#ifndef DISABLE_POLYPHONIC
+    struct {
+        float magnitudes[128];  /* Pre-computed smoothed FFT magnitudes (MAX_MAPPED_OSCILLATORS) */
+        int valid;  /* 1 if FFT data is valid, 0 otherwise */
+    } fft;
+#endif
     
     /* Timestamp for synchronization (microseconds) */
     uint64_t timestamp_us;
@@ -76,5 +82,20 @@ int image_preprocess_frame(
     const uint8_t *raw_b,
     PreprocessedImageData *out
 );
+
+/* FFT preprocessing function for polyphonic synthesis
+ * Computes FFT magnitudes from grayscale data with temporal smoothing
+ * 
+ * Parameters:
+ *   data: PreprocessedImageData structure with grayscale already computed
+ * 
+ * Returns:
+ *   0 on success, -1 on error
+ * 
+ * Note: This function maintains internal state for temporal smoothing
+ */
+#ifndef DISABLE_POLYPHONIC
+int image_preprocess_fft(PreprocessedImageData *data);
+#endif
 
 #endif /* IMAGE_PREPROCESSOR_H */

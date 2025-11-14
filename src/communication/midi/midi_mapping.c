@@ -439,12 +439,20 @@ static int create_default_midi_mapping_file(const char *mapping_file) {
     fprintf(file, "[SYNTH_POLYPHONIC]\n");
     fprintf(file, "volume=none                   # Polyphonic synthesis mix level\n");
     fprintf(file, "reverb_send=none              # Polyphonic reverb send amount\n");
-    fprintf(file, "lfo_vibrato=none              # LFO vibrato rate\n");
-    fprintf(file, "env_attack=none               # Volume envelope attack time\n");
-    fprintf(file, "env_decay=none                # Volume envelope decay time\n");
-    fprintf(file, "env_release=none              # Volume envelope release time\n");
     fprintf(file, "note_on=none                  # MIDI note on (use NOTE:* for all notes)\n");
-    fprintf(file, "note_off=none                 # MIDI note off (use NOTE:* for all notes)\n\n");
+    fprintf(file, "note_off=none                 # MIDI note off (use NOTE:* for all notes)\n");
+    fprintf(file, "volume_env_attack=none        # Volume envelope attack time\n");
+    fprintf(file, "volume_env_decay=none         # Volume envelope decay time\n");
+    fprintf(file, "volume_env_sustain=none       # Volume envelope sustain level\n");
+    fprintf(file, "volume_env_release=none       # Volume envelope release time\n");
+    fprintf(file, "filter_env_attack=none        # Filter envelope attack time\n");
+    fprintf(file, "filter_env_decay=none         # Filter envelope decay time\n");
+    fprintf(file, "filter_env_sustain=none       # Filter envelope sustain level\n");
+    fprintf(file, "filter_env_release=none       # Filter envelope release time\n");
+    fprintf(file, "lfo_vibrato_rate=none         # LFO vibrato rate\n");
+    fprintf(file, "lfo_vibrato_depth=none        # LFO vibrato depth\n");
+    fprintf(file, "filter_cutoff=none            # Lowpass filter cutoff frequency\n");
+    fprintf(file, "filter_env_depth=none         # Filter envelope modulation depth\n\n");
     
     // Generate sequencer player sections (1-5)
     for (int player = 1; player <= 5; player++) {
@@ -458,10 +466,10 @@ static int create_default_midi_mapping_file(const char *mapping_file) {
         fprintf(file, "speed=none                    # Playback speed multiplier\n");
         fprintf(file, "exposure=none                 # Exposure control (0%=dark, 50%=normal, 100%=blown out)\n");
         fprintf(file, "offset=none                   # Playback start offset\n");
-        fprintf(file, "attack=none                   # ADSR attack time\n");
-        fprintf(file, "decay=none                    # ADSR decay time\n");
-        fprintf(file, "sustain=none                  # ADSR sustain level\n");
-        fprintf(file, "release=none                  # ADSR release time\n");
+        fprintf(file, "env_attack=none               # ADSR attack time\n");
+        fprintf(file, "env_decay=none                # ADSR decay time\n");
+        fprintf(file, "env_sustain=none              # ADSR sustain level\n");
+        fprintf(file, "env_release=none              # ADSR release time\n");
         fprintf(file, "loop_mode=none                # Loop mode selector (0=SIMPLE, 1=PINGPONG, 2=ONESHOT)\n");
         fprintf(file, "playback_direction=none       # Playback direction (0=FORWARD, 1=REVERSE)\n\n");
     }
@@ -567,17 +575,41 @@ static int create_default_midi_params_file(const char *params_file) {
     fprintf(file, "[SYNTH_POLYPHONIC.reverb_send]\n");
     fprintf(file, "default=0.2\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
     
-    fprintf(file, "[SYNTH_POLYPHONIC.lfo_vibrato]\n");
-    fprintf(file, "default=0.0\nmin=0.0\nmax=10.0\nscaling=linear\n\n");
+    fprintf(file, "[SYNTH_POLYPHONIC.lfo_vibrato_rate]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=20.0\nscaling=linear\n\n");
     
-    fprintf(file, "[SYNTH_POLYPHONIC.env_attack]\n");
+    fprintf(file, "[SYNTH_POLYPHONIC.lfo_vibrato_depth]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=2.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.volume_env_attack]\n");
     fprintf(file, "default=0.01\nmin=0.001\nmax=5.0\nscaling=exponential\n\n");
     
-    fprintf(file, "[SYNTH_POLYPHONIC.env_decay]\n");
+    fprintf(file, "[SYNTH_POLYPHONIC.volume_env_decay]\n");
     fprintf(file, "default=0.1\nmin=0.001\nmax=5.0\nscaling=exponential\n\n");
     
-    fprintf(file, "[SYNTH_POLYPHONIC.env_release]\n");
+    fprintf(file, "[SYNTH_POLYPHONIC.volume_env_sustain]\n");
+    fprintf(file, "default=0.8\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.volume_env_release]\n");
     fprintf(file, "default=0.5\nmin=0.001\nmax=10.0\nscaling=exponential\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.filter_env_attack]\n");
+    fprintf(file, "default=0.02\nmin=0.001\nmax=5.0\nscaling=exponential\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.filter_env_decay]\n");
+    fprintf(file, "default=0.2\nmin=0.001\nmax=5.0\nscaling=exponential\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.filter_env_sustain]\n");
+    fprintf(file, "default=0.1\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.filter_env_release]\n");
+    fprintf(file, "default=0.3\nmin=0.001\nmax=10.0\nscaling=exponential\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.filter_cutoff]\n");
+    fprintf(file, "default=8000.0\nmin=20.0\nmax=20000.0\nscaling=logarithmic\n\n");
+    
+    fprintf(file, "[SYNTH_POLYPHONIC.filter_env_depth]\n");
+    fprintf(file, "default=-7800.0\nmin=-10000.0\nmax=10000.0\nscaling=linear\n\n");
     
     fprintf(file, "[SYNTH_POLYPHONIC.note_on]\n");
     fprintf(file, "default=0.0\nmin=0.0\nmax=127.0\nscaling=discrete\ntype=button\n\n");
@@ -611,17 +643,17 @@ static int create_default_midi_params_file(const char *params_file) {
     fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.offset]\n");
     fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
     
-    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.attack]\n");
-    fprintf(file, "default=0.01\nmin=0.001\nmax=5.0\nscaling=exponential\n\n");
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.env_attack]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
     
-    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.decay]\n");
-    fprintf(file, "default=0.1\nmin=0.001\nmax=5.0\nscaling=exponential\n\n");
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.env_decay]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
     
-    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.sustain]\n");
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.env_sustain]\n");
     fprintf(file, "default=1.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
     
-    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.release]\n");
-    fprintf(file, "default=0.5\nmin=0.001\nmax=10.0\nscaling=exponential\n\n");
+    fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.env_release]\n");
+    fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=linear\n\n");
     
     fprintf(file, "[SEQUENCER_PLAYER_DEFAULTS.loop_mode]\n");
     fprintf(file, "default=0.0\nmin=0.0\nmax=2.0\nscaling=discrete\n\n");
