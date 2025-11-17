@@ -1027,9 +1027,9 @@ void midi_callbacks_register_sequencer(void *sequencer_instance) {
     midi_mapping_register_callback("sequencer_global_quantize_res", midi_cb_sequencer_quantize_res, NULL);
     
     // Register player-specific controls (static allocation for player IDs)
-    static int player_ids[5] = {0, 1, 2, 3, 4};
+    static int player_ids[4] = {0, 1, 2, 3};
     
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 4; i++) {
         char param_name[64];
         
         // Record toggle

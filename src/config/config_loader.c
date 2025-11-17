@@ -281,10 +281,70 @@ static int parse_log_level(const char* value_str, log_level_t* result) {
 }
 
 /**
+ * Check if a parameter is MIDI-controllable (handled by midi_mapping.c)
+ * These parameters should be ignored by config_loader.c
+ */
+static int is_midi_parameter(const char* section, const char* key) {
+    // First check for MIDI suffixes
+    size_t len = strlen(key);
+    if (len > 4 && strcmp(key + len - 4, "_min") == 0) return 1;
+    if (len > 4 && strcmp(key + len - 4, "_max") == 0) return 1;
+    if (len > 8 && strcmp(key + len - 8, "_scaling") == 0) return 1;
+    if (len > 5 && strcmp(key + len - 5, "_type") == 0) return 1;
+    
+    // Check for MIDI-controllable parameters by section
+    if (strcmp(section, "audio_global") == 0) {
+        // All audio_global parameters are MIDI-controllable
+        return 1;
+    }
+    
+    if (strcmp(section, "synth_additive") == 0) {
+        // MIDI-controllable additive synth parameters
+        if (strcmp(key, "volume") == 0) return 1;
+        if (strcmp(key, "reverb_send") == 0) return 1;
+        if (strstr(key, "envelope_") == key) return 1;  // envelope_*
+        if (strcmp(key, "stereo_mode_enabled") == 0) return 1;
+    }
+    
+    if (strcmp(section, "synth_photowave") == 0) {
+        // All synth_photowave parameters are MIDI-controllable
+        return 1;
+    }
+    
+    if (strcmp(section, "synth_polyphonic") == 0) {
+        // All synth_polyphonic parameters are MIDI-controllable
+        return 1;
+    }
+    
+    if (strcmp(section, "sequencer_global") == 0) {
+        // All sequencer_global parameters are MIDI-controllable
+        return 1;
+    }
+    
+    if (strcmp(section, "sequencer_player_defaults") == 0) {
+        // All sequencer player parameters are MIDI-controllable
+        return 1;
+    }
+    
+    if (strcmp(section, "system") == 0) {
+        // System control parameters are MIDI-controllable
+        if (strcmp(key, "freeze") == 0) return 1;
+        if (strcmp(key, "resume") == 0) return 1;
+    }
+    
+    return 0;
+}
+
+/**
  * Parse key-value pair using parameter table
  */
 static int parse_key_value(const char* section, const char* key, const char* value,
                           sp3ctra_config_t* config, int line_number) {
+    // Silently ignore MIDI-controllable parameters (handled by midi_mapping.c)
+    if (is_midi_parameter(section, key)) {
+        return CONFIG_SUCCESS;
+    }
+    
     // Handle Log_level as a global parameter (empty section) or in [system] section
     if ((strcmp(section, "") == 0 || strcmp(section, "system") == 0) && 
         (strcmp(key, "Log_level") == 0 || strcmp(key, "log_level") == 0)) {

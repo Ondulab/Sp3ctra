@@ -896,9 +896,9 @@ int midi_mapping_load_parameters(const char *params_file) {
     }
     
     if (defaults_count > 0) {
-        log_info("MIDI_MAP", "Expanding %d SEQUENCER_PLAYER_DEFAULTS to 5 players", defaults_count);
+        log_info("MIDI_MAP", "Expanding %d SEQUENCER_PLAYER_DEFAULTS to 4 players", defaults_count);
         
-        for (int player = 1; player <= 5; player++) {
+        for (int player = 1; player <= 4; player++) {
             for (int d = 0; d < defaults_count; d++) {
                 const char *suffix = defaults_params[d].name + 26;
                 
