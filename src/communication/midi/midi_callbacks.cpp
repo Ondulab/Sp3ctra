@@ -693,7 +693,6 @@ void midi_cb_sequencer_player_play_stop(const MidiParameterValue *param, void *u
 
 void midi_cb_sequencer_player_clear(const MidiParameterValue *param, void *user_data) {
     log_debug("MIDI", "SEQUENCER CALLBACK CALLED: clear");
-    (void)param;
     
     if (!g_image_sequencer) {
         log_error("MIDI", "g_image_sequencer is NULL");
@@ -706,9 +705,12 @@ void midi_cb_sequencer_player_clear(const MidiParameterValue *param, void *user_
     }
     
     int player_id = *(int*)user_data;
-    log_debug("MIDI", "Player ID: %d", player_id);
+    log_debug("MIDI", "Player ID: %d, button_pressed: %d", player_id, param->button_pressed);
     
-    image_sequencer_clear_buffer(g_image_sequencer, player_id);
+    // Monostable behavior: only clear on button press, not on release
+    if (param->button_pressed) {
+        image_sequencer_clear_buffer(g_image_sequencer, player_id);
+    }
 }
 
 void midi_cb_sequencer_player_speed(const MidiParameterValue *param, void *user_data) {

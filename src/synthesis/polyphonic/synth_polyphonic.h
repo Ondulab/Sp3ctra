@@ -64,6 +64,10 @@ typedef struct {
                        // for this voice
   unsigned long long
       last_triggered_order; // Order in which this voice was triggered
+  
+  // New fields for robust note tracking
+  uint64_t release_start_timestamp_us; // Timestamp when release phase started (0 if not in release)
+  int pending_note_off; // Flag: 1 if Note Off received but voice was stolen before processing
 } SynthVoice;
 
 /* Exported types ------------------------------------------------------------*/
