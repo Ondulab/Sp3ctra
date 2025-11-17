@@ -8,32 +8,22 @@
 #include "audio_rtaudio.h"
 #include "config.h"
 #include "midi_controller.h"
+#include "../../utils/logger.h"
 #include <stdio.h>
 
 extern "C" {
 
 void audio_set_master_volume(float volume) {
-#ifdef DEBUG_AUDIO_INTERFACE
-  printf("[AUDIO_IF] Setting master volume to %.3f\n", volume);
-#endif
   if (gAudioSystem) {
     gAudioSystem->setMasterVolume(volume);
-#ifdef DEBUG_AUDIO_INTERFACE
-    printf("[AUDIO_IF] Volume applied successfully\n");
-#endif
+    log_info("AUDIO", "Master volume set to %.3f", volume);
   } else {
-#ifdef DEBUG_AUDIO_INTERFACE
-    printf("[AUDIO_IF] WARNING: gAudioSystem is NULL, volume not applied\n");
-#endif
+    log_warning("AUDIO", "Cannot set master volume: audio system not initialized");
   }
 }
 
 int audio_is_initialized(void) {
   int initialized = (gAudioSystem != nullptr) ? 1 : 0;
-#ifdef DEBUG_AUDIO_INTERFACE
-  printf("[AUDIO_IF] Audio system initialized: %s\n",
-         initialized ? "YES" : "NO");
-#endif
   return initialized;
 }
 }

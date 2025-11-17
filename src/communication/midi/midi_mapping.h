@@ -21,8 +21,8 @@ extern "C" {
  * CONSTANTS
  * ============================================================================ */
 
-#define MIDI_MAX_PARAMETERS 128
-#define MIDI_MAX_CALLBACKS 128
+#define MIDI_MAX_PARAMETERS 256
+#define MIDI_MAX_CALLBACKS 256
 #define MIDI_MAX_PARAM_NAME 64
 
 /* ============================================================================
