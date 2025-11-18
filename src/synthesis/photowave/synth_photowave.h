@@ -157,6 +157,7 @@ typedef struct {
     volatile int ready;       // 0 = not ready, 1 = ready for consumption
     pthread_mutex_t mutex;    // Mutex for thread synchronization
     pthread_cond_t cond;      // Condition variable for signaling
+    uint64_t write_timestamp_us; // Timestamp when buffer was written (microseconds)
 } PhotowaveAudioBuffer;
 
 /* ============================================================================

@@ -81,6 +81,10 @@ static const config_param_def_t CONFIG_PARAMS[] = {
     CONFIG_PARAM("stereo_processing", "stereo_temperature_curve_exponent", PARAM_TYPE_FLOAT, 
                  stereo_temperature_curve_exponent, 0.1f, 2.0f),
     
+    // Threading section
+    CONFIG_PARAM("synth_additive", "num_workers", PARAM_TYPE_INT,
+                 num_workers, 1, 8),
+    
     // Summation normalization section
     CONFIG_PARAM("summation_normalization", "volume_weighting_exponent", PARAM_TYPE_FLOAT, 
                  volume_weighting_exponent, 0.01f, 10.0f),
@@ -114,6 +118,38 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  photowave_interp_mode, 0, 1),
     CONFIG_PARAM("photowave", "amplitude", PARAM_TYPE_FLOAT, 
                  photowave_amplitude, 0.0f, 1.0f),
+    
+    // Photowave ADSR Volume parameters
+    CONFIG_PARAM("synth_photowave", "volume_env_attack", PARAM_TYPE_FLOAT,
+                 photowave_volume_adsr_attack_s, 0.001f, 5.0f),
+    CONFIG_PARAM("synth_photowave", "volume_env_decay", PARAM_TYPE_FLOAT,
+                 photowave_volume_adsr_decay_s, 0.001f, 5.0f),
+    CONFIG_PARAM("synth_photowave", "volume_env_sustain", PARAM_TYPE_FLOAT,
+                 photowave_volume_adsr_sustain_level, 0.0f, 1.0f),
+    CONFIG_PARAM("synth_photowave", "volume_env_release", PARAM_TYPE_FLOAT,
+                 photowave_volume_adsr_release_s, 0.001f, 10.0f),
+    
+    // Photowave ADSR Filter parameters
+    CONFIG_PARAM("synth_photowave", "filter_env_attack", PARAM_TYPE_FLOAT,
+                 photowave_filter_adsr_attack_s, 0.001f, 5.0f),
+    CONFIG_PARAM("synth_photowave", "filter_env_decay", PARAM_TYPE_FLOAT,
+                 photowave_filter_adsr_decay_s, 0.001f, 5.0f),
+    CONFIG_PARAM("synth_photowave", "filter_env_sustain", PARAM_TYPE_FLOAT,
+                 photowave_filter_adsr_sustain_level, 0.0f, 1.0f),
+    CONFIG_PARAM("synth_photowave", "filter_env_release", PARAM_TYPE_FLOAT,
+                 photowave_filter_adsr_release_s, 0.001f, 10.0f),
+    
+    // Photowave LFO parameters
+    CONFIG_PARAM("synth_photowave", "lfo_vibrato_rate", PARAM_TYPE_FLOAT,
+                 photowave_lfo_rate_hz, 0.0f, 20.0f),
+    CONFIG_PARAM("synth_photowave", "lfo_vibrato_depth", PARAM_TYPE_FLOAT,
+                 photowave_lfo_depth_semitones, 0.0f, 2.0f),
+    
+    // Photowave spectral filter parameters
+    CONFIG_PARAM("synth_photowave", "filter_cutoff", PARAM_TYPE_FLOAT,
+                 photowave_filter_cutoff_hz, 100.0f, 20000.0f),
+    CONFIG_PARAM("synth_photowave", "filter_env_depth", PARAM_TYPE_FLOAT,
+                 photowave_filter_env_depth_hz, -10000.0f, 10000.0f),
     
     // Polyphonic synthesis section
     CONFIG_PARAM("polyphonic", "num_voices", PARAM_TYPE_INT, 
