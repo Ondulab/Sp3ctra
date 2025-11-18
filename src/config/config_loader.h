@@ -65,6 +65,9 @@ typedef struct {
     float stereo_cyan_yellow_weight;           // Weight for cyan-yellow opponent axis
     float stereo_temperature_curve_exponent;   // Exponent for response curve shaping
     
+    // Threading parameters
+    int num_workers;                           // Number of worker threads for additive synthesis (1-8)
+    
     // Summation normalization parameters
     float volume_weighting_exponent;           // Volume weighting exponent (1.0=linear, 2.0=quadratic, 3.0=cubic)
     float summation_response_exponent;         // Final response curve exponent (0.5=anti-compress, 1.0=linear, 1.5+=compress)
@@ -86,6 +89,26 @@ typedef struct {
     int photowave_scan_mode;                   // Scanning mode (0=L→R, 1=R→L, 2=Dual)
     int photowave_interp_mode;                 // Interpolation mode (0=Linear, 1=Cubic)
     float photowave_amplitude;                 // Amplitude (0.0-1.0)
+    
+    // Photowave ADSR Volume parameters
+    float photowave_volume_adsr_attack_s;      // Volume ADSR attack time (seconds)
+    float photowave_volume_adsr_decay_s;       // Volume ADSR decay time (seconds)
+    float photowave_volume_adsr_sustain_level; // Volume ADSR sustain level (0.0-1.0)
+    float photowave_volume_adsr_release_s;     // Volume ADSR release time (seconds)
+    
+    // Photowave ADSR Filter parameters
+    float photowave_filter_adsr_attack_s;      // Filter ADSR attack time (seconds)
+    float photowave_filter_adsr_decay_s;       // Filter ADSR decay time (seconds)
+    float photowave_filter_adsr_sustain_level; // Filter ADSR sustain level (0.0-1.0)
+    float photowave_filter_adsr_release_s;     // Filter ADSR release time (seconds)
+    
+    // Photowave LFO parameters
+    float photowave_lfo_rate_hz;               // LFO rate in Hz
+    float photowave_lfo_depth_semitones;       // LFO depth in semitones
+    
+    // Photowave spectral filter parameters
+    float photowave_filter_cutoff_hz;          // Base filter cutoff frequency (Hz)
+    float photowave_filter_env_depth_hz;       // Filter envelope depth (Hz)
     
     // Polyphonic synthesis parameters
     int poly_num_voices;                       // Number of polyphonic voices (1-32)

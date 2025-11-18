@@ -87,9 +87,10 @@ extern debug_additive_osc_config_t g_debug_osc_config;
 
 /* Global variables ----------------------------------------------------------*/
 
-// Pool of persistent threads
-synth_thread_worker_t thread_pool[3];
-static pthread_t worker_threads[3];
+// Pool of persistent threads (dynamically allocated)
+synth_thread_worker_t *thread_pool = NULL;
+pthread_t *worker_threads = NULL;
+int num_workers = 0;  // Actual number of workers from config
 volatile int synth_pool_initialized = 0;
 volatile int synth_pool_shutdown = 0;
 
@@ -108,16 +109,37 @@ int synth_init_thread_pool(void) {
   if (synth_pool_initialized)
     return 0;
 
-  int current_notes = get_current_number_of_notes();
-  int notes_per_thread = current_notes / 3;
+  // Get number of workers from config (with validation)
+  num_workers = g_sp3ctra_config.num_workers;
+  if (num_workers < 1 || num_workers > MAX_WORKERS) {
+    log_warning("SYNTH", "Invalid num_workers=%d, clamping to range [1, %d]", num_workers, MAX_WORKERS);
+    num_workers = (num_workers < 1) ? 1 : MAX_WORKERS;
+  }
+  
+  log_info("SYNTH", "Initializing thread pool with %d workers", num_workers);
+  
+  // Allocate thread pool and worker threads arrays
+  thread_pool = (synth_thread_worker_t*)calloc(num_workers, sizeof(synth_thread_worker_t));
+  worker_threads = (pthread_t*)calloc(num_workers, sizeof(pthread_t));
+  
+  if (!thread_pool || !worker_threads) {
+    log_error("SYNTH", "Failed to allocate thread pool arrays");
+    if (thread_pool) { free(thread_pool); thread_pool = NULL; }
+    if (worker_threads) { free(worker_threads); worker_threads = NULL; }
+    return -1;
+  }
 
-  for (int i = 0; i < 3; i++) {
+  int current_notes = get_current_number_of_notes();
+  int notes_per_thread = current_notes / num_workers;
+
+  for (int i = 0; i < num_workers; i++) {
     synth_thread_worker_t *worker = &thread_pool[i];
 
     // Worker configuration
     worker->thread_id = i;
     worker->start_note = i * notes_per_thread;
-    worker->end_note = (i == 2) ? current_notes : (i + 1) * notes_per_thread;
+    // Last worker handles all remaining notes (handles rounding)
+    worker->end_note = (i == num_workers - 1) ? current_notes : (i + 1) * notes_per_thread;
     worker->work_ready = 0;
     worker->work_done = 0;
 
@@ -374,7 +396,7 @@ void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
   // ✅ OPTIMIZATION: Lock-free parallel pre-computation for maximum performance
   
   // Phase 1: Image data assignment (thread-safe, read-only)
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < num_workers; i++) {
     thread_pool[i].imageData = imageData;
   }
 
@@ -386,7 +408,7 @@ void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
   // - waves[note].current_idx writes are deferred until after worker completion
   // - Pan system uses lock-free atomic operations
   
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < num_workers; i++) {
     synth_thread_worker_t *worker = &thread_pool[i];
 
     for (int note = worker->start_note; note < worker->end_note; note++) {
@@ -443,7 +465,7 @@ void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
  * @retval 0 on success, -1 on error
  */
 int synth_start_worker_threads(void) {
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < num_workers; i++) {
     if (pthread_create(&worker_threads[i], NULL, synth_persistent_worker_thread,
                        &thread_pool[i]) != 0) {
       log_error("SYNTH", "Error creating worker thread %d", i);
@@ -454,15 +476,17 @@ int synth_start_worker_threads(void) {
 #ifdef __linux__
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    // Distribute threads on CPUs 1, 2, 3 (leave CPU 0 for system)
-    CPU_SET(i + 1, &cpuset);
+    // Distribute threads across available CPUs (leave CPU 0 for system if possible)
+    // For num_workers <= 7, use CPUs 1-7; for num_workers == 8, use CPUs 0-7
+    int cpu_id = (num_workers <= 7) ? (i + 1) : i;
+    CPU_SET(cpu_id, &cpuset);
 
     int result =
         pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &cpuset);
     if (result == 0) {
-      log_info("SYNTH", "Worker thread %d assigned to CPU %d", i, i + 1);
+      log_info("SYNTH", "Worker thread %d assigned to CPU %d", i, cpu_id);
     } else {
-      log_warning("SYNTH", "Cannot assign thread %d to CPU %d (error: %d)", i, i + 1, result);
+      log_warning("SYNTH", "Cannot assign thread %d to CPU %d (error: %d)", i, cpu_id, result);
     }
 #endif
   }
@@ -480,14 +504,14 @@ void synth_shutdown_thread_pool(void) {
   synth_pool_shutdown = 1;
 
   // Wake up all threads
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < num_workers; i++) {
     pthread_mutex_lock(&thread_pool[i].work_mutex);
     pthread_cond_signal(&thread_pool[i].work_cond);
     pthread_mutex_unlock(&thread_pool[i].work_mutex);
   }
 
   // Wait for all threads to terminate
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < num_workers; i++) {
     pthread_join(worker_threads[i], NULL);
 
     // Free dynamically allocated worker buffers
@@ -517,6 +541,17 @@ void synth_shutdown_thread_pool(void) {
     pthread_cond_destroy(&thread_pool[i].work_cond);
   }
 
+  // Free the dynamically allocated arrays
+  if (thread_pool) {
+    free(thread_pool);
+    thread_pool = NULL;
+  }
+  if (worker_threads) {
+    free(worker_threads);
+    worker_threads = NULL;
+  }
+  num_workers = 0;
+
   if (g_sp3ctra_config.stereo_mode_enabled) {
     // Cleanup lock-free pan gains system
     lock_free_pan_cleanup();
@@ -524,6 +559,7 @@ void synth_shutdown_thread_pool(void) {
   }
 
   synth_pool_initialized = 0;
+  log_info("SYNTH", "Thread pool shutdown complete");
 }
 
 /**

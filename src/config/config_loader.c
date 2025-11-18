@@ -283,23 +283,27 @@ static int parse_log_level(const char* value_str, log_level_t* result) {
 /**
  * Check if a parameter is MIDI-controllable (handled by midi_mapping.c)
  * These parameters should be ignored by config_loader.c
+ * 
+ * IMPORTANT: Only parameters with MIDI suffixes (_min, _max, _scaling, _type)
+ * should be blocked. Base parameters (without suffixes) must be loaded from
+ * the config file to set initial/default values.
  */
 static int is_midi_parameter(const char* section, const char* key) {
-    // First check for MIDI suffixes
+    // Check for MIDI metadata suffixes - these are ALWAYS MIDI-only
     size_t len = strlen(key);
     if (len > 4 && strcmp(key + len - 4, "_min") == 0) return 1;
     if (len > 4 && strcmp(key + len - 4, "_max") == 0) return 1;
     if (len > 8 && strcmp(key + len - 8, "_scaling") == 0) return 1;
     if (len > 5 && strcmp(key + len - 5, "_type") == 0) return 1;
     
-    // Check for MIDI-controllable parameters by section
+    // Check for MIDI-only parameters (no config file equivalent)
     if (strcmp(section, "audio_global") == 0) {
-        // All audio_global parameters are MIDI-controllable
+        // All audio_global parameters are MIDI-only (no config defaults)
         return 1;
     }
     
     if (strcmp(section, "synth_additive") == 0) {
-        // MIDI-controllable additive synth parameters
+        // MIDI-only additive synth parameters (runtime control only)
         if (strcmp(key, "volume") == 0) return 1;
         if (strcmp(key, "reverb_send") == 0) return 1;
         if (strstr(key, "envelope_") == key) return 1;  // envelope_*
@@ -307,27 +311,39 @@ static int is_midi_parameter(const char* section, const char* key) {
     }
     
     if (strcmp(section, "synth_photowave") == 0) {
-        // All synth_photowave parameters are MIDI-controllable
-        return 1;
+        // MIDI-only photowave parameters (runtime control only)
+        // NOTE: Base parameters like filter_cutoff, volume_env_attack, etc.
+        // are NOT blocked - they load defaults from config file
+        if (strcmp(key, "volume") == 0) return 1;
+        if (strcmp(key, "reverb_send") == 0) return 1;
+        if (strcmp(key, "note_on") == 0) return 1;
+        if (strcmp(key, "note_off") == 0) return 1;
+        if (strcmp(key, "pitch") == 0) return 1;
+        if (strcmp(key, "modulation") == 0) return 1;
+        if (strcmp(key, "resonance") == 0) return 1;
+        if (strcmp(key, "brightness") == 0) return 1;
     }
     
     if (strcmp(section, "synth_polyphonic") == 0) {
-        // All synth_polyphonic parameters are MIDI-controllable
-        return 1;
+        // MIDI-only polyphonic parameters (runtime control only)
+        if (strcmp(key, "volume") == 0) return 1;
+        if (strcmp(key, "reverb_send") == 0) return 1;
+        if (strcmp(key, "note_on") == 0) return 1;
+        if (strcmp(key, "note_off") == 0) return 1;
     }
     
     if (strcmp(section, "sequencer_global") == 0) {
-        // All sequencer_global parameters are MIDI-controllable
+        // All sequencer_global parameters are MIDI-only
         return 1;
     }
     
     if (strcmp(section, "sequencer_player_defaults") == 0) {
-        // All sequencer player parameters are MIDI-controllable
+        // All sequencer player parameters are MIDI-only
         return 1;
     }
     
     if (strcmp(section, "system") == 0) {
-        // System control parameters are MIDI-controllable
+        // System control parameters are MIDI-only
         if (strcmp(key, "freeze") == 0) return 1;
         if (strcmp(key, "resume") == 0) return 1;
     }

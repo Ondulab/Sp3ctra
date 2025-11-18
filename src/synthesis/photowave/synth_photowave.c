@@ -11,6 +11,8 @@
 #include <string.h>
 #include <math.h>
 #include <unistd.h>         // For usleep
+#include <sys/time.h>       // For gettimeofday
+#include <errno.h>          // For ETIMEDOUT
 
 #ifndef M_PI
 #define M_PI (3.14159265358979323846)
@@ -36,28 +38,34 @@ PhotowaveState g_photowave_state = {0};
 // Thread running flag
 static volatile int photowave_thread_running = 0;
 
+// Performance monitoring
+static uint64_t photowave_total_buffers_processed = 0;
+static uint64_t photowave_total_wait_timeouts = 0;
+static uint64_t photowave_last_stats_print_time_us = 0;
+#define PHOTOWAVE_STATS_PRINT_INTERVAL_US 5000000ULL  // Print stats every 5 seconds
+
 /* ============================================================================
  * GLOBAL ADSR/LFO/FILTER PARAMETERS
  * ========================================================================== */
 
-// Volume ADSR defaults
+// Volume ADSR runtime values (initialized from config)
 static float G_PHOTOWAVE_VOLUME_ATTACK_S = 0.01f;
 static float G_PHOTOWAVE_VOLUME_DECAY_S = 0.1f;
 static float G_PHOTOWAVE_VOLUME_SUSTAIN = 0.8f;
 static float G_PHOTOWAVE_VOLUME_RELEASE_S = 0.2f;
 
-// Filter ADSR defaults
+// Filter ADSR runtime values (initialized from config)
 static float G_PHOTOWAVE_FILTER_ATTACK_S = 0.02f;
 static float G_PHOTOWAVE_FILTER_DECAY_S = 0.2f;
 static float G_PHOTOWAVE_FILTER_SUSTAIN = 0.3f;
 static float G_PHOTOWAVE_FILTER_RELEASE_S = 0.3f;
 
-// LFO defaults
+// LFO runtime values (initialized from config)
 static float G_PHOTOWAVE_LFO_RATE_HZ = 5.0f;
 static float G_PHOTOWAVE_LFO_DEPTH_SEMITONES = 0.25f;
 
-// Filter defaults
-static float G_PHOTOWAVE_FILTER_CUTOFF_HZ = 20000.0f;  // Maximum cutoff (will be clamped to Nyquist)
+// Filter runtime values (initialized from config)
+static float G_PHOTOWAVE_FILTER_CUTOFF_HZ = 12000.0f;
 static float G_PHOTOWAVE_FILTER_ENV_DEPTH = -6000.0f;
 
 /* ============================================================================
@@ -461,6 +469,17 @@ void synth_photowave_process(PhotowaveState *state,
                              int num_frames) {
     int i, v;
     
+    // PROFILING: Measure total processing time
+    static uint64_t total_process_calls = 0;
+    static uint64_t total_adsr_time_us = 0;
+    static uint64_t total_interp_time_us = 0;
+    static uint64_t total_filter_time_us = 0;
+    static uint64_t total_other_time_us = 0;
+    struct timeval tv_start, tv_end;
+    
+    gettimeofday(&tv_start, NULL);
+    uint64_t start_us = (uint64_t)tv_start.tv_sec * 1000000ULL + (uint64_t)tv_start.tv_usec;
+    
     if (!state || !output_left || !output_right) return;
     
     if (!state->image_line || state->pixel_count <= 0) {
@@ -471,62 +490,106 @@ void synth_photowave_process(PhotowaveState *state,
         return;
     }
     
+    // OPTIMIZATION: Pre-calculate LFO modulation for entire buffer
+    float lfo_freq_ratio = 1.0f;
+    if (state->global_vibrato_lfo.depth_semitones > 0.001f) {
+        float lfo_output = lfo_process(&state->global_vibrato_lfo);
+        // Use fast approximation: 2^x ≈ 1 + 0.693147*x for small x
+        float semitone_shift = lfo_output * state->global_vibrato_lfo.depth_semitones;
+        if (semitone_shift > -1.0f && semitone_shift < 1.0f) {
+            lfo_freq_ratio = 1.0f + 0.693147f * (semitone_shift / 12.0f);
+        } else {
+            lfo_freq_ratio = powf(2.0f, semitone_shift / 12.0f);
+        }
+    }
+    
+    // OPTIMIZATION: Cache frequently used values
+    const float sample_rate_inv = 1.0f / state->sample_rate;
+    const float amplitude = state->config.amplitude;
+    const PhotowaveScanMode scan_mode = state->config.scan_mode;
+    const PhotowaveInterpMode interp_mode = state->config.interp_mode;
+    const float phase_mult = (scan_mode == PHOTOWAVE_SCAN_DUAL) ? 2.0f : 1.0f;
+    
+    uint64_t adsr_time_us = 0, interp_time_us = 0, filter_time_us = 0;
+    
     for (i = 0; i < num_frames; i++) {
         float master_sum = 0.0f;
-        int active_voices = 0;
-        float lfo_output = lfo_process(&state->global_vibrato_lfo);
         
         for (v = 0; v < NUM_PHOTOWAVE_VOICES; v++) {
             PhotowaveVoice *voice = &state->voices[v];
             
+            // PROFILING: Measure ADSR time
+            gettimeofday(&tv_start, NULL);
+            uint64_t adsr_start = (uint64_t)tv_start.tv_sec * 1000000ULL + (uint64_t)tv_start.tv_usec;
+            
             float vol_adsr = adsr_get_output(&voice->volume_adsr);
             float filt_adsr = adsr_get_output(&voice->filter_adsr);
+            
+            gettimeofday(&tv_end, NULL);
+            uint64_t adsr_end = (uint64_t)tv_end.tv_sec * 1000000ULL + (uint64_t)tv_end.tv_usec;
+            adsr_time_us += (adsr_end - adsr_start);
             
             if (vol_adsr < MIN_AUDIBLE_AMPLITUDE && voice->volume_adsr.state == ADSR_STATE_IDLE) {
                 voice->active = false;
                 continue;
             }
             
-            active_voices++;
+            // OPTIMIZATION: Use pre-calculated LFO ratio
+            float modulated_freq = voice->frequency * lfo_freq_ratio;
             
-            float freq_ratio = powf(2.0f, (lfo_output * state->global_vibrato_lfo.depth_semitones) / 12.0f);
-            float modulated_freq = voice->frequency * freq_ratio;
+            // OPTIMIZATION: Simplified filter cutoff calculation
+            float modulated_cutoff = voice->lowpass.base_cutoff_hz + filt_adsr * voice->lowpass.filter_env_depth;
+            modulated_cutoff = clamp_float(modulated_cutoff, 20.0f, state->sample_rate * 0.5f);
             
-            float base_cutoff = voice->lowpass.base_cutoff_hz;
-            float modulated_cutoff = base_cutoff + filt_adsr * voice->lowpass.filter_env_depth;
-            modulated_cutoff = clamp_float(modulated_cutoff, 20.0f, state->sample_rate / 2.0f);
+            // PROFILING: Measure interpolation time
+            gettimeofday(&tv_start, NULL);
+            uint64_t interp_start = (uint64_t)tv_start.tv_sec * 1000000ULL + (uint64_t)tv_start.tv_usec;
             
-            // Select interpolation method based on configuration
+            // OPTIMIZATION: Select interpolation method based on configuration
             float raw_sample;
-            if (state->config.interp_mode == PHOTOWAVE_INTERP_CUBIC) {
+            if (interp_mode == PHOTOWAVE_INTERP_CUBIC) {
                 raw_sample = sample_waveform_cubic(state->image_line, state->pixel_count,
-                                                   voice->phase, state->config.scan_mode);
+                                                   voice->phase, scan_mode);
             } else {
                 raw_sample = sample_waveform_linear(state->image_line, state->pixel_count,
-                                                   voice->phase, state->config.scan_mode);
+                                                   voice->phase, scan_mode);
             }
             
-            float filtered = lowpass_process(&voice->lowpass, raw_sample, modulated_cutoff, state->sample_rate);
+            gettimeofday(&tv_end, NULL);
+            uint64_t interp_end = (uint64_t)tv_end.tv_sec * 1000000ULL + (uint64_t)tv_end.tv_usec;
+            interp_time_us += (interp_end - interp_start);
             
-            float velocity_scale = voice->velocity / 127.0f;
+            // PROFILING: Measure filter time
+            gettimeofday(&tv_start, NULL);
+            uint64_t filter_start = (uint64_t)tv_start.tv_sec * 1000000ULL + (uint64_t)tv_start.tv_usec;
+            
+            // OPTIMIZATION: Simplified lowpass filter (one-pole, cached alpha)
+            float rc = 1.0f / (TWO_PI * modulated_cutoff);
+            float dt = sample_rate_inv;
+            float alpha = dt / (rc + dt);
+            voice->lowpass.prev_output = alpha * raw_sample + (1.0f - alpha) * voice->lowpass.prev_output;
+            float filtered = voice->lowpass.prev_output;
+            
+            gettimeofday(&tv_end, NULL);
+            uint64_t filter_end = (uint64_t)tv_end.tv_sec * 1000000ULL + (uint64_t)tv_end.tv_usec;
+            filter_time_us += (filter_end - filter_start);
+            
+            // OPTIMIZATION: Combine multiplications
+            float velocity_scale = voice->velocity * (1.0f / 127.0f);
             float final_sample = filtered * vol_adsr * velocity_scale;
             
             master_sum += final_sample;
             
-            float phase_incr = modulated_freq / state->sample_rate;
-            if (state->config.scan_mode == PHOTOWAVE_SCAN_DUAL) {
-                phase_incr *= 2.0f;
-            }
+            // OPTIMIZATION: Simplified phase increment
+            float phase_incr = modulated_freq * sample_rate_inv * phase_mult;
             voice->phase += phase_incr;
             if (voice->phase >= 1.0f) voice->phase -= 1.0f;
         }
         
-        // Normalize by number of active voices to prevent clipping
-        if (active_voices > 1) {
-            master_sum /= sqrtf((float)active_voices);  // Use sqrt for better perceived loudness
-        }
+        // Apply master amplitude (no dynamic normalization - matches polyphonic mode behavior)
+        master_sum *= amplitude;
         
-        master_sum *= state->config.amplitude;
+        // Hard clipping to prevent overflow
         master_sum = clamp_float(master_sum, -1.0f, 1.0f);
         
         output_left[i] = master_sum;
@@ -534,6 +597,41 @@ void synth_photowave_process(PhotowaveState *state,
     }
     
     state->samples_generated += num_frames;
+    
+    // PROFILING: Calculate total time and accumulate stats
+    gettimeofday(&tv_end, NULL);
+    uint64_t end_us = (uint64_t)tv_end.tv_sec * 1000000ULL + (uint64_t)tv_end.tv_usec;
+    uint64_t total_time_us = end_us - start_us;
+    uint64_t other_time_us = total_time_us - (adsr_time_us + interp_time_us + filter_time_us);
+    
+    total_adsr_time_us += adsr_time_us;
+    total_interp_time_us += interp_time_us;
+    total_filter_time_us += filter_time_us;
+    total_other_time_us += other_time_us;
+    total_process_calls++;
+    
+    // PROFILING: Print stats every 100 calls (~2 seconds at 48kHz with 512 frames)
+    if (total_process_calls % 100 == 0) {
+        uint64_t avg_adsr = total_adsr_time_us / total_process_calls;
+        uint64_t avg_interp = total_interp_time_us / total_process_calls;
+        uint64_t avg_filter = total_filter_time_us / total_process_calls;
+        uint64_t avg_other = total_other_time_us / total_process_calls;
+        uint64_t avg_total = (avg_adsr + avg_interp + avg_filter + avg_other);
+        
+        log_info("PHOTOWAVE", "Performance breakdown per buffer (%d frames):", num_frames);
+        log_info("PHOTOWAVE", "  ADSR:   %llu µs (%.1f%%)", avg_adsr, (float)avg_adsr * 100.0f / avg_total);
+        log_info("PHOTOWAVE", "  Interp: %llu µs (%.1f%%)", avg_interp, (float)avg_interp * 100.0f / avg_total);
+        log_info("PHOTOWAVE", "  Filter: %llu µs (%.1f%%)", avg_filter, (float)avg_filter * 100.0f / avg_total);
+        log_info("PHOTOWAVE", "  Other:  %llu µs (%.1f%%)", avg_other, (float)avg_other * 100.0f / avg_total);
+        log_info("PHOTOWAVE", "  TOTAL:  %llu µs", avg_total);
+        
+        // Reset counters
+        total_process_calls = 0;
+        total_adsr_time_us = 0;
+        total_interp_time_us = 0;
+        total_filter_time_us = 0;
+        total_other_time_us = 0;
+    }
 }
 
 /* ============================================================================
@@ -877,14 +975,56 @@ bool synth_photowave_is_note_active(const PhotowaveState *state) {
  * THREAD INTEGRATION FUNCTIONS
  * ========================================================================== */
 
+/**
+ * @brief Load global parameters from config (must be called BEFORE synth_photowave_init)
+ * 
+ * This function loads the global ADSR/LFO/Filter parameters from g_sp3ctra_config
+ * into the static global variables. It must be called before synth_photowave_init()
+ * so that the voices are initialized with the correct values.
+ */
+static void synth_photowave_load_global_params(void) {
+    // Apply ADSR Volume parameters from config
+    G_PHOTOWAVE_VOLUME_ATTACK_S = g_sp3ctra_config.photowave_volume_adsr_attack_s;
+    G_PHOTOWAVE_VOLUME_DECAY_S = g_sp3ctra_config.photowave_volume_adsr_decay_s;
+    G_PHOTOWAVE_VOLUME_SUSTAIN = g_sp3ctra_config.photowave_volume_adsr_sustain_level;
+    G_PHOTOWAVE_VOLUME_RELEASE_S = g_sp3ctra_config.photowave_volume_adsr_release_s;
+    
+    // Apply ADSR Filter parameters from config
+    G_PHOTOWAVE_FILTER_ATTACK_S = g_sp3ctra_config.photowave_filter_adsr_attack_s;
+    G_PHOTOWAVE_FILTER_DECAY_S = g_sp3ctra_config.photowave_filter_adsr_decay_s;
+    G_PHOTOWAVE_FILTER_SUSTAIN = g_sp3ctra_config.photowave_filter_adsr_sustain_level;
+    G_PHOTOWAVE_FILTER_RELEASE_S = g_sp3ctra_config.photowave_filter_adsr_release_s;
+    
+    // Apply LFO parameters from config
+    G_PHOTOWAVE_LFO_RATE_HZ = g_sp3ctra_config.photowave_lfo_rate_hz;
+    G_PHOTOWAVE_LFO_DEPTH_SEMITONES = g_sp3ctra_config.photowave_lfo_depth_semitones;
+    
+    // Apply Filter parameters from config
+    G_PHOTOWAVE_FILTER_CUTOFF_HZ = g_sp3ctra_config.photowave_filter_cutoff_hz;
+    G_PHOTOWAVE_FILTER_ENV_DEPTH = g_sp3ctra_config.photowave_filter_env_depth_hz;
+    
+    log_info("PHOTOWAVE", "Global parameters loaded from config:");
+    log_info("PHOTOWAVE", "  ADSR Volume: A=%.3fs D=%.3fs S=%.2f R=%.3fs",
+             G_PHOTOWAVE_VOLUME_ATTACK_S, G_PHOTOWAVE_VOLUME_DECAY_S, 
+             G_PHOTOWAVE_VOLUME_SUSTAIN, G_PHOTOWAVE_VOLUME_RELEASE_S);
+    log_info("PHOTOWAVE", "  ADSR Filter: A=%.3fs D=%.3fs S=%.2f R=%.3fs",
+             G_PHOTOWAVE_FILTER_ATTACK_S, G_PHOTOWAVE_FILTER_DECAY_S,
+             G_PHOTOWAVE_FILTER_SUSTAIN, G_PHOTOWAVE_FILTER_RELEASE_S);
+    log_info("PHOTOWAVE", "  LFO: rate=%.2fHz depth=%.2f semitones",
+             G_PHOTOWAVE_LFO_RATE_HZ, G_PHOTOWAVE_LFO_DEPTH_SEMITONES);
+    log_info("PHOTOWAVE", "  Filter: cutoff=%.0fHz env_depth=%.0fHz",
+             G_PHOTOWAVE_FILTER_CUTOFF_HZ, G_PHOTOWAVE_FILTER_ENV_DEPTH);
+}
+
 void synth_photowave_apply_config(PhotowaveState *state) {
     if (!state) return;
     
+    // Apply basic photowave config to state
     state->config.scan_mode = (PhotowaveScanMode)g_sp3ctra_config.photowave_scan_mode;
     state->config.interp_mode = (PhotowaveInterpMode)g_sp3ctra_config.photowave_interp_mode;
     state->config.amplitude = g_sp3ctra_config.photowave_amplitude;
     
-    log_info("PHOTOWAVE", "Configuration applied: scan_mode=%d, interp_mode=%d, amplitude=%.2f",
+    log_info("PHOTOWAVE", "State configuration applied: scan_mode=%d, interp_mode=%d, amplitude=%.2f",
              state->config.scan_mode, state->config.interp_mode, state->config.amplitude);
 }
 
@@ -892,6 +1032,10 @@ void synth_photowave_mode_init(void) {
     int i, pixel_count, result;
     
     log_info("PHOTOWAVE", "Initializing polyphonic photowave synthesis mode");
+    
+    // CRITICAL: Load global parameters from config BEFORE initializing voices
+    // This ensures that lowpass_init() uses the correct filter cutoff values
+    synth_photowave_load_global_params();
     
     for (i = 0; i < 2; i++) {
         pthread_mutex_init(&photowave_audio_buffers[i].mutex, NULL);
@@ -947,10 +1091,15 @@ void *synth_photowave_thread_func(void *arg) {
     int buffer_size, write_index;
     float *temp_left, *temp_right;
     extern float getSynthPhotowaveMixLevel(void);
+    struct timeval tv_start, tv_end, tv_stats;
+    uint64_t process_time_us, current_time_us;
+    uint64_t max_process_time_us = 0;
+    uint64_t min_process_time_us = UINT64_MAX;
+    uint64_t total_process_time_us = 0;
     
     (void)arg;
     
-    log_info("PHOTOWAVE", "Thread started");
+    log_info("PHOTOWAVE", "Thread started with optimized synchronization");
     photowave_thread_running = 1;
     
     buffer_size = g_sp3ctra_config.audio_buffer_size;
@@ -964,9 +1113,19 @@ void *synth_photowave_thread_func(void *arg) {
         return NULL;
     }
     
+    // Initialize stats timestamp
+    gettimeofday(&tv_stats, NULL);
+    photowave_last_stats_print_time_us = (uint64_t)tv_stats.tv_sec * 1000000ULL + (uint64_t)tv_stats.tv_usec;
+    
     while (photowave_thread_running) {
         if (getSynthPhotowaveMixLevel() < 0.01f) {
             usleep(10000);
+            continue;
+        }
+        
+        // OPTIMIZATION: Skip buffer generation if no notes are active
+        if (!synth_photowave_is_note_active(&g_photowave_state)) {
+            usleep(5000);  // Sleep 5ms if nothing to do
             continue;
         }
         
@@ -974,42 +1133,102 @@ void *synth_photowave_thread_func(void *arg) {
         write_index = photowave_current_buffer_index;
         pthread_mutex_unlock(&photowave_buffer_index_mutex);
         
-        // RT-SAFE: Wait for buffer to be consumed with timeout and exponential backoff
-        int wait_iterations = 0;
-        const int MAX_WAIT_ITERATIONS = 100; // ~10ms max wait
+        // OPTIMIZED: Use condition variable with timeout instead of busy-wait
+        struct timespec timeout;
+        struct timeval now;
+        gettimeofday(&now, NULL);
         
-        while (__atomic_load_n(&photowave_audio_buffers[write_index].ready, __ATOMIC_ACQUIRE) == 1 && 
-               photowave_thread_running && wait_iterations < MAX_WAIT_ITERATIONS) {
-            // Exponential backoff: start with short sleeps, increase if needed
-            int sleep_us = (wait_iterations < 10) ? 10 : 
-                           (wait_iterations < 50) ? 50 : 100;
-            struct timespec sleep_time = {0, sleep_us * 1000}; // Convert µs to ns
-            nanosleep(&sleep_time, NULL);
-            wait_iterations++;
+        // Set timeout to 15ms (generous for buffer consumption)
+        timeout.tv_sec = now.tv_sec;
+        timeout.tv_nsec = (now.tv_usec + 15000) * 1000; // 15ms timeout
+        if (timeout.tv_nsec >= 1000000000) {
+            timeout.tv_sec++;
+            timeout.tv_nsec -= 1000000000;
         }
+        
+        // Record wait start time
+        uint64_t wait_start_us = (uint64_t)now.tv_sec * 1000000ULL + (uint64_t)now.tv_usec;
+        
+        // Wait for buffer to be consumed using condition variable
+        pthread_mutex_lock(&photowave_audio_buffers[write_index].mutex);
+        while (__atomic_load_n(&photowave_audio_buffers[write_index].ready, __ATOMIC_ACQUIRE) == 1 && 
+               photowave_thread_running) {
+            int wait_result = pthread_cond_timedwait(&photowave_audio_buffers[write_index].cond,
+                                                     &photowave_audio_buffers[write_index].mutex,
+                                                     &timeout);
+            if (wait_result == ETIMEDOUT) {
+                // Timeout occurred - callback is too slow
+                gettimeofday(&now, NULL);
+                uint64_t wait_time_us = ((uint64_t)now.tv_sec * 1000000ULL + (uint64_t)now.tv_usec) - wait_start_us;
+                photowave_total_wait_timeouts++;
+                log_warning("PHOTOWAVE", "Buffer wait timeout (%.2f ms wait, callback consuming too slowly)",
+                           wait_time_us / 1000.0);
+                break;
+            }
+        }
+        pthread_mutex_unlock(&photowave_audio_buffers[write_index].mutex);
         
         if (!photowave_thread_running) {
             break;
         }
         
-        // If timeout, log warning but continue (graceful degradation)
-        if (wait_iterations >= MAX_WAIT_ITERATIONS) {
-            static int timeout_counter = 0;
-            if (++timeout_counter % 100 == 0) {
-                log_warning("PHOTOWAVE", "Buffer wait timeout (callback too slow)");
-            }
-        }
+        // Record processing start time
+        gettimeofday(&tv_start, NULL);
         
         // Process audio
         synth_photowave_process(&g_photowave_state, temp_left, temp_right, buffer_size);
         
+        // Calculate processing time
+        gettimeofday(&tv_end, NULL);
+        process_time_us = ((uint64_t)tv_end.tv_sec * 1000000ULL + (uint64_t)tv_end.tv_usec) -
+                         ((uint64_t)tv_start.tv_sec * 1000000ULL + (uint64_t)tv_start.tv_usec);
+        
+        // Update statistics
+        photowave_total_buffers_processed++;
+        total_process_time_us += process_time_us;
+        if (process_time_us > max_process_time_us) max_process_time_us = process_time_us;
+        if (process_time_us < min_process_time_us) min_process_time_us = process_time_us;
+        
         memcpy(photowave_audio_buffers[write_index].data, temp_left, buffer_size * sizeof(float));
+        
+        // Record timestamp when buffer is written
+        gettimeofday(&tv_end, NULL);
+        photowave_audio_buffers[write_index].write_timestamp_us = 
+            (uint64_t)tv_end.tv_sec * 1000000ULL + (uint64_t)tv_end.tv_usec;
         
         __atomic_store_n(&photowave_audio_buffers[write_index].ready, 1, __ATOMIC_RELEASE);
         
         pthread_mutex_lock(&photowave_buffer_index_mutex);
         photowave_current_buffer_index = (write_index == 0) ? 1 : 0;
         pthread_mutex_unlock(&photowave_buffer_index_mutex);
+        
+        // Periodic statistics reporting (every 5 seconds)
+        gettimeofday(&tv_stats, NULL);
+        current_time_us = (uint64_t)tv_stats.tv_sec * 1000000ULL + (uint64_t)tv_stats.tv_usec;
+        
+        if (current_time_us - photowave_last_stats_print_time_us >= PHOTOWAVE_STATS_PRINT_INTERVAL_US) {
+            if (photowave_total_buffers_processed > 0) {
+                uint64_t avg_process_time_us = total_process_time_us / photowave_total_buffers_processed;
+                float buffer_duration_ms = (buffer_size * 1000.0f) / g_sp3ctra_config.sampling_frequency;
+                float cpu_usage_percent = (avg_process_time_us / 1000.0f) / buffer_duration_ms * 100.0f;
+                
+                log_info("PHOTOWAVE", "Performance stats: buffers=%llu, avg=%.2fms (%.1f%% CPU), min=%.2fms, max=%.2fms, timeouts=%llu",
+                        photowave_total_buffers_processed,
+                        avg_process_time_us / 1000.0,
+                        cpu_usage_percent,
+                        min_process_time_us / 1000.0,
+                        max_process_time_us / 1000.0,
+                        photowave_total_wait_timeouts);
+                
+                // Reset statistics for next interval
+                total_process_time_us = 0;
+                max_process_time_us = 0;
+                min_process_time_us = UINT64_MAX;
+                photowave_total_buffers_processed = 0;
+                photowave_total_wait_timeouts = 0;
+            }
+            photowave_last_stats_print_time_us = current_time_us;
+        }
     }
     
     free(temp_left);

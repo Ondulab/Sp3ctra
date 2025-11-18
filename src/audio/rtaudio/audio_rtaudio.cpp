@@ -127,6 +127,11 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   static int additive_read_buffer = 0;
   static int polyphonic_read_buffer = 0;
   static int photowave_read_buffer = 0;
+  
+  // DESYNC TRACKING: Monitor when photowave reads without additive (causes distortion)
+  static uint64_t additive_missing_streak = 0;
+  static uint64_t photowave_read_without_additive = 0;
+  static uint64_t last_sync_check_time_us = 0;
 
   // Cache volume level to avoid repeated access
   static float cached_volume = 1.0f;
@@ -169,6 +174,18 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     // BUFFER LATENCY MEASUREMENT: Measure time from buffer write to read
     static int latency_warning_counter = 0;
     
+    // DESYNC DETECTION: Track when additive buffer is missing
+    bool additive_ready = (buffers_L[additive_read_buffer].ready == 1 && 
+                          buffers_R[additive_read_buffer].ready == 1);
+    bool photowave_ready = (photowave_audio_buffers[photowave_read_buffer].ready == 1);
+    
+    if (!additive_ready) {
+      additive_missing_streak++;
+      if (photowave_ready) {
+        photowave_read_without_additive++;
+      }
+    }
+    
     // Additive synthesis (stereo)
     if (buffers_L[additive_read_buffer].ready == 1) {
       source_additive_left = &buffers_L[additive_read_buffer].data[global_read_offset];
@@ -176,10 +193,17 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       // Measure latency only at start of buffer read (global_read_offset == 0)
       if (global_read_offset == 0 && buffers_L[additive_read_buffer].write_timestamp_us > 0) {
         uint64_t latency_us = current_time_us - buffers_L[additive_read_buffer].write_timestamp_us;
-        // Critical threshold: >20ms latency indicates serious problem
-        if (latency_us > 20000) {
+        
+        // DYNAMIC LATENCY THRESHOLD: Calculate based on buffer size
+        // For double buffering, expect latency of ~2x buffer duration
+        // Add 50% margin for processing overhead
+        uint64_t buffer_duration_us = ((uint64_t)g_sp3ctra_config.audio_buffer_size * 1000000ULL) / g_sp3ctra_config.sampling_frequency;
+        uint64_t latency_threshold_us = (buffer_duration_us * 2) + (buffer_duration_us / 2); // 2.5x buffer duration
+        
+        if (latency_us > latency_threshold_us) {
           if (++latency_warning_counter % 10 == 0) { // Rate limit
-            log_warning("AUDIO", "High additive buffer latency: %llu µs (>20ms critical)", latency_us);
+            log_warning("AUDIO", "High additive buffer latency: %llu µs (threshold: %llu µs for %d frames)", 
+                       latency_us, latency_threshold_us, g_sp3ctra_config.audio_buffer_size);
           }
         }
       }
@@ -196,9 +220,17 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       // Measure latency only at start of buffer read
       if (global_read_offset == 0 && polyphonic_audio_buffers[polyphonic_read_buffer].write_timestamp_us > 0) {
         uint64_t latency_us = current_time_us - polyphonic_audio_buffers[polyphonic_read_buffer].write_timestamp_us;
-        if (latency_us > 20000) {
+        
+        // DYNAMIC LATENCY THRESHOLD: Calculate based on buffer size
+        // For double buffering, expect latency of ~2x buffer duration
+        // Add 50% margin for processing overhead
+        uint64_t buffer_duration_us = ((uint64_t)g_sp3ctra_config.audio_buffer_size * 1000000ULL) / g_sp3ctra_config.sampling_frequency;
+        uint64_t latency_threshold_us = (buffer_duration_us * 2) + (buffer_duration_us / 2); // 2.5x buffer duration
+        
+        if (latency_us > latency_threshold_us) {
           if (++latency_warning_counter % 10 == 0) { // Rate limit
-            log_warning("AUDIO", "High polyphonic buffer latency: %llu µs (>20ms critical)", latency_us);
+            log_warning("AUDIO", "High polyphonic buffer latency: %llu µs (threshold: %llu µs for %d frames)", 
+                       latency_us, latency_threshold_us, g_sp3ctra_config.audio_buffer_size);
           }
         }
       }
@@ -245,7 +277,8 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 
       // Add Photowave contribution (same for both channels)
       // CPU OPTIMIZATION: Skip photowave processing if mix level is essentially zero
-      if (source_photowave && cached_level_photowave > 0.01f) {
+      // SYNC FIX: Only mix photowave if additive is also ready (prevents desynchronization)
+      if (source_photowave && cached_level_photowave > 0.01f && source_additive_left) {
         dry_sample_left += source_photowave[i] * cached_level_photowave;
         dry_sample_right += source_photowave[i] * cached_level_photowave;
       }
@@ -369,6 +402,8 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       // Photowave synthesis buffer
       if (photowave_audio_buffers[photowave_read_buffer].ready == 1) {
         __atomic_store_n(&photowave_audio_buffers[photowave_read_buffer].ready, 0, __ATOMIC_RELEASE);
+        // CRITICAL FIX: Signal the photowave thread that buffer has been consumed
+        pthread_cond_signal(&photowave_audio_buffers[photowave_read_buffer].cond);
       }
       
       // Switch all buffers simultaneously
@@ -417,6 +452,20 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
              (float)buffer_missing_counter * 100.0f / (float)total_callback_counter);
       fflush(stdout);
     }
+  }
+  
+  // DESYNC MONITORING: Report photowave desync events periodically
+  if (current_time_us - last_sync_check_time_us > 1000000ULL) { // Every 1 second
+    if (photowave_read_without_additive > 0) {
+      printf("[SYNC WARNING] Photowave desync events: %llu (additive missing: %llu)\n",
+             photowave_read_without_additive, additive_missing_streak);
+      printf("[SYNC INFO] Sync protection active: photowave skipped when additive missing\n");
+      fflush(stdout);
+    }
+    // Reset counters for next interval
+    additive_missing_streak = 0;
+    photowave_read_without_additive = 0;
+    last_sync_check_time_us = current_time_us;
   }
   
   if (polyphonic_audio_buffers[polyphonic_read_buffer].ready != 1) {
