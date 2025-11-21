@@ -77,13 +77,13 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     .noise_gate_threshold = NOISE_GATE_THRESHOLD_DEFAULT,
     .soft_limit_threshold = SOFT_LIMIT_THRESHOLD_DEFAULT,
     .soft_limit_knee = SOFT_LIMIT_KNEE_DEFAULT,
-    
-    // Image processing and contrast parameters
-    .contrast_min = CONTRAST_MIN,
-    .contrast_stride = CONTRAST_STRIDE,
-    .contrast_adjustment_power = CONTRAST_ADJUSTMENT_POWER,
-    .enable_non_linear_mapping = ENABLE_NON_LINEAR_MAPPING,
-    .gamma_value = GAMMA_VALUE,
+
+    // Image processing parameters - ADDITIVE SYNTHESIS
+    .additive_enable_non_linear_mapping = 1,      // Enable gamma correction by default
+    .additive_gamma_value = 4.8f,                 // Default gamma value
+    .additive_contrast_min = 0.21f,               // Minimum volume for blurred images
+    .additive_contrast_stride = 1.0f,             // Pixel sampling stride
+    .additive_contrast_adjustment_power = 0.5f,   // Contrast curve exponent
     
     // Photowave synthesis parameters
     .photowave_continuous_mode = 0,     // 0 = Only on MIDI notes

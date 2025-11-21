@@ -51,6 +51,13 @@ typedef struct {
     int semitone_per_octave;      // Always 12 (standard musical scale)
     int comma_per_semitone;       // Calculated based on DPI and frequency range
     int pixels_per_note;          // Always 1 for maximum resolution
+    
+    // Image processing parameters - ADDITIVE SYNTHESIS
+    int additive_enable_non_linear_mapping;    // Enable/disable gamma correction (0/1)
+    float additive_gamma_value;                // Gamma value for non-linear intensity correction
+    float additive_contrast_min;               // Minimum volume for blurred images (0.0-1.0)
+    float additive_contrast_stride;            // Pixel sampling stride for optimization
+    float additive_contrast_adjustment_power;  // Exponent for adjusting the contrast curve
 
     // Envelope slew parameters (runtime configurable; defaults from compile-time defines)
     float tau_up_base_ms;             // Base attack time in milliseconds
@@ -76,13 +83,6 @@ typedef struct {
     float noise_gate_threshold;                // Noise gate threshold (0.0-1.0, relative to VOLUME_AMP_RESOLUTION)
     float soft_limit_threshold;                // Soft limiter threshold (0.0-1.0)
     float soft_limit_knee;                     // Soft limiter knee width (0.0-1.0)
-    
-    // Image processing and contrast parameters
-    float contrast_min;                        // Minimum volume for blurred images (0.0-1.0)
-    float contrast_stride;                     // Pixel sampling stride for optimization
-    float contrast_adjustment_power;           // Exponent for adjusting the contrast curve
-    int enable_non_linear_mapping;             // Enable/disable non-linear gamma mapping (0/1)
-    float gamma_value;                         // Gamma value for non-linear intensity correction
     
     // Photowave synthesis parameters
     int photowave_continuous_mode;             // Continuous mode (0=MIDI notes only, 1=always generating)

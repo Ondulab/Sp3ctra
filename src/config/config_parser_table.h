@@ -49,15 +49,15 @@ static const config_param_def_t CONFIG_PARAMS[] = {
     CONFIG_PARAM("auto_volume", "contrast_change_threshold", PARAM_TYPE_FLOAT, 
                  contrast_change_threshold, 0.01f, 0.5f),
     
-    // Synthesis section (new user-configurable parameters)
-    CONFIG_PARAM("synthesis", "low_frequency", PARAM_TYPE_FLOAT, 
-                 low_frequency, 20.0f, 20000.0f),
-    CONFIG_PARAM("synthesis", "high_frequency", PARAM_TYPE_FLOAT, 
-                 high_frequency, 20.0f, 20000.0f),
-    CONFIG_PARAM("synthesis", "sensor_dpi", PARAM_TYPE_INT, 
+    // Instrument section (hardware configuration)
+    CONFIG_PARAM("instrument", "sensor_dpi", PARAM_TYPE_INT, 
                  sensor_dpi, 200, 400),
-    CONFIG_PARAM("synthesis", "invert_intensity", PARAM_TYPE_BOOL, 
-                 invert_intensity, 0, 1),
+    
+    // Additive synthesis section (frequency mapping)
+    CONFIG_PARAM("synth_additive", "low_frequency", PARAM_TYPE_FLOAT, 
+                 low_frequency, 20.0f, 20000.0f),
+    CONFIG_PARAM("synth_additive", "high_frequency", PARAM_TYPE_FLOAT, 
+                 high_frequency, 20.0f, 20000.0f),
     
     // Envelope slew section
     CONFIG_PARAM("envelope_slew", "tau_up_base_ms", PARAM_TYPE_FLOAT, 
@@ -96,18 +96,20 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  soft_limit_threshold, 0.0f, 1.0f),
     CONFIG_PARAM("summation_normalization", "soft_limit_knee", PARAM_TYPE_FLOAT, 
                  soft_limit_knee, 0.0f, 1.0f),
-    CONFIG_PARAM("summation_normalization", "contrast_min", PARAM_TYPE_FLOAT, 
-                 contrast_min, 0.0f, 1.0f),
-    CONFIG_PARAM("summation_normalization", "contrast_stride", PARAM_TYPE_FLOAT, 
-                 contrast_stride, 1.0f, 10.0f),
-    CONFIG_PARAM("summation_normalization", "contrast_adjustment_power", PARAM_TYPE_FLOAT, 
-                 contrast_adjustment_power, 0.1f, 5.0f),
     
-    // Image processing section
-    CONFIG_PARAM("image_processing", "enable_non_linear_mapping", PARAM_TYPE_BOOL, 
-                 enable_non_linear_mapping, 0, 1),
-    CONFIG_PARAM("image_processing", "gamma_value", PARAM_TYPE_FLOAT, 
-                 gamma_value, 0.1f, 5.0f),
+    // Image processing - ADDITIVE SYNTHESIS
+    CONFIG_PARAM("image_processing_additive", "invert_intensity", PARAM_TYPE_BOOL, 
+                 invert_intensity, 0, 1),
+    CONFIG_PARAM("image_processing_additive", "enable_non_linear_mapping", PARAM_TYPE_BOOL, 
+                 additive_enable_non_linear_mapping, 0, 1),
+    CONFIG_PARAM("image_processing_additive", "gamma_value", PARAM_TYPE_FLOAT, 
+                 additive_gamma_value, 0.1f, 10.0f),
+    CONFIG_PARAM("image_processing_additive", "contrast_min", PARAM_TYPE_FLOAT, 
+                 additive_contrast_min, 0.0f, 1.0f),
+    CONFIG_PARAM("image_processing_additive", "contrast_stride", PARAM_TYPE_FLOAT, 
+                 additive_contrast_stride, 1.0f, 10.0f),
+    CONFIG_PARAM("image_processing_additive", "contrast_adjustment_power", PARAM_TYPE_FLOAT, 
+                 additive_contrast_adjustment_power, 0.1f, 5.0f),
     
     // Photowave synthesis section
     CONFIG_PARAM("photowave", "continuous_mode", PARAM_TYPE_BOOL, 
@@ -234,6 +236,11 @@ static const deprecated_param_t DEPRECATED_PARAMS[] = {
     {"auto_volume", "imu_filter_alpha_x", "compile-time constant"},
     {"auto_volume", "auto_volume_active_level", "compile-time constant"},
     {"auto_volume", "auto_volume_poll_ms", "compile-time constant"},
+    {"image_processing", "enable_non_linear_mapping", "moved to [image_processing_additive]"},
+    {"image_processing", "gamma_value", "moved to [image_processing_additive]"},
+    {"summation_normalization", "contrast_min", "moved to [image_processing_additive]"},
+    {"summation_normalization", "contrast_stride", "moved to [image_processing_additive]"},
+    {"summation_normalization", "contrast_adjustment_power", "moved to [image_processing_additive]"},
 };
 
 #define DEPRECATED_PARAMS_COUNT (sizeof(DEPRECATED_PARAMS) / sizeof(DEPRECATED_PARAMS[0]))

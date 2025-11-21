@@ -277,12 +277,9 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
   fill_float(0, worker->thread_additiveBuffer_L, g_sp3ctra_config.audio_buffer_size);
   fill_float(0, worker->thread_additiveBuffer_R, g_sp3ctra_config.audio_buffer_size);
 
-  // Use centralized preprocessing algorithm
-  process_image_preprocessing(worker->imageData, worker->imageBuffer_q31, 
-                             worker->start_note, worker->end_note);
-
-  // Use centralized RELATIVE_MODE algorithm
-  apply_relative_mode(worker->imageBuffer_q31, worker->start_note, worker->end_note);
+  // DEPRECATED: Old preprocessing removed - now using preprocessed_data.additive.notes[]
+  // The preprocessing is done centrally in image_preprocessor.c
+  // Data is already: RGB → Grayscale → Inversion → Gamma → Averaging → Contrast
 
   // ✅ OPTIMIZATION: Hoist invariant calculations and improve cache locality
   const int audio_buffer_size = g_sp3ctra_config.audio_buffer_size;
@@ -296,13 +293,12 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     
     // ✅ OPTIMIZATION: Prefetch next iteration data (improves cache hit rate)
     if (note + 1 < worker->end_note) {
-      __builtin_prefetch(&worker->imageBuffer_q31[local_note_idx + 1], 0, 3);
+      __builtin_prefetch(&worker->precomputed_volume[local_note_idx + 1], 0, 3);
       __builtin_prefetch(&worker->precomputed_wave_data[(size_t)(local_note_idx + 1) * audio_buffer_size], 0, 3);
     }
     
-    // Convert from stored micros back to normalized [0, 1] range
-    worker->imageBuffer_f32[local_note_idx] = (float)worker->imageBuffer_q31[local_note_idx] / 1000000.0f;
-    apply_gamma_mapping(&worker->imageBuffer_f32[local_note_idx], 1);
+    // Use preprocessed volume data (already has: RGB → Grayscale → Inversion → Gamma → Averaging)
+    float target_volume = worker->precomputed_volume[local_note_idx];
 
     // ✅ OPTIMIZATION: Compute pointers once (avoid repeated address calculations)
     const float* pre_wave = worker->precomputed_wave_data + (size_t)local_note_idx * audio_buffer_size;
@@ -313,7 +309,7 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     generate_waveform_samples(note, wave_buf, pre_wave);
 
     // Apply GAP_LIMITER envelope
-    apply_gap_limiter_ramp(note, worker->imageBuffer_f32[local_note_idx], pre_wave, vol_buf);
+    apply_gap_limiter_ramp(note, target_volume, pre_wave, vol_buf);
 
     // Debug capture (fast path when disabled)
     if (capture_enabled) {
@@ -438,10 +434,10 @@ void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
       }
       // Workers will commit the last index per note after processing using the precomputed indices
 
-#ifdef GAP_LIMITER
-      // ✅ GAP_LIMITER: Don't pre-compute volume - threads access it directly
-      // Volume parameters are now handled by tau_up_base_ms/tau_down_base_ms system
-#endif
+      // ✅ NEW: Copy preprocessed volume data (already has: RGB → Grayscale → Inversion → Gamma → Averaging)
+      pthread_mutex_lock(&db->mutex);
+      worker->precomputed_volume[local_note_idx] = db->preprocessed_data.additive.notes[note];
+      pthread_mutex_unlock(&db->mutex);
 
       if (g_sp3ctra_config.stereo_mode_enabled) {
         // 🎯 OPTIMIZATION: Use preprocessed stereo data (calculated 1x at 50Hz instead of at 96kHz!)

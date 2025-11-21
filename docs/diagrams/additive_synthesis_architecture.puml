@@ -1,0 +1,161 @@
+@startuml Additive Synthesis - Architecture Globale
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+
+title Sp3ctra - Architecture Synthese Additive\n(Vue Globale des 5 Phases)
+
+' Phase 1: Image Acquisition
+package "PHASE 1: ACQUISITION IMAGE" as phase1 #E3F2FD {
+  component "Scanner CIS\n(UDP)" as scanner #FFFFFF
+  note right of scanner
+    Frequence: 1000-2000 Hz
+    Resolution: 400 DPI = 1000 lignes/s
+                200 DPI = 2000 lignes/s
+    Format: 3456 pixels RGB
+  end note
+  
+  database "ImageBuffers\n(Double Buffering)" as imgbuf #C8E6C9
+  note bottom of imgbuf
+    Synchronisation: Atomique
+    - read_buffer_index (atomic_int)
+    - write_buffer_index (atomic_int)
+    - write_mutex (UDP protection)
+    Swap: Lock-free pour lecture
+  end note
+  
+  scanner -down-> imgbuf : UDP write\n(mutex protected)
+}
+
+' Phase 2: Preprocessing
+package "PHASE 2: PREPROCESSING" as phase2 #FFE0B2 {
+  component "Image Preprocessor\n(~750 Hz)" as preproc #FFFFFF
+  note right of preproc
+    Limite par: Audio callback rate
+    Frequence: 48kHz/64 = 750 Hz
+    Downsampling: 1000Hz -> 750Hz
+                  (ratio 1.3:1)
+  end note
+  
+  database "DoubleBuffer\n(Mutex Protected)" as doublebuf #C8E6C9
+  note bottom of doublebuf
+    ATTENTION: Nom trompeur!
+    Pas de vrai double buffering
+    Zone partagee avec mutex
+    
+    Contenu:
+    - grayscale[96]
+    - contrast_factor
+    - stereo.pan_positions[96]
+    - stereo.left_gains[96]
+    - stereo.right_gains[96]
+  end note
+  
+  preproc -down-> doublebuf : RGB -> Grayscale\nColor temp -> Pan\nContrast analysis
+}
+
+imgbuf -down-> preproc : Lock-free read\n(atomic index)
+
+' Phase 3: Parallel Synthesis
+package "PHASE 3: SYNTHESE PARALLELE" as phase3 #E3F2FD {
+  component "synth_IfftMode()\n(~750 Hz)" as ifftmode #FFFFFF
+  
+  rectangle "Thread Pool (1-8 workers)" as pool {
+    component "Worker 0\nNotes 0-23" as w0 #FFE0B2
+    component "Worker 1\nNotes 24-47" as w1 #FFE0B2
+    component "Worker 2\nNotes 48-71" as w2 #FFE0B2
+    component "Worker 3\nNotes 72-95" as w3 #FFE0B2
+  }
+  
+  note right of pool
+    Parallelisme: 3-4 threads (config)
+    CPU Affinity: CPUs 1-7 (Pi5)
+    Synchronisation:
+    - Pre-computation: Lock-free
+    - Workers: Independants
+    - Combinaison: Polling 5us
+  end note
+  
+  component "Combinaison\nBuffers" as combine #F8BBD0
+  note bottom of combine
+    Somme buffers de tous workers:
+    - additiveBuffer (mono)
+    - stereoBuffer_L/R (stereo)
+    - sumVolumeBuffer (ponderes)
+    - maxVolumeBuffer (pics)
+  end note
+  
+  ifftmode -down-> pool : Signal workers\n(pthread_cond)
+  w0 -down-> combine
+  w1 -down-> combine
+  w2 -down-> combine
+  w3 -down-> combine
+}
+
+doublebuf -down-> ifftmode : Read preprocessed\n(mutex lock 1x)
+
+' Phase 4: Normalization
+package "PHASE 4: NORMALISATION" as phase4 #FFE0B2 {
+  component "Normalisation\n& Compression" as norm #FFFFFF
+  note right of norm
+    Par sample: 64-128 samples
+    Pipeline:
+    1. Noise Gate
+    2. Intelligent Norm
+    3. Soft Limiter
+    4. Contrast Apply
+    5. Hard Clip [-1,+1]
+    
+    Algorithmes:
+    - Response curve: pow(x, 1/exp)
+    - Soft limit: tanh(excess/knee)
+    - Volume weighting: vol^exp
+  end note
+}
+
+combine -down-> norm : Combined\nsignals
+
+' Phase 5: Audio Output
+package "PHASE 5: SORTIE AUDIO RT-SAFE" as phase5 #B2DFDB {
+  database "Audio Output Buffers\n(Double Buffering)" as audiobuf #C8E6C9
+  note bottom of audiobuf
+    Synchronisation: Atomique
+    - current_buffer_index (atomic)
+    - ready flags (atomic per buffer)
+    - write_timestamp_us (us precision)
+    RT-Safe: Zero mutex!
+    
+    Buffers:
+    - buffers_L[0/1] (64 samples)
+    - buffers_R[0/1] (64 samples)
+  end note
+  
+  component "RtAudio Callback\n(~750 Hz)" as rtcallback #E3F2FD
+  note right of rtcallback
+    Thread: Real-Time priority
+    Latency: 1.33ms @ 64 samples
+    Polling: Atomic ready flag
+    Underrun: Zero-fill protection
+  end note
+  
+  component "DAC\n(48kHz PCM)" as dac #FFFFFF
+  
+  audiobuf -down-> rtcallback : Lock-free read\n(atomic polling)
+  rtcallback -down-> dac : Hardware\nbuffer
+}
+
+norm -down-> audiobuf : Write + atomic swap\nready=1, idx=1-idx
+
+' Performance metrics
+note bottom of phase5
+  Metriques Globales (Raspberry Pi 5):
+  - Scanner: 1000-2000 Hz (evenementiel)
+  - Preprocessing: ~750 Hz (limite audio)
+  - Synthesis: ~750 Hz (4 workers paralleles)
+  - Audio callback: 750 Hz (48kHz/64)
+  - CPU total: ~60-70% (marge 30% systeme)
+  - Latency totale: ~3-5ms (acquisition -> DAC)
+end note
+
+@enduml

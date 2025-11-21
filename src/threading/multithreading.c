@@ -101,24 +101,35 @@ void initDoubleBuffer(DoubleBuffer *db) {
   
   // 🔧 BUGFIX: Initialize preprocessed_data with safe default values
   // This prevents bus errors when audio thread starts before first UDP frame
-  memset(db->preprocessed_data.grayscale, 0, sizeof(db->preprocessed_data.grayscale));
-  db->preprocessed_data.contrast_factor = 1.0f;
   
-  // Initialize stereo with center panning (equal-power law)
+  /* Initialize additive synthesis data */
+  memset(db->preprocessed_data.additive.grayscale, 0, sizeof(db->preprocessed_data.additive.grayscale));
+  memset(db->preprocessed_data.additive.notes, 0, sizeof(db->preprocessed_data.additive.notes));
+  db->preprocessed_data.additive.contrast_factor = 1.0f;
+  
+  /* Initialize polyphonic synthesis data */
+#ifndef DISABLE_POLYPHONIC
+  memset(db->preprocessed_data.polyphonic.grayscale, 0, sizeof(db->preprocessed_data.polyphonic.grayscale));
+  memset(db->preprocessed_data.polyphonic.magnitudes, 0, sizeof(db->preprocessed_data.polyphonic.magnitudes));
+  db->preprocessed_data.polyphonic.valid = 0;
+#endif
+  
+  /* Initialize photowave synthesis data */
+  memset(db->preprocessed_data.photowave.r, 0, sizeof(db->preprocessed_data.photowave.r));
+  memset(db->preprocessed_data.photowave.g, 0, sizeof(db->preprocessed_data.photowave.g));
+  memset(db->preprocessed_data.photowave.b, 0, sizeof(db->preprocessed_data.photowave.b));
+  
+  /* Initialize stereo with center panning (equal-power law) */
   for (int i = 0; i < PREPROCESS_MAX_NOTES; i++) {
     db->preprocessed_data.stereo.pan_positions[i] = 0.0f;  // Center
     db->preprocessed_data.stereo.left_gains[i] = 0.707f;   // -3dB (equal power)
     db->preprocessed_data.stereo.right_gains[i] = 0.707f;  // -3dB (equal power)
   }
   
-  // Initialize DMX with black
+  /* Initialize DMX with black */
+#ifdef USE_DMX
   memset(&db->preprocessed_data.dmx, 0, sizeof(db->preprocessed_data.dmx));
-  
-  // Initialize FFT data with safe defaults
-  #ifndef DISABLE_POLYPHONIC
-  memset(db->preprocessed_data.fft.magnitudes, 0, sizeof(db->preprocessed_data.fft.magnitudes));
-  db->preprocessed_data.fft.valid = 0;
-  #endif
+#endif
   
   db->preprocessed_data.timestamp_us = 0;
   
@@ -476,13 +487,8 @@ void *udpThread(void *arg) {
         log_error("THREAD", "Image preprocessing failed");
       }
       
-      /* Step 2.5: Calculate FFT for polyphonic synthesis (if enabled) */
-      #ifndef DISABLE_POLYPHONIC
-      if (image_preprocess_fft(&preprocessed_temp) != 0) {
-        log_warning("THREAD", "FFT preprocessing failed - polyphonic synthesis may glitch");
-        preprocessed_temp.fft.valid = 0;  /* Mark FFT as invalid */
-      }
-      #endif
+      /* Step 2.5: FFT is already calculated in preprocess_polyphonic() */
+      /* No additional action needed - FFT data is in preprocessed_temp.polyphonic */
 
       /* 🎵 PHOTOWAVE FIX: Pass grayscale image data to Photowave synthesis thread
        * This connects the scanner data pipeline to Photowave for audio generation
