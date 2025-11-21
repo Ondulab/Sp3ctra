@@ -312,7 +312,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     synth_precompute_wave_data(imageData, db);
 
     // Phase 2: Start workers in parallel
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < num_workers; i++) {
       pthread_mutex_lock(&thread_pool[i].work_mutex);
       thread_pool[i].work_ready = 1;
       thread_pool[i].work_done = 0;
@@ -320,15 +320,20 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
       pthread_mutex_unlock(&thread_pool[i].work_mutex);
     }
 
-    // Phase 3: Wait for all workers to finish (optimized latency)
-    for (int i = 0; i < 3; i++) {
+    // Phase 3: Wait for all workers to finish (ultra-optimized latency)
+    for (int i = 0; i < num_workers; i++) {
       pthread_mutex_lock(&thread_pool[i].work_mutex);
       while (!thread_pool[i].work_done) {
-        // Very short sleep for better responsiveness
-        struct timespec sleep_time = {0, 5000}; // 5 microseconds (reduced from 100µs)
-        pthread_mutex_unlock(&thread_pool[i].work_mutex);
-        nanosleep(&sleep_time, NULL);
-        pthread_mutex_lock(&thread_pool[i].work_mutex);
+        // OPTIMIZATION: Use pthread_cond_timedwait instead of sleep+loop
+        // This is more efficient and responsive under system load
+        struct timespec timeout;
+        clock_gettime(CLOCK_REALTIME, &timeout);
+        timeout.tv_nsec += 1000000; // 1ms timeout
+        if (timeout.tv_nsec >= 1000000000) {
+          timeout.tv_sec += 1;
+          timeout.tv_nsec -= 1000000000;
+        }
+        pthread_cond_timedwait(&thread_pool[i].work_cond, &thread_pool[i].work_mutex, &timeout);
       }
       pthread_mutex_unlock(&thread_pool[i].work_mutex);
     }
@@ -338,7 +343,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     // Iterate over each sample inside this audio buffer
     for (int s = 0; s < g_sp3ctra_config.audio_buffer_size; s++) {
       // Visit notes in ascending order across workers to keep strict note order
-      for (int wi = 0; wi < 3; wi++) {
+      for (int wi = 0; wi < num_workers; wi++) {
         synth_thread_worker_t *w = &thread_pool[wi];
         // Safety: ensure captured buffers are allocated for this worker
         if (!w->captured_current_volume || !w->captured_target_volume) {
@@ -363,7 +368,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     // Thread buffers combination completed
 
     // Float32 version: combine float buffers directly
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < num_workers; i++) {
       synth_thread_worker_t *w = &thread_pool[i];
       if (w->thread_additiveBuffer) {
         add_float(w->thread_additiveBuffer, additiveBuffer,
@@ -497,7 +502,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     fill_float(0, stereoBuffer_R, g_sp3ctra_config.audio_buffer_size);
     
     // Float32 version: combine float stereo buffers directly
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < num_workers; i++) {
       add_float(thread_pool[i].thread_additiveBuffer_L, stereoBuffer_L,
                 stereoBuffer_L, g_sp3ctra_config.audio_buffer_size);
       add_float(thread_pool[i].thread_additiveBuffer_R, stereoBuffer_R,

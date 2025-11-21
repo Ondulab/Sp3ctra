@@ -630,6 +630,18 @@ void *audioProcessingThread(void *arg) {
   log_info("THREAD", "Audio processing thread started with lock-free dual buffer system");
   log_info("THREAD", "Real-time audio processing guaranteed - no timeouts, no blocking!");
 
+  // OPTIMIZATION: Set real-time priority for audio processing thread
+  // This ensures the thread gets CPU time even under system load
+#ifdef __linux__
+  struct sched_param param;
+  param.sched_priority = 70; // Same priority as RtAudio callback
+  if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) == 0) {
+    log_info("THREAD", "Audio processing thread set to RT priority 70 (SCHED_FIFO)");
+  } else {
+    log_warning("THREAD", "Failed to set RT priority (may need CAP_SYS_NICE capability)");
+  }
+#endif
+
   while (context->running) {
     // Get current read pointers atomically (no mutex, no blocking!)
     audio_image_buffers_get_read_pointers(audioBuffers, &audio_read_R,
