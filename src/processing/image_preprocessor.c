@@ -50,6 +50,7 @@ static int module_initialized = 0;
 
 /* Private helper function prototypes */
 static uint64_t get_timestamp_us(void);
+static float calculate_contrast(float *imageData, size_t size);
 static void preprocess_stereo(const uint8_t *raw_r, const uint8_t *raw_g,
                                const uint8_t *raw_b, PreprocessedImageData *out);
 static void preprocess_dmx(const uint8_t *raw_r, const uint8_t *raw_g,
@@ -128,6 +129,96 @@ static uint64_t get_timestamp_us(void) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return (uint64_t)tv.tv_sec * 1000000ULL + (uint64_t)tv.tv_usec;
+}
+
+/**
+ * @brief Calculate contrast of an image by measuring pixel value variance
+ * Optimized for performance with sampling
+ * Returns a value between contrast_min (low contrast) and 1.0 (high contrast)
+ * 
+ * This function was moved from synth_additive_stereo.c to image_preprocessor.c
+ * for better architectural coherence (preprocessing logic belongs in preprocessor)
+ */
+static float calculate_contrast(float *imageData, size_t size) {
+    size_t sample_stride, sample_count, valid_samples, i;
+    float sum, sum_sq, mean, raw_variance, variance, val;
+    float max_possible_variance, contrast_ratio, adjusted_contrast, result;
+    
+    // Protection against invalid inputs
+    if (imageData == NULL || size == 0) {
+        log_error("PREPROCESS", "Invalid image data in calculate_contrast");
+        return 1.0f; // Default value = maximum volume
+    }
+
+    // Sampling - don't process all pixels to optimize performance  
+    sample_stride = (size_t)g_sp3ctra_config.additive_contrast_stride > 0 ? 
+                    (size_t)g_sp3ctra_config.additive_contrast_stride : 1;
+    sample_count = size / sample_stride;
+
+    if (sample_count == 0) {
+        log_error("PREPROCESS", "No valid samples in calculate_contrast");
+        return 1.0f; // Default value = maximum volume
+    }
+
+    // Calculate mean and variance in a single pass
+    sum = 0.0f;
+    sum_sq = 0.0f;
+    valid_samples = 0;
+
+    for (i = 0; i < size; i += sample_stride) {
+        val = (float)imageData[i];
+        // Protection against invalid values (robust version without isnan/isinf)
+        if (val != val || val * 0.0f != 0.0f) // equivalent to isnan(val) || isinf(val)
+            continue;
+
+        sum += val;
+        sum_sq += val * val;
+        valid_samples++;
+    }
+
+    // Protection against no valid samples
+    if (valid_samples == 0) {
+        log_error("PREPROCESS", "No valid samples in calculate_contrast");
+        return 1.0f; // Default value = maximum volume
+    }
+
+    // Statistical calculation
+    mean = sum / valid_samples;
+
+    // Calculate variance with protection against rounding errors
+    raw_variance = (sum_sq / valid_samples) - (mean * mean);
+    variance = raw_variance > 0.0f ? raw_variance : 0.0f;
+
+    // Normalization with min-max thresholds for stability
+    // VOLUME_AMP_RESOLUTION = 1.0 (normalized float range)
+    max_possible_variance = (VOLUME_AMP_RESOLUTION * VOLUME_AMP_RESOLUTION) / 4.0f;
+
+    if (max_possible_variance <= 0.0f) {
+        log_error("PREPROCESS", "Invalid maximum variance in calculate_contrast");
+        return 1.0f; // Default value = maximum volume
+    }
+
+    contrast_ratio = sqrtf(variance) / sqrtf(max_possible_variance);
+
+    // Protection against NaN and infinity (robust version without isnan/isinf)
+    if (contrast_ratio != contrast_ratio || contrast_ratio * 0.0f != 0.0f) {
+        log_error("PREPROCESS", "Invalid contrast ratio: %f / %f = %f",
+                  sqrtf(variance), sqrtf(max_possible_variance), contrast_ratio);
+        return 1.0f; // Default value = maximum volume
+    }
+
+    // Apply response curve for better perception
+    adjusted_contrast = powf(contrast_ratio, g_sp3ctra_config.additive_contrast_adjustment_power);
+
+    // Limit between min value and 1.0 (maximum)
+    result = g_sp3ctra_config.additive_contrast_min + 
+             (1.0f - g_sp3ctra_config.additive_contrast_min) * adjusted_contrast;
+    if (result > 1.0f)
+        result = 1.0f;
+    if (result < g_sp3ctra_config.additive_contrast_min)
+        result = g_sp3ctra_config.additive_contrast_min;
+
+    return result;
 }
 
 /**

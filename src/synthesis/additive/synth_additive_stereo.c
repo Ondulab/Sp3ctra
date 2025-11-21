@@ -15,96 +15,12 @@
 #include <math.h>
 #include <stdio.h>
 
-/* Private variables ---------------------------------------------------------*/
-// Variables for log frequency limitation
-static uint32_t log_counter = 0;
-
 /* Private function implementations ------------------------------------------*/
 
 /**
- * Calculate contrast of an image by measuring pixel value variance
- * Optimized for performance with sampling
- * Returns a value between 0.2 (low contrast) and 1.0 (high contrast)
+ * NOTE: calculate_contrast() has been moved to image_preprocessor.c
+ * for better architectural coherence (preprocessing logic belongs in preprocessor)
  */
-float calculate_contrast(float *imageData, size_t size) {
-  // Protection against invalid inputs
-  if (imageData == NULL || size == 0) {
-    printf("ERROR: Invalid image data in calculate_contrast\n");
-    return 1.0f; // Default value = maximum volume
-  }
-
-  // Sampling - don't process all pixels to optimize performance  
-  const size_t sample_stride = (size_t)g_sp3ctra_config.additive_contrast_stride > 0 ? (size_t)g_sp3ctra_config.additive_contrast_stride : 1;
-  const size_t sample_count = size / sample_stride;
-
-  if (sample_count == 0) {
-    printf("ERROR: No valid samples in calculate_contrast\n");
-    return 1.0f; // Default value = maximum volume
-  }
-
-  // Calculate mean and variance in a single pass
-  float sum = 0.0f;
-  float sum_sq = 0.0f;
-  size_t valid_samples = 0;
-
-  for (size_t i = 0; i < size; i += sample_stride) {
-    float val = (float)imageData[i];
-    // Protection against invalid values (robust version without isnan/isinf)
-    if (val != val || val * 0.0f != 0.0f) // equivalent to isnan(val) || isinf(val)
-      continue;
-
-    sum += val;
-    sum_sq += val * val;
-    valid_samples++;
-  }
-
-  // Protection against no valid samples
-  if (valid_samples == 0) {
-    printf("ERROR: No valid samples in calculate_contrast\n");
-    return 1.0f; // Default value = maximum volume
-  }
-
-  // Statistical calculation
-  float mean = sum / valid_samples;
-
-  // Calculate variance with protection against rounding errors
-  float raw_variance = (sum_sq / valid_samples) - (mean * mean);
-  float variance = raw_variance > 0.0f ? raw_variance : 0.0f;
-
-  // Normalization with min-max thresholds for stability
-  float max_possible_variance = ((float)VOLUME_AMP_RESOLUTION * (float)VOLUME_AMP_RESOLUTION) / 4.0f;
-
-  if (max_possible_variance <= 0.0f) {
-    printf("ERROR: Invalid maximum variance in calculate_contrast\n");
-    return 1.0f; // Default value = maximum volume
-  }
-
-  float contrast_ratio = sqrtf(variance) / sqrtf(max_possible_variance);
-
-  // Protection against NaN and infinity (robust version without isnan/isinf)
-  if (contrast_ratio != contrast_ratio || contrast_ratio * 0.0f != 0.0f) {
-    printf("ERROR: Invalid contrast ratio: %f / %f = %f\n",
-           sqrtf(variance), sqrtf(max_possible_variance), contrast_ratio);
-    return 1.0f; // Default value = maximum volume
-  }
-
-  // Apply response curve for better perception
-  float adjusted_contrast = powf(contrast_ratio, g_sp3ctra_config.additive_contrast_adjustment_power);
-
-  // Limit between min value and 1.0 (maximum)
-  float result = g_sp3ctra_config.additive_contrast_min + (1.0f - g_sp3ctra_config.additive_contrast_min) * adjusted_contrast;
-  if (result > 1.0f)
-    result = 1.0f;
-  if (result < g_sp3ctra_config.additive_contrast_min)
-    result = g_sp3ctra_config.additive_contrast_min;
-
-  // Limited logs to improve performance
-  if (log_counter % LOG_FREQUENCY == 0) {
-    // printf("Calculated contrast: mean=%.2f, variance=%.2f, result=%.2f\n", mean, variance, result);
-  }
-
-  return result;
-}
 
 /**
  * @brief Calculate color temperature from RGB values (AGGRESSIVE VERSION)
