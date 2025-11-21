@@ -2,7 +2,9 @@
  * synth_additive_stereo.h
  *
  * Stereo processing and color temperature analysis for additive synthesis
- * Contains functions for panoramization, contrast calculation, and color analysis
+ * Contains functions for color temperature analysis and stereo panning
+ *
+ * Note: calculate_contrast() has been moved to image_preprocessor.c
  *
  * Author: zhonx
  */
@@ -15,9 +17,6 @@
 #include <stddef.h>
 
 /* Exported function prototypes ----------------------------------------------*/
-
-/* Contrast and image analysis */
-float calculate_contrast(float *imageData, size_t size);
 
 /* Color temperature and stereo panning */
 float calculate_color_temperature(uint8_t r, uint8_t g, uint8_t b);

@@ -19,15 +19,20 @@
 #include "../../config/config_loader.h"
 #include "../../utils/image_debug.h"
 #include "../../utils/logger.h"
+#include "../../utils/rt_profiler.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
 #include <time.h>
 #include <stdlib.h>
+#include <sys/time.h>
 
 #ifdef __linux__
 #include <sched.h>
 #endif
+
+/* External RT Profiler */
+extern RTProfiler g_rt_profiler;
 
 // Runtime-gated capture buffers: lazy allocation only when capture is enabled
 static inline int synth_ensure_capture_buffers(synth_thread_worker_t *worker) {
@@ -435,14 +440,39 @@ void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
       // Workers will commit the last index per note after processing using the precomputed indices
 
       // ✅ NEW: Copy preprocessed volume data (already has: RGB → Grayscale → Inversion → Gamma → Averaging)
+      // RT PROFILER: Measure mutex contention
+      struct timeval mutex_start, mutex_end;
+      gettimeofday(&mutex_start, NULL);
+      rt_profiler_mutex_lock_start(&g_rt_profiler);
+      
       pthread_mutex_lock(&db->mutex);
+      
+      gettimeofday(&mutex_end, NULL);
+      // FIX: Correct time calculation to avoid overflow when microseconds wrap
+      int64_t sec_diff = (int64_t)(mutex_end.tv_sec - mutex_start.tv_sec);
+      int64_t usec_diff = (int64_t)(mutex_end.tv_usec - mutex_start.tv_usec);
+      uint64_t wait_us = (uint64_t)(sec_diff * 1000000LL + usec_diff);
+      rt_profiler_mutex_lock_end(&g_rt_profiler, wait_us);
+      
       worker->precomputed_volume[local_note_idx] = db->preprocessed_data.additive.notes[note];
       pthread_mutex_unlock(&db->mutex);
 
       if (g_sp3ctra_config.stereo_mode_enabled) {
         // 🎯 OPTIMIZATION: Use preprocessed stereo data (calculated 1x at 50Hz instead of at 96kHz!)
         // This is a MAJOR performance gain - we read data calculated once per image instead of recalculating
+        // RT PROFILER: Measure mutex contention
+        gettimeofday(&mutex_start, NULL);
+        rt_profiler_mutex_lock_start(&g_rt_profiler);
+        
         pthread_mutex_lock(&db->mutex);
+        
+        gettimeofday(&mutex_end, NULL);
+        // FIX: Correct time calculation to avoid overflow when microseconds wrap
+        sec_diff = (int64_t)(mutex_end.tv_sec - mutex_start.tv_sec);
+        usec_diff = (int64_t)(mutex_end.tv_usec - mutex_start.tv_usec);
+        wait_us = (uint64_t)(sec_diff * 1000000LL + usec_diff);
+        rt_profiler_mutex_lock_end(&g_rt_profiler, wait_us);
+        
         worker->precomputed_pan_position[local_note_idx] = db->preprocessed_data.stereo.pan_positions[note];
         worker->precomputed_left_gain[local_note_idx] = db->preprocessed_data.stereo.left_gains[note];
         worker->precomputed_right_gain[local_note_idx] = db->preprocessed_data.stereo.right_gains[note];

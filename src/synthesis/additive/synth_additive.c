@@ -307,12 +307,33 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
 
   if (synth_pool_initialized && !synth_pool_shutdown) {
     // === OPTIMIZED VERSION WITH THREAD POOL ===
+    
+    // TIMING INSTRUMENTATION: Measure each phase
+    struct timeval t_start, t_precomp_end, t_workers_start, t_workers_end;
+    static uint64_t precomp_time_sum = 0, workers_time_sum = 0;
+    static uint64_t precomp_time_max = 0, workers_time_max = 0;
+    static int timing_sample_count = 0;
+    
+    gettimeofday(&t_start, NULL);
 
     // Phase 1: Pre-compute data in single-thread (avoids contention)
     synth_precompute_wave_data(imageData, db);
+    
+    gettimeofday(&t_precomp_end, NULL);
+    uint64_t precomp_us = (t_precomp_end.tv_sec - t_start.tv_sec) * 1000000ULL + 
+                          (t_precomp_end.tv_usec - t_start.tv_usec);
 
     // Phase 2: Start workers in parallel
+    gettimeofday(&t_workers_start, NULL);
+    
+    // Per-worker timing instrumentation
+    struct timeval worker_start_times[MAX_WORKERS];
+    struct timeval worker_end_times[MAX_WORKERS];
+    static uint64_t worker_time_sums[MAX_WORKERS] = {0};
+    static uint64_t worker_time_maxs[MAX_WORKERS] = {0};
+    
     for (int i = 0; i < num_workers; i++) {
+      gettimeofday(&worker_start_times[i], NULL);
       pthread_mutex_lock(&thread_pool[i].work_mutex);
       thread_pool[i].work_ready = 1;
       thread_pool[i].work_done = 0;
@@ -336,6 +357,68 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
         pthread_cond_timedwait(&thread_pool[i].work_cond, &thread_pool[i].work_mutex, &timeout);
       }
       pthread_mutex_unlock(&thread_pool[i].work_mutex);
+      gettimeofday(&worker_end_times[i], NULL);
+      
+      // Calculate worker time
+      int64_t sec_diff = (int64_t)(worker_end_times[i].tv_sec - worker_start_times[i].tv_sec);
+      int64_t usec_diff = (int64_t)(worker_end_times[i].tv_usec - worker_start_times[i].tv_usec);
+      uint64_t worker_us = (uint64_t)(sec_diff * 1000000LL + usec_diff);
+      
+      worker_time_sums[i] += worker_us;
+      if (worker_us > worker_time_maxs[i]) worker_time_maxs[i] = worker_us;
+    }
+    
+    gettimeofday(&t_workers_end, NULL);
+    uint64_t workers_us = (t_workers_end.tv_sec - t_workers_start.tv_sec) * 1000000ULL + 
+                          (t_workers_end.tv_usec - t_workers_start.tv_usec);
+    
+    // Accumulate statistics
+    precomp_time_sum += precomp_us;
+    workers_time_sum += workers_us;
+    if (precomp_us > precomp_time_max) precomp_time_max = precomp_us;
+    if (workers_us > workers_time_max) workers_time_max = workers_us;
+    timing_sample_count++;
+    
+    // Log every 1000 samples (~10 seconds @ 96kHz)
+    if (timing_sample_count >= 1000) {
+      uint64_t precomp_avg = precomp_time_sum / timing_sample_count;
+      uint64_t workers_avg = workers_time_sum / timing_sample_count;
+      uint64_t total_avg = precomp_avg + workers_avg;
+      uint64_t total_max = precomp_time_max + workers_time_max;
+      
+      // Time budget @ 96kHz with 1024 frames = 10666µs
+      uint64_t time_budget_us = ((uint64_t)g_sp3ctra_config.audio_buffer_size * 1000000ULL) / 
+                                g_sp3ctra_config.sampling_frequency;
+      
+      log_info("SYNTH_TIMING", "Precomp: avg=%llu µs, max=%llu µs | Workers: avg=%llu µs, max=%llu µs | Total: avg=%llu µs, max=%llu µs (budget=%llu µs)",
+               precomp_avg, precomp_time_max, workers_avg, workers_time_max, 
+               total_avg, total_max, time_budget_us);
+      
+      // Log per-worker statistics to identify slow workers
+      log_info("SYNTH_TIMING", "Per-worker timing:");
+      for (int i = 0; i < num_workers; i++) {
+        uint64_t w_avg = worker_time_sums[i] / timing_sample_count;
+        log_info("SYNTH_TIMING", "  Worker %d: avg=%llu µs, max=%llu µs (notes %d-%d)", 
+                 i, w_avg, worker_time_maxs[i],
+                 thread_pool[i].start_note, thread_pool[i].end_note - 1);
+      }
+      
+      // Detect if we're exceeding budget
+      if (total_max > time_budget_us) {
+        log_warning("SYNTH_TIMING", "⚠️  EXCEEDING TIME BUDGET! max=%llu µs > budget=%llu µs (%.1f%% over)",
+                   total_max, time_budget_us, ((float)total_max / time_budget_us - 1.0f) * 100.0f);
+      }
+      
+      // Reset statistics
+      precomp_time_sum = 0;
+      workers_time_sum = 0;
+      precomp_time_max = 0;
+      workers_time_max = 0;
+      timing_sample_count = 0;
+      for (int i = 0; i < num_workers; i++) {
+        worker_time_sums[i] = 0;
+        worker_time_maxs[i] = 0;
+      }
     }
 
     // Capture per-sample (per buffer) volumes across all notes to ensure 1 image line = 1 audio sample

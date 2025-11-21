@@ -11,6 +11,7 @@
 #include "../../utils/image_debug.h"      // For continuous volume capture
 #include "../../synthesis/additive/wave_generation.h"  // For waves[] access
 #include "../../utils/logger.h"           // For structured logging
+#include "../../utils/rt_profiler.h"      // For RT performance profiling
 #include <algorithm>         // For std::transform
 #include <cstring>
 #include <iostream>
@@ -53,6 +54,9 @@ char* g_requested_audio_device_name = NULL;
 static bool use_minimal_callback = false;
 static float minimal_test_volume = 0.1f;
 
+// RT Performance Profiler (global for instrumentation)
+RTProfiler g_rt_profiler;
+
 // Callbacks
 int AudioSystem::rtCallback(void *outputBuffer, void *inputBuffer,
                             unsigned int nFrames, double streamTime,
@@ -66,6 +70,9 @@ int AudioSystem::rtCallback(void *outputBuffer, void *inputBuffer,
 }
 
 int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
+  // RT Performance Profiler - Start measurement
+  rt_profiler_callback_start(&g_rt_profiler);
+  
   // RT CALLBACK WATCHDOG: Detect callback freeze/slowness
   static uint64_t last_callback_time_us = 0;
   static int freeze_warning_counter = 0;
@@ -439,19 +446,17 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     callback_slow_counter++;
   }
   
-  // BUFFER MISSING DETECTION: Count when buffers are not ready (underrun indicator)
-  static int buffer_missing_counter = 0;
-  static int total_callback_counter = 0;
-  total_callback_counter++;
-  
+  // BUFFER MISSING DETECTION: Report to RT profiler (no printf in RT callback)
   if (buffers_L[additive_read_buffer].ready != 1 || buffers_R[additive_read_buffer].ready != 1) {
-    buffer_missing_counter++;
-    if (buffer_missing_counter % 10 == 0) {
-      printf("[AUDIO] Additive buffer missing! (count: %d / %d callbacks = %.2f%%)\n",
-             buffer_missing_counter, total_callback_counter,
-             (float)buffer_missing_counter * 100.0f / (float)total_callback_counter);
-      fflush(stdout);
-    }
+    rt_profiler_report_buffer_miss_additive(&g_rt_profiler);
+  }
+  
+  if (polyphonic_audio_buffers[polyphonic_read_buffer].ready != 1) {
+    rt_profiler_report_buffer_miss_polyphonic(&g_rt_profiler);
+  }
+  
+  if (photowave_audio_buffers[photowave_read_buffer].ready != 1) {
+    rt_profiler_report_buffer_miss_photowave(&g_rt_profiler);
   }
   
   // DESYNC MONITORING: Report photowave desync events periodically
@@ -467,11 +472,9 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     photowave_read_without_additive = 0;
     last_sync_check_time_us = current_time_us;
   }
-  
-  if (polyphonic_audio_buffers[polyphonic_read_buffer].ready != 1) {
-    printf("[AUDIO] Polyphonic buffer missing!\n");
-    fflush(stdout);
-  }
+
+  // RT Performance Profiler - End measurement
+  rt_profiler_callback_end(&g_rt_profiler);
 
   return 0;
 }
@@ -990,6 +993,9 @@ bool AudioSystem::initialize() {
 
       log_info("AUDIO", "Stream opened successfully: %uHz, %u frames", 
               actualSampleRate, bufferSize);
+      
+      // Initialize RT profiler with actual audio parameters
+      rt_profiler_init(&g_rt_profiler, actualSampleRate, bufferSize);
     }
   } catch (std::exception &e) {
     log_error("AUDIO", "RtAudio error: %s", e.what());
