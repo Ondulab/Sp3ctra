@@ -307,10 +307,10 @@ static void read_preprocessed_fft_magnitudes(DoubleBuffer *image_db) {
   pthread_mutex_lock(&image_db->mutex);
   
   /* Check if FFT data is valid */
-  if (image_db->preprocessed_data.fft.valid) {
+  if (image_db->preprocessed_data.polyphonic.valid) {
     /* Copy pre-computed magnitudes to global array */
     memcpy(global_smoothed_magnitudes, 
-           image_db->preprocessed_data.fft.magnitudes,
+           image_db->preprocessed_data.polyphonic.magnitudes,
            sizeof(global_smoothed_magnitudes));
   } else {
     /* FFT data not valid - use silence (all zeros) */

@@ -677,8 +677,8 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   // 🎯 USE PREPROCESSED DATA: Get all preprocessed data in single mutex lock (optimized)
   float contrast_factor;
   pthread_mutex_lock(&db->mutex);
-  memcpy(g_grayScale_live, db->preprocessed_data.grayscale, nb_pixels * sizeof(float));
-  contrast_factor = db->preprocessed_data.contrast_factor;
+  memcpy(g_grayScale_live, db->preprocessed_data.additive.grayscale, nb_pixels * sizeof(float));
+  contrast_factor = db->preprocessed_data.additive.contrast_factor;
   pthread_mutex_unlock(&db->mutex);
 
   // Debug auto-freeze after N images: keep reception active but freeze synth data
@@ -711,7 +711,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   static int prev_frozen_state_synth = 0;
   if (local_is_frozen && !prev_frozen_state_synth && !local_is_fading) {
     memcpy(g_frozen_grayscale_buffer, g_grayScale_live,
-           sizeof(g_grayScale_live));
+           nb_pixels * sizeof(float));
   }
   prev_frozen_state_synth = local_is_frozen;
 
@@ -733,7 +733,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
       g_is_synth_data_frozen = 0;
       pthread_mutex_unlock(&g_synth_data_freeze_mutex);
       memcpy(processed_grayScale, g_grayScale_live,
-             sizeof(g_grayScale_live)); // Use live data
+             nb_pixels * sizeof(float)); // Use live data
     } else {
       alpha_blend =
           (float)(elapsed_time /

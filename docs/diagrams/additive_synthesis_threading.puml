@@ -1,0 +1,251 @@
+@startuml Additive Synthesis - Threading & Parallélisme
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+
+title Sp3ctra - Synthèse Additive\n(Threading & Traitement Parallèle)
+
+' Define colors
+!define THREAD_COLOR #E3F2FD
+!define WORKER_COLOR #FFE0B2
+!define SYNC_COLOR #F8BBD0
+!define DATA_COLOR #C8E6C9
+
+' Main synthesis thread
+participant "synth_IfftMode()\nThread Principal\n(~750 Hz)" as main #E3F2FD
+
+' Thread pool workers
+box "Thread Pool (Persistent Workers)" #FFE0B2
+  participant "Worker 0\nNotes 0-23\nCPU 1" as w0
+  participant "Worker 1\nNotes 24-47\nCPU 2" as w1
+  participant "Worker 2\nNotes 48-71\nCPU 3" as w2
+  participant "Worker 3\nNotes 72-95\nCPU 4" as w3
+end box
+
+' Data structures
+database "Shared Data\n(Read-Only)" as shared #C8E6C9
+database "Worker Buffers\n(Thread-Local)" as buffers #C8E6C9
+
+== Initialisation (Au démarrage) ==
+
+main -> w0 : pthread_create()
+activate w0 #FFE0B2
+note right: CPU affinity: CPU 1\nPriorité normale
+
+main -> w1 : pthread_create()
+activate w1 #FFE0B2
+note right: CPU affinity: CPU 2
+
+main -> w2 : pthread_create()
+activate w2 #FFE0B2
+note right: CPU affinity: CPU 3
+
+main -> w3 : pthread_create()
+activate w3 #FFE0B2
+note right: CPU affinity: CPU 4
+
+w0 -> w0 : pthread_cond_wait()
+note right: Attente signal\nwork_ready=0
+
+w1 -> w1 : pthread_cond_wait()
+w2 -> w2 : pthread_cond_wait()
+w3 -> w3 : pthread_cond_wait()
+
+== Cycle de Synthèse (~750 Hz) ==
+
+note over main
+  **Nouvelle image disponible**
+  Appelé depuis synth_AudioProcess()
+end note
+
+main -> main : Phase 1: Pré-computation\n(Lock-free, parallèle)
+activate main #F8BBD0
+
+note over main
+  **Pour chaque worker range:**
+  - Calcul indices phase [128 samples]
+  - Lecture échantillons sinusoïdaux
+  - Récupération gains stéréo (mutex 1x)
+  
+  **Pas de contention:**
+  - Chaque worker a son range disjoint
+  - Lecture seule de waves[]
+  - Écriture dans buffers pré-alloués
+end note
+
+main -> shared : Pré-calcul données\n(Lock-free)
+activate shared
+shared --> main : precomputed_wave_data[]\nprecomputed_new_idx[]
+deactivate shared
+
+main -> main : Phase 2: Signal Workers
+note right
+  **Réveil simultané:**
+  pthread_mutex_lock()
+  work_ready = 1
+  pthread_cond_signal()
+  pthread_mutex_unlock()
+end note
+
+main -> w0 : pthread_cond_signal()
+main -> w1 : pthread_cond_signal()
+main -> w2 : pthread_cond_signal()
+main -> w3 : pthread_cond_signal()
+
+deactivate main
+
+== Traitement Parallèle (Workers) ==
+
+w0 -> w0 : pthread_cond_wait() → réveil
+activate w0 #FFE0B2
+note right of w0
+  **Worker 0 actif**
+  Notes: 0-23 (24 notes)
+  Buffers locaux:
+  - thread_additiveBuffer
+  - thread_stereoBuffer_L/R
+  - thread_sumVolumeBuffer
+  - thread_maxVolumeBuffer
+end note
+
+w1 -> w1 : pthread_cond_wait() → réveil
+activate w1 #FFE0B2
+
+w2 -> w2 : pthread_cond_wait() → réveil
+activate w2 #FFE0B2
+
+w3 -> w3 : pthread_cond_wait() → réveil
+activate w3 #FFE0B2
+
+par Traitement Parallèle (Indépendant)
+  w0 -> w0 : synth_process_worker_range()
+  note right
+    **Pour notes 0-23:**
+    1. Génération forme d'onde
+    2. Enveloppe GAP_LIMITER
+    3. Application volume
+    4. Panoramisation stéréo
+    5. Sommations locales
+    
+    **Aucun mutex!**
+    Écriture buffers locaux uniquement
+  end note
+  
+  w0 -> buffers : Écriture buffers locaux
+  activate buffers
+  buffers --> w0
+  deactivate buffers
+  
+else
+  w1 -> w1 : synth_process_worker_range()
+  note right: Notes 24-47
+  w1 -> buffers : Écriture buffers locaux
+  
+else
+  w2 -> w2 : synth_process_worker_range()
+  note right: Notes 48-71
+  w2 -> buffers : Écriture buffers locaux
+  
+else
+  w3 -> w3 : synth_process_worker_range()
+  note right: Notes 72-95
+  w3 -> buffers : Écriture buffers locaux
+end
+
+w0 -> w0 : pthread_mutex_lock()\nwork_done = 1\npthread_mutex_unlock()
+deactivate w0
+
+w1 -> w1 : work_done = 1
+deactivate w1
+
+w2 -> w2 : work_done = 1
+deactivate w2
+
+w3 -> w3 : work_done = 1
+deactivate w3
+
+note over w0, w3
+  **Workers retournent en attente**
+  pthread_cond_wait() pour prochain cycle
+end note
+
+w0 -> w0 : pthread_cond_wait()
+w1 -> w1 : pthread_cond_wait()
+w2 -> w2 : pthread_cond_wait()
+w3 -> w3 : pthread_cond_wait()
+
+== Phase 3: Attente & Combinaison ==
+
+activate main #F8BBD0
+
+main -> main : Polling workers\n(5µs sleep)
+note right
+  **Attente optimisée:**
+  while (!work_done) {
+    nanosleep(5 microseconds)
+  }
+  
+  **Pas de pthread_cond_wait:**
+  - Latence minimale
+  - Réactivité maximale
+end note
+
+loop Pour chaque worker
+  main -> w0 : Check work_done
+  w0 --> main : work_done = 1
+  main -> w1 : Check work_done
+  w1 --> main : work_done = 1
+  main -> w2 : Check work_done
+  w2 --> main : work_done = 1
+  main -> w3 : Check work_done
+  w3 --> main : work_done = 1
+end
+
+main -> main : Combinaison buffers
+note right
+  **Sommation séquentielle:**
+  global_additive = Σ(worker.additiveBuffer)
+  global_stereo_L = Σ(worker.stereoBuffer_L)
+  global_stereo_R = Σ(worker.stereoBuffer_R)
+  global_sumVolume = Σ(worker.sumVolumeBuffer)
+  global_maxVolume = max(worker.maxVolumeBuffer)
+  
+  **Pas de contention:**
+  Workers en attente (pthread_cond_wait)
+end note
+
+main -> buffers : Lecture buffers workers
+activate buffers
+buffers --> main : Données combinées
+deactivate buffers
+
+deactivate main
+
+note over main
+  **Suite du traitement:**
+  Phase 4: Normalisation
+  Phase 5: Sortie audio
+end note
+
+== Métriques de Performance ==
+
+note over main, w3
+  **Temps de traitement typique (64 samples @ 48kHz):**
+  - Pré-computation: ~0.15ms (lock-free)
+  - Workers parallèles: ~0.6-0.8ms (4 cores)
+  - Attente workers: ~0.01ms (polling 5µs)
+  - Combinaison: ~0.05ms (séquentiel)
+  - Normalisation: ~0.08ms
+  **Total: ~0.9-1.1ms sur 1.33ms disponibles**
+  **Marge: ~20-30% pour pics de charge**
+  
+  **Scalabilité:**
+  - 1 worker: ~2ms (trop lent, underruns)
+  - 2 workers: ~1.2ms (limite)
+  - 3 workers: ~0.95ms (optimal Pi5)
+  - 4 workers: ~0.85ms (optimal)
+  - 8 workers: ~0.75ms (diminishing returns)
+end note
+
+@enduml

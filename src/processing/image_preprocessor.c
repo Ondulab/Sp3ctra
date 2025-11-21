@@ -50,8 +50,6 @@ static int module_initialized = 0;
 
 /* Private helper function prototypes */
 static uint64_t get_timestamp_us(void);
-static void preprocess_grayscale(const uint8_t *raw_r, const uint8_t *raw_g, 
-                                  const uint8_t *raw_b, float *out_grayscale);
 static void preprocess_stereo(const uint8_t *raw_r, const uint8_t *raw_g,
                                const uint8_t *raw_b, PreprocessedImageData *out);
 static void preprocess_dmx(const uint8_t *raw_r, const uint8_t *raw_g,
@@ -97,21 +95,26 @@ int image_preprocess_frame(
     /* Get timestamp */
     out->timestamp_us = get_timestamp_us();
     
-    /* 1. Convert RGB to grayscale (always needed) */
-    preprocess_grayscale(raw_r, raw_g, raw_b, out->grayscale);
+    /* 1. Preprocess for additive synthesis (with gamma) */
+    preprocess_additive(raw_r, raw_g, raw_b, out);
     
-    /* 2. Calculate contrast factor (always needed) */
-    out->contrast_factor = calculate_contrast(out->grayscale, get_cis_pixels_nb());
+    /* 2. Preprocess for polyphonic synthesis (without gamma) */
+#ifndef DISABLE_POLYPHONIC
+    preprocess_polyphonic(raw_r, raw_g, raw_b, out);
+#endif
     
-    /* 3. Calculate stereo panning data (only if stereo enabled) */
+    /* 3. Preprocess for photowave synthesis (native RGB) */
+    preprocess_photowave(raw_r, raw_g, raw_b, out);
+    
+    /* 4. Calculate stereo panning data (only if stereo enabled) */
     if (g_sp3ctra_config.stereo_mode_enabled) {
         preprocess_stereo(raw_r, raw_g, raw_b, out);
     }
     
-    /* 4. Calculate DMX zone averages (only if DMX enabled) */
-    #ifdef USE_DMX
+    /* 5. Calculate DMX zone averages (only if DMX enabled) */
+#ifdef USE_DMX
     preprocess_dmx(raw_r, raw_g, raw_b, out);
-    #endif
+#endif
     
     return 0;
 }
@@ -128,23 +131,114 @@ static uint64_t get_timestamp_us(void) {
 }
 
 /**
- * @brief Convert RGB to grayscale with normalization
- * This is the greyScale() function moved here from synthesis
+ * @brief Additive synthesis preprocessing
+ * Pipeline: RGB → Grayscale → Inversion (optional) → Gamma → Averaging → Contrast
  */
-static void preprocess_grayscale(const uint8_t *raw_r, const uint8_t *raw_g, 
-                                  const uint8_t *raw_b, float *out_grayscale) {
-    int nb_pixels;
+void preprocess_additive(
+    const uint8_t *raw_r,
+    const uint8_t *raw_g,
+    const uint8_t *raw_b,
+    PreprocessedImageData *out
+) {
+    int nb_pixels = get_cis_pixels_nb();
+    int num_notes = nb_pixels / g_sp3ctra_config.pixels_per_note;
+    int pixels_per_note = g_sp3ctra_config.pixels_per_note;
+    int i, note, pix;
+    
+    /* STEP 1: RGB → Grayscale [0.0, 1.0] */
+    for (i = 0; i < nb_pixels; i++) {
+        float gray = (0.299f * raw_r[i] + 0.587f * raw_g[i] + 0.114f * raw_b[i]);
+        out->additive.grayscale[i] = gray / 255.0f;
+    }
+    
+    /* STEP 2: Inversion (optional, BEFORE gamma) */
+    if (g_sp3ctra_config.invert_intensity) {
+        for (i = 0; i < nb_pixels; i++) {
+            out->additive.grayscale[i] = 1.0f - out->additive.grayscale[i];
+        }
+    }
+    
+    /* STEP 3: Gamma correction (non-linear mapping) - ADDITIVE SPECIFIC */
+    if (g_sp3ctra_config.additive_enable_non_linear_mapping) {
+        float gamma = g_sp3ctra_config.additive_gamma_value;
+        for (i = 0; i < nb_pixels; i++) {
+            out->additive.grayscale[i] = powf(out->additive.grayscale[i], gamma);
+        }
+    }
+    
+    /* STEP 4: Averaging per note */
+    if (num_notes > PREPROCESS_MAX_NOTES) {
+        num_notes = PREPROCESS_MAX_NOTES;
+    }
+    
+    for (note = 0; note < num_notes; note++) {
+        float sum = 0.0f;
+        for (pix = 0; pix < pixels_per_note; pix++) {
+            int pixel_idx = note * pixels_per_note + pix;
+            if (pixel_idx < nb_pixels) {
+                sum += out->additive.grayscale[pixel_idx];
+            }
+        }
+        out->additive.notes[note] = sum / (float)pixels_per_note;
+    }
+    
+    /* Bug correction: note 0 = 0 */
+    out->additive.notes[0] = 0.0f;
+    
+    /* STEP 5: Calculate contrast factor (on final note data) */
+    out->additive.contrast_factor = calculate_contrast(out->additive.notes, num_notes);
+}
+
+/**
+ * @brief Polyphonic synthesis preprocessing
+ * Pipeline: RGB → Grayscale → Inversion (optional) → FFT (no gamma for linear response)
+ */
+void preprocess_polyphonic(
+    const uint8_t *raw_r,
+    const uint8_t *raw_g,
+    const uint8_t *raw_b,
+    PreprocessedImageData *out
+) {
+    int nb_pixels = get_cis_pixels_nb();
     int i;
     
-    nb_pixels = get_cis_pixels_nb();
-    
+    /* STEP 1: RGB → Grayscale [0.0, 1.0] */
     for (i = 0; i < nb_pixels; i++) {
-        /* Standard grayscale conversion: 0.299*R + 0.587*G + 0.114*B */
         float gray = (0.299f * raw_r[i] + 0.587f * raw_g[i] + 0.114f * raw_b[i]);
-        
-        /* Normalize to [0.0, 1.0] range */
-        out_grayscale[i] = gray / 255.0f;
+        out->polyphonic.grayscale[i] = gray / 255.0f;
     }
+    
+    /* STEP 2: Inversion (optional) */
+    if (g_sp3ctra_config.invert_intensity) {
+        for (i = 0; i < nb_pixels; i++) {
+            out->polyphonic.grayscale[i] = 1.0f - out->polyphonic.grayscale[i];
+        }
+    }
+    
+    /* NO GAMMA - FFT requires linear response */
+    
+    /* STEP 3: FFT with temporal smoothing */
+    image_preprocess_fft(out);
+}
+
+/**
+ * @brief Photowave synthesis preprocessing
+ * Pipeline: Direct RGB copy (native sampling, no conversion)
+ */
+void preprocess_photowave(
+    const uint8_t *raw_r,
+    const uint8_t *raw_g,
+    const uint8_t *raw_b,
+    PreprocessedImageData *out
+) {
+    int nb_pixels = get_cis_pixels_nb();
+    
+    /* Direct RGB copy for native waveform sampling */
+    memcpy(out->photowave.r, raw_r, nb_pixels);
+    memcpy(out->photowave.g, raw_g, nb_pixels);
+    memcpy(out->photowave.b, raw_b, nb_pixels);
+    
+    /* Photowave handles its own inversion/processing via its parameters */
 }
 
 /**
@@ -326,7 +420,7 @@ int image_preprocess_fft(PreprocessedImageData *data) {
     
     /* Convert grayscale [0.0-1.0] to FFT input [0-255] */
     for (i = 0; i < nb_pixels; i++) {
-        fft_history_state.fft_input[i] = data->grayscale[i] * 255.0f;
+        fft_history_state.fft_input[i] = data->polyphonic.grayscale[i] * 255.0f;
     }
     
     /* Compute FFT */
@@ -368,13 +462,13 @@ int image_preprocess_fft(PreprocessedImageData *data) {
         
         /* Apply exponential smoothing on top of moving average */
         /* This provides additional temporal stability */
-        data->fft.magnitudes[i] = 
+        data->polyphonic.magnitudes[i] = 
             AMPLITUDE_SMOOTHING_ALPHA * averaged +
-            (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * data->fft.magnitudes[i];
+            (1.0f - AMPLITUDE_SMOOTHING_ALPHA) * data->polyphonic.magnitudes[i];
     }
     
     /* Mark FFT data as valid */
-    data->fft.valid = 1;
+    data->polyphonic.valid = 1;
     
     return 0;
 }

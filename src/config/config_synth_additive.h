@@ -18,18 +18,6 @@
 #define STEREO_CENTER_BOOST_FACTOR           1.02f   // Center boost factor to maintain perceived loudness
 
 /**************************************************************************************
- * Image Processing Configuration
- **************************************************************************************/
-// Image Processing and Contrast Modulation
-#define CONTRAST_MIN                 0.21f     // Minimum volume for blurred images (0.0 to 1.0)
-#define CONTRAST_STRIDE              1.0f      // Pixel sampling stride for optimization
-#define CONTRAST_ADJUSTMENT_POWER    0.5f      // Exponent for adjusting the contrast curve
-
-// Non-Linear Intensity Mapping
-#define ENABLE_NON_LINEAR_MAPPING    1         // Set to 1 to enable non-linear mapping, or 0 to disable
-#define GAMMA_VALUE                  4.8f      // Gamma value for non-linear intensity correction
-
-/**************************************************************************************
  * Summation Normalization and Volume Weighting
  **************************************************************************************/
 // Intelligent volume weighting to prioritize strong oscillators over weak background noise
