@@ -99,6 +99,16 @@ int num_workers = 0;  // Actual number of workers from config
 volatile int synth_pool_initialized = 0;
 volatile int synth_pool_shutdown = 0;
 
+// Barrier synchronization for deterministic execution
+#ifdef __linux__
+pthread_barrier_t g_worker_start_barrier;
+pthread_barrier_t g_worker_end_barrier;
+#else
+barrier_t g_worker_start_barrier;
+barrier_t g_worker_end_barrier;
+#endif
+volatile int g_use_barriers = 1;  // Enable barriers by default for deterministic execution
+
 /* RT-safe double buffering system */
 rt_safe_buffer_t g_rt_additive_buffer = {0};
 rt_safe_buffer_t g_rt_stereo_L_buffer = {0};  
@@ -134,6 +144,15 @@ int synth_init_thread_pool(void) {
     return -1;
   }
 
+  // Initialize barrier synchronization (Phase 2: Deterministic execution)
+  if (g_use_barriers) {
+    // num_workers + 1 for main thread
+    if (synth_init_barriers(num_workers + 1) != 0) {
+      log_warning("SYNTH", "Failed to initialize barriers, falling back to condition variables");
+      g_use_barriers = 0;
+    }
+  }
+
   int current_notes = get_current_number_of_notes();
   int notes_per_thread = current_notes / num_workers;
 
@@ -145,8 +164,6 @@ int synth_init_thread_pool(void) {
     worker->start_note = i * notes_per_thread;
     // Last worker handles all remaining notes (handles rounding)
     worker->end_note = (i == num_workers - 1) ? current_notes : (i + 1) * notes_per_thread;
-    worker->work_ready = 0;
-    worker->work_done = 0;
 
     // CRITICAL FIX: Initialize all buffers to zero to prevent garbage values
     {
@@ -233,24 +250,18 @@ void *synth_persistent_worker_thread(void *arg) {
   synth_thread_worker_t *worker = (synth_thread_worker_t *)arg;
 
   while (!synth_pool_shutdown) {
-    // Wait for work
-    pthread_mutex_lock(&worker->work_mutex);
-    while (!worker->work_ready && !synth_pool_shutdown) {
-      pthread_cond_wait(&worker->work_cond, &worker->work_mutex);
-    }
-    pthread_mutex_unlock(&worker->work_mutex);
-
+    // Deterministic execution with barriers
+    // Wait at start barrier for all workers + main thread
+    synth_barrier_wait(&g_worker_start_barrier);
+    
     if (synth_pool_shutdown)
       break;
-
+    
     // Perform the work (Float32 path)
     synth_process_worker_range(worker);
-
-    // Signal that work is done
-    pthread_mutex_lock(&worker->work_mutex);
-    worker->work_done = 1;
-    worker->work_ready = 0;
-    pthread_mutex_unlock(&worker->work_mutex);
+    
+    // Wait at end barrier for all workers to complete
+    synth_barrier_wait(&g_worker_end_barrier);
   }
 
   return NULL;
@@ -487,7 +498,7 @@ void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
 }
 
 /**
- * @brief  Start worker threads with CPU affinity
+ * @brief  Start worker threads with CPU affinity and RT priorities
  * @retval 0 on success, -1 on error
  */
 int synth_start_worker_threads(void) {
@@ -497,6 +508,13 @@ int synth_start_worker_threads(void) {
       log_error("SYNTH", "Error creating worker thread %d", i);
       return -1;
     }
+
+    // ✅ PHASE 1: Set RT priority for deterministic execution
+#ifdef __linux__
+    if (synth_set_rt_priority(worker_threads[i], 80) != 0) {
+      log_warning("SYNTH", "Failed to set RT priority for worker %d (continuing without RT)", i);
+    }
+#endif
 
     // ✅ OPTIMIZATION: CPU affinity to balance load on Pi5
 #ifdef __linux__
@@ -582,6 +600,12 @@ void synth_shutdown_thread_pool(void) {
     // Cleanup lock-free pan gains system
     lock_free_pan_cleanup();
     log_info("SYNTH", "Lock-free pan system cleaned up");
+  }
+
+  // Cleanup barrier synchronization
+  if (g_use_barriers) {
+    synth_cleanup_barriers();
+    log_info("SYNTH", "Barrier synchronization cleaned up");
   }
 
   synth_pool_initialized = 0;

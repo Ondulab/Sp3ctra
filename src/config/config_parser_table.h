@@ -90,8 +90,6 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  volume_weighting_exponent, 0.01f, 10.0f),
     CONFIG_PARAM("summation_normalization", "summation_response_exponent", PARAM_TYPE_FLOAT, 
                  summation_response_exponent, 0.1f, 3.0f),
-    CONFIG_PARAM("summation_normalization", "noise_gate_threshold", PARAM_TYPE_FLOAT, 
-                 noise_gate_threshold, 0.0f, 1.0f),
     CONFIG_PARAM("summation_normalization", "soft_limit_threshold", PARAM_TYPE_FLOAT, 
                  soft_limit_threshold, 0.0f, 1.0f),
     CONFIG_PARAM("summation_normalization", "soft_limit_knee", PARAM_TYPE_FLOAT, 

@@ -73,8 +73,7 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     .volume_weighting_exponent = 0.1f,
     .summation_response_exponent = 2.0f,
     
-    // Noise gate and soft limiter parameters
-    .noise_gate_threshold = NOISE_GATE_THRESHOLD_DEFAULT,
+    // Soft limiter parameters
     .soft_limit_threshold = SOFT_LIMIT_THRESHOLD_DEFAULT,
     .soft_limit_knee = SOFT_LIMIT_KNEE_DEFAULT,
 

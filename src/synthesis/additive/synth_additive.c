@@ -332,31 +332,20 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     static uint64_t worker_time_sums[MAX_WORKERS] = {0};
     static uint64_t worker_time_maxs[MAX_WORKERS] = {0};
     
+    // Record start times for all workers (before dispatch)
     for (int i = 0; i < num_workers; i++) {
       gettimeofday(&worker_start_times[i], NULL);
-      pthread_mutex_lock(&thread_pool[i].work_mutex);
-      thread_pool[i].work_ready = 1;
-      thread_pool[i].work_done = 0;
-      pthread_cond_signal(&thread_pool[i].work_cond);
-      pthread_mutex_unlock(&thread_pool[i].work_mutex);
     }
-
-    // Phase 3: Wait for all workers to finish (ultra-optimized latency)
+    
+    // Deterministic execution with barriers
+    // Signal all workers to start via barrier
+    synth_barrier_wait(&g_worker_start_barrier);
+    
+    // Wait for all workers to complete via barrier
+    synth_barrier_wait(&g_worker_end_barrier);
+    
+    // Record end times and calculate worker times (after all workers complete)
     for (int i = 0; i < num_workers; i++) {
-      pthread_mutex_lock(&thread_pool[i].work_mutex);
-      while (!thread_pool[i].work_done) {
-        // OPTIMIZATION: Use pthread_cond_timedwait instead of sleep+loop
-        // This is more efficient and responsive under system load
-        struct timespec timeout;
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_nsec += 1000000; // 1ms timeout
-        if (timeout.tv_nsec >= 1000000000) {
-          timeout.tv_sec += 1;
-          timeout.tv_nsec -= 1000000000;
-        }
-        pthread_cond_timedwait(&thread_pool[i].work_cond, &thread_pool[i].work_mutex, &timeout);
-      }
-      pthread_mutex_unlock(&thread_pool[i].work_mutex);
       gettimeofday(&worker_end_times[i], NULL);
       
       // Calculate worker time
@@ -523,18 +512,8 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
       startup_callback_count++;
     }
     
-    // NOISE GATE: Suppress weak signals (dust, background noise) BEFORE compression
-    const float noise_gate_threshold_absolute = g_sp3ctra_config.noise_gate_threshold * (float)VOLUME_AMP_RESOLUTION;
-    
     for (buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
-        // Apply noise gate to suppress weak signals
-        if (sumVolumeBuffer[buff_idx] < noise_gate_threshold_absolute) {
-          sumVolumeBuffer[buff_idx] = 0.0f;  // Complete suppression below threshold
-          tmp_audioData[buff_idx] = 0.0f;
-          continue;
-        }
-        
-        // Compression ONLY applied to signals above gate threshold
+        // Compression applied to all signals
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           // Apply exponential response curve to reduce compression effects
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
