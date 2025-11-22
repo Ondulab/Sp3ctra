@@ -31,26 +31,16 @@
 #define SOFT_LIMIT_KNEE_DEFAULT       0.1f    // Default: knee width for smooth transition
 
 /**************************************************************************************
- * Gap Limiter Configuration
- **************************************************************************************/
-#define GAP_LIMITER
-
-// Instant Attack Mode: When enabled, attack phase is instantaneous (no ramp-up)
-// This provides maximum performance by eliminating attack envelope calculations
-// Release (decay) is still progressive to avoid audio clicks
-// Set to 1 for instant attack, 0 for progressive attack (tau_up_base_ms)
-#define INSTANT_ATTACK 0
-
-/**************************************************************************************
  * Adaptive Slew/Decay Configuration
+ * Gap Limiter is always enabled with progressive attack/release envelope
  **************************************************************************************/
 // Frequency-dependent release weighting (stabilizes highs vs lows)
 #define DECAY_FREQ_MIN 0.001f
 #define DECAY_FREQ_MAX 1000.0f
 
 // Numerical safety and bounds (to avoid underflow/denormals and instability)
-#define TAU_UP_MAX_MS 2000.0f     // Cap extremely long attacks
-#define TAU_DOWN_MAX_MS 2000.0f   // Cap extremely long releases
+#define TAU_UP_MAX_MS 10000.0f     // Cap extremely long attacks
+#define TAU_DOWN_MAX_MS 10000.0f   // Cap extremely long releases
 #define ALPHA_MIN 1e-5f           // Minimum effective alpha to ensure progress and avoid denormals
 
 /**************************************************************************************

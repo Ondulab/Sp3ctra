@@ -23,12 +23,11 @@
 /* Function implementations --------------------------------------------------*/
 
 /**
- * @brief Precompute GAP_LIMITER envelope coefficients for all oscillators
+ * @brief Precompute gap limiter envelope coefficients for all oscillators
  * Called at startup and when tau parameters change at runtime
  * @retval None
  */
 void update_gap_limiter_coefficients(void) {
-#ifdef GAP_LIMITER
     // Safety check: waves array must be initialized before we can update coefficients
     if (waves == NULL) {
         log_warning("ADDITIVE", "update_gap_limiter_coefficients: waves is NULL, skipping");
@@ -39,8 +38,7 @@ void update_gap_limiter_coefficients(void) {
     
     const float Fs = (float)g_sp3ctra_config.sampling_frequency;
     
-#if !INSTANT_ATTACK
-    // Get runtime tau parameter for attack (only if not instant attack)
+    // Get runtime tau parameter for attack (progressive attack mode)
     float tau_up_ms = g_sp3ctra_config.tau_up_base_ms;
     
     // Clamp tau to avoid division by zero or denormals
@@ -55,7 +53,6 @@ void update_gap_limiter_coefficients(void) {
     // Clamp alpha to reasonable bounds
     if (alpha_up < ALPHA_MIN) alpha_up = ALPHA_MIN;
     if (alpha_up > 1.0f) alpha_up = 1.0f;
-#endif
     
     // Get runtime tau parameter for release
     float tau_down_ms = g_sp3ctra_config.tau_down_base_ms;
@@ -86,10 +83,8 @@ void update_gap_limiter_coefficients(void) {
     int debug_notes[] = {0, num_notes / 2, num_notes - 1};
     
     for (int note = 0; note < num_notes; note++) {
-#if !INSTANT_ATTACK
-        // Store attack coefficient (frequency-independent) - only if not instant
+        // Store attack coefficient (frequency-independent)
         waves[note].alpha_up = alpha_up;
-#endif
         
         // Compute frequency-dependent release weighting
         float f = waves[note].frequency;
@@ -115,23 +110,8 @@ void update_gap_limiter_coefficients(void) {
     }
     
     log_info("ADDITIVE", "update_gap_limiter_coefficients: Completed for %d notes", num_notes);
-#endif
 }
 
-/**
- * @brief DEPRECATED - Image preprocessing now done in image_preprocessor.c
- * This function is kept for compatibility but should not be used.
- * Use preprocessed_data.additive.notes[] directly instead.
- */
-void process_image_preprocessing(float *imageData, int32_t *imageBuffer_q31, 
-                                int start_note, int end_note) {
-    (void)imageData;
-    (void)imageBuffer_q31;
-    (void)start_note;
-    (void)end_note;
-    // DEPRECATED: All preprocessing is now done in image_preprocessor.c
-    // This function should not be called anymore
-}
 
 /**
  * @brief Apply GAP_LIMITER volume ramp for a single note
@@ -144,7 +124,6 @@ void process_image_preprocessing(float *imageData, int32_t *imageBuffer_q31,
 void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave, float *volumeBuffer) {
     (void)pre_wave; // No longer used (phase weighting removed)
     
-#ifdef GAP_LIMITER
     // Set the target volume for the oscillator
     waves[note].target_volume = target_volume;
 
@@ -152,22 +131,6 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
     float v = waves[note].current_volume;
     const float t = waves[note].target_volume;
 
-#if INSTANT_ATTACK
-    // ✅ INSTANT ATTACK MODE: Maximum performance optimization
-    // Attack is instantaneous, only release is progressive
-    if (t > v) {
-        // Attack phase: instant transition to target volume
-        fill_float(t, volumeBuffer, g_sp3ctra_config.audio_buffer_size);
-        waves[note].current_volume = t;
-    } else {
-        // Release phase: progressive decay to avoid clicks
-        const float alpha_down = waves[note].alpha_down_weighted;
-        float final_volume = apply_envelope_ramp(volumeBuffer, v, t, alpha_down,
-                                                g_sp3ctra_config.audio_buffer_size,
-                                                0.0f, (float)VOLUME_AMP_RESOLUTION);
-        waves[note].current_volume = final_volume;
-    }
-#else
     // PROGRESSIVE ATTACK MODE: Traditional envelope with attack and release
     // Use precomputed envelope coefficients (no complex calculations in RT path!)
     const float alpha = (t > v) ? waves[note].alpha_up : waves[note].alpha_down_weighted;
@@ -179,29 +142,8 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
     
     // Write back current volume once per buffer
     waves[note].current_volume = final_volume;
-#endif
-
-#else
-    // Without GAP_LIMITER, just fill with constant volume
-    fill_float(target_volume, volumeBuffer, g_sp3ctra_config.audio_buffer_size);
-
-    // Keep state consistent
-    waves[note].current_volume = target_volume;
-    waves[note].target_volume = target_volume;
-#endif
 }
 
-/**
- * @brief DEPRECATED - Gamma mapping now done in image_preprocessor.c
- * This function is kept for compatibility but should not be used.
- * Gamma is already applied in preprocessed_data.additive.grayscale[]
- */
-void apply_gamma_mapping(float *imageBuffer_f32, int count) {
-    (void)imageBuffer_f32;
-    (void)count;
-    // DEPRECATED: Gamma mapping is now done in image_preprocessor.c
-    // This function should not be called anymore
-}
 
 /**
  * @brief Apply RELATIVE_MODE processing to image buffer

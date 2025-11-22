@@ -226,6 +226,11 @@ int synth_init_thread_pool(void) {
       }
     }
 
+    // Initialize timing statistics
+    worker->worker_time_sum_us = 0;
+    worker->worker_time_max_us = 0;
+    worker->worker_timing_sample_count = 0;
+
     // Initialize synchronization
     if (pthread_mutex_init(&worker->work_mutex, NULL) != 0) {
       log_error("SYNTH", "Error initializing mutex for thread %d", i);
@@ -280,6 +285,9 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     log_info("SYNTH", "Float32 WORKER: Using Float32 path in workers");
     f32_logged = 1;
   }
+
+  // Record start time for this worker
+  gettimeofday(&worker->worker_start_time, NULL);
 
   // Release capture buffers if capture was disabled since last buffer
   synth_release_capture_buffers_if_disabled(worker);
@@ -393,6 +401,21 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
     // Commit phase continuity: set waves[note].current_idx to the last precomputed index for this buffer
     waves[note].current_idx = *(worker->precomputed_new_idx + (size_t)local_note_idx * g_sp3ctra_config.audio_buffer_size + (g_sp3ctra_config.audio_buffer_size - 1));
   }
+
+  // Record end time for this worker
+  gettimeofday(&worker->worker_end_time, NULL);
+  
+  // Calculate execution time
+  int64_t sec_diff = (int64_t)(worker->worker_end_time.tv_sec - worker->worker_start_time.tv_sec);
+  int64_t usec_diff = (int64_t)(worker->worker_end_time.tv_usec - worker->worker_start_time.tv_usec);
+  uint64_t worker_us = (uint64_t)(sec_diff * 1000000LL + usec_diff);
+  
+  // Accumulate statistics
+  worker->worker_time_sum_us += worker_us;
+  if (worker_us > worker->worker_time_max_us) {
+    worker->worker_time_max_us = worker_us;
+  }
+  worker->worker_timing_sample_count++;
 
   // NOTE: RT-safe buffer writing removed - causes audio corruption
   // Workers only write to their local buffers, main thread combines them

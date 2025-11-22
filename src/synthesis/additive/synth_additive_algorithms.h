@@ -22,16 +22,6 @@ extern "C" {
 
 /* Function prototypes -------------------------------------------------------*/
 
-/**
- * @brief Process image preprocessing (averaging and color inversion)
- * @param imageData Input image data
- * @param imageBuffer_q31 Output processed buffer
- * @param start_note Starting note index
- * @param end_note Ending note index (exclusive)
- * @retval None
- */
-void process_image_preprocessing(float *imageData, int32_t *imageBuffer_q31, 
-                                 int start_note, int end_note);
 
 /**
  * @brief Apply GAP_LIMITER volume ramp for a single note
@@ -57,13 +47,6 @@ void apply_gap_limiter_ramp(int note, float target_volume, const float *pre_wave
  */
 void update_gap_limiter_coefficients(void);
 
-/**
- * @brief Apply non-linear gamma mapping to image buffer
- * @param imageBuffer_f32 Input/output float buffer
- * @param count Number of elements to process
- * @retval None
- */
-void apply_gamma_mapping(float *imageBuffer_f32, int count);
 
 /**
  * @brief Apply RELATIVE_MODE processing to image buffer

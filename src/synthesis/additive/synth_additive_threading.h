@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <pthread.h>
+#include <sys/time.h>
 
 /* Forward declarations ------------------------------------------------------*/
 struct DoubleBuffer;
@@ -73,6 +74,13 @@ typedef struct synth_thread_worker_s {
   float *captured_current_volume; // size: (notes_per_thread * g_sp3ctra_config.audio_buffer_size)
   float *captured_target_volume; // size: (notes_per_thread * g_sp3ctra_config.audio_buffer_size)
   size_t capture_capacity_elements; // number of elements allocated across capture buffers; 0 when disabled
+
+  // Per-worker timing instrumentation (captured inside worker thread)
+  struct timeval worker_start_time;
+  struct timeval worker_end_time;
+  uint64_t worker_time_sum_us;
+  uint64_t worker_time_max_us;
+  int worker_timing_sample_count;
 
   // Synchronization (kept for shutdown signaling only)
   pthread_mutex_t work_mutex;
