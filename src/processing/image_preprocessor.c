@@ -136,6 +136,9 @@ static uint64_t get_timestamp_us(void) {
  * Optimized for performance with sampling
  * Returns a value between contrast_min (low contrast) and 1.0 (high contrast)
  * 
+ * CRITICAL: This function must be called on INDIVIDUAL PIXELS, not averaged notes
+ * White noise has high pixel-to-pixel variance but low note-to-note variance after averaging
+ * 
  * This function was moved from synth_additive_stereo.c to image_preprocessor.c
  * for better architectural coherence (preprocessing logic belongs in preprocessor)
  */
@@ -210,9 +213,13 @@ static float calculate_contrast(float *imageData, size_t size) {
     // Apply response curve for better perception
     adjusted_contrast = powf(contrast_ratio, g_sp3ctra_config.additive_contrast_adjustment_power);
 
-    // Limit between min value and 1.0 (maximum)
+    // ORIGINAL FORMULA (restored): Linear mapping from contrast_min to 1.0
+    // High adjusted_contrast (sharp image) → result near 1.0 (loud)
+    // Low adjusted_contrast (blurry image) → result near contrast_min (quiet)
     result = g_sp3ctra_config.additive_contrast_min + 
              (1.0f - g_sp3ctra_config.additive_contrast_min) * adjusted_contrast;
+    
+    // Safety clamps
     if (result > 1.0f)
         result = 1.0f;
     if (result < g_sp3ctra_config.additive_contrast_min)
@@ -223,7 +230,7 @@ static float calculate_contrast(float *imageData, size_t size) {
 
 /**
  * @brief Additive synthesis preprocessing
- * Pipeline: RGB → Grayscale → Inversion (optional) → Gamma → Averaging → Contrast
+ * Pipeline: RGB → Grayscale → Contrast → Inversion (optional) → Gamma → Averaging
  */
 void preprocess_additive(
     const uint8_t *raw_r,
@@ -242,14 +249,30 @@ void preprocess_additive(
         out->additive.grayscale[i] = gray / 255.0f;
     }
     
-    /* STEP 2: Inversion (optional, BEFORE gamma) */
+    /* STEP 2: Calculate contrast factor on RAW grayscale (BEFORE any transformations) */
+    /* CRITICAL: Contrast must be calculated on untransformed data to get objective variance
+     * Gamma and inversion are non-linear transformations that would distort the variance measurement
+     * This prevents volume jumps when inserting objects into the image */
+    out->additive.contrast_factor = calculate_contrast(out->additive.grayscale, nb_pixels);
+    
+    /* Debug logging for contrast calculation (periodic) */
+    static int contrast_log_counter = 0;
+    if (++contrast_log_counter % 1000 == 0) {
+        log_debug("PREPROCESS", "Contrast factor: %.3f (min=%.2f, power=%.2f, stride=%.0f)",
+                  out->additive.contrast_factor,
+                  g_sp3ctra_config.additive_contrast_min,
+                  g_sp3ctra_config.additive_contrast_adjustment_power,
+                  g_sp3ctra_config.additive_contrast_stride);
+    }
+    
+    /* STEP 3: Inversion (optional, AFTER contrast calculation) */
     if (g_sp3ctra_config.invert_intensity) {
         for (i = 0; i < nb_pixels; i++) {
             out->additive.grayscale[i] = 1.0f - out->additive.grayscale[i];
         }
     }
     
-    /* STEP 3: Gamma correction (non-linear mapping) - ADDITIVE SPECIFIC */
+    /* STEP 4: Gamma correction (non-linear mapping) - ADDITIVE SPECIFIC */
     if (g_sp3ctra_config.additive_enable_non_linear_mapping) {
         float gamma = g_sp3ctra_config.additive_gamma_value;
         for (i = 0; i < nb_pixels; i++) {
@@ -257,7 +280,7 @@ void preprocess_additive(
         }
     }
     
-    /* STEP 4: Averaging per note */
+    /* STEP 5: Averaging per note */
     if (num_notes > PREPROCESS_MAX_NOTES) {
         num_notes = PREPROCESS_MAX_NOTES;
     }
@@ -275,9 +298,6 @@ void preprocess_additive(
     
     /* Bug correction: note 0 = 0 */
     out->additive.notes[0] = 0.0f;
-    
-    /* STEP 5: Calculate contrast factor (on final note data) */
-    out->additive.contrast_factor = calculate_contrast(out->additive.notes, num_notes);
 }
 
 /**
