@@ -74,13 +74,35 @@ typedef struct synth_thread_worker_s {
   float *captured_target_volume; // size: (notes_per_thread * g_sp3ctra_config.audio_buffer_size)
   size_t capture_capacity_elements; // number of elements allocated across capture buffers; 0 when disabled
 
-  // Synchronization
+  // Synchronization (kept for shutdown signaling only)
   pthread_mutex_t work_mutex;
   pthread_cond_t work_cond;
-  volatile int work_ready;
-  volatile int work_done;
 
 } synth_thread_worker_t;
+
+/* Barrier synchronization for deterministic execution (cross-platform) */
+#ifdef __linux__
+extern pthread_barrier_t g_worker_start_barrier;
+extern pthread_barrier_t g_worker_end_barrier;
+#else
+// macOS doesn't have pthread_barrier, use custom implementation
+typedef struct {
+  pthread_mutex_t mutex;
+  pthread_cond_t cond;
+  int count;
+  int waiting;
+  int generation;
+} barrier_t;
+
+extern barrier_t g_worker_start_barrier;
+extern barrier_t g_worker_end_barrier;
+
+int barrier_init(barrier_t *barrier, int count);
+int barrier_wait(barrier_t *barrier);
+int barrier_destroy(barrier_t *barrier);
+#endif
+
+extern volatile int g_use_barriers;  // Enable/disable barrier mode
 
 /* Exported function prototypes ----------------------------------------------*/
 
@@ -88,6 +110,12 @@ typedef struct synth_thread_worker_s {
 int synth_init_thread_pool(void);
 int synth_start_worker_threads(void);
 void synth_shutdown_thread_pool(void);
+
+/* RT deterministic threading (Phase 1 & 2) */
+int synth_init_barriers(int num_threads);
+void synth_cleanup_barriers(void);
+int synth_set_rt_priority(pthread_t thread, int priority);
+int synth_barrier_wait(void *barrier);
 
 /* Thread processing functions */
 void *synth_persistent_worker_thread(void *arg);

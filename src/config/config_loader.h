@@ -79,8 +79,7 @@ typedef struct {
     float volume_weighting_exponent;           // Volume weighting exponent (1.0=linear, 2.0=quadratic, 3.0=cubic)
     float summation_response_exponent;         // Final response curve exponent (0.5=anti-compress, 1.0=linear, 1.5+=compress)
     
-    // Noise gate and soft limiter parameters
-    float noise_gate_threshold;                // Noise gate threshold (0.0-1.0, relative to VOLUME_AMP_RESOLUTION)
+    // Soft limiter parameters
     float soft_limit_threshold;                // Soft limiter threshold (0.0-1.0)
     float soft_limit_knee;                     // Soft limiter knee width (0.0-1.0)
     

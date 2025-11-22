@@ -25,10 +25,6 @@
 // REFACTORED: With VOLUME_AMP_RESOLUTION = 1.0, simply use the normalized value directly
 #define SUMMATION_BASE_LEVEL        (0.2f)  // Base level to avoid division issues (normalized scale)
 
-// Noise Gate Configuration (suppresses weak signals like dust on background)
-// Runtime configurable values are loaded from sp3ctra.ini via g_sp3ctra_config
-#define NOISE_GATE_THRESHOLD_DEFAULT  0.05f   // Default: 5% of VOLUME_AMP_RESOLUTION
-
 // Soft Limiter Configuration (prevents hard clipping while preserving dynamics)
 // Runtime configurable values are loaded from sp3ctra.ini via g_sp3ctra_config
 #define SOFT_LIMIT_THRESHOLD_DEFAULT  0.8f    // Default: 80% before soft compression
