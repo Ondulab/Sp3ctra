@@ -34,8 +34,6 @@ void update_gap_limiter_coefficients(void) {
         return;  // Silently return if called before initialization
     }
     
-    log_info("ADDITIVE", "update_gap_limiter_coefficients: Starting coefficient update");
-    
     const float Fs = (float)g_sp3ctra_config.sampling_frequency;
     
     // Get runtime tau parameter for attack (progressive attack mode)
@@ -57,8 +55,6 @@ void update_gap_limiter_coefficients(void) {
     // Get runtime tau parameter for release
     float tau_down_ms = g_sp3ctra_config.tau_down_base_ms;
     
-    log_info("ADDITIVE", "  tau_down_base_ms from config: %.3f ms", tau_down_ms);
-    
     // Clamp tau to avoid division by zero or denormals
     if (tau_down_ms < 0.01f) tau_down_ms = 0.01f;
     if (tau_down_ms > TAU_DOWN_MAX_MS) tau_down_ms = TAU_DOWN_MAX_MS;
@@ -72,15 +68,8 @@ void update_gap_limiter_coefficients(void) {
     if (alpha_down < ALPHA_MIN) alpha_down = ALPHA_MIN;
     if (alpha_down > 1.0f) alpha_down = 1.0f;
     
-    log_info("ADDITIVE", "  alpha_down (base): %.6f", alpha_down);
-    log_info("ADDITIVE", "  decay_freq_ref_hz: %.1f Hz", g_sp3ctra_config.decay_freq_ref_hz);
-    log_info("ADDITIVE", "  decay_freq_beta: %.3f", g_sp3ctra_config.decay_freq_beta);
-    
     // Precompute for each oscillator
     const int num_notes = get_current_number_of_notes();
-    
-    // Log first and last note for debugging
-    int debug_notes[] = {0, num_notes / 2, num_notes - 1};
     
     for (int note = 0; note < num_notes; note++) {
         // Store attack coefficient (frequency-independent)
@@ -99,17 +88,7 @@ void update_gap_limiter_coefficients(void) {
         
         // Store weighted release coefficient
         waves[note].alpha_down_weighted = alpha_down * g_down;
-        
-        // Debug log for selected notes
-        for (int i = 0; i < 3; i++) {
-            if (note == debug_notes[i]) {
-                log_info("ADDITIVE", "  Note %d: freq=%.1f Hz, ratio=%.3f, g_down=%.3f, alpha_down_weighted=%.6f",
-                         note, f, ratio, g_down, waves[note].alpha_down_weighted);
-            }
-        }
     }
-    
-    log_info("ADDITIVE", "update_gap_limiter_coefficients: Completed for %d notes", num_notes);
 }
 
 

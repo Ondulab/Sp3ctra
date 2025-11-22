@@ -83,6 +83,9 @@ typedef struct {
     float soft_limit_threshold;                // Soft limiter threshold (0.0-1.0)
     float soft_limit_knee;                     // Soft limiter knee width (0.0-1.0)
     
+    // Noise gate parameters
+    float noise_gate_threshold;                // Noise gate threshold (0.0-0.1, fraction of max volume)
+    
     // Photowave synthesis parameters
     int photowave_continuous_mode;             // Continuous mode (0=MIDI notes only, 1=always generating)
     int photowave_scan_mode;                   // Scanning mode (0=L→R, 1=R→L, 2=Dual)

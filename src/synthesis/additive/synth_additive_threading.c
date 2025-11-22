@@ -488,7 +488,9 @@ void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
       uint64_t wait_us = (uint64_t)(sec_diff * 1000000LL + usec_diff);
       rt_profiler_mutex_lock_end(&g_rt_profiler, wait_us);
       
-      worker->precomputed_volume[local_note_idx] = db->preprocessed_data.additive.notes[note];
+      float preprocessed_value = db->preprocessed_data.additive.notes[note];
+      worker->precomputed_volume[local_note_idx] = preprocessed_value;
+      
       pthread_mutex_unlock(&db->mutex);
 
       if (g_sp3ctra_config.stereo_mode_enabled) {

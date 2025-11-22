@@ -243,10 +243,17 @@ void preprocess_additive(
     int pixels_per_note = g_sp3ctra_config.pixels_per_note;
     int i, note, pix;
     
-    /* STEP 1: RGB → Grayscale [0.0, 1.0] */
+    /* STEP 1: RGB → Grayscale [0.0, 1.0] with preventive clamping */
     for (i = 0; i < nb_pixels; i++) {
         float gray = (0.299f * raw_r[i] + 0.587f * raw_g[i] + 0.114f * raw_b[i]);
-        out->additive.grayscale[i] = gray / 255.0f;
+        float normalized = gray / 255.0f;
+        
+        /* Preventive clamping to handle floating-point rounding errors */
+        /* This prevents negative zeros after inversion and reduces downstream corrections */
+        if (normalized < 0.0f) normalized = 0.0f;
+        if (normalized > 1.0f) normalized = 1.0f;
+        
+        out->additive.grayscale[i] = normalized;
     }
     
     /* STEP 2: Calculate contrast factor on RAW grayscale (BEFORE any transformations) */
@@ -275,8 +282,24 @@ void preprocess_additive(
     /* STEP 4: Gamma correction (non-linear mapping) - ADDITIVE SPECIFIC */
     if (g_sp3ctra_config.additive_enable_non_linear_mapping) {
         float gamma = g_sp3ctra_config.additive_gamma_value;
+        
         for (i = 0; i < nb_pixels; i++) {
-            out->additive.grayscale[i] = powf(out->additive.grayscale[i], gamma);
+            float val = out->additive.grayscale[i];
+            
+            /* Protection against invalid values before powf */
+            if (val < 0.0f) val = 0.0f;  /* Clamp negative values */
+            if (val > 1.0f) val = 1.0f;  /* Clamp values above 1.0 */
+            
+            /* Apply gamma with protection */
+            float result = powf(val, gamma);
+            
+            /* Verify result is valid (not NaN/Inf) */
+            if (result != result || result * 0.0f != 0.0f) {
+                /* NaN or Inf detected - use original clamped value */
+                result = val;
+            }
+            
+            out->additive.grayscale[i] = result;
         }
     }
     
@@ -287,13 +310,31 @@ void preprocess_additive(
     
     for (note = 0; note < num_notes; note++) {
         float sum = 0.0f;
+        int valid_pixels = 0;
+        
         for (pix = 0; pix < pixels_per_note; pix++) {
             int pixel_idx = note * pixels_per_note + pix;
             if (pixel_idx < nb_pixels) {
-                sum += out->additive.grayscale[pixel_idx];
+                float val = out->additive.grayscale[pixel_idx];
+                /* Protection against NaN/Inf in grayscale data */
+                if (val == val && val * 0.0f == 0.0f) {  /* equivalent to !isnan(val) && !isinf(val) */
+                    sum += val;
+                    valid_pixels++;
+                }
             }
         }
-        out->additive.notes[note] = sum / (float)pixels_per_note;
+        
+        /* Protection against division by zero and NaN propagation */
+        if (valid_pixels > 0) {
+            out->additive.notes[note] = sum / (float)valid_pixels;
+        } else {
+            out->additive.notes[note] = 0.0f;  /* Default to silence if no valid pixels */
+        }
+        
+        /* Final NaN check - replace any NaN with 0 */
+        if (out->additive.notes[note] != out->additive.notes[note]) {
+            out->additive.notes[note] = 0.0f;
+        }
     }
     
     /* Bug correction: note 0 = 0 */
