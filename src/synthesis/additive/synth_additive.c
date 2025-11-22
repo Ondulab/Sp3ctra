@@ -80,7 +80,6 @@ static _Atomic float g_last_contrast_factor = 0.0f;
 
 /* Global context variables (moved from shared.c) */
 struct shared_var shared_var;
-volatile int32_t audioBuff[1]; // legacy placeholder, unused
 
 // Persistent dynamically-sized buffers (allocated on first use; freed in synth_additive_cleanup)
 static float *additiveBuffer   = NULL;
@@ -326,36 +325,12 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     // Phase 2: Start workers in parallel
     gettimeofday(&t_workers_start, NULL);
     
-    // Per-worker timing instrumentation
-    struct timeval worker_start_times[MAX_WORKERS];
-    struct timeval worker_end_times[MAX_WORKERS];
-    static uint64_t worker_time_sums[MAX_WORKERS] = {0};
-    static uint64_t worker_time_maxs[MAX_WORKERS] = {0};
-    
-    // Record start times for all workers (before dispatch)
-    for (int i = 0; i < num_workers; i++) {
-      gettimeofday(&worker_start_times[i], NULL);
-    }
-    
     // Deterministic execution with barriers
     // Signal all workers to start via barrier
     synth_barrier_wait(&g_worker_start_barrier);
     
     // Wait for all workers to complete via barrier
     synth_barrier_wait(&g_worker_end_barrier);
-    
-    // Record end times and calculate worker times (after all workers complete)
-    for (int i = 0; i < num_workers; i++) {
-      gettimeofday(&worker_end_times[i], NULL);
-      
-      // Calculate worker time
-      int64_t sec_diff = (int64_t)(worker_end_times[i].tv_sec - worker_start_times[i].tv_sec);
-      int64_t usec_diff = (int64_t)(worker_end_times[i].tv_usec - worker_start_times[i].tv_usec);
-      uint64_t worker_us = (uint64_t)(sec_diff * 1000000LL + usec_diff);
-      
-      worker_time_sums[i] += worker_us;
-      if (worker_us > worker_time_maxs[i]) worker_time_maxs[i] = worker_us;
-    }
     
     gettimeofday(&t_workers_end, NULL);
     uint64_t workers_us = (t_workers_end.tv_sec - t_workers_start.tv_sec) * 1000000ULL + 
@@ -383,13 +358,15 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
                precomp_avg, precomp_time_max, workers_avg, workers_time_max, 
                total_avg, total_max, time_budget_us);
       
-      // Log per-worker statistics to identify slow workers
+      // Log per-worker statistics (using data captured inside each worker thread)
       log_info("SYNTH_TIMING", "Per-worker timing:");
       for (int i = 0; i < num_workers; i++) {
-        uint64_t w_avg = worker_time_sums[i] / timing_sample_count;
-        log_info("SYNTH_TIMING", "  Worker %d: avg=%llu µs, max=%llu µs (notes %d-%d)", 
-                 i, w_avg, worker_time_maxs[i],
-                 thread_pool[i].start_note, thread_pool[i].end_note - 1);
+        if (thread_pool[i].worker_timing_sample_count > 0) {
+          uint64_t w_avg = thread_pool[i].worker_time_sum_us / thread_pool[i].worker_timing_sample_count;
+          log_info("SYNTH_TIMING", "  Worker %d: avg=%llu µs, max=%llu µs (notes %d-%d)", 
+                   i, w_avg, thread_pool[i].worker_time_max_us,
+                   thread_pool[i].start_note, thread_pool[i].end_note - 1);
+        }
       }
       
       // Detect if we're exceeding budget
@@ -404,9 +381,11 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
       precomp_time_max = 0;
       workers_time_max = 0;
       timing_sample_count = 0;
+      // Reset per-worker statistics
       for (int i = 0; i < num_workers; i++) {
-        worker_time_sums[i] = 0;
-        worker_time_maxs[i] = 0;
+        thread_pool[i].worker_time_sum_us = 0;
+        thread_pool[i].worker_time_max_us = 0;
+        thread_pool[i].worker_timing_sample_count = 0;
       }
     }
 
@@ -489,12 +468,6 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     return;
   }
 
-  // === FINAL PHASE (common to both modes) ===
-  // CRITICAL FIX: Remove problematic mult_float that creates explosion with normalized waveforms
-  // mult_float(additiveBuffer, maxVolumeBuffer, additiveBuffer, AUDIO_BUFFER_SIZE);
-  // CRITICAL FIX: Remove the problematic scaling that was creating massive compression
-  // scale_float(sumVolumeBuffer, (float)VOLUME_AMP_RESOLUTION / 2.0f, AUDIO_BUFFER_SIZE);
-
     // Final processing phase
 
     // Intelligent normalization with exponential response curve (REACTIVATED)
@@ -517,10 +490,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           // Apply exponential response curve to reduce compression effects
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
-          
-          // Pre-normalization removed - was compressing dynamics too much
-          
-          float base_level = (float)SUMMATION_BASE_LEVEL / (float)VOLUME_AMP_RESOLUTION; // Use configured base level (normalized)
+          float base_level = (float)SUMMATION_BASE_LEVEL / (float)VOLUME_AMP_RESOLUTION;
           // CORRECTED: Proper exponent logic for compression reduction with normalized waveforms
           float expo = 1.0f / g_sp3ctra_config.summation_response_exponent;
           float x = sum_normalized + base_level;
@@ -576,10 +546,6 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     scale_float(stereoBuffer_L, safety_scale_stereo, g_sp3ctra_config.audio_buffer_size);
     scale_float(stereoBuffer_R, safety_scale_stereo, g_sp3ctra_config.audio_buffer_size);
     
-    // CRITICAL FIX: Remove problematic mult_float that creates explosion in stereo mode
-    // mult_float(stereoBuffer_L, maxVolumeBuffer, stereoBuffer_L, AUDIO_BUFFER_SIZE);
-    // mult_float(stereoBuffer_R, maxVolumeBuffer, stereoBuffer_R, AUDIO_BUFFER_SIZE);
-    
     // Apply final processing and contrast
     // Pre-limit clipping telemetry (once per second, low overhead)
     float peakPreL = 0.0f, peakPreR = 0.0f;
@@ -592,10 +558,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           // Apply exponential response curve to reduce compression effects (stereo mode)
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
-          
-          // Pre-normalization removed - was compressing dynamics too much  
-          
-          float base_level = (float)SUMMATION_BASE_LEVEL / (float)VOLUME_AMP_RESOLUTION; // Use configured base level (normalized)
+          float base_level = (float)SUMMATION_BASE_LEVEL / (float)VOLUME_AMP_RESOLUTION;
           // CORRECTED: Proper exponent logic for compression reduction with normalized waveforms
           float expo = 1.0f / g_sp3ctra_config.summation_response_exponent;
           float x = sum_normalized + base_level;

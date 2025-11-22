@@ -19,7 +19,6 @@ static inline float clampf(float x, float lo, float hi) {
   return (x < lo) ? lo : (x > hi) ? hi : x;
 }
 
-static inline int approx_eq(float a, float b, float eps) __attribute__((unused));
 static inline int approx_eq(float a, float b, float eps) {
   float d = a - b;
   return (d < 0.0f ? -d : d) <= eps;
@@ -42,13 +41,11 @@ static _Thread_local unit_cache_t g_unit_cache;
 static unit_cache_t g_unit_cache;
 #endif
 
-static void build_unit_lut(float expo) __attribute__((unused));
 static void build_unit_lut(float expo) {
   const int N = POW_LUT_SIZE;
   const float invN = 1.0f / (float)(N - 1);
   for (int i = 0; i < N; ++i) {
-    float t = (float)i * invN;     /* t in [0,1] */
-    /* Build-time may use powf; happens rarely on parameter change, not per-sample */
+    float t = (float)i * invN;
     g_unit_cache.lut[i] = powf(t, expo);
   }
   g_unit_cache.last_expo = expo;
@@ -196,14 +193,12 @@ static _Thread_local shifted_cache_t g_shifted_cache;
 static shifted_cache_t g_shifted_cache;
 #endif
 
-static void build_shifted_lut(float base, float expo) __attribute__((unused));
 static void build_shifted_lut(float base, float expo) {
   const int N = POW_LUT_SIZE;
   const float invN = 1.0f / (float)(N - 1);
-  /* Domain is [base, base+POW_SHIFTED_DOMAIN_SIZE] */
   for (int i = 0; i < N; ++i) {
-    float t01 = (float)i * invN;        /* [0,1] */
-    float x = base + t01 * POW_SHIFTED_DOMAIN_SIZE;  /* [base, base+POW_SHIFTED_DOMAIN_SIZE] */
+    float t01 = (float)i * invN;
+    float x = base + t01 * POW_SHIFTED_DOMAIN_SIZE;
     g_shifted_cache.lut[i] = powf(x, expo);
   }
   g_shifted_cache.last_base = base;
