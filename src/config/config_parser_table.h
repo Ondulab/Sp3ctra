@@ -94,6 +94,8 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  soft_limit_threshold, 0.0f, 1.0f),
     CONFIG_PARAM("summation_normalization", "soft_limit_knee", PARAM_TYPE_FLOAT, 
                  soft_limit_knee, 0.0f, 1.0f),
+    CONFIG_PARAM("summation_normalization", "noise_gate_threshold", PARAM_TYPE_FLOAT,
+                 noise_gate_threshold, 0.0f, 0.1f),
     
     // Image processing - ADDITIVE SYNTHESIS
     CONFIG_PARAM("image_processing_additive", "invert_intensity", PARAM_TYPE_BOOL, 

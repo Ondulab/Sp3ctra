@@ -76,6 +76,9 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     // Soft limiter parameters
     .soft_limit_threshold = SOFT_LIMIT_THRESHOLD_DEFAULT,
     .soft_limit_knee = SOFT_LIMIT_KNEE_DEFAULT,
+    
+    // Noise gate parameters
+    .noise_gate_threshold = 0.005f,
 
     // Image processing parameters - ADDITIVE SYNTHESIS
     .additive_enable_non_linear_mapping = 1,      // Enable gamma correction by default
