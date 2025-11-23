@@ -16,6 +16,13 @@
 #include <sched.h>
 #endif
 
+#ifdef __APPLE__
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+#include <mach/thread_policy.h>
+#include <mach/thread_act.h>
+#endif
+
 /* macOS barrier implementation (pthread_barrier not available) */
 #ifndef __linux__
 
@@ -145,11 +152,59 @@ int synth_set_rt_priority(pthread_t thread, int priority) {
   
   log_info("SYNTH_RT", "Set RT priority %d (SCHED_FIFO)", priority);
   return 0;
+  
+#elif defined(__APPLE__)
+  // macOS: Use Mach time-constraint policy for RT threads
+  // This requires elevated privileges (sudo) but fails gracefully without them
+  
+  // Get the Mach thread from pthread
+  mach_port_t mach_thread = pthread_mach_thread_np(thread);
+  
+  // Calculate time constraints based on audio buffer parameters
+  // Assuming 48kHz sample rate, 128 frame buffer = 2.666ms period
+  const uint64_t AUDIO_PERIOD_NS = 2666667;  // 2.666ms in nanoseconds
+  
+  // Convert nanoseconds to Mach absolute time units
+  mach_timebase_info_data_t timebase;
+  mach_timebase_info(&timebase);
+  
+  // Convert to Mach time units (depends on CPU frequency)
+  uint32_t period_mach = (uint32_t)((AUDIO_PERIOD_NS * timebase.denom) / timebase.numer);
+  
+  // Set time constraints:
+  // - period: how often the thread needs to run (our buffer duration)
+  // - computation: max time the thread can use per period (60% of budget)
+  // - constraint: deadline for completion (90% of budget)
+  // - preemptible: allow interruption by higher priority threads
+  thread_time_constraint_policy_data_t policy;
+  policy.period      = period_mach;                    // 2.666ms
+  policy.computation = (uint32_t)(period_mach * 0.6);  // 1.6ms max computation
+  policy.constraint  = (uint32_t)(period_mach * 0.9);  // 2.4ms deadline
+  policy.preemptible = TRUE;                           // Allow preemption
+  
+  kern_return_t result = thread_policy_set(
+      mach_thread,
+      THREAD_TIME_CONSTRAINT_POLICY,
+      (thread_policy_t)&policy,
+      THREAD_TIME_CONSTRAINT_POLICY_COUNT
+  );
+  
+  if (result != KERN_SUCCESS) {
+    // Graceful failure - app continues without RT priorities
+    log_warning("SYNTH_RT", "Failed to set RT time-constraint policy (error %d)", result);
+    log_info("SYNTH_RT", "RT priorities require elevated privileges (run with sudo)");
+    log_info("SYNTH_RT", "Continuing without RT priorities - performance may vary");
+    return -1;
+  }
+  
+  log_info("SYNTH_RT", "✓ RT time-constraint policy enabled (period=%.2fms, computation=%.2fms, constraint=%.2fms)",
+           AUDIO_PERIOD_NS / 1000000.0,
+           (AUDIO_PERIOD_NS * 0.6) / 1000000.0,
+           (AUDIO_PERIOD_NS * 0.9) / 1000000.0);
+  return 0;
+  
 #else
-  // macOS: Use time-constraint policy for RT threads
-  // This requires elevated privileges
-  log_warning("SYNTH_RT", "RT priorities not fully supported on macOS");
-  log_info("SYNTH_RT", "Consider using sudo or adjusting thread QoS");
+  log_warning("SYNTH_RT", "RT priorities not supported on this platform");
   return -1;
 #endif
 }

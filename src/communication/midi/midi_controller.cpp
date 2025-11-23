@@ -345,20 +345,6 @@ void MidiController::processMidiMessage(double timeStamp,
     unsigned char messageType = status & 0xF0;
     unsigned char channel = status & 0x0F;
     
-    // Log all incoming MIDI messages at debug level
-    const char *msg_type_str = "UNKNOWN";
-    if (messageType == 0xB0) {
-      msg_type_str = "CC";
-    } else if (messageType == 0x90) {
-      msg_type_str = "NOTE_ON";
-    } else if (messageType == 0x80) {
-      msg_type_str = "NOTE_OFF";
-    } else if (messageType == 0xE0) {
-      msg_type_str = "PITCHBEND";
-    }
-    
-    log_debug("MIDI", "RX: %s ch=%d num=%d val=%d", msg_type_str, channel, number, value);
-    
     // Convert RtMidi message type to our enum and dispatch
     if (messageType == 0xB0) {
       // Control Change

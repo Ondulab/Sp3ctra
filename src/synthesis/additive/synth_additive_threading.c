@@ -428,20 +428,62 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
  * @retval None
  */
 void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
-  // ✅ OPTIMIZATION: Lock-free parallel pre-computation for maximum performance
+  // ✅ CRITICAL OPTIMIZATION: Batch read all preprocessed data in ONE mutex lock
+  // BEFORE: 6912 mutex locks per buffer (2 locks × 3456 notes) = massive contention!
+  // AFTER: 1 mutex lock per buffer = 6912x reduction in lock overhead
   
   // Phase 1: Image data assignment (thread-safe, read-only)
   for (int i = 0; i < num_workers; i++) {
     thread_pool[i].imageData = imageData;
   }
 
-  // Phase 2: Lock-free parallel pre-computation of waves[] data by ranges
+  // Phase 2: Batch copy ALL preprocessed data with a SINGLE mutex lock
+  // RT PROFILER: Measure mutex contention
+  struct timeval mutex_start, mutex_end;
+  gettimeofday(&mutex_start, NULL);
+  rt_profiler_mutex_lock_start(&g_rt_profiler);
+  
+  pthread_mutex_lock(&db->mutex);
+  
+  gettimeofday(&mutex_end, NULL);
+  int64_t sec_diff = (int64_t)(mutex_end.tv_sec - mutex_start.tv_sec);
+  int64_t usec_diff = (int64_t)(mutex_end.tv_usec - mutex_start.tv_usec);
+  uint64_t wait_us = (uint64_t)(sec_diff * 1000000LL + usec_diff);
+  rt_profiler_mutex_lock_end(&g_rt_profiler, wait_us);
+  
+  // Copy all preprocessed data for all workers in one shot
+  for (int i = 0; i < num_workers; i++) {
+    synth_thread_worker_t *worker = &thread_pool[i];
+    int notes_this_worker = worker->end_note - worker->start_note;
+    
+    // Batch copy volume data
+    memcpy(worker->precomputed_volume,
+           &db->preprocessed_data.additive.notes[worker->start_note],
+           notes_this_worker * sizeof(float));
+    
+    // Batch copy stereo data if enabled
+    if (g_sp3ctra_config.stereo_mode_enabled) {
+      memcpy(worker->precomputed_pan_position,
+             &db->preprocessed_data.stereo.pan_positions[worker->start_note],
+             notes_this_worker * sizeof(float));
+      memcpy(worker->precomputed_left_gain,
+             &db->preprocessed_data.stereo.left_gains[worker->start_note],
+             notes_this_worker * sizeof(float));
+      memcpy(worker->precomputed_right_gain,
+             &db->preprocessed_data.stereo.right_gains[worker->start_note],
+             notes_this_worker * sizeof(float));
+    }
+  }
+  
+  pthread_mutex_unlock(&db->mutex);
+
+  // Phase 3: Lock-free parallel pre-computation of waves[] data by ranges
   // Each worker computes independently without mutex contention
   // THREAD-SAFETY ANALYSIS:
   // - Each worker processes a disjoint range of notes (no overlap)
   // - waves[note] reads are thread-safe (read-only access during precomputation)
   // - waves[note].current_idx writes are deferred until after worker completion
-  // - Pan system uses lock-free atomic operations
+  // - Preprocessed data already copied, no more mutex needed
   
   for (int i = 0; i < num_workers; i++) {
     synth_thread_worker_t *worker = &thread_pool[i];
@@ -472,54 +514,14 @@ void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
         cur_idx = (uint32_t)new_idx;
       }
       // Workers will commit the last index per note after processing using the precomputed indices
-
-      // ✅ NEW: Copy preprocessed volume data (already has: RGB → Grayscale → Inversion → Gamma → Averaging)
-      // RT PROFILER: Measure mutex contention
-      struct timeval mutex_start, mutex_end;
-      gettimeofday(&mutex_start, NULL);
-      rt_profiler_mutex_lock_start(&g_rt_profiler);
-      
-      pthread_mutex_lock(&db->mutex);
-      
-      gettimeofday(&mutex_end, NULL);
-      // FIX: Correct time calculation to avoid overflow when microseconds wrap
-      int64_t sec_diff = (int64_t)(mutex_end.tv_sec - mutex_start.tv_sec);
-      int64_t usec_diff = (int64_t)(mutex_end.tv_usec - mutex_start.tv_usec);
-      uint64_t wait_us = (uint64_t)(sec_diff * 1000000LL + usec_diff);
-      rt_profiler_mutex_lock_end(&g_rt_profiler, wait_us);
-      
-      float preprocessed_value = db->preprocessed_data.additive.notes[note];
-      worker->precomputed_volume[local_note_idx] = preprocessed_value;
-      
-      pthread_mutex_unlock(&db->mutex);
-
-      if (g_sp3ctra_config.stereo_mode_enabled) {
-        // 🎯 OPTIMIZATION: Use preprocessed stereo data (calculated 1x at 50Hz instead of at 96kHz!)
-        // This is a MAJOR performance gain - we read data calculated once per image instead of recalculating
-        // RT PROFILER: Measure mutex contention
-        gettimeofday(&mutex_start, NULL);
-        rt_profiler_mutex_lock_start(&g_rt_profiler);
-        
-        pthread_mutex_lock(&db->mutex);
-        
-        gettimeofday(&mutex_end, NULL);
-        // FIX: Correct time calculation to avoid overflow when microseconds wrap
-        sec_diff = (int64_t)(mutex_end.tv_sec - mutex_start.tv_sec);
-        usec_diff = (int64_t)(mutex_end.tv_usec - mutex_start.tv_usec);
-        wait_us = (uint64_t)(sec_diff * 1000000LL + usec_diff);
-        rt_profiler_mutex_lock_end(&g_rt_profiler, wait_us);
-        
-        worker->precomputed_pan_position[local_note_idx] = db->preprocessed_data.stereo.pan_positions[note];
-        worker->precomputed_left_gain[local_note_idx] = db->preprocessed_data.stereo.left_gains[note];
-        worker->precomputed_right_gain[local_note_idx] = db->preprocessed_data.stereo.right_gains[note];
-        pthread_mutex_unlock(&db->mutex);
-      }
     }
   }
   
-  // ✅ PERFORMANCE BOOST: Eliminated global mutex contention
-  // Workers now precompute data in parallel without blocking each other
-  // Expected speedup: 30-40% on precomputation phase
+  // ✅ PERFORMANCE BOOST: Eliminated per-note mutex contention
+  // BEFORE: 6912 mutex locks per buffer (catastrophic for RT performance)
+  // AFTER: 1 mutex lock per buffer (6912x reduction!)
+  // Expected speedup: 50-70% reduction in precomputation time
+  // Expected spike reduction: Eliminates mutex-induced latency spikes
 }
 
 /**
@@ -535,7 +537,7 @@ int synth_start_worker_threads(void) {
     }
 
     // ✅ PHASE 1: Set RT priority for deterministic execution
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
     if (synth_set_rt_priority(worker_threads[i], 80) != 0) {
       log_warning("SYNTH", "Failed to set RT priority for worker %d (continuing without RT)", i);
     }
