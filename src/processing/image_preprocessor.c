@@ -262,7 +262,9 @@ void preprocess_additive(
      * This prevents volume jumps when inserting objects into the image */
     out->additive.contrast_factor = calculate_contrast(out->additive.grayscale, nb_pixels);
     
-    /* Debug logging for contrast calculation (periodic) */
+    /* Debug logging for contrast calculation (periodic) - DISABLED */
+    /* This log was too verbose in production and has been removed */
+    /*
     static int contrast_log_counter = 0;
     if (++contrast_log_counter % 1000 == 0) {
         log_debug("PREPROCESS", "Contrast factor: %.3f (min=%.2f, power=%.2f, stride=%.0f)",
@@ -271,6 +273,7 @@ void preprocess_additive(
                   g_sp3ctra_config.additive_contrast_adjustment_power,
                   g_sp3ctra_config.additive_contrast_stride);
     }
+    */
     
     /* STEP 3: Inversion (optional, AFTER contrast calculation) */
     if (g_sp3ctra_config.invert_intensity) {

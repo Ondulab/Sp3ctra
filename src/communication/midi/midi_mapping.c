@@ -155,14 +155,9 @@ static float midi_to_normalized(int midi_value) {
 static void update_parameter_value(ParameterEntry *param, float normalized_value) {
     if (!param) return;
     
-    log_debug("MIDI_MAP", "update_parameter_value: '%s' normalized=%.3f", 
-              param->name, normalized_value);
-    
     // Update values
     param->current_value = normalized_value;
     param->current_raw_value = normalized_to_raw(normalized_value, &param->spec);
-    
-    log_debug("MIDI_MAP", "  Raw value computed: %.3f", param->current_raw_value);
     
     // Prepare callback data
     MidiParameterValue callback_data = {
@@ -172,25 +167,12 @@ static void update_parameter_value(ParameterEntry *param, float normalized_value
         .is_button = param->spec.is_button
     };
     
-    // Count callbacks for this parameter
-    int callback_count = 0;
-    for (int i = 0; i < g_midi_system.num_callbacks; i++) {
-        CallbackEntry *cb = &g_midi_system.callbacks[i];
-        if (cb->is_active && strcmp(cb->param_name, param->name) == 0) {
-            callback_count++;
-        }
-    }
-    
-    log_debug("MIDI_MAP", "  Found %d active callbacks for '%s'", 
-              callback_count, param->name);
-    
     // Trigger all registered callbacks for this parameter
     for (int i = 0; i < g_midi_system.num_callbacks; i++) {
         CallbackEntry *cb = &g_midi_system.callbacks[i];
         
         if (cb->is_active && strcmp(cb->param_name, param->name) == 0) {
             if (cb->callback) {
-                log_debug("MIDI_MAP", "  Triggering callback %d for '%s'", i, param->name);
                 cb->callback(&callback_data, cb->user_data);
             }
         }
@@ -1186,11 +1168,7 @@ void midi_mapping_dispatch(MidiMessageType type, int channel, int number, int va
             if (param->control.channel == -1 || param->control.channel == channel) {
                 matches_found++;
                 
-                // Log mapped message at DEBUG level with real parameter value
-                float real_value = normalized_to_raw(midi_to_normalized(value), &param->spec);
-                log_debug("MIDI_MAP", "Mapped to '%s': MIDI=%d → %.2f %s", 
-                         param->name, value, real_value,
-                         param->spec.is_button ? "(trigger)" : "");
+                // Mapped message (logging removed for performance)
                 
                 // BUGFIX: For NOTE_ON and NOTE_OFF messages, we need to pass both note number and velocity
                 // The callback expects: raw_value = note number, value = normalized velocity

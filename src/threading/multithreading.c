@@ -444,9 +444,6 @@ void *udpThread(void *arg) {
 
     if (fragmentCount == packet.total_fragments) {
       PreprocessedImageData preprocessed_temp;
-      static int diff_log_counter = 0;
-      int diff_count;
-      int i;
       
 #ifdef DEBUG_UDP
       log_debug("UDP", "COMPLETE LINE RECEIVED! line_id=%u, %u fragments", packet.line_id, fragmentCount);
@@ -517,7 +514,8 @@ void *udpThread(void *arg) {
        * This replaces the grayscale→RGB conversion in synth_additive.c
        */
       
-      /* DEBUG: Check if mixed_R is different from live */
+      /* DEBUG: Pixel difference check - DISABLED (too verbose in production) */
+      /*
       if (++diff_log_counter % 1000 == 0) {
         diff_count = 0;
         for (i = 0; i < nb_pixels; i++) {
@@ -526,6 +524,7 @@ void *udpThread(void *arg) {
         log_debug("UDP", "Pixels different: %d/%d (%.1f%%)",
                   diff_count, nb_pixels, (diff_count * 100.0f) / nb_pixels);
       }
+      */
       
       pthread_mutex_lock(&g_displayable_synth_mutex);
       memcpy(g_displayable_synth_R, mixed_R, nb_pixels);
