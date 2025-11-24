@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-log_level_t g_log_level = LOG_LEVEL_INFO;
+log_level_t g_log_level = LOG_LEVEL_DEBUG;
 startup_verbose_t g_startup_verbose = STARTUP_VERBOSE_NORMAL;
 static pthread_mutex_t g_log_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int g_colors_enabled = -1; // -1 = not initialized, 0 = disabled, 1 = enabled

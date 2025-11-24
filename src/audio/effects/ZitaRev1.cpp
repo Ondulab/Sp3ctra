@@ -15,9 +15,11 @@
 #include "config.h"
 #include "../utils/logger.h"
 
-// Constantes pour les délais (nombres premiers)
-static const int ZITA_PRIME_DELAYS[8] = {743,  809,  877,  947,
-                                         1019, 1097, 1171, 1259};
+// Constantes pour les délais (nombres premiers multipliés par 8 pour des délais longs)
+// Original: 743, 809, 877, 947, 1019, 1097, 1171, 1259 (~16-28ms)
+// Now: ~130-230ms for true long reverb tails
+static const int ZITA_PRIME_DELAYS[8] = {5944, 6472, 7016, 7576,
+                                         8152, 8776, 9368, 10072};
 
 ZitaRev1::ZitaRev1() {
   // Initialisation des paramètres
@@ -37,9 +39,15 @@ ZitaRev1::ZitaRev1() {
 
   // Autres paramètres
   _sampleRate = 44100.0f;
-  _gain0 = 1.0f;                    // Gain interne de la réverbération
+  _gain0 = 1.0f;                    // Gain interne de la réverbération (deprecated)
   _gain1 = 1.0f - _parameters[MIX]; // Dry gain
   _gain2 = _parameters[MIX];        // Wet gain
+  
+  // Initialize smoothing parameters for click-free parameter changes
+  // Using very aggressive smoothing: 0.0002 gives ~300ms transition time
+  _currentGain0 = 1.0f;
+  _targetGain0 = 1.0f;
+  _smoothingCoeff = 0.000002f;  // Very slow/smooth for heavy smoothing
 
   // Initialiser les indices et tailles de buffer
   for (int i = 0; i < NUM_DELAY_LINES; i++) {
@@ -100,10 +108,7 @@ float ZitaRev1::get_mix() const { return _parameters[MIX]; }
 void ZitaRev1::process(float *inputL, float *inputR, float *outputL,
                        float *outputR, unsigned int numSamples) {
   // Paramètres locaux pour performance
-  const float mix = _parameters[MIX];
   const float width = _parameters[WIDTH];
-  const float g1 = 1.0f - mix; // Gain dry
-  const float g2 = mix;        // Gain wet
 
 #if DEBUG_AUDIO_REVERB
   static int zita_debug_counter = 0;
@@ -116,6 +121,9 @@ void ZitaRev1::process(float *inputL, float *inputR, float *outputL,
 
   // Pour chaque échantillon
   for (unsigned int i = 0; i < numSamples; i++) {
+    // Smooth gain0 towards target for click-free parameter changes
+    _currentGain0 += (_targetGain0 - _currentGain0) * _smoothingCoeff;
+    
     // Mixer les entrées
     float input = (inputL[i] + inputR[i]) * 0.5f;
 
@@ -147,15 +155,15 @@ void ZitaRev1::process(float *inputL, float *inputR, float *outputL,
       _lpSamples[j] =
           delaySample * dampingFactor + _lpSamples[j] * (1.0f - dampingFactor);
 
-      // Appliquer la réverbération et le feedback
-      float processed = _lpSamples[j] * _gain0;
+      // Appliquer la réverbération et le feedback (using smoothed gain)
+      float processed = _lpSamples[j] * _currentGain0;
 
       // Ajouter au canal gauche
       leftReflections += processed;
 
       // Écrire dans la ligne de délai avec un mélange de l'entrée et du
-      // feedback
-      writeDelay(j, preDelayed + processed * 0.5f);
+      // feedback (increased to 0.9f for extreme reverb tail - very close to instability limit)
+      writeDelay(j, preDelayed + processed * 0.9f);
     }
 
     // Deuxième moitié des lignes de délai pour le canal droit
@@ -168,21 +176,20 @@ void ZitaRev1::process(float *inputL, float *inputR, float *outputL,
       _lpSamples[j] =
           delaySample * dampingFactor + _lpSamples[j] * (1.0f - dampingFactor);
 
-      // Appliquer la réverbération et le feedback
-      float processed = _lpSamples[j] * _gain0;
+      // Appliquer la réverbération et le feedback (using smoothed gain)
+      float processed = _lpSamples[j] * _currentGain0;
 
       // Ajouter au canal droit
       rightReflections += processed;
 
       // Écrire dans la ligne de délai avec un mélange de l'entrée et du
-      // feedback
-      writeDelay(j, preDelayed + processed * 0.5f);
+      // feedback (increased to 0.9f for extreme reverb tail - very close to instability limit)
+      writeDelay(j, preDelayed + processed * 0.9f);
     }
 
-    // Normaliser les réflexions - Increased gain for audible reverb
-    // Previous value of 0.25f was too aggressive, resulting in barely audible reverb
-    leftReflections *= 1.5f;
-    rightReflections *= 1.5f;
+    // No attenuation - unity gain (1.0x)
+    // Dry/wet mixing is handled externally in audio_rtaudio.cpp
+    // leftReflections and rightReflections are used as-is
 
 #if DEBUG_AUDIO_REVERB
     static int zita_sample_counter = 0;
@@ -197,9 +204,15 @@ void ZitaRev1::process(float *inputL, float *inputR, float *outputL,
     float centerComponent = (leftReflections + rightReflections) * 0.7071f;
     float sideComponent = (leftReflections - rightReflections) * width;
 
-    // Mixer les signaux secs et traités
-    outputL[i] = inputL[i] * g1 + (centerComponent + sideComponent) * g2;
-    outputR[i] = inputR[i] * g1 + (centerComponent - sideComponent) * g2;
+    // CRITICAL FIX: Normalize output to prevent gain accumulation from feedback loops
+    // The 8 delay lines with 0.9 feedback can cause signal buildup
+    // Empirically determined compensation factor to maintain unity gain
+    const float OUTPUT_COMPENSATION = 0.25f;  // Divide by ~4 to compensate for 8 delay lines
+    
+    // Output ONLY wet signal (100% wet) - dry/wet mixing is handled externally in audio_rtaudio.cpp
+    // This prevents double mixing which causes volume jumps
+    outputL[i] = (centerComponent + sideComponent) * OUTPUT_COMPENSATION;
+    outputR[i] = (centerComponent - sideComponent) * OUTPUT_COMPENSATION;
   }
 }
 
@@ -230,11 +243,16 @@ void ZitaRev1::updateReverbParameters() {
     _preDelaySize = MAX_PREDELAY_SIZE;
   }
 
-  // Calculer le temps de réverbération (0.5s à 3.0s)
-  float revTime = 0.5f + 2.5f * _parameters[ROOMSIZE];
+  // Calculer le temps de réverbération (2.0s à 8.0s for extreme reverb)
+  // Previous: 0.5s to 3.0s was too short, 1.0s to 5.0s still not enough
+  float revTime = 2.0f + 6.0f * _parameters[ROOMSIZE];
 
   // Calculer le gain interne en fonction du temps de réverbération
-  _gain0 = pow(0.001f, 1.0f / (revTime * _sampleRate));
+  // Set TARGET gain instead of direct gain for smooth transitions
+  _targetGain0 = pow(0.001f, 1.0f / (revTime * _sampleRate));
+  
+  // Keep _gain0 for backward compatibility (deprecated)
+  _gain0 = _targetGain0;
 
   // Mettre à jour les gains de mixage
   _gain1 = 1.0f - _parameters[MIX]; // Dry gain

@@ -100,10 +100,6 @@ private:
   bool writeToReverbOutput(float sampleL, float sampleR);
   bool readFromReverbOutput(float &sampleL, float &sampleR);
 
-  // Fonction de traitement de la réverbération (legacy)
-  void processReverb(float inputL, float inputR, float &outputL,
-                     float &outputR);
-
   // Fonction de traitement de la réverbération optimisée pour callback
   void processReverbOptimized(float inputL, float inputR, float &outputL,
                               float &outputR);

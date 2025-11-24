@@ -1084,25 +1084,14 @@ void *synth_photowave_thread_func(void *arg) {
         photowave_current_buffer_index = (write_index == 0) ? 1 : 0;
         pthread_mutex_unlock(&photowave_buffer_index_mutex);
         
-        // Periodic statistics reporting (every 5 seconds)
+        // Periodic statistics reporting (every 5 seconds) - DISABLED
+        // Performance stats collection continues but logging is suppressed
         gettimeofday(&tv_stats, NULL);
         current_time_us = (uint64_t)tv_stats.tv_sec * 1000000ULL + (uint64_t)tv_stats.tv_usec;
         
         if (current_time_us - photowave_last_stats_print_time_us >= PHOTOWAVE_STATS_PRINT_INTERVAL_US) {
             if (photowave_total_buffers_processed > 0) {
-                uint64_t avg_process_time_us = total_process_time_us / photowave_total_buffers_processed;
-                float buffer_duration_ms = (buffer_size * 1000.0f) / g_sp3ctra_config.sampling_frequency;
-                float cpu_usage_percent = (avg_process_time_us / 1000.0f) / buffer_duration_ms * 100.0f;
-                
-                log_info("PHOTOWAVE", "Performance stats: buffers=%llu, avg=%.2fms (%.1f%% CPU), min=%.2fms, max=%.2fms, timeouts=%llu",
-                        photowave_total_buffers_processed,
-                        avg_process_time_us / 1000.0,
-                        cpu_usage_percent,
-                        min_process_time_us / 1000.0,
-                        max_process_time_us / 1000.0,
-                        photowave_total_wait_timeouts);
-                
-                // Reset statistics for next interval
+                // Reset statistics for next interval (stats collection continues silently)
                 total_process_time_us = 0;
                 max_process_time_us = 0;
                 min_process_time_us = UINT64_MAX;
