@@ -340,6 +340,7 @@ int image_sequencer_start_playback(ImageSequencer *seq, int player_id) {
     
     player->state = PLAYER_STATE_PLAYING;
     player->playback_position = 0.0f;
+    player->playback_direction = 1;  // Force forward direction on start
     
     pthread_mutex_unlock(&seq->mutex);
     log_info("SEQUENCER", "Player %d: Started playback", player_id);
@@ -783,12 +784,16 @@ int image_sequencer_process_frame(
                 if (player->loop_mode == LOOP_MODE_SIMPLE) {
                     frame_idx = 0;
                     player->playback_position = 0.0f;
+                    log_info("SEQUENCER", "Player %d: END reached, wrapping to start (SIMPLE)", i);
                 } else if (player->loop_mode == LOOP_MODE_PINGPONG) {
                     player->playback_direction *= -1;
                     frame_idx = player->recorded_frames - 1;
                     player->playback_position = (float)frame_idx;
+                    log_info("SEQUENCER", "Player %d: END reached, reversing direction (PINGPONG) → dir=%d", 
+                             i, player->playback_direction);
                 } else { // LOOP_MODE_ONESHOT
                     player->state = PLAYER_STATE_STOPPED;
+                    log_info("SEQUENCER", "Player %d: END reached, stopping (ONESHOT)", i);
                     continue;
                 }
             } else if (frame_idx < 0) {
@@ -796,12 +801,16 @@ int image_sequencer_process_frame(
                 if (player->loop_mode == LOOP_MODE_SIMPLE) {
                     frame_idx = player->recorded_frames - 1;
                     player->playback_position = (float)frame_idx;
+                    log_info("SEQUENCER", "Player %d: START reached (reverse), wrapping to end (SIMPLE)", i);
                 } else if (player->loop_mode == LOOP_MODE_PINGPONG) {
                     player->playback_direction *= -1;
                     frame_idx = 0;
                     player->playback_position = 0.0f;
+                    log_info("SEQUENCER", "Player %d: START reached (reverse), reversing direction (PINGPONG) → dir=%d", 
+                             i, player->playback_direction);
                 } else { // LOOP_MODE_ONESHOT
                     player->state = PLAYER_STATE_STOPPED;
+                    log_info("SEQUENCER", "Player %d: START reached (reverse), stopping (ONESHOT)", i);
                     continue;
                 }
             }
