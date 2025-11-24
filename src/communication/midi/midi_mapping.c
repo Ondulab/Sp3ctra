@@ -8,12 +8,10 @@
  */
 
 #include "midi_mapping.h"
-#include "../../utils/logger.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <errno.h>
 
 /* ============================================================================
  * INTERNAL STRUCTURES
@@ -191,7 +189,6 @@ int midi_mapping_init(void) {
     memset(&g_midi_system, 0, sizeof(MidiMappingSystem));
     g_midi_system.is_initialized = 1;
     
-    log_info("MIDI_MAP", "MIDI Mapping System initialized");
     return 0;
 }
 
@@ -201,7 +198,6 @@ void midi_mapping_cleanup(void) {
     }
     
     memset(&g_midi_system, 0, sizeof(MidiMappingSystem));
-    log_info("MIDI_MAP", "MIDI Mapping System cleaned up");
 }
 
 /* ============================================================================
@@ -270,18 +266,12 @@ static int parse_midi_control(const char *str, MidiControl *control) {
     if (sscanf(str, "%15[^:]:%d:%d", type_str, &number, &channel) == 3) {
         // Validate channel range (0-15 in MIDI spec)
         if (channel < 0 || channel > 15) {
-            char msg[128];
-            snprintf(msg, sizeof(msg), "Invalid MIDI channel %d (must be 0-15), using any channel", channel);
-            log_warning("MIDI_MAP", msg);
             channel = -1;
         }
         
         if (strcmp(type_str, "CC") == 0) {
             // Validate CC number range (0-127)
             if (number < 0 || number > 127) {
-                char msg[128];
-                snprintf(msg, sizeof(msg), "Invalid CC number %d (must be 0-127)", number);
-                log_error("MIDI_MAP", msg);
                 return -1;
             }
             control->type = MIDI_MSG_CC;
@@ -291,9 +281,6 @@ static int parse_midi_control(const char *str, MidiControl *control) {
         } else if (strcmp(type_str, "NOTE") == 0) {
             // Validate note number range (0-127)
             if (number < 0 || number > 127) {
-                char msg[128];
-                snprintf(msg, sizeof(msg), "Invalid note number %d (must be 0-127)", number);
-                log_error("MIDI_MAP", msg);
                 return -1;
             }
             control->type = MIDI_MSG_NOTE_ON;
@@ -308,9 +295,6 @@ static int parse_midi_control(const char *str, MidiControl *control) {
         if (strcmp(type_str, "CC") == 0) {
             // Validate CC number range (0-127)
             if (number < 0 || number > 127) {
-                char msg[128];
-                snprintf(msg, sizeof(msg), "Invalid CC number %d (must be 0-127)", number);
-                log_error("MIDI_MAP", msg);
                 return -1;
             }
             control->type = MIDI_MSG_CC;
@@ -320,9 +304,6 @@ static int parse_midi_control(const char *str, MidiControl *control) {
         } else if (strcmp(type_str, "NOTE") == 0) {
             // Validate note number range (0-127)
             if (number < 0 || number > 127) {
-                char msg[128];
-                snprintf(msg, sizeof(msg), "Invalid note number %d (must be 0-127)", number);
-                log_error("MIDI_MAP", msg);
                 return -1;
             }
             control->type = MIDI_MSG_NOTE_ON;
@@ -336,9 +317,6 @@ static int parse_midi_control(const char *str, MidiControl *control) {
     if (sscanf(str, "%15[^:]:%*[*]:%d", type_str, &channel) == 2) {
         if (strcmp(type_str, "NOTE") == 0) {
             if (channel < 0 || channel > 15) {
-                char msg[128];
-                snprintf(msg, sizeof(msg), "Invalid MIDI channel %d (must be 0-15), using any channel", channel);
-                log_warning("MIDI_MAP", msg);
                 channel = -1;
             }
             control->type = MIDI_MSG_NOTE_ON;
@@ -369,8 +347,6 @@ static int parse_midi_control(const char *str, MidiControl *control) {
 static int create_default_midi_mapping_file(const char *mapping_file) {
     FILE *file = fopen(mapping_file, "w");
     if (!file) {
-        log_error("MIDI_MAP", "Cannot create MIDI mapping file '%s': %s", 
-                  mapping_file, strerror(errno));
         return -1;
     }
     
@@ -474,7 +450,6 @@ static int create_default_midi_mapping_file(const char *mapping_file) {
     
     fclose(file);
     
-    log_info("MIDI_MAP", "Created default mapping file with all mappings disabled: %s", mapping_file);
     return 0;
 }
 
@@ -484,7 +459,6 @@ static int create_default_midi_mapping_file(const char *mapping_file) {
 static int create_default_midi_params_file(const char *params_file) {
     FILE *file = fopen(params_file, "w");
     if (!file) {
-        log_error("MIDI_MAP", "Cannot create MIDI parameters file '%s'", params_file);
         return -1;
     }
     
@@ -672,19 +646,16 @@ static int create_default_midi_params_file(const char *params_file) {
     fprintf(file, "default=0.0\nmin=0.0\nmax=1.0\nscaling=discrete\ntype=button\n");
     
     fclose(file);
-    log_info("MIDI_MAP", "Created complete default parameters file: %s", params_file);
     return 0;
 }
 
 int midi_mapping_load_parameters(const char *params_file) {
     if (!g_midi_system.is_initialized) {
-        log_error("MIDI_MAP", "MIDI mapping system not initialized");
         return -1;
     }
     
     FILE *file = fopen(params_file, "r");
     if (!file) {
-        log_error("MIDI_MAP", "Cannot open parameters file '%s': %s", params_file, strerror(errno));
         return -1;
     }
     
@@ -722,7 +693,6 @@ int midi_mapping_load_parameters(const char *params_file) {
         if (*trimmed == '[') {
             char *end = strchr(trimmed, ']');
             if (!end) {
-                log_error("MIDI_MAP", "Line %d: Invalid section header", line_number);
                 continue;
             }
             *end = '\0';
@@ -802,7 +772,6 @@ int midi_mapping_load_parameters(const char *params_file) {
         
         if (!temp) {
             if (temp_count >= MIDI_MAX_PARAMETERS) {
-                log_error("MIDI_MAP", "Maximum number of parameters reached");
                 continue;
             }
             temp = &temp_params[temp_count++];
@@ -848,7 +817,6 @@ int midi_mapping_load_parameters(const char *params_file) {
         ParameterEntry *param = find_parameter(temp->name);
         if (!param) {
             if (g_midi_system.num_parameters >= MIDI_MAX_PARAMETERS) {
-                log_error("MIDI_MAP", "Maximum number of parameters reached");
                 break;
             }
             param = &g_midi_system.parameters[g_midi_system.num_parameters++];
@@ -878,8 +846,6 @@ int midi_mapping_load_parameters(const char *params_file) {
     }
     
     if (defaults_count > 0) {
-        log_info("MIDI_MAP", "Expanding %d SEQUENCER_PLAYER_DEFAULTS to 4 players", defaults_count);
-        
         for (int player = 1; player <= 4; player++) {
             for (int d = 0; d < defaults_count; d++) {
                 const char *suffix = defaults_params[d].name + 26;
@@ -893,7 +859,6 @@ int midi_mapping_load_parameters(const char *params_file) {
                 }
                 
                 if (g_midi_system.num_parameters >= MIDI_MAX_PARAMETERS) {
-                    log_warning("MIDI_MAP", "Maximum parameters reached while expanding defaults");
                     break;
                 }
                 
@@ -904,31 +869,24 @@ int midi_mapping_load_parameters(const char *params_file) {
                 new_param->is_mapped = 0;
             }
         }
-        
-        log_info("MIDI_MAP", "Expanded to %d total parameters", g_midi_system.num_parameters);
     }
     
-    log_info("MIDI_MAP", "Loaded %d parameter specifications from %s", 
-             g_midi_system.num_parameters, params_file);
     return 0;
 }
 
 int midi_mapping_load_mappings(const char *config_file) {
     if (!g_midi_system.is_initialized) {
-        log_error("MIDI_MAP", "MIDI mapping system not initialized");
         return -1;
     }
     
     FILE *file = fopen(config_file, "r");
     if (!file) {
-        log_info("MIDI_MAP", "Mappings file '%s' not found, creating with all mappings disabled (none)", config_file);
         if (create_default_midi_mapping_file(config_file) != 0) {
             return -1;
         }
         // Try to open again
         file = fopen(config_file, "r");
         if (!file) {
-            log_error("MIDI_MAP", "Cannot open MIDI mappings file '%s' after creation", config_file);
             return -1;
         }
     }
@@ -952,7 +910,6 @@ int midi_mapping_load_mappings(const char *config_file) {
         if (*trimmed == '[') {
             char *end = strchr(trimmed, ']');
             if (!end) {
-                log_error("MIDI_MAP", "Line %d: Invalid section header", line_number);
                 fclose(file);
                 return -1;
             }
@@ -988,14 +945,12 @@ int midi_mapping_load_mappings(const char *config_file) {
                 if (strcmp(key, "device_name") == 0) {
                     strncpy(g_midi_device_name, value, sizeof(g_midi_device_name) - 1);
                     g_midi_device_name[sizeof(g_midi_device_name) - 1] = '\0';
-                    log_info("MIDI_MAP", "MIDI device_name configured: '%s'", g_midi_device_name);
                 } else if (strcmp(key, "device_id") == 0) {
                     if (strcmp(value, "auto") == 0) {
                         g_midi_device_id = -1;
                     } else {
                         g_midi_device_id = atoi(value);
                     }
-                    log_info("MIDI_MAP", "MIDI device_id configured: %d", g_midi_device_id);
                 }
             }
             continue;
@@ -1033,10 +988,6 @@ int midi_mapping_load_mappings(const char *config_file) {
         // Find parameter
         ParameterEntry *param = find_parameter(full_param_name);
         if (!param) {
-            char msg[256];
-            snprintf(msg, sizeof(msg), "Line %d: Unknown parameter '%s' (looked for '%s')", 
-                     line_number, key, full_param_name);
-            log_warning("MIDI_MAP", msg);
             continue;
         }
         
@@ -1058,32 +1009,10 @@ int midi_mapping_load_mappings(const char *config_file) {
                 mappings_loaded++;
             }
             // Silently accept "none" - it's a valid way to disable a mapping
-        } else {
-            // Only warn if it's not "none" (which is handled above)
-            if (strcmp(value, "none") != 0) {
-                char msg[256];
-                snprintf(msg, sizeof(msg), "Line %d: Invalid MIDI control format '%s'", line_number, value);
-                log_warning("MIDI_MAP", msg);
-            }
         }
     }
     
     fclose(file);
-    log_info("MIDI_MAP", "Loaded %d MIDI mappings from %s", mappings_loaded, config_file);
-    
-    // Log channel-specific mappings for debugging
-    int channel_specific = 0;
-    for (int i = 0; i < g_midi_system.num_parameters; i++) {
-        if (g_midi_system.parameters[i].is_mapped && 
-            g_midi_system.parameters[i].control.channel != -1) {
-            channel_specific++;
-        }
-    }
-    if (channel_specific > 0) {
-        char msg[128];
-        snprintf(msg, sizeof(msg), "  %d mappings use specific MIDI channels", channel_specific);
-        log_info("MIDI_MAP", msg);
-    }
     
     return 0;
 }
@@ -1096,25 +1025,20 @@ int midi_mapping_register_callback(const char *param_name,
                                    MidiCallback callback, 
                                    void *user_data) {
     if (!g_midi_system.is_initialized) {
-        log_error("MIDI_MAP", "MIDI mapping system not initialized");
         return -1;
     }
     
     if (!param_name || !callback) {
-        log_error("MIDI_MAP", "Invalid parameters for callback registration");
         return -1;
     }
     
     if (g_midi_system.num_callbacks >= MIDI_MAX_CALLBACKS) {
-        log_error("MIDI_MAP", "Maximum number of callbacks reached");
         return -1;
     }
     
     // Check if parameter exists (optional, depends on initialization order)
     ParameterEntry *param = find_parameter(param_name);
-    if (!param) {
-        log_warning("MIDI_MAP", "Registering callback for unknown parameter: %s", param_name);
-    }
+    (void)param; // Suppress unused variable warning
     
     // Add callback entry
     CallbackEntry *cb = &g_midi_system.callbacks[g_midi_system.num_callbacks];
@@ -1233,16 +1157,7 @@ void midi_mapping_dispatch(MidiMessageType type, int channel, int number, int va
         }
     }
     
-    if (matches_found == 0) {
-        // No mapping for this control - log at debug level
-        const char *type_str = "UNKNOWN";
-        if (type == MIDI_MSG_CC) type_str = "CC";
-        else if (type == MIDI_MSG_NOTE_ON) type_str = "NOTE_ON";
-        else if (type == MIDI_MSG_NOTE_OFF) type_str = "NOTE_OFF";
-        else if (type == MIDI_MSG_PITCHBEND) type_str = "PITCHBEND";
-        
-        log_debug("MIDI_MAP", "Unmapped: %s:%d (ch=%d, val=%d)", type_str, number, channel, value);
-    }
+    (void)matches_found; // Suppress unused variable warning
 }
 
 /* ============================================================================
@@ -1291,12 +1206,8 @@ int midi_mapping_set_parameter_value(const char *param_name, float normalized_va
 
 int midi_mapping_apply_defaults(void) {
     if (!g_midi_system.is_initialized) {
-        log_error("MIDI_MAP", "MIDI mapping system not initialized");
         return -1;
     }
-    
-    log_debug("MIDI_MAP", "midi_mapping_apply_defaults: Starting...");
-    log_debug("MIDI_MAP", "Total parameters: %d", g_midi_system.num_parameters);
     
     int count = 0;
     
@@ -1307,13 +1218,8 @@ int midi_mapping_apply_defaults(void) {
         // BUGFIX: Skip buttons - they should only be triggered by actual MIDI events
         // Buttons are momentary triggers, not persistent states
         if (param->spec.is_button) {
-            log_debug("MIDI_MAP", "Skipping button parameter '%s' (buttons not initialized)", param->name);
             continue;
         }
-        
-        log_debug("MIDI_MAP", "Processing parameter '%s'", param->name);
-        log_debug("MIDI_MAP", "  Default: %.3f, Min: %.3f, Max: %.3f", 
-                  param->spec.default_value, param->spec.min_value, param->spec.max_value);
         
         // Calculate normalized default value from raw default
         float normalized_default;
@@ -1326,7 +1232,6 @@ int midi_mapping_apply_defaults(void) {
             } else {
                 normalized_default = 0.0f;
             }
-            log_debug("MIDI_MAP", "  Discrete/Button: normalized = %.3f", normalized_default);
         } else {
             // For continuous parameters, reverse the scaling to get normalized value
             float default_val = param->spec.default_value;
@@ -1336,7 +1241,6 @@ int midi_mapping_apply_defaults(void) {
             switch (param->spec.scaling) {
                 case MIDI_SCALE_LINEAR:
                     normalized_default = (default_val - min_val) / (max_val - min_val);
-                    log_debug("MIDI_MAP", "  Linear scaling: normalized = %.3f", normalized_default);
                     break;
                     
                 case MIDI_SCALE_LOGARITHMIC:
@@ -1345,10 +1249,8 @@ int midi_mapping_apply_defaults(void) {
                         float log_max = logf(max_val);
                         float log_val = logf(default_val);
                         normalized_default = (log_val - log_min) / (log_max - log_min);
-                        log_debug("MIDI_MAP", "  Logarithmic scaling: normalized = %.3f", normalized_default);
                     } else {
                         normalized_default = 0.5f;
-                        log_debug("MIDI_MAP", "  Logarithmic scaling FALLBACK: normalized = %.3f", normalized_default);
                     }
                     break;
                     
@@ -1356,16 +1258,13 @@ int midi_mapping_apply_defaults(void) {
                     if (min_val > 0.0f && max_val > min_val && default_val > 0.0f) {
                         float exp_range = max_val / min_val;
                         normalized_default = logf(default_val / min_val) / logf(exp_range);
-                        log_debug("MIDI_MAP", "  Exponential scaling: normalized = %.3f", normalized_default);
                     } else {
                         normalized_default = 0.5f;
-                        log_debug("MIDI_MAP", "  Exponential scaling FALLBACK: normalized = %.3f", normalized_default);
                     }
                     break;
                     
                 default:
                     normalized_default = (default_val - min_val) / (max_val - min_val);
-                    log_debug("MIDI_MAP", "  Default scaling: normalized = %.3f", normalized_default);
                     break;
             }
         }
@@ -1374,15 +1273,11 @@ int midi_mapping_apply_defaults(void) {
         if (normalized_default < 0.0f) normalized_default = 0.0f;
         if (normalized_default > 1.0f) normalized_default = 1.0f;
         
-        log_debug("MIDI_MAP", "  Calling update_parameter_value with normalized = %.3f", normalized_default);
-        
         // Update parameter (this will trigger callbacks)
         update_parameter_value(param, normalized_default);
         count++;
     }
     
-    log_debug("MIDI_MAP", "midi_mapping_apply_defaults: Completed, applied %d defaults", count);
-    log_info("MIDI_MAP", "Applied default values to %d parameters", count);
     return count;
 }
 
@@ -1462,8 +1357,6 @@ int midi_mapping_validate(void) {
                     
                     // Only report conflict if it's not a note_on/note_off pair
                     if (!is_note_on_off_pair) {
-                        log_warning("MIDI_MAP", "MIDI conflict: %s and %s both use same control",
-                                    name1, name2);
                         conflicts++;
                     }
                 }

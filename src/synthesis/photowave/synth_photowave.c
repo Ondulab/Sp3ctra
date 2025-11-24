@@ -280,15 +280,6 @@ static void lowpass_init(PhotowaveLowpassFilter *filter, float sample_rate) {
     filter->alpha = dt / (rc + dt);
 }
 
-static float lowpass_process(PhotowaveLowpassFilter *filter, float input, 
-                            float modulated_cutoff, float sample_rate) {
-    float rc = 1.0f / (TWO_PI * modulated_cutoff);
-    float dt = 1.0f / sample_rate;
-    float alpha = dt / (rc + dt);
-    
-    filter->prev_output = alpha * input + (1.0f - alpha) * filter->prev_output;
-    return filter->prev_output;
-}
 
 /* ============================================================================
  * WAVEFORM SAMPLING
@@ -332,76 +323,6 @@ static float sample_waveform_linear(const uint8_t *image_line, int pixel_count,
     return sample0 + frac * (sample1 - sample0);
 }
 
-/**
- * @brief Sample waveform using cubic (Catmull-Rom) interpolation
- * 
- * Provides smoother interpolation than linear, reducing aliasing artifacts.
- * Uses Catmull-Rom spline which passes through control points.
- * 
- * @param image_line Pointer to grayscale image line data
- * @param pixel_count Number of pixels in the line
- * @param phase Current phase position (0.0 to 1.0)
- * @param scan_mode Scanning direction mode
- * @return Interpolated sample value (-1.0 to 1.0)
- */
-static float sample_waveform_cubic(const uint8_t *image_line, int pixel_count,
-                                  float phase, PhotowaveScanMode scan_mode) {
-    if (!image_line || pixel_count <= 0) return 0.0f;
-    
-    phase = phase - floorf(phase);
-    
-    float pixel_pos;
-    switch (scan_mode) {
-        case PHOTOWAVE_SCAN_LEFT_TO_RIGHT:
-            pixel_pos = phase * (float)(pixel_count - 1);
-            break;
-        case PHOTOWAVE_SCAN_RIGHT_TO_LEFT:
-            pixel_pos = (1.0f - phase) * (float)(pixel_count - 1);
-            break;
-        case PHOTOWAVE_SCAN_DUAL:
-            if (phase < 0.5f) {
-                pixel_pos = (phase * 2.0f) * (float)(pixel_count - 1);
-            } else {
-                pixel_pos = ((1.0f - phase) * 2.0f) * (float)(pixel_count - 1);
-            }
-            break;
-        default:
-            pixel_pos = phase * (float)(pixel_count - 1);
-            break;
-    }
-    
-    int pixel_index = (int)pixel_pos;
-    float frac = pixel_pos - (float)pixel_index;
-    
-    // Clamp indices for boundary conditions
-    if (pixel_index < 0) pixel_index = 0;
-    if (pixel_index >= pixel_count - 1) pixel_index = pixel_count - 2;
-    
-    // Get 4 samples for cubic interpolation (with boundary handling)
-    int idx_m1 = (pixel_index > 0) ? pixel_index - 1 : pixel_index;
-    int idx_0 = pixel_index;
-    int idx_1 = pixel_index + 1;
-    int idx_2 = (pixel_index + 2 < pixel_count) ? pixel_index + 2 : pixel_index + 1;
-    
-    // Convert to normalized float samples [-1.0, 1.0]
-    float y_m1 = ((float)image_line[idx_m1] / 127.5f) - 1.0f;
-    float y_0 = ((float)image_line[idx_0] / 127.5f) - 1.0f;
-    float y_1 = ((float)image_line[idx_1] / 127.5f) - 1.0f;
-    float y_2 = ((float)image_line[idx_2] / 127.5f) - 1.0f;
-    
-    // Catmull-Rom cubic interpolation
-    // P(t) = 0.5 * [(2*P1) + (-P0 + P2)*t + (2*P0 - 5*P1 + 4*P2 - P3)*t^2 + (-P0 + 3*P1 - 3*P2 + P3)*t^3]
-    float t = frac;
-    float t2 = t * t;
-    float t3 = t2 * t;
-    
-    float a0 = -0.5f * y_m1 + 1.5f * y_0 - 1.5f * y_1 + 0.5f * y_2;
-    float a1 = y_m1 - 2.5f * y_0 + 2.0f * y_1 - 0.5f * y_2;
-    float a2 = -0.5f * y_m1 + 0.5f * y_1;
-    float a3 = y_0;
-    
-    return a0 * t3 + a1 * t2 + a2 * t + a3;
-}
 
 /* ============================================================================
  * INITIALIZATION & CLEANUP
@@ -469,17 +390,6 @@ void synth_photowave_process(PhotowaveState *state,
                              int num_frames) {
     int i, v;
     
-    // PROFILING: Measure total processing time
-    static uint64_t total_process_calls = 0;
-    static uint64_t total_adsr_time_us = 0;
-    static uint64_t total_interp_time_us = 0;
-    static uint64_t total_filter_time_us = 0;
-    static uint64_t total_other_time_us = 0;
-    struct timeval tv_start, tv_end;
-    
-    gettimeofday(&tv_start, NULL);
-    uint64_t start_us = (uint64_t)tv_start.tv_sec * 1000000ULL + (uint64_t)tv_start.tv_usec;
-    
     if (!state || !output_left || !output_right) return;
     
     if (!state->image_line || state->pixel_count <= 0) {
@@ -490,78 +400,51 @@ void synth_photowave_process(PhotowaveState *state,
         return;
     }
     
-    // OPTIMIZATION: Pre-calculate LFO modulation for entire buffer
-    float lfo_freq_ratio = 1.0f;
-    if (state->global_vibrato_lfo.depth_semitones > 0.001f) {
-        float lfo_output = lfo_process(&state->global_vibrato_lfo);
-        // Use fast approximation: 2^x ≈ 1 + 0.693147*x for small x
-        float semitone_shift = lfo_output * state->global_vibrato_lfo.depth_semitones;
-        if (semitone_shift > -1.0f && semitone_shift < 1.0f) {
-            lfo_freq_ratio = 1.0f + 0.693147f * (semitone_shift / 12.0f);
-        } else {
-            lfo_freq_ratio = powf(2.0f, semitone_shift / 12.0f);
-        }
-    }
-    
     // OPTIMIZATION: Cache frequently used values
     const float sample_rate_inv = 1.0f / state->sample_rate;
     const float amplitude = state->config.amplitude;
     const PhotowaveScanMode scan_mode = state->config.scan_mode;
-    const PhotowaveInterpMode interp_mode = state->config.interp_mode;
     const float phase_mult = (scan_mode == PHOTOWAVE_SCAN_DUAL) ? 2.0f : 1.0f;
-    
-    uint64_t adsr_time_us = 0, interp_time_us = 0, filter_time_us = 0;
     
     for (i = 0; i < num_frames; i++) {
         float master_sum = 0.0f;
         
+        // Calculate LFO modulation for this sample
+        float lfo_freq_ratio = 1.0f;
+        if (state->global_vibrato_lfo.depth_semitones > 0.001f) {
+            float lfo_output = lfo_process(&state->global_vibrato_lfo);
+            // Use fast approximation: 2^x ≈ 1 + 0.693147*x for small x
+            float semitone_shift = lfo_output * state->global_vibrato_lfo.depth_semitones;
+            if (semitone_shift > -1.0f && semitone_shift < 1.0f) {
+                lfo_freq_ratio = 1.0f + 0.693147f * (semitone_shift / 12.0f);
+            } else {
+                lfo_freq_ratio = powf(2.0f, semitone_shift / 12.0f);
+            }
+        }
+        
         for (v = 0; v < NUM_PHOTOWAVE_VOICES; v++) {
             PhotowaveVoice *voice = &state->voices[v];
-            
-            // PROFILING: Measure ADSR time
-            gettimeofday(&tv_start, NULL);
-            uint64_t adsr_start = (uint64_t)tv_start.tv_sec * 1000000ULL + (uint64_t)tv_start.tv_usec;
             
             float vol_adsr = adsr_get_output(&voice->volume_adsr);
             float filt_adsr = adsr_get_output(&voice->filter_adsr);
             
-            gettimeofday(&tv_end, NULL);
-            uint64_t adsr_end = (uint64_t)tv_end.tv_sec * 1000000ULL + (uint64_t)tv_end.tv_usec;
-            adsr_time_us += (adsr_end - adsr_start);
-            
             if (vol_adsr < MIN_AUDIBLE_AMPLITUDE && voice->volume_adsr.state == ADSR_STATE_IDLE) {
                 voice->active = false;
+                // NOTE: midi_note is intentionally NOT cleared here to allow late Note Off messages
+                // It will be cleared when the Note Off is processed in synth_photowave_note_off()
                 continue;
             }
             
-            // OPTIMIZATION: Use pre-calculated LFO ratio
+            // Apply LFO modulation to voice frequency
             float modulated_freq = voice->frequency * lfo_freq_ratio;
             
             // OPTIMIZATION: Simplified filter cutoff calculation
             float modulated_cutoff = voice->lowpass.base_cutoff_hz + filt_adsr * voice->lowpass.filter_env_depth;
             modulated_cutoff = clamp_float(modulated_cutoff, 20.0f, state->sample_rate * 0.5f);
             
-            // PROFILING: Measure interpolation time
-            gettimeofday(&tv_start, NULL);
-            uint64_t interp_start = (uint64_t)tv_start.tv_sec * 1000000ULL + (uint64_t)tv_start.tv_usec;
-            
-            // OPTIMIZATION: Select interpolation method based on configuration
-            float raw_sample;
-            if (interp_mode == PHOTOWAVE_INTERP_CUBIC) {
-                raw_sample = sample_waveform_cubic(state->image_line, state->pixel_count,
-                                                   voice->phase, scan_mode);
-            } else {
-                raw_sample = sample_waveform_linear(state->image_line, state->pixel_count,
-                                                   voice->phase, scan_mode);
-            }
-            
-            gettimeofday(&tv_end, NULL);
-            uint64_t interp_end = (uint64_t)tv_end.tv_sec * 1000000ULL + (uint64_t)tv_end.tv_usec;
-            interp_time_us += (interp_end - interp_start);
-            
-            // PROFILING: Measure filter time
-            gettimeofday(&tv_start, NULL);
-            uint64_t filter_start = (uint64_t)tv_start.tv_sec * 1000000ULL + (uint64_t)tv_start.tv_usec;
+            // OPTIMIZATION: Use linear interpolation only (cubic removed for performance)
+            float raw_sample = sample_waveform_linear(state->image_line, state->pixel_count,
+                                                     voice->phase, scan_mode);
             
             // OPTIMIZATION: Simplified lowpass filter (one-pole, cached alpha)
             float rc = 1.0f / (TWO_PI * modulated_cutoff);
@@ -569,10 +452,6 @@ void synth_photowave_process(PhotowaveState *state,
             float alpha = dt / (rc + dt);
             voice->lowpass.prev_output = alpha * raw_sample + (1.0f - alpha) * voice->lowpass.prev_output;
             float filtered = voice->lowpass.prev_output;
-            
-            gettimeofday(&tv_end, NULL);
-            uint64_t filter_end = (uint64_t)tv_end.tv_sec * 1000000ULL + (uint64_t)tv_end.tv_usec;
-            filter_time_us += (filter_end - filter_start);
             
             // OPTIMIZATION: Combine multiplications
             float velocity_scale = voice->velocity * (1.0f / 127.0f);
@@ -597,41 +476,6 @@ void synth_photowave_process(PhotowaveState *state,
     }
     
     state->samples_generated += num_frames;
-    
-    // PROFILING: Calculate total time and accumulate stats
-    gettimeofday(&tv_end, NULL);
-    uint64_t end_us = (uint64_t)tv_end.tv_sec * 1000000ULL + (uint64_t)tv_end.tv_usec;
-    uint64_t total_time_us = end_us - start_us;
-    uint64_t other_time_us = total_time_us - (adsr_time_us + interp_time_us + filter_time_us);
-    
-    total_adsr_time_us += adsr_time_us;
-    total_interp_time_us += interp_time_us;
-    total_filter_time_us += filter_time_us;
-    total_other_time_us += other_time_us;
-    total_process_calls++;
-    
-    // PROFILING: Print stats every 100 calls (~2 seconds at 48kHz with 512 frames)
-    if (total_process_calls % 100 == 0) {
-        uint64_t avg_adsr = total_adsr_time_us / total_process_calls;
-        uint64_t avg_interp = total_interp_time_us / total_process_calls;
-        uint64_t avg_filter = total_filter_time_us / total_process_calls;
-        uint64_t avg_other = total_other_time_us / total_process_calls;
-        uint64_t avg_total = (avg_adsr + avg_interp + avg_filter + avg_other);
-        
-        log_info("PHOTOWAVE", "Performance breakdown per buffer (%d frames):", num_frames);
-        log_info("PHOTOWAVE", "  ADSR:   %llu µs (%.1f%%)", avg_adsr, (float)avg_adsr * 100.0f / avg_total);
-        log_info("PHOTOWAVE", "  Interp: %llu µs (%.1f%%)", avg_interp, (float)avg_interp * 100.0f / avg_total);
-        log_info("PHOTOWAVE", "  Filter: %llu µs (%.1f%%)", avg_filter, (float)avg_filter * 100.0f / avg_total);
-        log_info("PHOTOWAVE", "  Other:  %llu µs (%.1f%%)", avg_other, (float)avg_other * 100.0f / avg_total);
-        log_info("PHOTOWAVE", "  TOTAL:  %llu µs", avg_total);
-        
-        // Reset counters
-        total_process_calls = 0;
-        total_adsr_time_us = 0;
-        total_interp_time_us = 0;
-        total_filter_time_us = 0;
-        total_other_time_us = 0;
-    }
 }
 
 /* ============================================================================
@@ -890,26 +734,80 @@ void synth_photowave_note_on(PhotowaveState *state, uint8_t note, uint8_t veloci
     // Reset filter state
     voice->lowpass.prev_output = 0.0f;
     
-    log_debug("PHOTOWAVE", "Note On: voice=%d, note=%d, vel=%d, freq=%.1f Hz",
-             voice_idx, note, velocity, voice->frequency);
 }
 
 void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
     int i;
+    int oldest_voice_idx = -1;
+    unsigned long long oldest_order = state->current_trigger_order + 1;
     
     if (!state) return;
     
+    // Priority 1: Find the OLDEST ACTIVE voice with this note number (not in RELEASE or IDLE)
+    // This ensures we only release the first instance of the note, not all of them
     for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
         if (state->voices[i].midi_note == note &&
             state->voices[i].active &&
             state->voices[i].volume_adsr.state != ADSR_STATE_IDLE &&
             state->voices[i].volume_adsr.state != ADSR_STATE_RELEASE) {
-            
-            adsr_trigger_release(&state->voices[i].volume_adsr);
-            adsr_trigger_release(&state->voices[i].filter_adsr);
-            
-            log_debug("PHOTOWAVE", "Note Off: voice=%d, note=%d", i, note);
+            // Find the oldest (lowest trigger order) voice with this note
+            if (state->voices[i].trigger_order < oldest_order) {
+                oldest_order = state->voices[i].trigger_order;
+                oldest_voice_idx = i;
+            }
         }
+    }
+    
+    // Priority 2: If no active voice found, search in RELEASE voices (duplicate/late Note Off)
+    // This handles duplicate Note Off messages or late arrivals when voice is already releasing
+    // NOTE: Do NOT check 'active' flag here - voices in RELEASE may have active=false
+    if (oldest_voice_idx == -1) {
+        for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+            if (state->voices[i].midi_note == note &&
+                state->voices[i].volume_adsr.state == ADSR_STATE_RELEASE) {
+                oldest_voice_idx = i;
+                log_debug("PHOTOWAVE", "Duplicate Note Off %d handled via RELEASE voice %d (already releasing)", 
+                          note, i);
+                break; // Take first RELEASE voice found with this note
+            }
+        }
+    }
+    
+    // Priority 3: If still not found, search in IDLE voices (grace period for very late Note Off)
+    // This handles the race condition where ADSR reaches IDLE before Note Off arrives
+    if (oldest_voice_idx == -1) {
+        for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+            if (state->voices[i].midi_note == note &&
+                state->voices[i].volume_adsr.state == ADSR_STATE_IDLE) {
+                oldest_voice_idx = i;
+                break; // Take first IDLE voice found with this note
+            }
+        }
+    }
+    
+    // Process the Note Off
+    if (oldest_voice_idx != -1) {
+        // Only trigger release if not already IDLE
+        if (state->voices[oldest_voice_idx].volume_adsr.state != ADSR_STATE_IDLE) {
+            adsr_trigger_release(&state->voices[oldest_voice_idx].volume_adsr);
+            adsr_trigger_release(&state->voices[oldest_voice_idx].filter_adsr);
+        }
+        
+        // Clear midi_note AFTER processing Note Off (prevents future late Note Offs from finding this voice)
+        state->voices[oldest_voice_idx].midi_note = 0;
+        
+    } else {
+        // No voice found - this should be rare now with the grace period
+        log_warning("PHOTOWAVE", "WARNING - Note Off %d: No voice found (neither active nor idle)!", note);
+        log_warning("PHOTOWAVE", "Voice states: [0:note=%d,state=%d] [1:note=%d,state=%d] [2:note=%d,state=%d] [3:note=%d,state=%d] [4:note=%d,state=%d] [5:note=%d,state=%d] [6:note=%d,state=%d] [7:note=%d,state=%d]",
+                   state->voices[0].midi_note, state->voices[0].volume_adsr.state,
+                   state->voices[1].midi_note, state->voices[1].volume_adsr.state,
+                   state->voices[2].midi_note, state->voices[2].volume_adsr.state,
+                   state->voices[3].midi_note, state->voices[3].volume_adsr.state,
+                   state->voices[4].midi_note, state->voices[4].volume_adsr.state,
+                   state->voices[5].midi_note, state->voices[5].volume_adsr.state,
+                   state->voices[6].midi_note, state->voices[6].volume_adsr.state,
+                   state->voices[7].midi_note, state->voices[7].volume_adsr.state);
     }
 }
 
@@ -934,12 +832,7 @@ void synth_photowave_control_change(PhotowaveState *state, uint8_t cc_number, ui
             state->config.amplitude = (float)cc_value / 127.0f;
             break;
             
-        case 74: // CC74 (Brightness): Interpolation mode
-            state->config.interp_mode = (cc_value < 64) ? 
-                PHOTOWAVE_INTERP_LINEAR : PHOTOWAVE_INTERP_CUBIC;
-            log_info("PHOTOWAVE", "Interpolation: %s (CC74=%d)", 
-                     (cc_value < 64) ? "Linear" : "Cubic", cc_value);
-            break;
+        // CC74 (Brightness) removed - cubic interpolation no longer available
             
         default:
             break;
@@ -1099,7 +992,14 @@ void *synth_photowave_thread_func(void *arg) {
     
     (void)arg;
     
-    log_info("PHOTOWAVE", "Thread started with optimized synchronization");
+    // Set RT priority for photowave synthesis thread (priority 75, same as polyphonic)
+    // Use the unified synth_set_rt_priority() function with macOS support
+    extern int synth_set_rt_priority(pthread_t thread, int priority);
+    if (synth_set_rt_priority(pthread_self(), 75) != 0) {
+        log_warning("PHOTOWAVE", "Thread: Failed to set RT priority (continuing without RT)");
+    }
+    
+    log_info("PHOTOWAVE", "Thread started with RT-optimized synchronization (nanosleep + exponential backoff)");
     photowave_thread_running = 1;
     
     buffer_size = g_sp3ctra_config.audio_buffer_size;
@@ -1118,55 +1018,37 @@ void *synth_photowave_thread_func(void *arg) {
     photowave_last_stats_print_time_us = (uint64_t)tv_stats.tv_sec * 1000000ULL + (uint64_t)tv_stats.tv_usec;
     
     while (photowave_thread_running) {
-        if (getSynthPhotowaveMixLevel() < 0.01f) {
-            usleep(10000);
-            continue;
-        }
-        
-        // OPTIMIZATION: Skip buffer generation if no notes are active
-        if (!synth_photowave_is_note_active(&g_photowave_state)) {
-            usleep(5000);  // Sleep 5ms if nothing to do
-            continue;
-        }
+        // RACE CONDITION FIX: Always produce buffers (like polyphonic mode)
+        // This eliminates the race condition where the audio callback could be called
+        // before the first buffer is ready after a note on event.
+        // When inactive, synth_photowave_process() will generate silence.
         
         pthread_mutex_lock(&photowave_buffer_index_mutex);
         write_index = photowave_current_buffer_index;
         pthread_mutex_unlock(&photowave_buffer_index_mutex);
         
-        // OPTIMIZED: Use condition variable with timeout instead of busy-wait
-        struct timespec timeout;
-        struct timeval now;
-        gettimeofday(&now, NULL);
+        // RT-SAFE: Wait for buffer to be consumed with exponential backoff (like polyphonic mode)
+        // This eliminates pthread_cond_timedwait latency and provides better RT performance
+        int wait_iterations = 0;
+        const int MAX_WAIT_ITERATIONS = 500; // ~50ms max wait
         
-        // Set timeout to 15ms (generous for buffer consumption)
-        timeout.tv_sec = now.tv_sec;
-        timeout.tv_nsec = (now.tv_usec + 15000) * 1000; // 15ms timeout
-        if (timeout.tv_nsec >= 1000000000) {
-            timeout.tv_sec++;
-            timeout.tv_nsec -= 1000000000;
-        }
-        
-        // Record wait start time
-        uint64_t wait_start_us = (uint64_t)now.tv_sec * 1000000ULL + (uint64_t)now.tv_usec;
-        
-        // Wait for buffer to be consumed using condition variable
-        pthread_mutex_lock(&photowave_audio_buffers[write_index].mutex);
         while (__atomic_load_n(&photowave_audio_buffers[write_index].ready, __ATOMIC_ACQUIRE) == 1 && 
-               photowave_thread_running) {
-            int wait_result = pthread_cond_timedwait(&photowave_audio_buffers[write_index].cond,
-                                                     &photowave_audio_buffers[write_index].mutex,
-                                                     &timeout);
-            if (wait_result == ETIMEDOUT) {
-                // Timeout occurred - callback is too slow
-                gettimeofday(&now, NULL);
-                uint64_t wait_time_us = ((uint64_t)now.tv_sec * 1000000ULL + (uint64_t)now.tv_usec) - wait_start_us;
-                photowave_total_wait_timeouts++;
-                log_warning("PHOTOWAVE", "Buffer wait timeout (%.2f ms wait, callback consuming too slowly)",
-                           wait_time_us / 1000.0);
-                break;
-            }
+               photowave_thread_running && wait_iterations < MAX_WAIT_ITERATIONS) {
+            // Optimized exponential backoff: more aggressive at start, then backs off
+            int sleep_us = (wait_iterations < 5) ? 5 :      // 5µs for first 5 iterations
+                           (wait_iterations < 20) ? 20 :     // 20µs for next 15 iterations
+                           (wait_iterations < 100) ? 50 :    // 50µs for next 80 iterations
+                           100;                              // 100µs for remaining iterations
+            struct timespec sleep_time = {0, sleep_us * 1000}; // Convert µs to ns
+            nanosleep(&sleep_time, NULL);
+            wait_iterations++;
         }
-        pthread_mutex_unlock(&photowave_audio_buffers[write_index].mutex);
+        
+        // If timeout, log warning but continue (graceful degradation)
+        if (wait_iterations >= MAX_WAIT_ITERATIONS) {
+            photowave_total_wait_timeouts++;
+            log_warning("PHOTOWAVE", "Buffer wait timeout (callback too slow)");
+        }
         
         if (!photowave_thread_running) {
             break;

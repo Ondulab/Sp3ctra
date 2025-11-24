@@ -353,15 +353,11 @@ void MidiController::processMidiMessage(double timeStamp,
       
     } else if (messageType == 0x90) {
       // Note On
-      log_debug("MIDI_DEBUG", "Note On detected: ch=%d, note=%d, vel=%d - dispatching to unified system", 
-               channel, number, value);
       midi_mapping_dispatch(MIDI_MSG_NOTE_ON, channel, number, value);
       return; // Skip legacy processing
       
     } else if (messageType == 0x80) {
       // Note Off
-      log_debug("MIDI_DEBUG", "Note Off detected: ch=%d, note=%d - dispatching to unified system", 
-               channel, number);
       midi_mapping_dispatch(MIDI_MSG_NOTE_OFF, channel, number, value);
       return; // Skip legacy processing
       
