@@ -62,7 +62,7 @@ public:
 
 private:
   // Constantes
-  static const int MAX_DELAY_SIZE = 8192;    // Taille max des lignes de délai
+  static const int MAX_DELAY_SIZE = 65536;   // Taille max des lignes de délai (~1.5s @ 44.1kHz)
   static const int MAX_PREDELAY_SIZE = 4800; // 100ms @ 48kHz
   static const int NUM_DELAY_LINES = 8;      // Nombre de lignes de délai
 
@@ -71,9 +71,14 @@ private:
   float _sampleRate;
 
   // Gains
-  float _gain0; // Gain interne de la réverbération
+  float _gain0; // Gain interne de la réverbération (deprecated, use _currentGain0)
   float _gain1; // Dry gain
   float _gain2; // Wet gain
+  
+  // Smoothed gain for click-free parameter changes
+  float _currentGain0;  // Current smoothed gain value
+  float _targetGain0;   // Target gain value
+  float _smoothingCoeff; // Smoothing coefficient (lower = slower/smoother)
 
   // Buffers de délai
   float _delayLines[NUM_DELAY_LINES][MAX_DELAY_SIZE];

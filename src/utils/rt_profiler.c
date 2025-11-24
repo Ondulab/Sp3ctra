@@ -145,12 +145,12 @@ void rt_profiler_print_stats(RTProfiler *profiler) {
     uint64_t miss_photo = atomic_load(&profiler->buffer_miss_photowave);
     uint64_t miss_total = miss_add + miss_poly + miss_photo;
     
-    log_info("RT_PROFILER", "=== Performance Stats (after %llu callbacks) ===", 
+    log_debug("RT_PROFILER", "=== Performance Stats (after %llu callbacks) ===", 
              profiler->callback_count);
-    log_info("RT_PROFILER", "  Callback: avg=%llu µs, max=%llu µs, budget=%llu µs",
+    log_debug("RT_PROFILER", "  Callback: avg=%llu µs, max=%llu µs, budget=%llu µs",
              avg_callback_us, profiler->max_callback_time_us, profiler->callback_budget_us);
-    log_info("RT_PROFILER", "  CPU usage: %.1f%% of available time", cpu_percent);
-    log_info("RT_PROFILER", "  Underruns: %llu total", underruns);
+    log_debug("RT_PROFILER", "  CPU usage: %.1f%% of available time", cpu_percent);
+    log_debug("RT_PROFILER", "  Underruns: %llu total", underruns);
     
     /* Buffer miss stats */
     if (miss_total > 0) {
@@ -158,13 +158,13 @@ void rt_profiler_print_stats(RTProfiler *profiler) {
         float miss_rate_poly = (miss_poly * 100.0f) / profiler->callback_count;
         float miss_rate_photo = (miss_photo * 100.0f) / profiler->callback_count;
         
-        log_info("RT_PROFILER", "  Buffer miss: %llu total (%.2f%%)", miss_total,
+        log_debug("RT_PROFILER", "  Buffer miss: %llu total (%.2f%%)", miss_total,
                  (miss_total * 100.0f) / profiler->callback_count);
-        log_info("RT_PROFILER", "    - Additive: %llu (%.2f%%)", miss_add, miss_rate_add);
-        log_info("RT_PROFILER", "    - Polyphonic: %llu (%.2f%%)", miss_poly, miss_rate_poly);
-        log_info("RT_PROFILER", "    - Photowave: %llu (%.2f%%)", miss_photo, miss_rate_photo);
+        log_debug("RT_PROFILER", "    - Additive: %llu (%.2f%%)", miss_add, miss_rate_add);
+        log_debug("RT_PROFILER", "    - Polyphonic: %llu (%.2f%%)", miss_poly, miss_rate_poly);
+        log_debug("RT_PROFILER", "    - Photowave: %llu (%.2f%%)", miss_photo, miss_rate_photo);
     } else {
-        log_info("RT_PROFILER", "  Buffer miss: 0 (0.00%%)");
+        log_debug("RT_PROFILER", "  Buffer miss: 0 (0.00%%)");
     }
     
     /* Mutex stats */
@@ -172,7 +172,7 @@ void rt_profiler_print_stats(RTProfiler *profiler) {
         uint64_t avg_mutex_wait = profiler->mutex_total_wait_us / profiler->mutex_lock_attempts;
         float contention_rate = (profiler->mutex_contentions * 100.0f) / profiler->mutex_lock_attempts;
         
-        log_info("RT_PROFILER", "  Mutex: %llu locks, %.2f%% contention, avg wait=%llu µs, max=%llu µs",
+        log_debug("RT_PROFILER", "  Mutex: %llu locks, %.2f%% contention, avg wait=%llu µs, max=%llu µs",
                  profiler->mutex_lock_attempts, contention_rate, 
                  avg_mutex_wait, profiler->mutex_max_wait_us);
     }
@@ -181,7 +181,7 @@ void rt_profiler_print_stats(RTProfiler *profiler) {
     if (!rt_profiler_is_healthy(profiler)) {
         log_warning("RT_PROFILER", "⚠️  PERFORMANCE ISSUES DETECTED!");
     } else {
-        log_info("RT_PROFILER", "✅ Performance is healthy");
+        log_debug("RT_PROFILER", "✅ Performance is healthy");
     }
 }
 

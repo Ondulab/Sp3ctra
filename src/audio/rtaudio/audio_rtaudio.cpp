@@ -295,41 +295,52 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       float reverb_left = 0.0f, reverb_right = 0.0f;
 
 #if ENABLE_REVERB
+      // CRITICAL FIX: Detect when ALL reverb sends go to zero and clear reverb buffers
+      // This prevents "ghost reverb" from lingering when sends are cut
+      static bool all_sends_zero_last_frame = false;
+      bool all_sends_zero = (cached_reverb_send_additive <= 0.01f &&
+                             cached_reverb_send_polyphonic <= 0.01f &&
+                             cached_reverb_send_photowave <= 0.01f);
+      
+      // If transitioning from "at least one send active" to "all sends zero"
+      // then clear the reverb buffers immediately
+      if (all_sends_zero && !all_sends_zero_last_frame && reverbEnabled) {
+        zitaRev.clear();  // Clear the 8 delay lines
+      }
+      all_sends_zero_last_frame = all_sends_zero;
+
 #if DEBUG_AUDIO_REVERB
       // DEBUG: Log reverb condition check
       static int reverb_debug_counter = 0;
       if (++reverb_debug_counter >= 4800) {
         reverb_debug_counter = 0;
-        printf("REVERB CONDITION: ENABLE_REVERB=%d, reverbEnabled=%d, send_additive=%.3f, send_poly=%.3f\n",
-               ENABLE_REVERB, reverbEnabled ? 1 : 0, cached_reverb_send_additive, cached_reverb_send_polyphonic);
+        printf("REVERB CONDITION: ENABLE_REVERB=%d, reverbEnabled=%d, send_additive=%.3f, send_poly=%.3f, send_photowave=%.3f, all_zero=%d\n",
+               ENABLE_REVERB, reverbEnabled ? 1 : 0, cached_reverb_send_additive, cached_reverb_send_polyphonic, cached_reverb_send_photowave, all_sends_zero ? 1 : 0);
       }
 #endif
       
-      if (reverbEnabled && (cached_reverb_send_additive > 0.01f ||
-                            cached_reverb_send_polyphonic > 0.01f)) {
+      if (reverbEnabled && !all_sends_zero) {
         float reverb_input_left = 0.0f;
         float reverb_input_right = 0.0f;
 
+        // CRITICAL FIX: Reverb sends are now INDEPENDENT of mix levels
+        // Each channel can send to reverb regardless of its master mix level
+        // This allows reverb to work even when a channel is muted in the mix
         if (source_additive_left && cached_reverb_send_additive > 0.01f) {
-          reverb_input_left += source_additive_left[i] * cached_level_additive *
-                               cached_reverb_send_additive;
+          reverb_input_left += source_additive_left[i] * cached_reverb_send_additive;
         }
         if (source_additive_right && cached_reverb_send_additive > 0.01f) {
-          reverb_input_right += source_additive_right[i] *
-                                cached_level_additive *
-                                cached_reverb_send_additive;
+          reverb_input_right += source_additive_right[i] * cached_reverb_send_additive;
         }
         if (source_fft && cached_reverb_send_polyphonic > 0.01f) {
-          float polyphonic_reverb = source_fft[i] * cached_level_polyphonic *
-                                    cached_reverb_send_polyphonic;
+          float polyphonic_reverb = source_fft[i] * cached_reverb_send_polyphonic;
           reverb_input_left += polyphonic_reverb;
           reverb_input_right += polyphonic_reverb;
         }
 
-        // Add photowave signal to reverb
+        // Add photowave signal to reverb (independent of mix level)
         if (source_photowave && cached_reverb_send_photowave > 0.01f) {
-          float photowave_reverb = source_photowave[i] * cached_level_photowave *
-                                   cached_reverb_send_photowave;
+          float photowave_reverb = source_photowave[i] * cached_reverb_send_photowave;
           reverb_input_left += photowave_reverb;
           reverb_input_right += photowave_reverb;
         }
@@ -527,9 +538,9 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
   zitaRev.set_width(1.0f);   // Largeur stéréo maximale
   zitaRev.set_delay(
       0.08f);            // Pre-delay plus important pour clarté et séparation
-  zitaRev.set_mix(1.0f); // CRITICAL: 100% wet - we handle dry/wet mixing ourselves in processReverbOptimized
+  zitaRev.set_mix(1.0f); // CRITICAL: 100% wet - ZitaRev outputs ONLY wet signal, no dry/wet mixing inside
   
-  log_info("AUDIO", "ZitaRev1 configured: roomsize=0.95, damping=0.4, width=1.0, mix=1.0 (100%% wet)");
+  log_info("AUDIO", "ZitaRev1 configured: roomsize=0.95, damping=0.4, width=1.0, mix=1.0 (100%% wet - dry/wet mixing handled externally)");
 }
 
 // Destructeur
@@ -550,44 +561,6 @@ AudioSystem::~AudioSystem() {
   }
 }
 
-// Fonction de traitement de la réverbération
-void AudioSystem::processReverb(float inputL, float inputR, float &outputL,
-                                float &outputR) {
-  // Si réverbération désactivée, sortie = entrée
-  if (!reverbEnabled) {
-    outputL = inputL;
-    outputR = inputR;
-    return;
-  }
-
-  // Mise à jour des paramètres ZitaRev1 en fonction des contrôles MIDI
-  zitaRev.set_roomsize(reverbRoomSize);
-  zitaRev.set_damping(reverbDamping);
-  zitaRev.set_width(reverbWidth);
-  // Le mix est géré séparément dans notre code
-
-  // Buffers temporaires pour traitement ZitaRev1
-  float inBufferL[1] = {inputL};
-  float inBufferR[1] = {inputR};
-  float outBufferL[1] = {0.0f};
-  float outBufferR[1] = {0.0f};
-
-  // Traiter via ZitaRev1 (algorithme de réverbération de haute qualité)
-  zitaRev.process(inBufferL, inBufferR, outBufferL, outBufferR, 1);
-
-  // Mélanger le signal sec et le signal traité (wet)
-  // Utiliser une courbe linéaire pour une réverbération plus douce
-  float wetGain =
-      reverbMix; // Relation directe entre le paramètre et le gain wet
-
-  // Balance simple entre signal sec et humide
-  float dryGain = 1.0f - reverbMix; // Relation inverse pour un total de 100%
-
-  // Mélanger les signaux
-  outputL = inputL * dryGain + outBufferL[0] * wetGain;
-  outputR = inputR * dryGain + outBufferR[0] * wetGain;
-}
-
 // ULTRA-OPTIMIZED reverb function for real-time callback
 void AudioSystem::processReverbOptimized(float inputL, float inputR,
                                          float &outputL, float &outputR) {
@@ -603,9 +576,11 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
   
   // CPU OPTIMIZATION: Skip all reverb processing if mix is zero or reverb
   // disabled
+  // CRITICAL FIX: Return SILENCE (0.0f), not the input signal!
+  // When reverbMix = 0%, we want NO reverb in the output, not a copy of the input
   if (!reverbEnabled || reverbMix <= 0.0f) {
-    outputL = inputL;
-    outputR = inputR;
+    outputL = 0.0f;
+    outputR = 0.0f;
 #if DEBUG_AUDIO_REVERB
     printf("REVERB SKIPPED: reverbEnabled=%d, reverbMix=%.3f\n", reverbEnabled ? 1 : 0, reverbMix);
 #endif
@@ -653,9 +628,11 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
   // Appel direct à ZitaRev1 (le coût principal)
   zitaRev.process(inBufferL, inBufferR, outBufferL, outBufferR, 1);
 
-  // Mix optimisé avec gains en cache
-  outputL = inputL * cached_dry_gain + outBufferL[0] * cached_wet_gain;
-  outputR = inputR * cached_dry_gain + outBufferR[0] * cached_wet_gain;
+  // CRITICAL FIX: Return ONLY wet signal (reverb processed)
+  // Dry/wet mixing is handled in the main callback, not here
+  // This prevents signal duplication when reverb_send is high
+  outputL = outBufferL[0] * cached_wet_gain;
+  outputR = outBufferR[0] * cached_wet_gain;
   
 #if DEBUG_AUDIO_REVERB
   // DEBUG: Log reverb output values
