@@ -140,7 +140,6 @@ typedef struct {
     float poly_master_volume;                  // Master volume (0.0-1.0)
     float poly_amplitude_gamma;                // Amplitude gamma curve (0.1-5.0)
     float poly_min_audible_amplitude;          // Minimum audible amplitude threshold
-    int poly_max_harmonics_per_voice;          // Max harmonics per voice for CPU optimization
     float poly_high_freq_harmonic_limit_hz;    // High frequency harmonic limit (Hz)
     
     // Polyphonic advanced parameters

@@ -177,10 +177,13 @@ void synth_polyphonicMode_process(float *audio_buffer,
       float volume_adsr_val = adsr_get_output(&current_voice->volume_adsr);
       float filter_adsr_val = adsr_get_output(&current_voice->filter_adsr);
 
+      // Update voice state to IDLE when ADSR completes, but DON'T clear midi_note_number yet
+      // This prevents race condition where Note Off arrives after ADSR reaches IDLE
+      // The midi_note_number will be cleared when the voice is stolen by a new Note On
       if (current_voice->volume_adsr.state == ADSR_STATE_IDLE &&
           current_voice->voice_state != ADSR_STATE_IDLE) {
         current_voice->voice_state = ADSR_STATE_IDLE;
-        current_voice->midi_note_number = -1;
+        // NOTE: midi_note_number is intentionally NOT cleared here to allow late Note Off messages
       }
 
       if (volume_adsr_val < 0.00001f &&
@@ -210,9 +213,9 @@ void synth_polyphonicMode_process(float *audio_buffer,
       // Reduce harmonics for high frequencies to save CPU
       if (actual_fundamental_freq > g_sp3ctra_config.poly_high_freq_harmonic_limit_hz) {
         max_harmonics =
-            fminf(g_sp3ctra_config.poly_max_harmonics_per_voice / 2, MAX_MAPPED_OSCILLATORS);
+            fminf(g_max_mapped_oscillators / 2, MAX_MAPPED_OSCILLATORS);
       } else if (actual_fundamental_freq > g_sp3ctra_config.poly_high_freq_harmonic_limit_hz / 2) {
-        max_harmonics = fminf(g_sp3ctra_config.poly_max_harmonics_per_voice, MAX_MAPPED_OSCILLATORS);
+        max_harmonics = fminf(g_max_mapped_oscillators, MAX_MAPPED_OSCILLATORS);
       }
 
       for (int osc_idx = 0; osc_idx < max_harmonics; ++osc_idx) {
@@ -330,42 +333,12 @@ void *synth_polyphonicMode_thread_func(void *arg) {
     log_warning("SYNTH", "Polyphonic thread: No context provided, no DoubleBuffer available");
   }
   
-  // Set RT priority for polyphonic synthesis thread (priority 75, between callback at 70 and max 99)
-  #ifdef __linux__
-  struct sched_param param;
-  param.sched_priority = 75;
-  if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) == 0) {
-    log_info("SYNTH", "Polyphonic thread: RT priority set to 75 (SCHED_FIFO)");
-  } else {
-    log_warning("SYNTH", "Polyphonic thread: Failed to set RT priority (may need CAP_SYS_NICE capability)");
+  // Set RT priority for polyphonic synthesis thread (priority 75, between callback at 70 and additive workers at 80)
+  // Use the unified synth_set_rt_priority() function with macOS support
+  extern int synth_set_rt_priority(pthread_t thread, int priority);
+  if (synth_set_rt_priority(pthread_self(), 75) != 0) {
+    log_warning("SYNTH", "Polyphonic thread: Failed to set RT priority (continuing without RT)");
   }
-  #elif defined(__APPLE__)
-  // macOS: Use thread_policy_set for RT priority
-  struct thread_time_constraint_policy ttcpolicy;
-  thread_port_t threadport = pthread_mach_thread_np(pthread_self());
-  
-  // Calculate time constraints for RT thread
-  // Period: ~10ms (typical audio buffer period at 48kHz/512 frames)
-  // Computation: 50% of period (5ms)
-  // Constraint: 80% of period (8ms)
-  // Preemptible: yes (1)
-  mach_timebase_info_data_t timebase_info;
-  mach_timebase_info(&timebase_info);
-  
-  double ms_to_abs_time = ((double)timebase_info.denom / (double)timebase_info.numer) * 1000000.0;
-  ttcpolicy.period = (uint32_t)(10.0 * ms_to_abs_time);      // 10ms period
-  ttcpolicy.computation = (uint32_t)(5.0 * ms_to_abs_time);  // 5ms computation
-  ttcpolicy.constraint = (uint32_t)(8.0 * ms_to_abs_time);   // 8ms constraint
-  ttcpolicy.preemptible = 1;
-  
-  if (thread_policy_set(threadport, THREAD_TIME_CONSTRAINT_POLICY,
-                       (thread_policy_t)&ttcpolicy,
-                       THREAD_TIME_CONSTRAINT_POLICY_COUNT) == KERN_SUCCESS) {
-    log_info("SYNTH", "Polyphonic thread: RT time constraint policy set (macOS)");
-  } else {
-    log_warning("SYNTH", "Polyphonic thread: Failed to set RT time constraint policy (macOS)");
-  }
-  #endif
   
   log_info("SYNTH", "Polyphonic synthesis thread started");
   srand(time(NULL));
@@ -752,8 +725,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
 }
 
 void synth_polyphonic_note_off(int noteNumber) {
-  // Find the OLDEST voice with this note number that is not already in RELEASE or IDLE
-  // This ensures we only release the first instance of the note, not all of them
+  // Priority 1: Find the OLDEST voice with this note number that is ACTIVE (not in RELEASE or IDLE)
   int oldest_voice_idx = -1;
   unsigned long long oldest_order = g_current_trigger_order + 1;
   
@@ -769,13 +741,54 @@ void synth_polyphonic_note_off(int noteNumber) {
     }
   }
   
-  // Only release the oldest voice found
+  // Priority 2: If no active voice found, search in RELEASE voices (duplicate/late Note Off)
+  // This handles duplicate Note Off messages or Note Offs that arrive while voice is already releasing
+  if (oldest_voice_idx == -1) {
+    for (int i = 0; i < g_num_poly_voices; ++i) {
+      if (poly_voices[i].midi_note_number == noteNumber &&
+          poly_voices[i].voice_state == ADSR_STATE_RELEASE) {
+        oldest_voice_idx = i;
+        log_debug("SYNTH_POLY", "Duplicate Note Off %d handled via RELEASE voice %d (already releasing)", 
+                  noteNumber, i);
+        break; // Take the first RELEASE voice found with this note
+      }
+    }
+  }
+  
+  // Priority 3: If still not found, search in IDLE voices (grace period for very late Note Off)
+  // This handles the race condition where ADSR reached IDLE before Note Off arrived
+  if (oldest_voice_idx == -1) {
+    for (int i = 0; i < g_num_poly_voices; ++i) {
+      if (poly_voices[i].midi_note_number == noteNumber &&
+          poly_voices[i].voice_state == ADSR_STATE_IDLE) {
+        oldest_voice_idx = i;
+        log_debug("SYNTH_POLY", "Late Note Off %d handled via IDLE voice %d (grace period)", 
+                  noteNumber, i);
+        break; // Take the first IDLE voice found with this note
+      }
+    }
+  }
+  
+  // Release the voice if found
   if (oldest_voice_idx != -1) {
-    adsr_trigger_release(&poly_voices[oldest_voice_idx].volume_adsr);
-    adsr_trigger_release(&poly_voices[oldest_voice_idx].filter_adsr);
-    poly_voices[oldest_voice_idx].voice_state = ADSR_STATE_RELEASE;
-    printf("SYNTH_POLY: Voice %d Note Off: %d -> ADSR Release\n", 
-           oldest_voice_idx, noteNumber);
+    // Only trigger release if not already IDLE (avoid re-triggering IDLE voices)
+    if (poly_voices[oldest_voice_idx].voice_state != ADSR_STATE_IDLE) {
+      adsr_trigger_release(&poly_voices[oldest_voice_idx].volume_adsr);
+      adsr_trigger_release(&poly_voices[oldest_voice_idx].filter_adsr);
+      poly_voices[oldest_voice_idx].voice_state = ADSR_STATE_RELEASE;
+      printf("SYNTH_POLY: Voice %d Note Off: %d -> ADSR Release\n", 
+             oldest_voice_idx, noteNumber);
+    }
+    // Clear midi_note_number now that Note Off has been processed
+    poly_voices[oldest_voice_idx].midi_note_number = -1;
+  } else {
+    // DEBUG: Log when no voice is found for Note Off (should be very rare now)
+    printf("SYNTH_POLY: WARNING - Note Off %d: No voice found (neither active nor idle)!\n", noteNumber);
+    printf("SYNTH_POLY: Voice states: ");
+    for (int i = 0; i < g_num_poly_voices; ++i) {
+      printf("[%d:note=%d,state=%d] ", i, poly_voices[i].midi_note_number, poly_voices[i].voice_state);
+    }
+    printf("\n");
   }
 }
 

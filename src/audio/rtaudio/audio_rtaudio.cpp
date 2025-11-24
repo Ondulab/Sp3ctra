@@ -284,8 +284,9 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 
       // Add Photowave contribution (same for both channels)
       // CPU OPTIMIZATION: Skip photowave processing if mix level is essentially zero
-      // SYNC FIX: Only mix photowave if additive is also ready (prevents desynchronization)
-      if (source_photowave && cached_level_photowave > 0.01f && source_additive_left) {
+      // RACE CONDITION FIX: Removed additive dependency check (source_additive_left)
+      // Photowave now produces buffers continuously, so no sync protection needed
+      if (source_photowave && cached_level_photowave > 0.01f) {
         dry_sample_left += source_photowave[i] * cached_level_photowave;
         dry_sample_right += source_photowave[i] * cached_level_photowave;
       }

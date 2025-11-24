@@ -390,8 +390,6 @@ void midi_cb_synth_polyphonic_note_on(const MidiParameterValue *param, void *use
     int velocity = (int)(param->value * 127.0f);
     
     synth_polyphonic_note_on(note_number, velocity);
-    
-    log_debug("MIDI", "Note On: %d (velocity %d)", note_number, velocity);
 }
 
 void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *user_data) {
@@ -401,8 +399,6 @@ void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *us
     int note_number = (int)param->raw_value;
     
     synth_polyphonic_note_off(note_number);
-    
-    log_debug("MIDI", "Note Off: %d", note_number);
 }
 
 void midi_cb_synth_polyphonic_filter_cutoff(const MidiParameterValue *param, void *user_data) {
@@ -489,11 +485,7 @@ void midi_cb_synth_photowave_note_on(const MidiParameterValue *param, void *user
     // param->value contains normalized velocity (0.0 to 1.0)
     int velocity = (int)(param->value * 127.0f);
     
-    log_debug("PHOTOWAVE_DEBUG", "MIDI Callback: Note On received - note=%d, velocity=%d", note_number, velocity);
-    
     synth_photowave_note_on(&g_photowave_state, (uint8_t)note_number, (uint8_t)velocity);
-    
-    log_debug("MIDI", "Photowave Note On: %d (velocity %d)", note_number, velocity);
 }
 
 void midi_cb_synth_photowave_note_off(const MidiParameterValue *param, void *user_data) {
@@ -502,11 +494,7 @@ void midi_cb_synth_photowave_note_off(const MidiParameterValue *param, void *use
     // Note handling is special - raw_value contains note number
     int note_number = (int)param->raw_value;
     
-    log_debug("PHOTOWAVE_DEBUG", "MIDI Callback: Note Off received - note=%d", note_number);
-    
     synth_photowave_note_off(&g_photowave_state, (uint8_t)note_number);
-    
-    log_debug("MIDI", "Photowave Note Off: %d", note_number);
 }
 
 void midi_cb_synth_photowave_modulation(const MidiParameterValue *param, void *user_data) {
@@ -640,8 +628,6 @@ void midi_cb_synth_photowave_filter_env_depth(const MidiParameterValue *param, v
  * ============================================================================ */
 
 void midi_cb_sequencer_player_record_toggle(const MidiParameterValue *param, void *user_data) {
-    log_debug("MIDI", "SEQUENCER CALLBACK CALLED: record_toggle");
-    
     if (!g_image_sequencer) {
         log_error("MIDI", "g_image_sequencer is NULL");
         return;
@@ -653,21 +639,16 @@ void midi_cb_sequencer_player_record_toggle(const MidiParameterValue *param, voi
     }
     
     int player_id = *(int*)user_data;
-    log_debug("MIDI", "Player ID: %d, button_pressed: %d", player_id, param->button_pressed);
     
     // Monostable behavior: press = start recording, release = stop recording
     if (param->button_pressed) {
-        log_debug("MIDI", "Button pressed: Starting recording");
         image_sequencer_start_recording(g_image_sequencer, player_id);
     } else {
-        log_debug("MIDI", "Button released: Stopping recording");
         image_sequencer_stop_recording(g_image_sequencer, player_id);
     }
 }
 
 void midi_cb_sequencer_player_play_stop(const MidiParameterValue *param, void *user_data) {
-    log_debug("MIDI", "SEQUENCER CALLBACK CALLED: play_stop");
-    
     if (!g_image_sequencer) {
         log_error("MIDI", "g_image_sequencer is NULL");
         return;
@@ -679,21 +660,16 @@ void midi_cb_sequencer_player_play_stop(const MidiParameterValue *param, void *u
     }
     
     int player_id = *(int*)user_data;
-    log_debug("MIDI", "Player ID: %d, button_pressed: %d", player_id, param->button_pressed);
     
     // Monostable behavior: press = start playback, release = stop playback
     if (param->button_pressed) {
-        log_debug("MIDI", "Button pressed: Starting playback");
         image_sequencer_start_playback(g_image_sequencer, player_id);
     } else {
-        log_debug("MIDI", "Button released: Stopping playback");
         image_sequencer_stop_playback(g_image_sequencer, player_id);
     }
 }
 
 void midi_cb_sequencer_player_clear(const MidiParameterValue *param, void *user_data) {
-    log_debug("MIDI", "SEQUENCER CALLBACK CALLED: clear");
-    
     if (!g_image_sequencer) {
         log_error("MIDI", "g_image_sequencer is NULL");
         return;
@@ -705,7 +681,6 @@ void midi_cb_sequencer_player_clear(const MidiParameterValue *param, void *user_
     }
     
     int player_id = *(int*)user_data;
-    log_debug("MIDI", "Player ID: %d, button_pressed: %d", player_id, param->button_pressed);
     
     // Monostable behavior: only clear on button press, not on release
     if (param->button_pressed) {

@@ -307,87 +307,16 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
   if (synth_pool_initialized && !synth_pool_shutdown) {
     // === OPTIMIZED VERSION WITH THREAD POOL ===
     
-    // TIMING INSTRUMENTATION: Measure each phase
-    struct timeval t_start, t_precomp_end, t_workers_start, t_workers_end;
-    static uint64_t precomp_time_sum = 0, workers_time_sum = 0;
-    static uint64_t precomp_time_max = 0, workers_time_max = 0;
-    static int timing_sample_count = 0;
-    
-    gettimeofday(&t_start, NULL);
-
     // Phase 1: Pre-compute data in single-thread (avoids contention)
     synth_precompute_wave_data(imageData, db);
-    
-    gettimeofday(&t_precomp_end, NULL);
-    uint64_t precomp_us = (t_precomp_end.tv_sec - t_start.tv_sec) * 1000000ULL + 
-                          (t_precomp_end.tv_usec - t_start.tv_usec);
 
     // Phase 2: Start workers in parallel
-    gettimeofday(&t_workers_start, NULL);
-    
     // Deterministic execution with barriers
     // Signal all workers to start via barrier
     synth_barrier_wait(&g_worker_start_barrier);
     
     // Wait for all workers to complete via barrier
     synth_barrier_wait(&g_worker_end_barrier);
-    
-    gettimeofday(&t_workers_end, NULL);
-    uint64_t workers_us = (t_workers_end.tv_sec - t_workers_start.tv_sec) * 1000000ULL + 
-                          (t_workers_end.tv_usec - t_workers_start.tv_usec);
-    
-    // Accumulate statistics
-    precomp_time_sum += precomp_us;
-    workers_time_sum += workers_us;
-    if (precomp_us > precomp_time_max) precomp_time_max = precomp_us;
-    if (workers_us > workers_time_max) workers_time_max = workers_us;
-    timing_sample_count++;
-    
-    // Log every 1000 samples (~10 seconds @ 96kHz)
-    if (timing_sample_count >= 1000) {
-      uint64_t precomp_avg = precomp_time_sum / timing_sample_count;
-      uint64_t workers_avg = workers_time_sum / timing_sample_count;
-      uint64_t total_avg = precomp_avg + workers_avg;
-      uint64_t total_max = precomp_time_max + workers_time_max;
-      
-      // Time budget @ 96kHz with 1024 frames = 10666µs
-      uint64_t time_budget_us = ((uint64_t)g_sp3ctra_config.audio_buffer_size * 1000000ULL) / 
-                                g_sp3ctra_config.sampling_frequency;
-      
-      log_info("SYNTH_TIMING", "Precomp: avg=%llu µs, max=%llu µs | Workers: avg=%llu µs, max=%llu µs | Total: avg=%llu µs, max=%llu µs (budget=%llu µs)",
-               precomp_avg, precomp_time_max, workers_avg, workers_time_max, 
-               total_avg, total_max, time_budget_us);
-      
-      // Log per-worker statistics (using data captured inside each worker thread)
-      log_info("SYNTH_TIMING", "Per-worker timing:");
-      for (int i = 0; i < num_workers; i++) {
-        if (thread_pool[i].worker_timing_sample_count > 0) {
-          uint64_t w_avg = thread_pool[i].worker_time_sum_us / thread_pool[i].worker_timing_sample_count;
-          log_info("SYNTH_TIMING", "  Worker %d: avg=%llu µs, max=%llu µs (notes %d-%d)", 
-                   i, w_avg, thread_pool[i].worker_time_max_us,
-                   thread_pool[i].start_note, thread_pool[i].end_note - 1);
-        }
-      }
-      
-      // Detect if we're exceeding budget
-      if (total_max > time_budget_us) {
-        log_warning("SYNTH_TIMING", "⚠️  EXCEEDING TIME BUDGET! max=%llu µs > budget=%llu µs (%.1f%% over)",
-                   total_max, time_budget_us, ((float)total_max / time_budget_us - 1.0f) * 100.0f);
-      }
-      
-      // Reset statistics
-      precomp_time_sum = 0;
-      workers_time_sum = 0;
-      precomp_time_max = 0;
-      workers_time_max = 0;
-      timing_sample_count = 0;
-      // Reset per-worker statistics
-      for (int i = 0; i < num_workers; i++) {
-        thread_pool[i].worker_time_sum_us = 0;
-        thread_pool[i].worker_time_max_us = 0;
-        thread_pool[i].worker_timing_sample_count = 0;
-      }
-    }
 
     // Capture per-sample (per buffer) volumes across all notes to ensure 1 image line = 1 audio sample
   if (image_debug_is_oscillator_capture_enabled()) {

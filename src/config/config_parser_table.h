@@ -111,14 +111,14 @@ static const config_param_def_t CONFIG_PARAMS[] = {
     CONFIG_PARAM("image_processing_additive", "contrast_adjustment_power", PARAM_TYPE_FLOAT, 
                  additive_contrast_adjustment_power, 0.1f, 5.0f),
     
-    // Photowave synthesis section
-    CONFIG_PARAM("photowave", "continuous_mode", PARAM_TYPE_BOOL, 
+    // Photowave synthesis section - all parameters now in synth_photowave
+    CONFIG_PARAM("synth_photowave", "continuous_mode", PARAM_TYPE_BOOL,
                  photowave_continuous_mode, 0, 1),
-    CONFIG_PARAM("photowave", "scan_mode", PARAM_TYPE_INT, 
+    CONFIG_PARAM("synth_photowave", "scan_mode", PARAM_TYPE_INT,
                  photowave_scan_mode, 0, 2),
-    CONFIG_PARAM("photowave", "interp_mode", PARAM_TYPE_INT, 
+    CONFIG_PARAM("synth_photowave", "interp_mode", PARAM_TYPE_INT,
                  photowave_interp_mode, 0, 1),
-    CONFIG_PARAM("photowave", "amplitude", PARAM_TYPE_FLOAT, 
+    CONFIG_PARAM("synth_photowave", "amplitude", PARAM_TYPE_FLOAT,
                  photowave_amplitude, 0.0f, 1.0f),
     
     // Photowave ADSR Volume parameters
@@ -153,54 +153,52 @@ static const config_param_def_t CONFIG_PARAMS[] = {
     CONFIG_PARAM("synth_photowave", "filter_env_depth", PARAM_TYPE_FLOAT,
                  photowave_filter_env_depth_hz, -10000.0f, 10000.0f),
     
-    // Polyphonic synthesis section
-    CONFIG_PARAM("polyphonic", "num_voices", PARAM_TYPE_INT, 
+    // Polyphonic synthesis section - all parameters now in synth_polyphonic
+    CONFIG_PARAM("synth_polyphonic", "num_voices", PARAM_TYPE_INT, 
                  poly_num_voices, 1, 32),
-    CONFIG_PARAM("polyphonic", "max_oscillators", PARAM_TYPE_INT, 
+    CONFIG_PARAM("synth_polyphonic", "max_oscillators", PARAM_TYPE_INT, 
                  poly_max_oscillators, 1, 256),
     
     // Polyphonic ADSR Volume parameters
-    CONFIG_PARAM("polyphonic", "volume_adsr_attack_s", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "volume_env_attack", PARAM_TYPE_FLOAT,
                  poly_volume_adsr_attack_s, 0.0f, 10.0f),
-    CONFIG_PARAM("polyphonic", "volume_adsr_decay_s", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "volume_env_decay", PARAM_TYPE_FLOAT,
                  poly_volume_adsr_decay_s, 0.0f, 10.0f),
-    CONFIG_PARAM("polyphonic", "volume_adsr_sustain_level", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "volume_env_sustain", PARAM_TYPE_FLOAT,
                  poly_volume_adsr_sustain_level, 0.0f, 1.0f),
-    CONFIG_PARAM("polyphonic", "volume_adsr_release_s", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "volume_env_release", PARAM_TYPE_FLOAT,
                  poly_volume_adsr_release_s, 0.0f, 10.0f),
     
     // Polyphonic ADSR Filter parameters
-    CONFIG_PARAM("polyphonic", "filter_adsr_attack_s", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "filter_env_attack", PARAM_TYPE_FLOAT,
                  poly_filter_adsr_attack_s, 0.0f, 10.0f),
-    CONFIG_PARAM("polyphonic", "filter_adsr_decay_s", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "filter_env_decay", PARAM_TYPE_FLOAT,
                  poly_filter_adsr_decay_s, 0.0f, 10.0f),
-    CONFIG_PARAM("polyphonic", "filter_adsr_sustain_level", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "filter_env_sustain", PARAM_TYPE_FLOAT,
                  poly_filter_adsr_sustain_level, 0.0f, 1.0f),
-    CONFIG_PARAM("polyphonic", "filter_adsr_release_s", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "filter_env_release", PARAM_TYPE_FLOAT,
                  poly_filter_adsr_release_s, 0.0f, 10.0f),
     
     // Polyphonic LFO parameters
-    CONFIG_PARAM("polyphonic", "lfo_rate_hz", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "lfo_vibrato_rate", PARAM_TYPE_FLOAT,
                  poly_lfo_rate_hz, 0.0f, 30.0f),
-    CONFIG_PARAM("polyphonic", "lfo_depth_semitones", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "lfo_vibrato_depth", PARAM_TYPE_FLOAT,
                  poly_lfo_depth_semitones, -12.0f, 12.0f),
     
     // Polyphonic spectral filter parameters
-    CONFIG_PARAM("polyphonic", "filter_cutoff_hz", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "filter_cutoff", PARAM_TYPE_FLOAT,
                  poly_filter_cutoff_hz, 20.0f, 20000.0f),
-    CONFIG_PARAM("polyphonic", "filter_env_depth_hz", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "filter_env_depth", PARAM_TYPE_FLOAT,
                  poly_filter_env_depth_hz, -20000.0f, 20000.0f),
     
     // Polyphonic performance parameters
-    CONFIG_PARAM("polyphonic", "master_volume", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "master_volume", PARAM_TYPE_FLOAT,
                  poly_master_volume, 0.0f, 1.0f),
-    CONFIG_PARAM("polyphonic", "amplitude_gamma", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "amplitude_gamma", PARAM_TYPE_FLOAT,
                  poly_amplitude_gamma, 0.1f, 5.0f),
-    CONFIG_PARAM("polyphonic", "min_audible_amplitude", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "min_audible_amplitude", PARAM_TYPE_FLOAT,
                  poly_min_audible_amplitude, 0.0f, 0.1f),
-    CONFIG_PARAM("polyphonic", "max_harmonics_per_voice", PARAM_TYPE_INT,
-                 poly_max_harmonics_per_voice, 1, 256),
-    CONFIG_PARAM("polyphonic", "high_freq_harmonic_limit_hz", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_polyphonic", "high_freq_harmonic_limit_hz", PARAM_TYPE_FLOAT,
                  poly_high_freq_harmonic_limit_hz, 1000.0f, 20000.0f),
     
     // Polyphonic advanced parameters

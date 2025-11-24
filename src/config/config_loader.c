@@ -121,7 +121,6 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     .poly_master_volume = 0.20f,
     .poly_amplitude_gamma = 2.0f,
     .poly_min_audible_amplitude = 0.001f,
-    .poly_max_harmonics_per_voice = 32,
     .poly_high_freq_harmonic_limit_hz = 8000.0f,
     
     // Polyphonic advanced parameters
@@ -699,8 +698,6 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "# Minimum audible amplitude threshold (0.0-0.1)\n");
     fprintf(file, "# Harmonics below this are skipped for CPU optimization\n");
     fprintf(file, "min_audible_amplitude = %.4f\n", DEFAULT_CONFIG.poly_min_audible_amplitude);
-    fprintf(file, "# Maximum harmonics per voice for CPU optimization (1-256)\n");
-    fprintf(file, "max_harmonics_per_voice = %d\n", DEFAULT_CONFIG.poly_max_harmonics_per_voice);
     fprintf(file, "# High frequency harmonic limit in Hz (1000.0-20000.0)\n");
     fprintf(file, "# Reduces harmonics above this frequency to save CPU\n");
     fprintf(file, "high_freq_harmonic_limit_hz = %.1f\n", DEFAULT_CONFIG.poly_high_freq_harmonic_limit_hz);
