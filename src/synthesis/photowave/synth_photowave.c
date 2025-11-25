@@ -289,6 +289,16 @@ static float sample_waveform_linear(const uint8_t *image_line, int pixel_count,
                                    float phase, PhotowaveScanMode scan_mode) {
     if (!image_line || pixel_count <= 0) return 0.0f;
     
+    // DC BLOCKING FIX: Calculate the mean pixel value to remove DC offset
+    // This prevents saturation/clipping when using reverb effects (especially Zita)
+    // Images with non-centered brightness (mean != 127.5) would otherwise introduce
+    // a DC component that gets amplified exponentially by reverb feedback loops
+    float pixel_mean = 0.0f;
+    for (int i = 0; i < pixel_count; i++) {
+        pixel_mean += (float)image_line[i];
+    }
+    pixel_mean /= (float)pixel_count;  // Mean in range 0-255
+    
     phase = phase - floorf(phase);
     
     float pixel_pos;
@@ -317,8 +327,11 @@ static float sample_waveform_linear(const uint8_t *image_line, int pixel_count,
     if (pixel_index < 0) pixel_index = 0;
     if (pixel_index >= pixel_count - 1) pixel_index = pixel_count - 2;
     
-    float sample0 = ((float)image_line[pixel_index] / 127.5f) - 1.0f;
-    float sample1 = ((float)image_line[pixel_index + 1] / 127.5f) - 1.0f;
+    // CRITICAL FIX: Center samples around the actual mean instead of assuming 127.5
+    // Old formula: sample = pixel/127.5 - 1.0 (assumes mean=127.5, introduces DC offset)
+    // New formula: sample = (pixel - mean)/127.5 (guarantees zero DC offset)
+    float sample0 = ((float)image_line[pixel_index] - pixel_mean) / 127.5f;
+    float sample1 = ((float)image_line[pixel_index + 1] - pixel_mean) / 127.5f;
     
     return sample0 + frac * (sample1 - sample0);
 }
