@@ -126,7 +126,11 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     // Polyphonic advanced parameters
     .poly_amplitude_smoothing_alpha = 0.1f,
     .poly_norm_factor_bin0 = 881280.0f * 1.1f,
-    .poly_norm_factor_harmonics = 220320.0f * 2.0f
+    .poly_norm_factor_harmonics = 220320.0f * 2.0f,
+    
+    // Polyphonic harmonicity parameters (color-based timbre control)
+    .poly_detune_max_cents = 10.0f,             // Maximum detune for semi-harmonic sounds
+    .poly_harmonicity_curve_exponent = 1.0f     // Linear response curve by default
 };
 
 /**************************************************************************************
@@ -711,6 +715,20 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "norm_factor_bin0 = %.1f\n", DEFAULT_CONFIG.poly_norm_factor_bin0);
     fprintf(file, "# Normalization factor for harmonic bins\n");
     fprintf(file, "norm_factor_harmonics = %.1f\n", DEFAULT_CONFIG.poly_norm_factor_harmonics);
+    fprintf(file, "\n");
+    
+    fprintf(file, "# Harmonicity parameters (color-based timbre control)\n");
+    fprintf(file, "# These parameters control how color temperature affects harmonic structure\n");
+    fprintf(file, "# Warm colors (red) → harmonic sounds (strings, voice)\n");
+    fprintf(file, "# Cold colors (blue) → inharmonic sounds (bells, percussion)\n");
+    fprintf(file, "\n");
+    fprintf(file, "# Maximum detune for semi-harmonic sounds in cents (0.0-50.0)\n");
+    fprintf(file, "# Used for neutral colors (guitar/piano-like sounds)\n");
+    fprintf(file, "detune_max_cents = %.1f\n", DEFAULT_CONFIG.poly_detune_max_cents);
+    fprintf(file, "\n");
+    fprintf(file, "# Harmonicity response curve exponent (0.5-2.0)\n");
+    fprintf(file, "# 1.0 = linear, <1.0 = more harmonic bias, >1.0 = more inharmonic bias\n");
+    fprintf(file, "harmonicity_curve_exponent = %.1f\n", DEFAULT_CONFIG.poly_harmonicity_curve_exponent);
     fprintf(file, "\n");
     
     fclose(file);

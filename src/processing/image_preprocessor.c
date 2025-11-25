@@ -527,6 +527,75 @@ static void preprocess_dmx(const uint8_t *raw_r, const uint8_t *raw_g,
 
 #ifndef DISABLE_POLYPHONIC
 /**
+ * @brief Calculate harmonicity parameters from color temperature
+ * Maps temperature to harmonic/inharmonic behavior for timbre control
+ * 
+ * Temperature mapping:
+ * - Warm colors (red, T=-1.0) → Harmonic sounds (strings, voice)
+ * - Neutral colors (T=0.0) → Semi-harmonic sounds (guitar, piano)
+ * - Cold colors (blue, T=+1.0) → Inharmonic sounds (bells, percussion)
+ * 
+ * @param data PreprocessedImageData with pan_positions already computed
+ */
+static void calculate_harmonicity_from_temperature(PreprocessedImageData *data) {
+    /* Inharmonic ratio tables for different physical models */
+    static const float membrane_ratios[] = {
+        1.000f, 1.593f, 2.136f, 2.296f, 2.653f, 
+        2.918f, 3.156f, 3.501f, 3.652f, 4.060f
+    };
+    static const int membrane_ratios_count = sizeof(membrane_ratios) / sizeof(membrane_ratios[0]);
+    
+    static const float bell_ratios[] = {
+        1.000f, 2.400f, 2.990f, 3.970f, 5.050f,
+        6.200f, 7.450f, 8.800f, 10.20f, 11.70f
+    };
+    static const int bell_ratios_count = sizeof(bell_ratios) / sizeof(bell_ratios[0]);
+    
+    int i;
+    
+    for (i = 0; i < MAX_FFT_BINS; i++) {
+        float temperature = data->polyphonic.pan_positions[i];  /* [-1, 1] */
+        
+        /* Apply curve exponent for response shaping */
+        float temp_abs = fabsf(temperature);
+        float temp_shaped = powf(temp_abs, g_sp3ctra_config.poly_harmonicity_curve_exponent);
+        float temp_signed = (temperature >= 0.0f) ? temp_shaped : -temp_shaped;
+        
+        /* Calculate harmonicity: warm (T=-1) → h=1.0, cold (T=+1) → h=0.0 */
+        float h = (1.0f - temp_signed) / 2.0f;  /* Map [-1,1] to [1,0] */
+        
+        /* Clamp to [0, 1] */
+        if (h < 0.0f) h = 0.0f;
+        if (h > 1.0f) h = 1.0f;
+        
+        data->polyphonic.harmonicity[i] = h;
+        
+        /* Calculate detune for semi-harmonic sounds (neutral colors) */
+        /* Maximum detune occurs at h=0.5 (neutral temperature) */
+        float detune_factor = 1.0f - fabsf(h - 0.5f) * 2.0f;  /* Peak at h=0.5 */
+        data->polyphonic.detune_cents[i] = detune_factor * g_sp3ctra_config.poly_detune_max_cents;
+        
+        /* Assign inharmonic ratios for cold colors (h < 0.3) */
+        if (h < 0.3f) {
+            /* Use membrane ratios for moderately cold */
+            if (h > 0.15f) {
+                int ratio_idx = i % membrane_ratios_count;
+                data->polyphonic.inharmonic_ratios[i] = membrane_ratios[ratio_idx];
+            }
+            /* Use bell ratios for very cold */
+            else {
+                int ratio_idx = i % bell_ratios_count;
+                data->polyphonic.inharmonic_ratios[i] = bell_ratios[ratio_idx];
+            }
+        }
+        /* Harmonic ratios for warm/neutral colors */
+        else {
+            data->polyphonic.inharmonic_ratios[i] = (float)(i + 1);  /* Standard harmonic series */
+        }
+    }
+}
+
+/**
  * @brief FFT preprocessing function for polyphonic synthesis
  * Computes FFT magnitudes from grayscale data with temporal smoothing
  * 
@@ -806,6 +875,9 @@ static int image_preprocess_color_fft(
                           &data->polyphonic.left_gains[i],
                           &data->polyphonic.right_gains[i]);
     }
+    
+    /* Step 5: Calculate harmonicity parameters from temperature */
+    calculate_harmonicity_from_temperature(data);
     
     return 0;
 }

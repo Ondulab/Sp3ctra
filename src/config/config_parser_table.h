@@ -208,6 +208,12 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  poly_norm_factor_bin0, 1.0f, 10000000.0f),
     CONFIG_PARAM("polyphonic", "norm_factor_harmonics", PARAM_TYPE_FLOAT,
                  poly_norm_factor_harmonics, 1.0f, 10000000.0f),
+    
+    // Polyphonic harmonicity parameters (color-based timbre control)
+    CONFIG_PARAM("polyphonic", "detune_max_cents", PARAM_TYPE_FLOAT,
+                 poly_detune_max_cents, 0.0f, 50.0f),
+    CONFIG_PARAM("polyphonic", "harmonicity_curve_exponent", PARAM_TYPE_FLOAT,
+                 poly_harmonicity_curve_exponent, 0.5f, 2.0f),
 };
 
 #define CONFIG_PARAMS_COUNT (sizeof(CONFIG_PARAMS) / sizeof(CONFIG_PARAMS[0]))
