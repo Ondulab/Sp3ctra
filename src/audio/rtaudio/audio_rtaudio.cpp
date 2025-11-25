@@ -289,19 +289,14 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 #endif
 
       // Add polyphonic contribution (true stereo with spectral panning)
+      // Volume is applied here, creating the "post-volume" signal
+      float polyphonic_with_volume_left = 0.0f;
+      float polyphonic_with_volume_right = 0.0f;
       if (source_fft_left && source_fft_right) {
-        dry_sample_left += source_fft_left[i] * cached_level_polyphonic;
-        dry_sample_right += source_fft_right[i] * cached_level_polyphonic;
-      }
-      // Add polyphonic contribution (true stereo with spectral panning)
-      if (source_fft_left && source_fft_right) {
-        dry_sample_left += source_fft_left[i] * cached_level_polyphonic;
-        dry_sample_right += source_fft_right[i] * cached_level_polyphonic;
-      }
-      // Add polyphonic contribution (true stereo with spectral panning)
-      if (source_fft_left && source_fft_right) {
-        dry_sample_left += source_fft_left[i] * cached_level_polyphonic;
-        dry_sample_right += source_fft_right[i] * cached_level_polyphonic;
+        polyphonic_with_volume_left = source_fft_left[i] * cached_level_polyphonic;
+        polyphonic_with_volume_right = source_fft_right[i] * cached_level_polyphonic;
+        dry_sample_left += polyphonic_with_volume_left;
+        dry_sample_right += polyphonic_with_volume_right;
       }
 
       // Add Photowave contribution (same for both channels)
@@ -358,26 +353,14 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         if (source_additive_right && cached_reverb_send_additive > 0.01f) {
           reverb_input_right += additive_with_volume_right * cached_reverb_send_additive;
         }
-        // Add polyphonic signal to reverb (true stereo with spectral panning)
+        // CRITICAL FIX: Reverb send now uses POST-VOLUME signal for polyphonic
+        // Volume control (mix level) is applied BEFORE reverb send
+        // This ensures volume=0% results in complete silence (dry + reverb)
         if (source_fft_left && cached_reverb_send_polyphonic > 0.01f) {
-          reverb_input_left += source_fft_left[i] * cached_reverb_send_polyphonic;
+          reverb_input_left += polyphonic_with_volume_left * cached_reverb_send_polyphonic;
         }
         if (source_fft_right && cached_reverb_send_polyphonic > 0.01f) {
-          reverb_input_right += source_fft_right[i] * cached_reverb_send_polyphonic;
-        }
-        // Add polyphonic signal to reverb (true stereo with spectral panning)
-        if (source_fft_left && cached_reverb_send_polyphonic > 0.01f) {
-          reverb_input_left += source_fft_left[i] * cached_level_polyphonic * cached_reverb_send_polyphonic;
-        }
-        if (source_fft_right && cached_reverb_send_polyphonic > 0.01f) {
-          reverb_input_right += source_fft_right[i] * cached_level_polyphonic * cached_reverb_send_polyphonic;
-        }
-        // Add polyphonic signal to reverb (true stereo with spectral panning)
-        if (source_fft_left && cached_reverb_send_polyphonic > 0.01f) {
-          reverb_input_left += source_fft_left[i] * cached_reverb_send_polyphonic;
-        }
-        if (source_fft_right && cached_reverb_send_polyphonic > 0.01f) {
-          reverb_input_right += source_fft_right[i] * cached_reverb_send_polyphonic;
+          reverb_input_right += polyphonic_with_volume_right * cached_reverb_send_polyphonic;
         }
 
         // Add photowave signal to reverb (using post-volume signal)

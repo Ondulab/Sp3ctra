@@ -354,21 +354,6 @@ void synth_polyphonicMode_process(float *audio_buffer_left,
     audio_buffer_right[sample_idx] = master_sample_right;
   }
   
-  /* DEBUG: Log generated stereo output periodically */
-  static int output_debug_counter = 0;
-  if (++output_debug_counter >= 100) { // Every 100 buffers (~100ms at 1kHz)
-    output_debug_counter = 0;
-    float sum_left = 0.0f, sum_right = 0.0f;
-    for (unsigned int i = 0; i < buffer_size; i++) {
-      sum_left += fabsf(audio_buffer_left[i]);
-      sum_right += fabsf(audio_buffer_right[i]);
-    }
-    float avg_left = sum_left / buffer_size;
-    float avg_right = sum_right / buffer_size;
-    printf("[POLY_OUTPUT] Generated L=%.6f R=%.6f (diff=%.6f, ratio=%.3f)\n",
-           avg_left, avg_right, avg_left - avg_right,
-           (avg_right > 0.000001f) ? (avg_left / avg_right) : 0.0f);
-  }
 }
 
 // --- Image & FFT Processing ---
@@ -411,17 +396,6 @@ static void read_preprocessed_fft_magnitudes(DoubleBuffer *image_db) {
            image_db->preprocessed_data.polyphonic.inharmonic_ratios,
            sizeof(global_inharmonic_ratios));
     
-    /* DEBUG: Log stereo gains periodically */
-    static int debug_counter = 0;
-    if (++debug_counter >= 100) { // Every 100 calls (~100ms at 1kHz)
-      debug_counter = 0;
-      printf("[POLY_STEREO] Gains copied - First 8 harmonics:\n");
-      for (int i = 0; i < 8; i++) {
-        printf("  H%d: L=%.3f R=%.3f (diff=%.3f)\n", 
-               i, global_stereo_left_gains[i], global_stereo_right_gains[i],
-               global_stereo_left_gains[i] - global_stereo_right_gains[i]);
-      }
-    }
   } else {
     /* FFT data not valid - use silence (all zeros) and center panning */
     memset(global_smoothed_magnitudes, 0, sizeof(global_smoothed_magnitudes));
