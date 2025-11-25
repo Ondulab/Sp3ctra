@@ -40,6 +40,9 @@ typedef struct {
     struct {
         float grayscale[CIS_MAX_PIXELS_NB];     /* Per-pixel grayscale [0.0, 1.0] for FFT input */
         float magnitudes[128];                  /* Pre-computed smoothed FFT magnitudes (MAX_MAPPED_OSCILLATORS) */
+        float pan_positions[128];               /* Per-harmonic pan positions [-1.0, 1.0] from color FFT */
+        float left_gains[128];                  /* Per-harmonic left channel gains [0.0, 1.0] (constant power) */
+        float right_gains[128];                 /* Per-harmonic right channel gains [0.0, 1.0] (constant power) */
         int valid;                              /* 1 if FFT data is valid, 0 otherwise */
     } polyphonic;
     
