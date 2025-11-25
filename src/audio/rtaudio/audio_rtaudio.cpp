@@ -254,12 +254,21 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       float dry_sample_left = 0.0f;
       float dry_sample_right = 0.0f;
 
+      // CRITICAL FIX: Apply volume BEFORE routing to dry/reverb
+      // This ensures volume control affects both dry signal AND reverb send
+      // When volume=0%, both dry and reverb should be silent
+      
       // Add Additive synthesis contribution - separate left and right channels
+      // Volume is applied here, creating the "post-volume" signal
+      float additive_with_volume_left = 0.0f;
+      float additive_with_volume_right = 0.0f;
       if (source_additive_left) {
-        dry_sample_left += source_additive_left[i] * cached_level_additive;
+        additive_with_volume_left = source_additive_left[i] * cached_level_additive;
+        dry_sample_left += additive_with_volume_left;
       }
       if (source_additive_right) {
-        dry_sample_right += source_additive_right[i] * cached_level_additive;
+        additive_with_volume_right = source_additive_right[i] * cached_level_additive;
+        dry_sample_right += additive_with_volume_right;
       }
       
 #if DEBUG_AUDIO_SIGNAL
@@ -277,18 +286,24 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
 #endif
 
       // Add polyphonic contribution (same for both channels)
+      // Volume is applied here, creating the "post-volume" signal
+      float polyphonic_with_volume = 0.0f;
       if (source_fft) {
-        dry_sample_left += source_fft[i] * cached_level_polyphonic;
-        dry_sample_right += source_fft[i] * cached_level_polyphonic;
+        polyphonic_with_volume = source_fft[i] * cached_level_polyphonic;
+        dry_sample_left += polyphonic_with_volume;
+        dry_sample_right += polyphonic_with_volume;
       }
 
       // Add Photowave contribution (same for both channels)
       // CPU OPTIMIZATION: Skip photowave processing if mix level is essentially zero
       // RACE CONDITION FIX: Removed additive dependency check (source_additive_left)
       // Photowave now produces buffers continuously, so no sync protection needed
+      // Volume is applied here, creating the "post-volume" signal
+      float photowave_with_volume = 0.0f;
       if (source_photowave && cached_level_photowave > 0.01f) {
-        dry_sample_left += source_photowave[i] * cached_level_photowave;
-        dry_sample_right += source_photowave[i] * cached_level_photowave;
+        photowave_with_volume = source_photowave[i] * cached_level_photowave;
+        dry_sample_left += photowave_with_volume;
+        dry_sample_right += photowave_with_volume;
       }
 
       // Direct reverb processing in callback - ULTRA OPTIMIZED
@@ -323,26 +338,25 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         float reverb_input_left = 0.0f;
         float reverb_input_right = 0.0f;
 
-        // CRITICAL FIX: Reverb sends are now INDEPENDENT of mix levels
-        // Each channel can send to reverb regardless of its master mix level
-        // This allows reverb to work even when a channel is muted in the mix
+        // CRITICAL FIX: Reverb sends now use POST-VOLUME signal
+        // Volume control (mix level) is applied BEFORE reverb send
+        // This ensures volume=0% results in complete silence (dry + reverb)
+        // The reverb_send parameter controls how much of the POST-VOLUME signal goes to reverb
         if (source_additive_left && cached_reverb_send_additive > 0.01f) {
-          reverb_input_left += source_additive_left[i] * cached_reverb_send_additive;
+          reverb_input_left += additive_with_volume_left * cached_reverb_send_additive;
         }
         if (source_additive_right && cached_reverb_send_additive > 0.01f) {
-          reverb_input_right += source_additive_right[i] * cached_reverb_send_additive;
+          reverb_input_right += additive_with_volume_right * cached_reverb_send_additive;
         }
         if (source_fft && cached_reverb_send_polyphonic > 0.01f) {
-          float polyphonic_reverb = source_fft[i] * cached_reverb_send_polyphonic;
-          reverb_input_left += polyphonic_reverb;
-          reverb_input_right += polyphonic_reverb;
+          reverb_input_left += polyphonic_with_volume * cached_reverb_send_polyphonic;
+          reverb_input_right += polyphonic_with_volume * cached_reverb_send_polyphonic;
         }
 
-        // Add photowave signal to reverb (independent of mix level)
+        // Add photowave signal to reverb (using post-volume signal)
         if (source_photowave && cached_reverb_send_photowave > 0.01f) {
-          float photowave_reverb = source_photowave[i] * cached_reverb_send_photowave;
-          reverb_input_left += photowave_reverb;
-          reverb_input_right += photowave_reverb;
+          reverb_input_left += photowave_with_volume * cached_reverb_send_photowave;
+          reverb_input_right += photowave_with_volume * cached_reverb_send_photowave;
         }
 
         // Single-sample reverb processing (optimized) - use average of
