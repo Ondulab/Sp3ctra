@@ -59,6 +59,8 @@ unsigned long long g_current_trigger_order =
     0; // Global trigger order counter, starts at 0
 SynthVoice poly_voices[MAX_POLY_VOICES];
 float global_smoothed_magnitudes[MAX_MAPPED_OSCILLATORS];
+float global_stereo_left_gains[MAX_MAPPED_OSCILLATORS];   // Per-harmonic left gains (spectral panning)
+float global_stereo_right_gains[MAX_MAPPED_OSCILLATORS];  // Per-harmonic right gains (spectral panning)
 SpectralFilterParams global_spectral_filter_params;
 LfoState global_vibrato_lfo; // Definition for the global LFO
 
@@ -103,10 +105,18 @@ void synth_polyphonicMode_init(void) {
       die("Failed to initialize polyphonic audio buffer condition variable");
     }
     polyphonic_audio_buffers[i].ready = 0;
-    if (!polyphonic_audio_buffers[i].data) {
-      polyphonic_audio_buffers[i].data = (float*)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
+    
+    // Allocate separate L/R buffers for true stereo
+    if (!polyphonic_audio_buffers[i].data_left) {
+      polyphonic_audio_buffers[i].data_left = (float*)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
     } else {
-      memset(polyphonic_audio_buffers[i].data, 0, g_sp3ctra_config.audio_buffer_size * sizeof(float));
+      memset(polyphonic_audio_buffers[i].data_left, 0, g_sp3ctra_config.audio_buffer_size * sizeof(float));
+    }
+    
+    if (!polyphonic_audio_buffers[i].data_right) {
+      polyphonic_audio_buffers[i].data_right = (float*)calloc(g_sp3ctra_config.audio_buffer_size, sizeof(float));
+    } else {
+      memset(polyphonic_audio_buffers[i].data_right, 0, g_sp3ctra_config.audio_buffer_size * sizeof(float));
     }
   }
   if (pthread_mutex_init(&polyphonic_buffer_index_mutex, NULL) != 0) {
@@ -115,6 +125,13 @@ void synth_polyphonicMode_init(void) {
   polyphonic_current_buffer_index = 0;
 
   memset(global_smoothed_magnitudes, 0, sizeof(global_smoothed_magnitudes));
+  
+  /* Initialize stereo gains to center (0.707 for constant power) */
+  for (i = 0; i < MAX_MAPPED_OSCILLATORS; ++i) {
+    global_stereo_left_gains[i] = 0.707f;
+    global_stereo_right_gains[i] = 0.707f;
+  }
+  
   filter_init_spectral_params(&global_spectral_filter_params, 
                               g_sp3ctra_config.poly_filter_cutoff_hz,
                               g_sp3ctra_config.poly_filter_env_depth_hz);
@@ -155,20 +172,23 @@ void synth_polyphonicMode_init(void) {
 // AUDIO_BUFFER_SIZE=512 -> ~86 calls/sec)
 #define POLYPHONIC_PRINT_INTERVAL 86
 
-void synth_polyphonicMode_process(float *audio_buffer,
+void synth_polyphonicMode_process(float *audio_buffer_left,
+                                  float *audio_buffer_right,
                                   unsigned int buffer_size) {
-  if (audio_buffer == NULL) {
+  if (audio_buffer_left == NULL || audio_buffer_right == NULL) {
     fprintf(stderr, "synth_polyphonicMode_process: audio_buffer is NULL\n");
     return;
   }
-  memset(audio_buffer, 0, buffer_size * sizeof(float));
+  memset(audio_buffer_left, 0, buffer_size * sizeof(float));
+  memset(audio_buffer_right, 0, buffer_size * sizeof(float));
 
   // NOTE: global_smoothed_magnitudes is now pre-computed in udpThread
   // via read_preprocessed_fft_magnitudes() which reads from preprocessed_data.fft.magnitudes
   // No need to calculate FFT here anymore - just use the pre-computed values!
 
   for (unsigned int sample_idx = 0; sample_idx < buffer_size; ++sample_idx) {
-    float master_sample_sum = 0.0f;
+    float master_sample_left = 0.0f;
+    float master_sample_right = 0.0f;
     float lfo_modulation_value =
         lfo_process(&global_vibrato_lfo); // Process LFO per sample
 
@@ -205,7 +225,8 @@ void synth_polyphonicMode_process(float *audio_buffer,
           (lfo_modulation_value * global_vibrato_lfo.depth_semitones) / 12.0f);
       float actual_fundamental_freq = base_freq * freq_mod_factor;
 
-      float voice_sample_sum = 0.0f;
+      float voice_sample_left = 0.0f;
+      float voice_sample_right = 0.0f;
       // CPU Optimized harmonic processing loop
       // Calculate adaptive harmonic limits based on frequency and sample rate
       int max_harmonics = g_max_mapped_oscillators;
@@ -270,7 +291,10 @@ void synth_polyphonicMode_process(float *audio_buffer,
         if (final_amplitude > g_sp3ctra_config.poly_min_audible_amplitude) {
           float osc_sample =
               final_amplitude * sinf(current_voice->oscillators[osc_idx].phase);
-          voice_sample_sum += osc_sample;
+          
+          // Apply spectral panning: each harmonic gets its own stereo position
+          voice_sample_left += osc_sample * global_stereo_left_gains[osc_idx];
+          voice_sample_right += osc_sample * global_stereo_right_gains[osc_idx];
         }
 
         current_voice->oscillators[osc_idx].phase += phase_increment;
@@ -279,19 +303,51 @@ void synth_polyphonicMode_process(float *audio_buffer,
         }
       }
 
-      voice_sample_sum *= volume_adsr_val;
-      voice_sample_sum *= current_voice->last_velocity;
-      master_sample_sum += voice_sample_sum;
+      // Apply voice-level modulations (ADSR, velocity) to both channels
+      voice_sample_left *= volume_adsr_val;
+      voice_sample_left *= current_voice->last_velocity;
+      voice_sample_right *= volume_adsr_val;
+      voice_sample_right *= current_voice->last_velocity;
+      
+      master_sample_left += voice_sample_left;
+      master_sample_right += voice_sample_right;
     }
 
-    master_sample_sum *= g_sp3ctra_config.poly_master_volume;
+    // Apply master volume to both channels
+    master_sample_left *= g_sp3ctra_config.poly_master_volume;
+    master_sample_right *= g_sp3ctra_config.poly_master_volume;
 
-    if (master_sample_sum > 1.0f)
-      master_sample_sum = 1.0f;
-    else if (master_sample_sum < -1.0f)
-      master_sample_sum = -1.0f;
+    // Clipping for left channel
+    if (master_sample_left > 1.0f)
+      master_sample_left = 1.0f;
+    else if (master_sample_left < -1.0f)
+      master_sample_left = -1.0f;
+    
+    // Clipping for right channel
+    if (master_sample_right > 1.0f)
+      master_sample_right = 1.0f;
+    else if (master_sample_right < -1.0f)
+      master_sample_right = -1.0f;
 
-    audio_buffer[sample_idx] = master_sample_sum;
+    // Output true stereo with spectral panning
+    audio_buffer_left[sample_idx] = master_sample_left;
+    audio_buffer_right[sample_idx] = master_sample_right;
+  }
+  
+  /* DEBUG: Log generated stereo output periodically */
+  static int output_debug_counter = 0;
+  if (++output_debug_counter >= 100) { // Every 100 buffers (~100ms at 1kHz)
+    output_debug_counter = 0;
+    float sum_left = 0.0f, sum_right = 0.0f;
+    for (unsigned int i = 0; i < buffer_size; i++) {
+      sum_left += fabsf(audio_buffer_left[i]);
+      sum_right += fabsf(audio_buffer_right[i]);
+    }
+    float avg_left = sum_left / buffer_size;
+    float avg_right = sum_right / buffer_size;
+    printf("[POLY_OUTPUT] Generated L=%.6f R=%.6f (diff=%.6f, ratio=%.3f)\n",
+           avg_left, avg_right, avg_left - avg_right,
+           (avg_right > 0.000001f) ? (avg_left / avg_right) : 0.0f);
   }
 }
 
@@ -315,9 +371,35 @@ static void read_preprocessed_fft_magnitudes(DoubleBuffer *image_db) {
     memcpy(global_smoothed_magnitudes, 
            image_db->preprocessed_data.polyphonic.magnitudes,
            sizeof(global_smoothed_magnitudes));
+    
+    /* Copy pre-computed stereo gains for spectral panning */
+    memcpy(global_stereo_left_gains,
+           image_db->preprocessed_data.polyphonic.left_gains,
+           sizeof(global_stereo_left_gains));
+    memcpy(global_stereo_right_gains,
+           image_db->preprocessed_data.polyphonic.right_gains,
+           sizeof(global_stereo_right_gains));
+    
+    /* DEBUG: Log stereo gains periodically */
+    static int debug_counter = 0;
+    if (++debug_counter >= 100) { // Every 100 calls (~100ms at 1kHz)
+      debug_counter = 0;
+      printf("[POLY_STEREO] Gains copied - First 8 harmonics:\n");
+      for (int i = 0; i < 8; i++) {
+        printf("  H%d: L=%.3f R=%.3f (diff=%.3f)\n", 
+               i, global_stereo_left_gains[i], global_stereo_right_gains[i],
+               global_stereo_left_gains[i] - global_stereo_right_gains[i]);
+      }
+    }
   } else {
-    /* FFT data not valid - use silence (all zeros) */
+    /* FFT data not valid - use silence (all zeros) and center panning */
     memset(global_smoothed_magnitudes, 0, sizeof(global_smoothed_magnitudes));
+    
+    /* Reset to center panning (0.707 for constant power) */
+    for (int i = 0; i < MAX_MAPPED_OSCILLATORS; ++i) {
+      global_stereo_left_gains[i] = 0.707f;
+      global_stereo_right_gains[i] = 0.707f;
+    }
   }
   
   pthread_mutex_unlock(&image_db->mutex);
@@ -384,8 +466,12 @@ void *synth_polyphonicMode_thread_func(void *arg) {
     }
     
     pthread_mutex_lock(&polyphonic_audio_buffers[local_producer_idx].mutex);
+    
+    // TRUE STEREO: Pass separate L/R buffers for spectral panning
     synth_polyphonicMode_process(
-        polyphonic_audio_buffers[local_producer_idx].data, g_sp3ctra_config.audio_buffer_size);
+        polyphonic_audio_buffers[local_producer_idx].data_left,
+        polyphonic_audio_buffers[local_producer_idx].data_right,
+        g_sp3ctra_config.audio_buffer_size);
     
     // Record timestamp when buffer is written
     struct timeval tv;
