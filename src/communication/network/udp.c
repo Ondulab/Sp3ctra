@@ -35,7 +35,7 @@ int udp_Init(struct sockaddr_in *si_other, struct sockaddr_in *si_me) {
   (void)si_other; // Mark si_other as unused
   int s;
 
-  // Création d'une socket UDP
+  // Creating UDP socket
   if ((s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
     die("socket");
   }

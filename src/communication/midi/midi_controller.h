@@ -98,7 +98,7 @@ int midi_Connect();
 int midi_ConnectAll(); // NEW: Connect to all available MIDI devices
 int midi_GetConnectedDeviceCount(); // NEW: Get number of connected devices
 void midi_Disconnect();
-void midi_SetupVolumeControl(); // Nouvelle fonction pour le contrôle du volume
+void midi_SetupVolumeControl(); // New function for volume control
                                 // en mode CLI
 
 // C-wrapper functions for setting note callbacks

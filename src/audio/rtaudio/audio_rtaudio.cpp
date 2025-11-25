@@ -124,7 +124,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   }
 
   // ULTRA-OPTIMIZED CALLBACK - for 96kHz performance
-  // Configuration stéréo non-entrelacée (comme RtAudio par défaut)
+  // Non-interleaved stereo configuration (like RtAudio default)
   float *outLeft = outputBuffer;
   float *outRight = outputBuffer + nFrames;
 
@@ -508,7 +508,7 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
 
   processBuffer.resize(bufferSize * channels);
 
-  // Initialisation du buffer de réverbération (pour compatibilité)
+  // Initialize reverb buffer (for compatibility)
   reverbBuffer = new float[REVERB_BUFFER_SIZE];
   for (int i = 0; i < REVERB_BUFFER_SIZE; i++) {
     reverbBuffer[i] = 0.0f;
@@ -518,7 +518,7 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
   reverbMix = DEFAULT_REVERB_MIX;
   log_info("AUDIO", "Reverb mix initialized to %.1f%% (%.2f)", reverbMix * 100.0f, reverbMix);
 
-  // Configuration des délais pour la réverbération (pour compatibilité)
+  // Configure delays for reverb (for compatibility)
   reverbDelays[0] = 1116;
   reverbDelays[1] = 1356;
   reverbDelays[2] = 1422;
@@ -528,16 +528,16 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
   reverbDelays[6] = 1491;
   reverbDelays[7] = 1557;
 
-  // Configuration de ZitaRev1 avec des valeurs pour une réverbération longue et
-  // douce
+  // Configure ZitaRev1 with values for long and
+  // smooth reverb
   zitaRev.init(sampleRate);
   zitaRev.set_roomsize(
-      0.95f); // Très grande taille de pièce pour une réverb longue
-  zitaRev.set_damping(0.4f); // Amortissement des hautes fréquences réduit pour
-                             // plus de brillance
-  zitaRev.set_width(1.0f);   // Largeur stéréo maximale
+      0.95f); // Very large room size for long reverb
+  zitaRev.set_damping(0.4f); // Reduced high frequency damping for
+                             // more brightness
+  zitaRev.set_width(1.0f);   // Maximum stereo width
   zitaRev.set_delay(
-      0.08f);            // Pre-delay plus important pour clarté et séparation
+      0.08f);            // Larger pre-delay for clarity and separation
   zitaRev.set_mix(1.0f); // CRITICAL: 100% wet - ZitaRev outputs ONLY wet signal, no dry/wet mixing inside
   
   log_info("AUDIO", "ZitaRev1 configured: roomsize=0.95, damping=0.4, width=1.0, mix=1.0 (100%% wet - dry/wet mixing handled externally)");
@@ -547,7 +547,7 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
 AudioSystem::~AudioSystem() {
   stop();
 
-  // Libération du buffer de réverbération
+  // Free reverb buffer
   if (reverbBuffer) {
     delete[] reverbBuffer;
     reverbBuffer = nullptr;
@@ -587,17 +587,17 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
     return;
   }
 
-  // Cache statique pour éviter les calculs répétitifs
+  // Static cache to avoid repetitive calculations
   static float cached_wet_gain = reverbMix; // Initialiser directement avec la valeur de reverb
   static float cached_dry_gain = 1.0f - reverbMix; // Compense pour avoir 100% du signal
   static int param_update_counter = 0;
   static bool reverb_initialized = false;
 
-  // Initialiser la reverb une seule fois au démarrage
+  // Initialize reverb once at startup
   if (!reverb_initialized) {
-    // Effacer explicitement les buffers internes pour éviter les craquements
+    // Explicitly clear internal buffers to avoid clicks
     zitaRev.clear();
-    // Initialiser les paramètres de base
+    // Initialize basic parameters
     zitaRev.set_roomsize(reverbRoomSize);
     zitaRev.set_damping(reverbDamping);
     zitaRev.set_width(reverbWidth);
@@ -607,25 +607,25 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
     reverb_initialized = true;
   }
   
-  // Mise à jour régulière des paramètres
+  // Regular parameter update
   if (++param_update_counter >= 256) {
     param_update_counter = 0;
     cached_wet_gain = reverbMix;
     cached_dry_gain = 1.0f - reverbMix;
 
-    // Mettre à jour les paramètres ZitaRev1 moins fréquemment
+    // Update ZitaRev1 parameters less frequently
     zitaRev.set_roomsize(reverbRoomSize);
     zitaRev.set_damping(reverbDamping);
     zitaRev.set_width(reverbWidth);
   }
 
-  // Traitement ZitaRev1 optimisé - un seul échantillon
+  // Optimized ZitaRev1 processing - single sample
   float inBufferL[1] = {inputL};
   float inBufferR[1] = {inputR};
   float outBufferL[1] = {0.0f};
   float outBufferR[1] = {0.0f};
 
-  // Appel direct à ZitaRev1 (le coût principal)
+  // Direct call to ZitaRev1 (main cost)
   zitaRev.process(inBufferL, inBufferR, outBufferL, outBufferR, 1);
 
   // CRITICAL FIX: Return ONLY wet signal (reverb processed)
@@ -649,13 +649,13 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
 
 // === MULTI-THREADED REVERB IMPLEMENTATION ===
 
-// Fonction pour écrire dans le buffer d'entrée de la réverbération
+// Function to write to reverb input buffer
 // (thread-safe)
 bool AudioSystem::writeToReverbInput(float sample) {
   int currentWrite = reverbInputBuffer.write_pos.load();
   int nextWrite = (currentWrite + 1) % REVERB_THREAD_BUFFER_SIZE;
 
-  // Vérifier si le buffer n'est pas plein
+  // Check if buffer is not full
   if (nextWrite == reverbInputBuffer.read_pos.load()) {
     return false; // Buffer plein
   }
@@ -667,7 +667,7 @@ bool AudioSystem::writeToReverbInput(float sample) {
   return true;
 }
 
-// Fonction pour lire depuis le buffer d'entrée de la réverbération
+// Function to read from reverb input buffer
 // (thread-safe)
 bool AudioSystem::readFromReverbInput(float &sample) {
   if (reverbInputBuffer.available_samples.load() == 0) {
@@ -684,13 +684,13 @@ bool AudioSystem::readFromReverbInput(float &sample) {
   return true;
 }
 
-// Fonction pour écrire dans le buffer de sortie de la réverbération
+// Function to write to reverb output buffer
 // (thread-safe)
 bool AudioSystem::writeToReverbOutput(float sampleL, float sampleR) {
   int currentWrite = reverbOutputBuffer.write_pos.load();
   int nextWrite = (currentWrite + 1) % REVERB_THREAD_BUFFER_SIZE;
 
-  // Vérifier si le buffer n'est pas plein
+  // Check if buffer is not full
   if (nextWrite == reverbOutputBuffer.read_pos.load()) {
     return false; // Buffer plein
   }
@@ -703,11 +703,11 @@ bool AudioSystem::writeToReverbOutput(float sampleL, float sampleR) {
   return true;
 }
 
-// Fonction pour lire depuis le buffer de sortie de la réverbération
+// Function to read from reverb output buffer
 // (thread-safe)
 bool AudioSystem::readFromReverbOutput(float &sampleL, float &sampleR) {
   if (reverbOutputBuffer.available_samples.load() == 0) {
-    sampleL = sampleR = 0.0f; // Silence si pas de données
+    sampleL = sampleR = 0.0f; // Silence if no data
     return false;
   }
 
@@ -722,13 +722,13 @@ bool AudioSystem::readFromReverbOutput(float &sampleL, float &sampleR) {
   return true;
 }
 
-// Fonction principale du thread de réverbération
+// Main reverb thread function
 void AudioSystem::reverbThreadFunction() {
   std::cout
       << "\033[1;33m[REVERB THREAD] Thread de réverbération démarré\033[0m"
       << std::endl;
 
-  const int processingBlockSize = 64; // Traiter par blocs pour l'efficacité
+  const int processingBlockSize = 64; // Process in blocks for efficiency
   float inputBuffer[processingBlockSize];
   float outputBufferL[processingBlockSize];
   float outputBufferR[processingBlockSize];
@@ -736,38 +736,38 @@ void AudioSystem::reverbThreadFunction() {
   while (reverbThreadRunning.load()) {
     int samplesProcessed = 0;
 
-    // Lire un bloc de samples depuis le buffer d'entrée
+    // Read a block of samples from input buffer
     for (int i = 0; i < processingBlockSize; i++) {
       float sample;
       if (readFromReverbInput(sample)) {
         inputBuffer[i] = sample;
         samplesProcessed++;
       } else {
-        inputBuffer[i] = 0.0f; // Silence si pas de données
+        inputBuffer[i] = 0.0f; // Silence if no data
       }
     }
 
     if (samplesProcessed > 0 && reverbEnabled) {
-      // Traiter la réverbération par blocs pour l'efficacité
+      // Process reverb in blocks for efficiency
       for (int i = 0; i < processingBlockSize; i++) {
-        // Mise à jour des paramètres ZitaRev1 (de temps en temps)
-        if (i == 0) { // Seulement au début du bloc
+        // Update ZitaRev1 parameters (from time to time)
+        if (i == 0) { // Only at start of block
           zitaRev.set_roomsize(reverbRoomSize);
           zitaRev.set_damping(reverbDamping);
           zitaRev.set_width(reverbWidth);
         }
 
-        // Traitement mono vers stéréo
+        // Mono to stereo processing
         float inBufferL[1] = {inputBuffer[i]};
         float inBufferR[1] = {inputBuffer[i]};
         float outBufferL_single[1] = {0.0f};
         float outBufferR_single[1] = {0.0f};
 
-        // Traiter via ZitaRev1
+        // Process via ZitaRev1
         zitaRev.process(inBufferL, inBufferR, outBufferL_single,
                         outBufferR_single, 1);
 
-        // Appliquer le mix dry/wet
+        // Apply dry/wet mix
         float wetGain = reverbMix;
         float dryGain = 1.0f - reverbMix;
 
@@ -777,13 +777,13 @@ void AudioSystem::reverbThreadFunction() {
             inputBuffer[i] * dryGain + outBufferR_single[0] * wetGain;
       }
 
-      // Écrire les résultats dans le buffer de sortie
+      // Write results to output buffer
       for (int i = 0; i < processingBlockSize; i++) {
-        // Tenter d'écrire, ignorer si le buffer de sortie est plein
+        // Try to write, ignore if output buffer is full
         writeToReverbOutput(outputBufferL[i], outputBufferR[i]);
       }
     } else {
-      // Pas de samples à traiter ou reverb désactivée, attendre un peu
+      // No samples to process or reverb disabled, wait a bit
       std::this_thread::sleep_for(std::chrono::microseconds(100));
     }
   }
@@ -802,7 +802,7 @@ bool AudioSystem::initialize() {
   audio = new RtAudio();
 #endif
 
-  // Vérifier si RtAudio a été correctement créé
+  // Check if RtAudio was correctly created
   if (!audio) {
     log_error("AUDIO", "Unable to create RtAudio instance");
     return false;
@@ -891,14 +891,14 @@ bool AudioSystem::initialize() {
   // Device selection is now complete - preferredDeviceId contains the selected device
   // No additional enumeration or validation needed since it was handled above
 
-  // Paramètres du stream
+  // Stream parameters
   RtAudio::StreamParameters params;
   params.deviceId =
-      preferredDeviceId; // Utiliser le preferredDeviceId trouvé ou le défaut
+      preferredDeviceId; // Use found preferredDeviceId or default
   params.nChannels = channels;
   params.firstChannel = 0;
 
-  // Options pour optimiser la stabilité sur Raspberry Pi Module 5
+  // Options to optimize stability on Raspberry Pi Module 5
   RtAudio::StreamOptions options;
   options.flags = RTAUDIO_NONINTERLEAVED | RTAUDIO_SCHEDULE_REALTIME;
 
@@ -985,7 +985,7 @@ bool AudioSystem::initialize() {
   return true;
 }
 
-// Démarrage du flux audio
+// Start audio stream
 bool AudioSystem::start() {
   if (!audio || !audio->isStreamOpen())
     return false;
@@ -1001,7 +1001,7 @@ bool AudioSystem::start() {
   return true;
 }
 
-// Arrêt du flux audio
+// Stop audio stream
 void AudioSystem::stop() {
   if (audio && audio->isStreamRunning()) {
     try {
@@ -1013,25 +1013,25 @@ void AudioSystem::stop() {
   }
 }
 
-// Vérifier si le système est actif
+// Check if system is active
 bool AudioSystem::isActive() const { return audio && audio->isStreamRunning(); }
 
-// Mise à jour des données audio
+// Update audio data
 bool AudioSystem::setAudioData(const float *data, size_t size) {
   if (!data || size == 0)
     return false;
 
-  // Protection d'accès au buffer
+  // Buffer access protection
   std::lock_guard<std::mutex> lock(bufferMutex);
 
-  // Copie des données dans notre buffer
+  // Copy data to our buffer
   size_t copySize = std::min(size, processBuffer.size());
   std::memcpy(processBuffer.data(), data, copySize * sizeof(float));
 
   return true;
 }
 
-// Récupérer la liste des périphériques disponibles
+// Get list of available devices
 std::vector<std::string> AudioSystem::getAvailableDevices() {
   std::vector<std::string> devices;
 
@@ -1049,12 +1049,12 @@ std::vector<std::string> AudioSystem::getAvailableDevices() {
   return devices;
 }
 
-// Modifier le périphérique de sortie
+// Change output device
 bool AudioSystem::setDevice(unsigned int deviceId) {
   if (!audio)
     return false;
 
-  // Il faut arrêter et redémarrer le stream pour changer de périphérique
+  // Must stop and restart stream to change device
   bool wasRunning = audio->isStreamRunning();
   if (wasRunning) {
     audio->stopStream();
@@ -1064,13 +1064,13 @@ bool AudioSystem::setDevice(unsigned int deviceId) {
     audio->closeStream();
   }
 
-  // Paramètres du stream
+  // Stream parameters
   RtAudio::StreamParameters params;
   params.deviceId = deviceId;
   params.nChannels = channels;
   params.firstChannel = 0;
 
-  // Options pour optimiser la stabilité sur Raspberry Pi
+  // Options to optimize stability on Raspberry Pi
   RtAudio::StreamOptions options;
   options.flags =
       RTAUDIO_NONINTERLEAVED; // Suppression de RTAUDIO_MINIMIZE_LATENCY
@@ -1093,31 +1093,31 @@ bool AudioSystem::setDevice(unsigned int deviceId) {
   return true;
 }
 
-// Récupérer le périphérique actuel
+// Get current device
 unsigned int AudioSystem::getCurrentDevice() const {
   if (!audio || !audio->isStreamOpen())
     return 0;
 
-  // Pas de méthode directe pour récupérer le périphérique courant
-  // Retourner le périphérique par défaut comme solution de contournement
+  // No direct method to get current device
+  // Return default device as workaround
   return audio->getDefaultOutputDevice();
 }
 
 // Modifier la taille du buffer (impact sur la latence)
 bool AudioSystem::setBufferSize(unsigned int size) {
-  // Pour changer la taille du buffer, il faut recréer le stream
+  // To change buffer size, must recreate stream
   if (size == bufferSize)
     return true;
 
   bufferSize = size;
 
-  // Redimensionner le buffer de traitement
+  // Resize processing buffer
   {
     std::lock_guard<std::mutex> lock(bufferMutex);
     processBuffer.resize(bufferSize * channels);
   }
 
-  // Si le stream est ouvert, le recréer
+  // If stream is open, recreate it
   if (audio && audio->isStreamOpen()) {
     return setDevice(getCurrentDevice());
   }
@@ -1125,30 +1125,30 @@ bool AudioSystem::setBufferSize(unsigned int size) {
   return true;
 }
 
-// Récupérer la taille du buffer
+// Get buffer size
 unsigned int AudioSystem::getBufferSize() const { return bufferSize; }
 
 // Set master volume (0.0 - 1.0)
 void AudioSystem::setMasterVolume(float volume) {
-  // Clamp volume entre 0.0 et 1.0
+  // Clamp volume between 0.0 and 1.0
   masterVolume = (volume < 0.0f) ? 0.0f : (volume > 1.0f) ? 1.0f : volume;
 }
 
 // Get master volume
 float AudioSystem::getMasterVolume() const { return masterVolume; }
 
-// === Contrôles de réverbération ===
+// === Reverb controls ===
 
-// Activer/désactiver la réverbération
+// Enable/disable reverb
 void AudioSystem::enableReverb(bool enable) {
   reverbEnabled = enable;
   log_info("AUDIO", "REVERB: %s", enable ? "ON" : "OFF");
 }
 
-// Vérifier si la réverbération est activée
+// Check if reverb is enabled
 bool AudioSystem::isReverbEnabled() const { return reverbEnabled; }
 
-// Régler le mix dry/wet (0.0 - 1.0)
+// Set dry/wet mix (0.0 - 1.0)
 void AudioSystem::setReverbMix(float mix) {
   if (mix < 0.0f)
     reverbMix = 0.0f;
@@ -1157,14 +1157,14 @@ void AudioSystem::setReverbMix(float mix) {
   else
     reverbMix = mix;
 
-  // Plus de log ici pour éviter les doublons avec les logs colorés de
+  // No more log here to avoid duplicates with colored logs from
   // midi_controller.cpp
 }
 
-// Obtenir le mix dry/wet actuel
+// Get current dry/wet mix
 float AudioSystem::getReverbMix() const { return reverbMix; }
 
-// Régler la taille de la pièce (0.0 - 1.0)
+// Set room size (0.0 - 1.0)
 void AudioSystem::setReverbRoomSize(float size) {
   if (size < 0.0f)
     reverbRoomSize = 0.0f;
@@ -1173,14 +1173,14 @@ void AudioSystem::setReverbRoomSize(float size) {
   else
     reverbRoomSize = size;
 
-  // Plus de log ici pour éviter les doublons avec les logs colorés de
+  // No more log here to avoid duplicates with colored logs from
   // midi_controller.cpp
 }
 
-// Obtenir la taille de la pièce actuelle
+// Get current room size
 float AudioSystem::getReverbRoomSize() const { return reverbRoomSize; }
 
-// Régler l'amortissement (0.0 - 1.0)
+// Set damping (0.0 - 1.0)
 void AudioSystem::setReverbDamping(float damping) {
   if (damping < 0.0f)
     reverbDamping = 0.0f;
@@ -1189,14 +1189,14 @@ void AudioSystem::setReverbDamping(float damping) {
   else
     reverbDamping = damping;
 
-  // Plus de log ici pour éviter les doublons avec les logs colorés de
+  // No more log here to avoid duplicates with colored logs from
   // midi_controller.cpp
 }
 
-// Obtenir l'amortissement actuel
+// Get current damping
 float AudioSystem::getReverbDamping() const { return reverbDamping; }
 
-// Régler la largeur stéréo (0.0 - 1.0)
+// Set stereo width (0.0 - 1.0)
 void AudioSystem::setReverbWidth(float width) {
   if (width < 0.0f)
     reverbWidth = 0.0f;
@@ -1205,11 +1205,11 @@ void AudioSystem::setReverbWidth(float width) {
   else
     reverbWidth = width;
 
-  // Plus de log ici pour éviter les doublons avec les logs colorés de
+  // No more log here to avoid duplicates with colored logs from
   // midi_controller.cpp
 }
 
-// Obtenir la largeur stéréo actuelle
+// Get current stereo width
 float AudioSystem::getReverbWidth() const { return reverbWidth; }
 
 // Set requested device ID for initialization
@@ -1218,16 +1218,16 @@ void AudioSystem::setRequestedDeviceId(int deviceId) {
   log_info("AUDIO", "Audio device ID %d requested for initialization", deviceId);
 }
 
-// Fonctions C pour la compatibilité avec le code existant
+// C functions for compatibility with existing code
 extern "C" {
 
-// Fonctions de gestion des buffers audio
+// Audio buffer management functions
 void resetAudioDataBufferOffset(void) {
-  // Cette fonction n'est plus nécessaire avec RtAudio
-  // Mais on la garde pour compatibilité
+  // This function is no longer needed with RtAudio
+  // But we keep it for compatibility
 }
 
-// Initialisation et nettoyage des données audio
+// Audio data initialization and cleanup
 void initAudioData(AudioData *audioData, UInt32 numChannels,
                    UInt32 bufferSize) {
   if (audioData) {
@@ -1242,7 +1242,7 @@ void initAudioData(AudioData *audioData, UInt32 numChannels,
 }
 
 void audio_Init(void) {
-  // Initialiser les buffers pour la compatibilité
+  // Initialize buffers for compatibility
   for (int i = 0; i < 2; i++) {
     pthread_mutex_init(&buffers_L[i].mutex, NULL);
     pthread_mutex_init(&buffers_R[i].mutex, NULL);
@@ -1271,7 +1271,7 @@ void audio_Init(void) {
   
   log_info("AUDIO", "RT-safe audio buffers initialized with zero content and atomic ready states");
 
-  // Créer et initialiser le système audio RtAudio
+  // Create and initialize RtAudio audio system
   if (!gAudioSystem) {
     gAudioSystem = new AudioSystem();
     if (gAudioSystem) {
@@ -1279,7 +1279,7 @@ void audio_Init(void) {
     }
   }
 
-  // Initialiser l'égaliseur à 3 bandes
+  // Initialize 3-band equalizer
   if (!gEqualizer) {
     float sampleRate = (gAudioSystem) ? g_sp3ctra_config.sampling_frequency : 44100.0f;
     eq_Init(sampleRate);
@@ -1300,7 +1300,7 @@ void cleanupAudioData(AudioData *audioData) {
 }
 
 void audio_Cleanup() {
-  // Nettoyage des mutex et conditions
+  // Cleanup mutexes and conditions
   for (int i = 0; i < 2; i++) {
     // Free dynamically allocated audio buffers
     if (buffers_L[i].data) {
@@ -1317,19 +1317,19 @@ void audio_Cleanup() {
     pthread_cond_destroy(&buffers_R[i].cond);
   }
 
-  // Nettoyage du système RtAudio
+  // Cleanup RtAudio system
   if (gAudioSystem) {
     delete gAudioSystem;
     gAudioSystem = nullptr;
   }
 
-  // Nettoyage de l'égaliseur
+  // Cleanup equalizer
   if (gEqualizer) {
     eq_Cleanup();
   }
 }
 
-// Fonctions de contrôle audio
+// Audio control functions
 int startAudioUnit() {
   if (gAudioSystem) {
     return gAudioSystem->start() ? 0 : -1;
@@ -1343,7 +1343,7 @@ void stopAudioUnit() {
   }
 }
 
-// Lister les périphériques audio disponibles avec énumération complète
+// List available audio devices with complete enumeration
 void printAudioDevices() {
   if (!gAudioSystem || !gAudioSystem->getAudioDevice()) {
     printf("Système audio non initialisé\n");
@@ -1509,7 +1509,7 @@ void printAudioDevices() {
   }
 }
 
-// Définir le périphérique audio actif
+// Set active audio device
 int setAudioDevice(unsigned int deviceId) {
   if (gAudioSystem) {
     // Set the requested device ID for next initialization

@@ -27,32 +27,32 @@
 
 #define DMX_GAMMA                    (1.2)
 
-// Paramètres pour la courbe de réponse progressive
-#define DMX_BLACK_THRESHOLD          (0.3)                  // Seuil en dessous duquel les LEDs restent éteintes (0-1)
-#define DMX_RESPONSE_CURVE           (2.5)                  // Contrôle l'inflexion de la courbe log/exp
+// Parameters for progressive response curve
+#define DMX_BLACK_THRESHOLD          (0.3)                  // Threshold below which LEDs remain off (0-1)
+#define DMX_RESPONSE_CURVE           (2.5)                  // Controls log/exp curve inflection
 
-// Paramètres pour la détection des éléments significatifs et le chevauchement
+// Parameters for significant element detection and overlap
 // des zones
 #define DMX_ZONE_OVERLAP             (0.15)                 // Facteur de chevauchement entre zones (0-1)
-#define DMX_WHITE_THRESHOLD          (220)                  // Valeur en dessous de laquelle un pixel n'est pas considéré comme blanc
+#define DMX_WHITE_THRESHOLD          (220)                  // Value below which a pixel is not considered white
 #define DMX_SIGNIFICANT_WEIGHT       (5.0)                  // Poids des pixels non-blancs par rapport aux pixels blancs
 
-// Paramètres pour la détection des blobs
-#define DMX_MIN_BLOB_SIZE            (2)                    // Taille minimale d'un blob pour être considéré (en pixels)
-#define DMX_COLOR_SIMILARITY_THRESHOLD (1000)               // Seuil de similarité de couleur (distance euclidienne au carré)
+// Parameters for blob detection
+#define DMX_MIN_BLOB_SIZE            (2)                    // Minimum blob size to be considered (in pixels)
+#define DMX_COLOR_SIMILARITY_THRESHOLD (1000)               // Color similarity threshold (squared Euclidean distance)
 #define DMX_MAX_BLOBS_PER_ZONE       (15)                   // Nombre maximum de blobs par zone
 #define DMX_MAX_ZONE_SIZE            (500)                  // Taille maximum d'une zone avec chevauchement
 
-// Paramètres pour la stabilisation des zones sombres/noires
-#define DMX_LOW_INTENSITY_THRESHOLD  (0.15)                 // Seuil d'intensité considéré comme "faible"
+// Parameters for dark/black area stabilization
+#define DMX_LOW_INTENSITY_THRESHOLD  (0.15)                 // Intensity threshold considered as "low"
 #define DMX_DARK_SMOOTHING_FACTOR    (0.98)                 // Lissage plus fort pour les zones sombres (0-1)
-#define DMX_UNIFORM_THRESHOLD        (8.0)                  // Seuil pour considérer une zone comme uniforme
-#define DMX_MIN_STD_DEV              (0.03)                 // Écart-type minimal pour considérer des variations significatives
+#define DMX_UNIFORM_THRESHOLD        (8.0)                  // Threshold to consider an area as uniform
+#define DMX_MIN_STD_DEV              (0.03)                 // Minimum standard deviation to consider significant variations
 
 /**************************************************************************************
  * DMX Flexible Configuration
  **************************************************************************************/
-// Types de projecteurs supportés
+// Supported projector types
 typedef enum {
     DMX_SPOT_RGB = 3,    // RGB (3 canaux)
     // DMX_SPOT_RGBW = 4, // Pour plus tard
@@ -63,6 +63,6 @@ typedef enum {
 #define DMX_SPOT_TYPE           DMX_SPOT_RGB
 #define DMX_CHANNELS_PER_SPOT   ((int)DMX_SPOT_TYPE)
 #define DMX_NUM_SPOTS           (27)                        // Test avec 18 spots
-#define DMX_START_CHANNEL       (1)                         // Canal de départ
+#define DMX_START_CHANNEL       (1)                         // Start channel
 
 #endif // __CONFIG_DMX_H__

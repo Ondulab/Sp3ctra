@@ -556,30 +556,30 @@ void *dmxSendingThread(void *arg) {
   DMXContext *dmxCtx = (DMXContext *)arg;
   unsigned char frame[DMX_FRAME_SIZE];
 
-  // Vérifier si le descripteur de fichier DMX est valide
+  // Check if DMX file descriptor is valid
   if (dmxCtx->fd < 0) {
     log_error("THREAD", "DMX thread started with invalid file descriptor, exiting thread");
     return NULL;
   }
 
   while (dmxCtx->running && keepRunning) {
-    // Vérifier si le descripteur de fichier est toujours valide
+    // Check if file descriptor is still valid
     if (dmxCtx->fd < 0) {
       log_error("THREAD", "DMX file descriptor became invalid, exiting thread");
       break;
     }
 
-    // Vérifier immédiatement si un signal d'arrêt a été reçu
+    // Check immediately if a stop signal has been received
     if (!dmxCtx->running || !keepRunning) {
       break;
     }
 
-    // Réinitialiser la trame DMX et définir le start code
+    // Reset DMX frame and set start code
     memset(frame, 0, DMX_FRAME_SIZE);
     frame[0] = 0;
 
-    // Pour chaque spot, insérer les 3 canaux (R, G, B) à partir de l'adresse
-    // définie dans la nouvelle structure flexible
+    // For each spot, insert the 3 channels (R, G, B) starting from the address
+    // defined in the new flexible structure
     for (int i = 0; i < dmxCtx->num_spots; i++) {
       int base = dmxCtx->spots[i].start_channel;
       if ((base + 2) < DMX_FRAME_SIZE) {
@@ -591,20 +591,20 @@ void *dmxSendingThread(void *arg) {
       }
     }
 
-    // Envoyer la trame DMX seulement si le fd est valide et que
-    // l'application est toujours en cours d'exécution
+    // Send DMX frame only if fd is valid and the
+    // application is still running
     if (dmxCtx->running && keepRunning && dmxCtx->fd >= 0 &&
         send_dmx_frame(dmxCtx->fd, frame, DMX_FRAME_SIZE) < 0) {
       log_error("THREAD", "Error sending DMX frame: %s", strerror(errno));
-      // En cas d'erreur répétée, on peut quitter le thread
+      // In case of repeated error, we can exit the thread
       if (errno == EBADF || errno == EIO) {
         log_error("THREAD", "Critical DMX error, exiting thread");
         break;
       }
     }
 
-    // Utiliser un sleep interruptible qui vérifie périodiquement si un signal
-    // d'arrêt a été reçu
+    // Use an interruptible sleep that periodically checks if a stop signal
+    // has been received
     for (int i = 0; i < 5; i++) { // 5 * 5ms = 25ms total
       if (!dmxCtx->running || !keepRunning) {
         break;

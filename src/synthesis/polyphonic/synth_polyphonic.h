@@ -9,7 +9,7 @@
 #define SYNTH_POLYPHONIC_H
 
 #include "config.h" // For AUDIO_BUFFER_SIZE, SAMPLING_FREQUENCY, CIS_MAX_PIXELS_NB
-#include "kissfft/kiss_fftr.h" // Pour la FFT réelle
+#include "kissfft/kiss_fftr.h" // For real FFT
 #include <pthread.h>           // For mutex and cond
 #include <stdint.h>            // For uint32_t, etc.
 #include "../common/synth_common.h"  // For AdsrState and AdsrEnvelope
