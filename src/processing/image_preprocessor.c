@@ -753,16 +753,21 @@ static int image_preprocess_color_fft(
             magnitude = sqrtf(real * real + imag * imag);
             phase = atan2f(imag, real);  /* Phase in [-π, π] */
             
-            /* Strategy: Magnitude determines intensity, phase determines direction */
-            /* Phase > 0 → Cold/Blue → Right (+1) */
-            /* Phase < 0 → Warm/Red → Left (-1) */
-            float direction = (phase > 0.0f) ? 1.0f : -1.0f;
+            /* HYBRID APPROACH: Phase for direction, magnitude for intensity */
+            /* Phase gives full directional range [-1, 1] instead of binary ±1 */
+            /* Magnitude modulates the pan intensity (strong patterns = extreme pan) */
             
-            /* Normalize magnitude to [0, 1] */
-            float normalized_mag = fminf(1.0f, magnitude / NORM_FACTOR_COLOR);
+            /* Convert phase from [-π, π] to [-1, 1] for full directional range */
+            float phase_normalized = phase / M_PI;
             
-            /* Pan position = direction × intensity */
-            pan_pos = direction * normalized_mag;
+            /* Normalize magnitude with reduced factor for better sensitivity */
+            /* Original NORM_FACTOR_COLOR was too large (440640), reducing by 20x */
+            float magnitude_factor = fminf(1.0f, magnitude / (NORM_FACTOR_COLOR / 20.0f));
+            
+            /* Pan position = phase direction × magnitude intensity */
+            /* Strong color patterns → pan follows phase direction fully */
+            /* Weak color patterns → pan reduced toward center */
+            pan_pos = phase_normalized * magnitude_factor;
         }
         
         /* Clamp to [-1, 1] */
