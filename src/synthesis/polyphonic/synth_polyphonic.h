@@ -72,11 +72,12 @@ typedef struct {
 
 /* Exported types ------------------------------------------------------------*/
 typedef struct {
-  float *data; // dynamically allocated with size = g_sp3ctra_config.audio_buffer_size
-  volatile int ready; // 0 = not ready, 1 = ready for consumption
-  uint64_t write_timestamp_us; // Timestamp when buffer was written (microseconds)
+  float* data_left;   // Left channel buffer (stereo)
+  float* data_right;  // Right channel buffer (stereo)
   pthread_mutex_t mutex;
   pthread_cond_t cond;
+  volatile int ready;
+  uint64_t write_timestamp_us;
 } FftAudioDataBuffer;
 
 /* Exported variables --------------------------------------------------------*/
@@ -92,6 +93,8 @@ extern pthread_mutex_t
 // Polyphony related globals
 extern SynthVoice poly_voices[MAX_POLY_VOICES];
 extern float global_smoothed_magnitudes[MAX_MAPPED_OSCILLATORS];
+extern float global_stereo_left_gains[MAX_MAPPED_OSCILLATORS];   // Per-harmonic left gains (spectral panning)
+extern float global_stereo_right_gains[MAX_MAPPED_OSCILLATORS];  // Per-harmonic right gains (spectral panning)
 extern SpectralFilterParams global_spectral_filter_params;
 
 extern LfoState global_vibrato_lfo; // Global LFO for vibrato
@@ -102,7 +105,8 @@ extern "C" {
 #endif
 
 void synth_polyphonicMode_init(void);
-void synth_polyphonicMode_process(float *audio_buffer,
+void synth_polyphonicMode_process(float *audio_buffer_left,
+                                  float *audio_buffer_right,
                                   unsigned int buffer_size);
 void *synth_polyphonicMode_thread_func(
     void *arg); // Renamed to avoid conflict if

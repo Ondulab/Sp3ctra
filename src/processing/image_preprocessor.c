@@ -32,6 +32,9 @@
 #define NORM_FACTOR_BIN0 (881280.0f * 1.1f)
 #define NORM_FACTOR_HARMONICS (220320.0f * 2.0f)
 
+/* Normalization factor for color FFT magnitude */
+#define NORM_FACTOR_COLOR (220320.0f * 2.0f)  /* Same as harmonics for consistency */
+
 /* Private state for FFT temporal smoothing */
 static struct {
     float history[FFT_HISTORY_SIZE][MAX_FFT_BINS];  /* Circular buffer for magnitude history */
@@ -42,6 +45,17 @@ static struct {
     kiss_fft_scalar *fft_input;  /* FFT input buffer (lazy alloc) */
     kiss_fft_cpx *fft_output;    /* FFT output buffer (lazy alloc) */
 } fft_history_state = {0};
+
+/* Private state for color FFT temporal smoothing */
+static struct {
+    float pan_history[FFT_HISTORY_SIZE][MAX_FFT_BINS];  /* Circular buffer for pan position history */
+    int write_index;  /* Current write position in circular buffer */
+    int fill_count;   /* Number of valid frames in history (0 to FFT_HISTORY_SIZE) */
+    int initialized;  /* 1 if color FFT state is initialized, 0 otherwise */
+    kiss_fftr_cfg color_fft_cfg;  /* KissFFT configuration for color (lazy init) */
+    kiss_fft_scalar *color_fft_input;  /* Color FFT input buffer (lazy alloc) */
+    kiss_fft_cpx *color_fft_output;    /* Color FFT output buffer (lazy alloc) */
+} color_fft_history_state = {0};
 #endif
 
 /* Private variables */
@@ -55,6 +69,10 @@ static void preprocess_stereo(const uint8_t *raw_r, const uint8_t *raw_g,
                                const uint8_t *raw_b, PreprocessedImageData *out);
 static void preprocess_dmx(const uint8_t *raw_r, const uint8_t *raw_g,
                             const uint8_t *raw_b, PreprocessedImageData *out);
+#ifndef DISABLE_POLYPHONIC
+static int image_preprocess_color_fft(const uint8_t *raw_r, const uint8_t *raw_g,
+                                      const uint8_t *raw_b, PreprocessedImageData *data);
+#endif
 
 /* Module initialization */
 void image_preprocess_init(void) {
@@ -372,8 +390,11 @@ void preprocess_polyphonic(
     
     /* NO GAMMA - FFT requires linear response */
     
-    /* STEP 3: FFT with temporal smoothing */
+    /* STEP 3: FFT with temporal smoothing (amplitude) */
     image_preprocess_fft(out);
+    
+    /* STEP 4: Color FFT for spectral panning (stereo) */
+    image_preprocess_color_fft(raw_r, raw_g, raw_b, out);
 }
 
 /**
@@ -624,6 +645,162 @@ int image_preprocess_fft(PreprocessedImageData *data) {
     
     /* Mark FFT data as valid */
     data->polyphonic.valid = 1;
+    
+    return 0;
+}
+
+/**
+ * @brief Color FFT preprocessing function for polyphonic synthesis spectral panning
+ * Computes FFT on color temperature data to extract per-harmonic pan positions
+ * 
+ * Architecture:
+ * - Lazy initialization of KissFFT on first call
+ * - Computes color temperature per pixel
+ * - Converts temperature [-1.0, 1.0] to FFT input [0-255]
+ * - Computes FFT using KissFFT
+ * - Extracts magnitude and phase to determine pan position per harmonic
+ * - Applies temporal smoothing via circular buffer (5 frames @ 1kHz = 5ms)
+ * - Precalculates stereo gains using constant power law
+ * 
+ * @param raw_r, raw_g, raw_b Raw RGB data
+ * @param data PreprocessedImageData to store pan positions and gains
+ * @return 0 on success, -1 on error
+ */
+static int image_preprocess_color_fft(
+    const uint8_t *raw_r,
+    const uint8_t *raw_g,
+    const uint8_t *raw_b,
+    PreprocessedImageData *data
+) {
+    int nb_pixels;
+    int i, h, idx;
+    float real, imag, magnitude, phase, pan_pos;
+    float sum, averaged;
+    
+    if (!data) {
+        log_error("PREPROCESS", "Color FFT: NULL data pointer");
+        return -1;
+    }
+    
+    nb_pixels = get_cis_pixels_nb();
+    
+    /* Lazy initialization of color FFT state */
+    if (!color_fft_history_state.initialized) {
+        log_info("PREPROCESS", "Color FFT: Initializing KissFFT for %d pixels", nb_pixels);
+        
+        /* Allocate color FFT buffers */
+        color_fft_history_state.color_fft_input = (kiss_fft_scalar *)calloc(nb_pixels, sizeof(kiss_fft_scalar));
+        color_fft_history_state.color_fft_output = (kiss_fft_cpx *)calloc(nb_pixels / 2 + 1, sizeof(kiss_fft_cpx));
+        
+        if (!color_fft_history_state.color_fft_input || !color_fft_history_state.color_fft_output) {
+            log_error("PREPROCESS", "Color FFT: Failed to allocate FFT buffers");
+            if (color_fft_history_state.color_fft_input) free(color_fft_history_state.color_fft_input);
+            if (color_fft_history_state.color_fft_output) free(color_fft_history_state.color_fft_output);
+            return -1;
+        }
+        
+        /* Initialize KissFFT configuration for color */
+        color_fft_history_state.color_fft_cfg = kiss_fftr_alloc(nb_pixels, 0, NULL, NULL);
+        if (!color_fft_history_state.color_fft_cfg) {
+            log_error("PREPROCESS", "Color FFT: Failed to initialize KissFFT configuration");
+            free(color_fft_history_state.color_fft_input);
+            free(color_fft_history_state.color_fft_output);
+            return -1;
+        }
+        
+        /* Pre-fill pan history buffer with center position (0.0) */
+        for (h = 0; h < FFT_HISTORY_SIZE; h++) {
+            for (i = 0; i < MAX_FFT_BINS; i++) {
+                color_fft_history_state.pan_history[h][i] = 0.0f;
+            }
+        }
+        
+        color_fft_history_state.write_index = 0;
+        color_fft_history_state.fill_count = FFT_HISTORY_SIZE;  /* History pre-filled */
+        color_fft_history_state.initialized = 1;
+        
+        log_info("PREPROCESS", "Color FFT: Initialized with %d-frame temporal smoothing (%.1fms @ 1kHz)", 
+                 FFT_HISTORY_SIZE, FFT_HISTORY_SIZE * 1.0f);
+    }
+    
+    /* Step 1: Compute color temperature per pixel */
+    for (i = 0; i < nb_pixels; i++) {
+        /* Calculate temperature [-1.0 (warm/red), +1.0 (cold/blue)] */
+        float temperature = calculate_color_temperature(raw_r[i], raw_g[i], raw_b[i]);
+        
+        /* Convert to FFT input [0-255] for KissFFT scalar */
+        /* Shift from [-1, 1] to [0, 1] then scale to [0, 255] */
+        color_fft_history_state.color_fft_input[i] = (temperature + 1.0f) * 127.5f;
+    }
+    
+    /* Step 2: Compute FFT on color temperature */
+    kiss_fftr(color_fft_history_state.color_fft_cfg, 
+              color_fft_history_state.color_fft_input, 
+              color_fft_history_state.color_fft_output);
+    
+    /* Step 3: Extract pan positions from FFT magnitude and phase */
+    for (i = 0; i < MAX_FFT_BINS && i < (nb_pixels / 2 + 1); i++) {
+        real = color_fft_history_state.color_fft_output[i].r;
+        imag = color_fft_history_state.color_fft_output[i].i;
+        
+        if (i == 0) {
+            /* Bin 0 (DC component): Average temperature of entire image */
+            /* DC represents global color bias: positive=cold/blue, negative=warm/red */
+            float avg_temp = real / (nb_pixels * 127.5f);  /* Normalize back to [-1, 1] */
+            pan_pos = avg_temp;
+        } else {
+            /* Harmonics: Use magnitude and phase to determine pan position */
+            magnitude = sqrtf(real * real + imag * imag);
+            phase = atan2f(imag, real);  /* Phase in [-π, π] */
+            
+            /* Strategy: Magnitude determines intensity, phase determines direction */
+            /* Phase > 0 → Cold/Blue → Right (+1) */
+            /* Phase < 0 → Warm/Red → Left (-1) */
+            float direction = (phase > 0.0f) ? 1.0f : -1.0f;
+            
+            /* Normalize magnitude to [0, 1] */
+            float normalized_mag = fminf(1.0f, magnitude / NORM_FACTOR_COLOR);
+            
+            /* Pan position = direction × intensity */
+            pan_pos = direction * normalized_mag;
+        }
+        
+        /* Clamp to [-1, 1] */
+        if (pan_pos > 1.0f) pan_pos = 1.0f;
+        if (pan_pos < -1.0f) pan_pos = -1.0f;
+        
+        /* Store in circular buffer for temporal smoothing */
+        color_fft_history_state.pan_history[color_fft_history_state.write_index][i] = pan_pos;
+    }
+    
+    /* Fill remaining bins with center position if nb_pixels is small */
+    for (i = (nb_pixels / 2 + 1); i < MAX_FFT_BINS; i++) {
+        color_fft_history_state.pan_history[color_fft_history_state.write_index][i] = 0.0f;
+    }
+    
+    /* Update circular buffer indices */
+    color_fft_history_state.write_index = (color_fft_history_state.write_index + 1) % FFT_HISTORY_SIZE;
+    if (color_fft_history_state.fill_count < FFT_HISTORY_SIZE) {
+        color_fft_history_state.fill_count++;
+    }
+    
+    /* Step 4: Calculate moving average over history buffer and compute stereo gains */
+    for (i = 0; i < MAX_FFT_BINS; i++) {
+        sum = 0.0f;
+        for (h = 0; h < color_fft_history_state.fill_count; h++) {
+            idx = (color_fft_history_state.write_index - 1 - h + FFT_HISTORY_SIZE) % FFT_HISTORY_SIZE;
+            sum += color_fft_history_state.pan_history[idx][i];
+        }
+        averaged = sum / color_fft_history_state.fill_count;
+        
+        /* Store smoothed pan position */
+        data->polyphonic.pan_positions[i] = averaged;
+        
+        /* Precalculate stereo gains using constant power law */
+        calculate_pan_gains(averaged, 
+                          &data->polyphonic.left_gains[i],
+                          &data->polyphonic.right_gains[i]);
+    }
     
     return 0;
 }
