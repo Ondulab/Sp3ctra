@@ -43,6 +43,12 @@ typedef struct {
         float pan_positions[128];               /* Per-harmonic pan positions [-1.0, 1.0] from color FFT */
         float left_gains[128];                  /* Per-harmonic left channel gains [0.0, 1.0] (constant power) */
         float right_gains[128];                 /* Per-harmonic right channel gains [0.0, 1.0] (constant power) */
+        
+        /* Harmonicity data (color-based timbre control) */
+        float harmonicity[128];                 /* Per-harmonic harmonicity [0.0, 1.0]: 0=inharmonic, 1=harmonic */
+        float detune_cents[128];                /* Per-harmonic detune in cents for semi-harmonic sounds */
+        float inharmonic_ratios[128];           /* Per-harmonic frequency ratios for inharmonic sounds */
+        
         int valid;                              /* 1 if FFT data is valid, 0 otherwise */
     } polyphonic;
     

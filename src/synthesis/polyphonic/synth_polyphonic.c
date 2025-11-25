@@ -61,6 +61,9 @@ SynthVoice poly_voices[MAX_POLY_VOICES];
 float global_smoothed_magnitudes[MAX_MAPPED_OSCILLATORS];
 float global_stereo_left_gains[MAX_MAPPED_OSCILLATORS];   // Per-harmonic left gains (spectral panning)
 float global_stereo_right_gains[MAX_MAPPED_OSCILLATORS];  // Per-harmonic right gains (spectral panning)
+float global_harmonicity[MAX_MAPPED_OSCILLATORS];         // Per-harmonic harmonicity [0,1] from color temperature
+float global_detune_cents[MAX_MAPPED_OSCILLATORS];        // Per-harmonic detune in cents for semi-harmonic sounds
+float global_inharmonic_ratios[MAX_MAPPED_OSCILLATORS];   // Per-harmonic frequency ratios for inharmonic sounds
 SpectralFilterParams global_spectral_filter_params;
 LfoState global_vibrato_lfo; // Definition for the global LFO
 
@@ -244,7 +247,24 @@ void synth_polyphonicMode_process(float *audio_buffer_left,
         if (osc_idx == 0) {
           harmonic_multiple = 1.0f; // Fundamental frequency for osc_idx 0
         } else {
-          harmonic_multiple = (float)(osc_idx + 1); // Harmonics for osc_idx > 0
+          // COLOR-BASED HARMONICITY: Use temperature to control harmonic/inharmonic behavior
+          float h = global_harmonicity[osc_idx];  // [0,1]: 0=inharmonic, 1=harmonic
+          
+          if (h > 0.7f) {
+            // Highly harmonic (warm colors: red, orange)
+            // Use standard harmonic series with optional slight detune
+            float detune_factor = global_detune_cents[osc_idx] / 1200.0f;  // Convert cents to ratio
+            harmonic_multiple = (float)(osc_idx + 1) + detune_factor;
+          } else if (h > 0.3f) {
+            // Semi-harmonic (neutral colors: yellow, green)
+            // Use harmonic series with stronger detune for "piano/guitar" effect
+            float detune_factor = global_detune_cents[osc_idx] / 1200.0f;
+            harmonic_multiple = (float)(osc_idx + 1) + detune_factor;
+          } else {
+            // Inharmonic (cold colors: blue, cyan)
+            // Use inharmonic ratios for "bell/percussion" effect
+            harmonic_multiple = global_inharmonic_ratios[osc_idx];
+          }
         }
         float osc_freq = actual_fundamental_freq * harmonic_multiple;
 
@@ -379,6 +399,17 @@ static void read_preprocessed_fft_magnitudes(DoubleBuffer *image_db) {
     memcpy(global_stereo_right_gains,
            image_db->preprocessed_data.polyphonic.right_gains,
            sizeof(global_stereo_right_gains));
+    
+    /* Copy pre-computed harmonicity data for color-based timbre control */
+    memcpy(global_harmonicity,
+           image_db->preprocessed_data.polyphonic.harmonicity,
+           sizeof(global_harmonicity));
+    memcpy(global_detune_cents,
+           image_db->preprocessed_data.polyphonic.detune_cents,
+           sizeof(global_detune_cents));
+    memcpy(global_inharmonic_ratios,
+           image_db->preprocessed_data.polyphonic.inharmonic_ratios,
+           sizeof(global_inharmonic_ratios));
     
     /* DEBUG: Log stereo gains periodically */
     static int debug_counter = 0;

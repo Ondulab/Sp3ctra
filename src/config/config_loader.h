@@ -146,6 +146,10 @@ typedef struct {
     float poly_amplitude_smoothing_alpha;      // Amplitude smoothing factor (0.0-1.0)
     float poly_norm_factor_bin0;               // Normalization factor for fundamental
     float poly_norm_factor_harmonics;          // Normalization factor for harmonics
+    
+    // Polyphonic harmonicity parameters (color-based timbre control)
+    float poly_detune_max_cents;               // Maximum detune for semi-harmonic sounds (cents)
+    float poly_harmonicity_curve_exponent;     // Exponent for harmonicity response curve (0.5-2.0)
 } sp3ctra_config_t;
 
 /**************************************************************************************
