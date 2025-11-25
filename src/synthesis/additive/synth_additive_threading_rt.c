@@ -156,6 +156,7 @@ int synth_set_rt_priority(pthread_t thread, int priority) {
 #elif defined(__APPLE__)
   // macOS: Use Mach time-constraint policy for RT threads
   // This requires elevated privileges (sudo) but fails gracefully without them
+  (void)priority; // Unused on macOS - uses time-constraint policy instead
   
   // Get the Mach thread from pthread
   mach_port_t mach_thread = pthread_mach_thread_np(thread);

@@ -568,33 +568,25 @@ void midi_cb_synth_photowave_volume_env_release(const MidiParameterValue *param,
 void midi_cb_synth_photowave_filter_env_attack(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     synth_photowave_set_filter_adsr_attack(param->raw_value);
-    if (is_startup_verbose()) {
-        log_info("MIDI", "PHOTOWAVE FILT ENV ATTACK: %d ms", (int)(param->raw_value * 1000));
-    }
+    log_info("PHOTOWAVE", "Filter ADSR Attack: %d ms", (int)(param->raw_value * 1000));
 }
 
 void midi_cb_synth_photowave_filter_env_decay(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     synth_photowave_set_filter_adsr_decay(param->raw_value);
-    if (is_startup_verbose()) {
-        log_info("MIDI", "PHOTOWAVE FILT ENV DECAY: %d ms", (int)(param->raw_value * 1000));
-    }
+    log_info("PHOTOWAVE", "Filter ADSR Decay: %d ms", (int)(param->raw_value * 1000));
 }
 
 void midi_cb_synth_photowave_filter_env_sustain(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     synth_photowave_set_filter_adsr_sustain(param->value);
-    if (is_startup_verbose()) {
-        log_info("MIDI", "PHOTOWAVE FILT ENV SUSTAIN: %.0f%%", param->value * 100.0f);
-    }
+    log_info("PHOTOWAVE", "Filter ADSR Sustain: %.0f%%", param->value * 100.0f);
 }
 
 void midi_cb_synth_photowave_filter_env_release(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     synth_photowave_set_filter_adsr_release(param->raw_value);
-    if (is_startup_verbose()) {
-        log_info("MIDI", "PHOTOWAVE FILT ENV RELEASE: %d ms", (int)(param->raw_value * 1000));
-    }
+    log_info("PHOTOWAVE", "Filter ADSR Release: %d ms", (int)(param->raw_value * 1000));
 }
 
 void midi_cb_synth_photowave_lfo_vibrato_rate(const MidiParameterValue *param, void *user_data) {
