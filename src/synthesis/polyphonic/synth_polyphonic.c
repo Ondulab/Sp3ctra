@@ -650,7 +650,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
     }
     if (candidate_idx != -1) {
       voice_idx = candidate_idx;
-      printf("SYNTH_POLY: Stealing quietest release voice %d for note %d (Env: %.2f)\n",
+      printf("POLYPHONIC: Stealing quietest release voice %d for note %d (Env: %.2f)\n",
              voice_idx, noteNumber, lowest_env_output);
     }
   }
@@ -674,7 +674,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
     }
     if (candidate_idx != -1) {
       voice_idx = candidate_idx;
-      printf("SYNTH_POLY: Last resort - stealing oldest active voice %d for note %d (Order: %llu)\n",
+      printf("POLYPHONIC: Last resort - stealing oldest active voice %d for note %d (Order: %llu)\n",
              voice_idx, noteNumber, oldest_order);
     }
   }
@@ -687,7 +687,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
   // more complex fallback.
   if (voice_idx == -1) {
     voice_idx = 0; // Default to stealing voice 0 if no other candidate found
-    printf("SYNTH_POLY: Critical fallback. Stealing voice 0 for note %d\n",
+    printf("POLYPHONIC: Critical fallback. Stealing voice 0 for note %d\n",
            noteNumber);
   }
 
@@ -718,7 +718,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
   adsr_trigger_attack(
       &voice->filter_adsr); // and set state to ATTACK, current_output to 0
 
-  printf("SYNTH_POLY: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f "
+  printf("POLYPHONIC: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f "
          "Hz, Order: %llu -> ADSR Attack\n",
          voice_idx, noteNumber, velocity, voice->last_velocity,
          voice->fundamental_frequency, voice->last_triggered_order);
@@ -776,15 +776,15 @@ void synth_polyphonic_note_off(int noteNumber) {
       adsr_trigger_release(&poly_voices[oldest_voice_idx].volume_adsr);
       adsr_trigger_release(&poly_voices[oldest_voice_idx].filter_adsr);
       poly_voices[oldest_voice_idx].voice_state = ADSR_STATE_RELEASE;
-      printf("SYNTH_POLY: Voice %d Note Off: %d -> ADSR Release\n", 
+      printf("POLYPHONIC: Voice %d Note Off: %d -> ADSR Release\n", 
              oldest_voice_idx, noteNumber);
     }
     // Clear midi_note_number now that Note Off has been processed
     poly_voices[oldest_voice_idx].midi_note_number = -1;
   } else {
     // DEBUG: Log when no voice is found for Note Off (should be very rare now)
-    printf("SYNTH_POLY: WARNING - Note Off %d: No voice found (neither active nor idle)!\n", noteNumber);
-    printf("SYNTH_POLY: Voice states: ");
+    printf("POLYPHONIC: WARNING - Note Off %d: No voice found (neither active nor idle)!\n", noteNumber);
+    printf("POLYPHONIC: Voice states: ");
     for (int i = 0; i < g_num_poly_voices; ++i) {
       printf("[%d:note=%d,state=%d] ", i, poly_voices[i].midi_note_number, poly_voices[i].voice_state);
     }

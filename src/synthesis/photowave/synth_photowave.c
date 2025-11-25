@@ -747,6 +747,9 @@ void synth_photowave_note_on(PhotowaveState *state, uint8_t note, uint8_t veloci
     // Reset filter state
     voice->lowpass.prev_output = 0.0f;
     
+    // Log Note On with same format as POLYPHONIC
+    printf("PHOTOWAVE: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f Hz, Order: %llu -> ADSR Attack\n",
+           voice_idx, note, velocity, (float)velocity / 127.0f, voice->frequency, voice->trigger_order);
 }
 
 void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
@@ -781,7 +784,8 @@ void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
                 oldest_voice_idx = i;
                 log_debug("PHOTOWAVE", "Duplicate Note Off %d handled via RELEASE voice %d (already releasing)", 
                           note, i);
-                break; // Take first RELEASE voice found with this note
+                // NOTE: Do NOT clear midi_note here - allows future duplicates to be detected
+                return; // Early return - duplicate Note Off, nothing to do
             }
         }
     }
@@ -793,6 +797,7 @@ void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
             if (state->voices[i].midi_note == note &&
                 state->voices[i].volume_adsr.state == ADSR_STATE_IDLE) {
                 oldest_voice_idx = i;
+                log_debug("PHOTOWAVE", "Late Note Off %d handled via IDLE voice %d (grace period)", note, i);
                 break; // Take first IDLE voice found with this note
             }
         }
@@ -800,10 +805,13 @@ void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
     
     // Process the Note Off
     if (oldest_voice_idx != -1) {
-        // Only trigger release if not already IDLE
-        if (state->voices[oldest_voice_idx].volume_adsr.state != ADSR_STATE_IDLE) {
+        // Only trigger release if not already IDLE or RELEASE
+        if (state->voices[oldest_voice_idx].volume_adsr.state != ADSR_STATE_IDLE &&
+            state->voices[oldest_voice_idx].volume_adsr.state != ADSR_STATE_RELEASE) {
             adsr_trigger_release(&state->voices[oldest_voice_idx].volume_adsr);
             adsr_trigger_release(&state->voices[oldest_voice_idx].filter_adsr);
+            // Log Note Off with same format as POLYPHONIC
+            printf("PHOTOWAVE: Voice %d Note Off: %d -> ADSR Release\n", oldest_voice_idx, note);
         }
         
         // Clear midi_note AFTER processing Note Off (prevents future late Note Offs from finding this voice)
@@ -811,8 +819,8 @@ void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
         
     } else {
         // No voice found - this should be rare now with the grace period
-        log_warning("PHOTOWAVE", "WARNING - Note Off %d: No voice found (neither active nor idle)!", note);
-        log_warning("PHOTOWAVE", "Voice states: [0:note=%d,state=%d] [1:note=%d,state=%d] [2:note=%d,state=%d] [3:note=%d,state=%d] [4:note=%d,state=%d] [5:note=%d,state=%d] [6:note=%d,state=%d] [7:note=%d,state=%d]",
+        printf("PHOTOWAVE: WARNING - Note Off %d: No voice found (neither active nor idle)!\n", note);
+        printf("PHOTOWAVE: Voice states: [0:note=%d,state=%d] [1:note=%d,state=%d] [2:note=%d,state=%d] [3:note=%d,state=%d] [4:note=%d,state=%d] [5:note=%d,state=%d] [6:note=%d,state=%d] [7:note=%d,state=%d]\n",
                    state->voices[0].midi_note, state->voices[0].volume_adsr.state,
                    state->voices[1].midi_note, state->voices[1].volume_adsr.state,
                    state->voices[2].midi_note, state->voices[2].volume_adsr.state,
@@ -1001,7 +1009,6 @@ void *synth_photowave_thread_func(void *arg) {
     uint64_t process_time_us, current_time_us;
     uint64_t max_process_time_us = 0;
     uint64_t min_process_time_us = UINT64_MAX;
-    uint64_t total_process_time_us = 0;
     
     (void)arg;
     
@@ -1080,7 +1087,6 @@ void *synth_photowave_thread_func(void *arg) {
         
         // Update statistics
         photowave_total_buffers_processed++;
-        total_process_time_us += process_time_us;
         if (process_time_us > max_process_time_us) max_process_time_us = process_time_us;
         if (process_time_us < min_process_time_us) min_process_time_us = process_time_us;
         
@@ -1105,7 +1111,6 @@ void *synth_photowave_thread_func(void *arg) {
         if (current_time_us - photowave_last_stats_print_time_us >= PHOTOWAVE_STATS_PRINT_INTERVAL_US) {
             if (photowave_total_buffers_processed > 0) {
                 // Reset statistics for next interval (stats collection continues silently)
-                total_process_time_us = 0;
                 max_process_time_us = 0;
                 min_process_time_us = UINT64_MAX;
                 photowave_total_buffers_processed = 0;
