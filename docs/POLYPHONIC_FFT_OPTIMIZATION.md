@@ -1,4 +1,4 @@
-# Polyphonic FFT Optimization - Architecture Refactoring
+# LuxSynth FFT Optimization - Architecture Refactoring
 
 **Date:** 2025-11-13  
 **Author:** zhonx  
@@ -7,7 +7,7 @@
 ## Problem Statement
 
 ### Symptoms
-- Frequent "[AUDIO] Polyphonic buffer missing!" messages
+- Frequent "[AUDIO] LuxSynth buffer missing!" messages
 - Regular audio crackling/pops during polyphonic synthesis
 - Unstable polyphonic synthesis performance
 
@@ -26,7 +26,7 @@ The polyphonic thread was attempting to compute **1000 FFT/second** (one FFT per
 
 **Problematic Code Flow (BEFORE):**
 ```c
-// In synth_polyphonicMode_thread_func()
+// In synth_luxsynthMode_thread_func()
 while (keepRunning) {
     process_image_data_for_fft(image_db);  // Blocked waiting for image
     // When image arrives:
@@ -56,19 +56,19 @@ For each complete image received:
 6. Store everything in preprocessed_data
 ```
 
-**Polyphonic Thread** (`synth_polyphonic.c`):
+**LuxSynth Thread** (`synth_luxsynth.c`):
 ```
 while (keepRunning) {
     // Read pre-computed FFT magnitudes from preprocessed_data
     read_preprocessed_fft_magnitudes(image_db);
     // Generate audio buffer (~0.3-0.5ms instead of 2ms)
-    synth_polyphonicMode_process(...);
+    synth_luxsynthMode_process(...);
 }
 ```
 
 ### Benefits
 - ✅ FFT computed in non-RT thread (no strict time constraint)
-- ✅ Polyphonic thread 4x faster (0.5ms vs 2ms)
+- ✅ LuxSynth thread 4x faster (0.5ms vs 2ms)
 - ✅ Coherent architecture (all preprocessing centralized)
 - ✅ No moving average needed (FFT per image @ 1kHz is sufficient)
 - ✅ No added audio latency
@@ -81,7 +81,7 @@ while (keepRunning) {
 
 Added FFT data to `PreprocessedImageData`:
 ```c
-#ifndef DISABLE_POLYPHONIC
+#ifndef DISABLE_LUXSYNTH
 #define PREPROCESS_MAX_FFT_BINS 64  /* Must match MAX_MAPPED_OSCILLATORS */
 struct {
     float magnitudes[PREPROCESS_MAX_FFT_BINS];  /* Pre-computed smoothed FFT magnitudes */
@@ -105,7 +105,7 @@ New function `image_preprocess_fft()`:
 **Key Features:**
 - Reuses normalization factors from original implementation
 - Maintains smoothing for temporal stability
-- Conditional compilation with `#ifndef DISABLE_POLYPHONIC`
+- Conditional compilation with `#ifndef DISABLE_LUXSYNTH`
 
 ### 3. UDP Thread Integration
 
@@ -114,7 +114,7 @@ New function `image_preprocess_fft()`:
 Added FFT preprocessing call after standard preprocessing:
 ```c
 /* Step 2.5: Calculate FFT for polyphonic synthesis (if enabled) */
-#ifndef DISABLE_POLYPHONIC
+#ifndef DISABLE_LUXSYNTH
 if (image_preprocess_fft(&preprocessed_temp) != 0) {
     log_warning("THREAD", "FFT preprocessing failed - polyphonic synthesis may glitch");
     preprocessed_temp.fft.valid = 0;  /* Mark FFT as invalid */
@@ -124,28 +124,28 @@ if (image_preprocess_fft(&preprocessed_temp) != 0) {
 
 Also initialized FFT data in `initDoubleBuffer()`:
 ```c
-#ifndef DISABLE_POLYPHONIC
+#ifndef DISABLE_LUXSYNTH
 memset(db->preprocessed_data.fft.magnitudes, 0, sizeof(db->preprocessed_data.fft.magnitudes));
 db->preprocessed_data.fft.valid = 0;
 #endif
 ```
 
-### 4. Polyphonic Thread Simplification
+### 4. LuxSynth Thread Simplification
 
-**File:** `src/synthesis/polyphonic/synth_polyphonic.c`
+**File:** `src/synthesis/luxsynth/synth_luxsynth.c`
 
 **Removed:**
 - `process_image_data_for_fft()` function (entire FFT computation)
 - Moving average logic (no longer needed at 1kHz)
-- Local FFT magnitude calculation in `synth_polyphonicMode_process()`
+- Local FFT magnitude calculation in `synth_luxsynthMode_process()`
 
 **Added:**
 - `read_preprocessed_fft_magnitudes()` - simple reader function
 - Direct copy from `preprocessed_data.fft.magnitudes[]` to `global_smoothed_magnitudes[]`
 
 **Modified:**
-- `synth_polyphonicMode_thread_func()` now calls `read_preprocessed_fft_magnitudes()`
-- `synth_polyphonicMode_process()` simplified - just uses pre-computed magnitudes
+- `synth_luxsynthMode_thread_func()` now calls `read_preprocessed_fft_magnitudes()`
+- `synth_luxsynthMode_process()` simplified - just uses pre-computed magnitudes
 
 ## Performance Impact
 
@@ -153,7 +153,7 @@ db->preprocessed_data.fft.valid = 0;
 
 | Metric | Before | After | Improvement |
 |--------|--------|-------|-------------|
-| Polyphonic thread time | ~2ms | ~0.5ms | **4x faster** |
+| LuxSynth thread time | ~2ms | ~0.5ms | **4x faster** |
 | FFT computation rate | 500-600/sec | 1000/sec | **2x faster** |
 | CPU usage (polyphonic) | High | Low | **-60-70%** |
 | Buffer underruns | Frequent | None | **100% reduction** |
@@ -161,7 +161,7 @@ db->preprocessed_data.fft.valid = 0;
 ### Validation Criteria
 
 After implementation, we should observe:
-- ❌ Complete disappearance of "[AUDIO] Polyphonic buffer missing!" messages
+- ❌ Complete disappearance of "[AUDIO] LuxSynth buffer missing!" messages
 - ✅ Stable audio without crackling
 - ✅ Logs showing much faster polyphonic thread execution
 - ✅ Reduced CPU usage in polyphonic synthesis
@@ -186,7 +186,7 @@ After implementation, we should observe:
 - Simplifies code and reduces memory usage
 
 ### Conditional Compilation
-**Decision:** All FFT preprocessing guarded by `#ifndef DISABLE_POLYPHONIC`
+**Decision:** All FFT preprocessing guarded by `#ifndef DISABLE_LUXSYNTH`
 
 **Rationale:**
 - Respects existing polyphonic enable/disable mechanism
@@ -217,12 +217,12 @@ After implementation, we should observe:
 1. ✅ Add FFT structure to `PreprocessedImageData`
 2. ✅ Implement `image_preprocess_fft()` in `image_preprocessor.c`
 3. ✅ Integrate FFT call in `udpThread()`
-4. ✅ Simplify `synth_polyphonic.c` to use pre-computed data
+4. ✅ Simplify `synth_luxsynth.c` to use pre-computed data
 5. ✅ Compile and verify no errors
 
 ### Phase 2: Testing (USER REQUIRED)
 1. Run application with MIDI controller
-2. Monitor for "[AUDIO] Polyphonic buffer missing!" messages
+2. Monitor for "[AUDIO] LuxSynth buffer missing!" messages
 3. Listen for audio crackling
 4. Verify CPU usage reduction
 5. Test on Raspberry Pi 5 (production environment)
@@ -241,7 +241,7 @@ The following legacy code can be removed in a future cleanup:
 1. `src/processing/image_preprocessor.h` - Added FFT structure and function declaration
 2. `src/processing/image_preprocessor.c` - Implemented FFT preprocessing
 3. `src/threading/multithreading.c` - Integrated FFT call in UDP thread
-4. `src/synthesis/polyphonic/synth_polyphonic.c` - Simplified to use pre-computed FFT
+4. `src/synthesis/luxsynth/synth_luxsynth.c` - Simplified to use pre-computed FFT
 
 ## Rollback Plan
 
@@ -250,7 +250,7 @@ If issues arise:
 git revert <commit-hash>
 ```
 
-Or disable FFT preprocessing by defining `DISABLE_POLYPHONIC` in build flags.
+Or disable FFT preprocessing by defining `DISABLE_LUXSYNTH` in build flags.
 
 ## FFT Temporal Smoothing Architecture
 
@@ -269,16 +269,16 @@ While the current implementation successfully moved FFT computation to the UDP t
 3. **No temporal continuity**: Current implementation calculates FFT on each individual image without historical context
 4. **Temporal aliasing**: UDP reception rate (~1kHz) creates beating patterns with bass frequencies
 
-**Comparison with Working Polyphonic Implementation:**
+**Comparison with Working LuxSynth Implementation:**
 
-The original polyphonic thread (`synth_polyphonic.c`) **did not have this problem** because it used:
+The original polyphonic thread (`synth_luxsynth.c`) **did not have this problem** because it used:
 - **Moving average window** (`MOVING_AVERAGE_WINDOW_SIZE = 8`)
 - **Circular buffer** of historical image lines
 - **Temporal smoothing** before FFT computation
 - **Pre-filled history** with white lines at startup (prevents transients)
 
 ```c
-// Original working code (synth_polyphonic.c)
+// Original working code (synth_luxsynth.c)
 for (j = 0; j < nb_pixels; ++j) {
   sum = 0.0f;
   for (k = 0; k < history_fill_count; ++k) {
@@ -309,7 +309,7 @@ Add a **circular buffer** in `image_preprocessor.c` to maintain FFT temporal con
 
 ```c
 /* Private state for FFT temporal smoothing */
-#ifndef DISABLE_POLYPHONIC
+#ifndef DISABLE_LUXSYNTH
 #define FFT_HISTORY_SIZE 5  /* 5ms @ 1kHz - good compromise */
 
 static struct {
@@ -369,7 +369,7 @@ Pre-fill history buffer at startup to prevent transients:
 
 ```c
 void image_preprocess_init(void) {
-    #ifndef DISABLE_POLYPHONIC
+    #ifndef DISABLE_LUXSYNTH
     // Pre-fill FFT history with "white" spectrum (all bins = 1.0)
     for (int h = 0; h < FFT_HISTORY_SIZE; h++) {
         for (int i = 0; i < PREPROCESS_MAX_FFT_BINS; i++) {
@@ -456,9 +456,9 @@ Maintains RT-safety by keeping all computation in UDP thread."
 **Functional Tests:**
 - [ ] No compilation errors or warnings
 - [ ] Application starts without crashes
-- [ ] Polyphonic synthesis produces sound
+- [ ] LuxSynth synthesis produces sound
 - [ ] MIDI note on/off works correctly
-- [ ] No "[AUDIO] Polyphonic buffer missing!" messages
+- [ ] No "[AUDIO] LuxSynth buffer missing!" messages
 
 **Audio Quality Tests:**
 - [ ] **Bass frequencies (50-100Hz) are stable** ← PRIMARY GOAL
@@ -511,7 +511,7 @@ git revert <commit-hash>
 ### Potential Improvements
 1. **Adaptive history size**: Adjust FFT_HISTORY_SIZE based on detected tempo/rhythm
 2. **Frequency-dependent smoothing**: More smoothing for bass, less for treble
-3. Remove legacy moving average code from `synth_polyphonic.c` (cleanup)
+3. Remove legacy moving average code from `synth_luxsynth.c` (cleanup)
 4. Test without exponential smoothing to measure impact
 5. Consider lock-free queue for FFT data transfer
 6. Profile actual performance gains on Raspberry Pi 5

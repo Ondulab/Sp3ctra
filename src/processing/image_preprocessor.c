@@ -9,8 +9,8 @@
 
 #include "image_preprocessor.h"
 #include "../../config/config_instrument.h"
-#include "../../synthesis/additive/synth_additive_stereo.h"
-#include "../../synthesis/additive/synth_additive_math.h"
+#include "../../synthesis/luxstral/synth_luxstral_stereo.h"
+#include "../../synthesis/luxstral/synth_luxstral_math.h"
 #include "../../communication/dmx/dmx.h"
 #include "../../config/config_loader.h"
 #include "../../utils/logger.h"
@@ -20,8 +20,8 @@
 #include <sys/time.h>
 #include <math.h>
 
-#ifndef DISABLE_POLYPHONIC
-#include "../../synthesis/polyphonic/kissfft/kiss_fftr.h"
+#ifndef DISABLE_LUXSYNTH
+#include "../../synthesis/luxsynth/kissfft/kiss_fftr.h"
 
 /* FFT temporal smoothing configuration */
 #define FFT_HISTORY_SIZE 5  /* 5ms @ 1kHz - good compromise for bass stability */
@@ -69,7 +69,7 @@ static void preprocess_stereo(const uint8_t *raw_r, const uint8_t *raw_g,
                                const uint8_t *raw_b, PreprocessedImageData *out);
 static void preprocess_dmx(const uint8_t *raw_r, const uint8_t *raw_g,
                             const uint8_t *raw_b, PreprocessedImageData *out);
-#ifndef DISABLE_POLYPHONIC
+#ifndef DISABLE_LUXSYNTH
 static int image_preprocess_color_fft(const uint8_t *raw_r, const uint8_t *raw_g,
                                       const uint8_t *raw_b, PreprocessedImageData *data);
 #endif
@@ -115,15 +115,15 @@ int image_preprocess_frame(
     out->timestamp_us = get_timestamp_us();
     
     /* 1. Preprocess for additive synthesis (with gamma) */
-    preprocess_additive(raw_r, raw_g, raw_b, out);
+    preprocess_luxstral(raw_r, raw_g, raw_b, out);
     
     /* 2. Preprocess for polyphonic synthesis (without gamma) */
-#ifndef DISABLE_POLYPHONIC
-    preprocess_polyphonic(raw_r, raw_g, raw_b, out);
+#ifndef DISABLE_LUXSYNTH
+    preprocess_luxsynth(raw_r, raw_g, raw_b, out);
 #endif
     
     /* 3. Preprocess for photowave synthesis (native RGB) */
-    preprocess_photowave(raw_r, raw_g, raw_b, out);
+    preprocess_luxwave(raw_r, raw_g, raw_b, out);
     
     /* 4. Calculate stereo panning data (only if stereo enabled) */
     if (g_sp3ctra_config.stereo_mode_enabled) {
@@ -157,7 +157,7 @@ static uint64_t get_timestamp_us(void) {
  * CRITICAL: This function must be called on INDIVIDUAL PIXELS, not averaged notes
  * White noise has high pixel-to-pixel variance but low note-to-note variance after averaging
  * 
- * This function was moved from synth_additive_stereo.c to image_preprocessor.c
+ * This function was moved from synth_luxstral_stereo.c to image_preprocessor.c
  * for better architectural coherence (preprocessing logic belongs in preprocessor)
  */
 static float calculate_contrast(float *imageData, size_t size) {
@@ -247,10 +247,10 @@ static float calculate_contrast(float *imageData, size_t size) {
 }
 
 /**
- * @brief Additive synthesis preprocessing
+ * @brief LuxStral synthesis preprocessing
  * Pipeline: RGB → Grayscale → Contrast → Inversion (optional) → Gamma → Averaging
  */
-void preprocess_additive(
+void preprocess_luxstral(
     const uint8_t *raw_r,
     const uint8_t *raw_g,
     const uint8_t *raw_b,
@@ -300,7 +300,7 @@ void preprocess_additive(
         }
     }
     
-    /* STEP 4: Gamma correction (non-linear mapping) - ADDITIVE SPECIFIC */
+    /* STEP 4: Gamma correction (non-linear mapping) - LUXSTRAL SPECIFIC */
     if (g_sp3ctra_config.additive_enable_non_linear_mapping) {
         float gamma = g_sp3ctra_config.additive_gamma_value;
         
@@ -363,10 +363,10 @@ void preprocess_additive(
 }
 
 /**
- * @brief Polyphonic synthesis preprocessing
+ * @brief LuxSynth synthesis preprocessing
  * Pipeline: RGB → Grayscale → Inversion (optional) → FFT (no gamma for linear response)
  */
-void preprocess_polyphonic(
+void preprocess_luxsynth(
     const uint8_t *raw_r,
     const uint8_t *raw_g,
     const uint8_t *raw_b,
@@ -398,10 +398,10 @@ void preprocess_polyphonic(
 }
 
 /**
- * @brief Photowave synthesis preprocessing
+ * @brief LuxWave synthesis preprocessing
  * Pipeline: Direct RGB copy (native sampling, no conversion)
  */
-void preprocess_photowave(
+void preprocess_luxwave(
     const uint8_t *raw_r,
     const uint8_t *raw_g,
     const uint8_t *raw_b,
@@ -414,7 +414,7 @@ void preprocess_photowave(
     memcpy(out->photowave.g, raw_g, nb_pixels);
     memcpy(out->photowave.b, raw_b, nb_pixels);
     
-    /* Photowave handles its own inversion/processing via its parameters */
+    /* LuxWave handles its own inversion/processing via its parameters */
 }
 
 /**
@@ -525,7 +525,7 @@ static void preprocess_dmx(const uint8_t *raw_r, const uint8_t *raw_g,
 #endif
 }
 
-#ifndef DISABLE_POLYPHONIC
+#ifndef DISABLE_LUXSYNTH
 /**
  * @brief Calculate harmonicity parameters from color temperature
  * Maps temperature to harmonic/inharmonic behavior for timbre control

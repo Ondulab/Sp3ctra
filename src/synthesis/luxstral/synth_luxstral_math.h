@@ -1,5 +1,5 @@
 /*
- * synth_additive_math.h
+ * synth_luxstral_math.h
  *
  * Mathematical utilities for additive synthesis
  * Contains reusable mathematical functions and color conversion utilities
@@ -7,13 +7,13 @@
  * Author: zhonx
  */
 
-#ifndef __SYNTH_ADDITIVE_MATH_H__
-#define __SYNTH_ADDITIVE_MATH_H__
+#ifndef __SYNTH_LUXSTRAL_MATH_H__
+#define __SYNTH_LUXSTRAL_MATH_H__
 
 /* Includes ------------------------------------------------------------------*/
 #include <stdint.h>
 #include <stddef.h>
-#include "../../config/config_synth_additive.h"
+#include "../../config/config_synth_luxstral.h"
 
 /**************************************************************************************
  * Core Synthesis Mathematical Constants
@@ -54,4 +54,4 @@ uint32_t greyScale(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
                    float *gray, uint32_t size);
 
 
-#endif /* __SYNTH_ADDITIVE_MATH_H__ */
+#endif /* __SYNTH_LUXSTRAL_MATH_H__ */

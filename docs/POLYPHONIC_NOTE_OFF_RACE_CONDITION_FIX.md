@@ -1,4 +1,4 @@
-# Polyphonic Note Off Race Condition Fix
+# LuxSynth Note Off Race Condition Fix
 
 **Date:** 2025-11-24  
 **Status:** ✅ Fixed  
@@ -13,7 +13,7 @@ SYNTH_POLY: WARNING - Note Off 62: No voice found (neither active nor idle)!
 SYNTH_POLY: WARNING - Note Off 50: No voice found (neither active nor idle)!
 ```
 
-This indicated that `synth_polyphonic_note_off()` was unable to find the voice to release.
+This indicated that `synth_luxsynth_note_off()` was unable to find the voice to release.
 
 ## Root Cause
 
@@ -42,7 +42,7 @@ The issue was a **race condition** in the Note Off handling logic:
 Added **Priority 2: Search RELEASE voices** to handle duplicate/late Note Offs:
 
 ```c
-void synth_polyphonic_note_off(int noteNumber) {
+void synth_luxsynth_note_off(int noteNumber) {
   // Priority 1: Find ACTIVE voices (ATTACK, DECAY, SUSTAIN)
   int oldest_voice_idx = -1;
   unsigned long long oldest_order = g_current_trigger_order + 1;
@@ -103,7 +103,7 @@ void synth_polyphonic_note_off(int noteNumber) {
 1. **Handles Duplicate Note Offs:** If a voice is already releasing, duplicate Note Off is gracefully ignored
 2. **Prevents Stuck Notes:** All Note Off messages now find their target voice
 3. **Robust MIDI Handling:** Works correctly even with timing variations and duplicate messages
-4. **Consistent with Photowave:** Same 3-priority search strategy as photowave engine
+4. **Consistent with LuxWave:** Same 3-priority search strategy as photowave engine
 
 ## Testing
 
@@ -115,8 +115,8 @@ The fix should be tested with:
 
 ## Related Files
 
-- `src/synthesis/polyphonic/synth_polyphonic.c` - Main fix implementation
-- `docs/PHOTOWAVE_NOTE_OFF_RACE_CONDITION_FIX.md` - Similar fix for photowave engine
+- `src/synthesis/luxsynth/synth_luxsynth.c` - Main fix implementation
+- `docs/LUXWAVE_NOTE_OFF_RACE_CONDITION_FIX.md` - Similar fix for photowave engine
 
 ## Notes
 

@@ -34,8 +34,8 @@ final = dry_sample + reverb_output = source × 1.0  ← correct!
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ SYNTHESIZER (e.g., Additive)                                │
-│ Produces: source_additive_left[i]                           │
+│ SYNTHESIZER (e.g., LuxStral)                                │
+│ Produces: source_luxstral_left[i]                           │
 └──────────────────┬──────────────────────────────────────────┘
                    │
          ┌─────────┴──────────┐
@@ -81,8 +81,8 @@ final = dry_sample + reverb_output = source × 1.0  ← correct!
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ SYNTHESIZER (e.g., Additive)                                │
-│ Produces: source_additive_left[i]                           │
+│ SYNTHESIZER (e.g., LuxStral)                                │
+│ Produces: source_luxstral_left[i]                           │
 └──────────────────┬──────────────────────────────────────────┘
                    │
          ┌─────────┴──────────┐

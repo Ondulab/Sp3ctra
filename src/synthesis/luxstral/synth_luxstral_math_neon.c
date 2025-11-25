@@ -1,5 +1,5 @@
 /*
- * synth_additive_math_neon.c
+ * synth_luxstral_math_neon.c
  *
  * NEON-optimized mathematical utilities for additive synthesis
  * ARM SIMD implementation for high-performance audio processing
@@ -11,7 +11,7 @@
 #ifdef __ARM_NEON
 
 /* Includes ------------------------------------------------------------------*/
-#include "synth_additive_math.h"
+#include "synth_luxstral_math.h"
 #include "pow_approx.h"
 #include <arm_neon.h>
 #include <math.h>
@@ -371,6 +371,6 @@ float apply_envelope_ramp(float *volumeBuffer, float start_volume, float target_
 #else /* !__ARM_NEON */
 
 /* Fallback: If NEON is not available, the standard C version from 
-   synth_additive_math.c will be used instead */
+   synth_luxstral_math.c will be used instead */
 
 #endif /* __ARM_NEON */

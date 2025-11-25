@@ -10,13 +10,13 @@
 #include "midi_callbacks.h"
 #include "midi_controller.h"
 #include "../../audio/rtaudio/audio_rtaudio.h"
-#include "../../audio/rtaudio/audio_c_api.h"  // For setSynthAdditiveMixLevel, setSynthPolyphonicMixLevel, setSynthPhotowaveMixLevel
+#include "../../audio/rtaudio/audio_c_api.h"  // For setSynthLuxStralMixLevel, setSynthLuxSynthMixLevel, setSynthLuxWaveMixLevel
 #include "../../audio/effects/three_band_eq.h"
 #include "../../audio/pan/lock_free_pan.h"
-#include "../../synthesis/additive/synth_additive.h"
-#include "../../synthesis/additive/synth_additive_algorithms.h"  // For update_gap_limiter_coefficients
-#include "../../synthesis/polyphonic/synth_polyphonic.h"
-#include "../../synthesis/photowave/synth_photowave.h"
+#include "../../synthesis/luxstral/synth_luxstral.h"
+#include "../../synthesis/luxstral/synth_luxstral_algorithms.h"  // For update_gap_limiter_coefficients
+#include "../../synthesis/luxsynth/synth_luxsynth.h"
+#include "../../synthesis/luxwave/synth_luxwave.h"
 #include "../../processing/image_sequencer.h"
 #include "../../utils/logger.h"
 #include <stdio.h>
@@ -145,23 +145,23 @@ void midi_cb_audio_eq_mid_freq(const MidiParameterValue *param, void *user_data)
 }
 
 /* ============================================================================
- * SYNTHESIS ADDITIVE CALLBACKS
+ * SYNTHESIS LUXSTRAL CALLBACKS
  * ============================================================================ */
 
-void midi_cb_synth_additive_volume(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxstral_volume(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // Set mix level directly (thread-safe)
-    setSynthAdditiveMixLevel(param->value);
+    setSynthLuxStralMixLevel(param->value);
     
-    log_info("ADDITIVE", "Volume: %d%%", (int)(param->value * 100));
+    log_info("LUXSTRAL", "Volume: %d%%", (int)(param->value * 100));
 }
 
-void midi_cb_synth_additive_reverb_send(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxstral_reverb_send(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // Set reverb send level for additive synth
-    setReverbSendAdditive(param->value);
+    setReverbSendLuxStral(param->value);
     
     if (gAudioSystem && param->value > 0.0f) {
         if (!gAudioSystem->isReverbEnabled()) {
@@ -169,14 +169,14 @@ void midi_cb_synth_additive_reverb_send(const MidiParameterValue *param, void *u
         }
     }
     
-    log_info("ADDITIVE", "Reverb send: %d%%", (int)(param->value * 100));
+    log_info("LUXSTRAL", "Reverb send: %d%%", (int)(param->value * 100));
 }
 
 /* ============================================================================
- * SYNTHESIS ADDITIVE ENVELOPE CALLBACKS
+ * SYNTHESIS LUXSTRAL ENVELOPE CALLBACKS
  * ============================================================================ */
 
-void midi_cb_synth_additive_tau_up(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxstral_tau_up(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // RT-safe: Direct atomic write to config structure
@@ -185,10 +185,10 @@ void midi_cb_synth_additive_tau_up(const MidiParameterValue *param, void *user_d
     // Recalculate envelope coefficients for all oscillators
     update_gap_limiter_coefficients();
     
-    log_info("ADDITIVE", "Envelope attack: %.3f ms", param->raw_value);
+    log_info("LUXSTRAL", "Envelope attack: %.3f ms", param->raw_value);
 }
 
-void midi_cb_synth_additive_tau_down(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxstral_tau_down(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // RT-safe: Direct atomic write to config structure
@@ -197,10 +197,10 @@ void midi_cb_synth_additive_tau_down(const MidiParameterValue *param, void *user
     // Recalculate envelope coefficients for all oscillators
     update_gap_limiter_coefficients();
     
-    log_info("ADDITIVE", "Envelope release: %.3f ms", param->raw_value);
+    log_info("LUXSTRAL", "Envelope release: %.3f ms", param->raw_value);
 }
 
-void midi_cb_synth_additive_decay_freq_ref(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxstral_decay_freq_ref(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // RT-safe: Direct atomic write to config structure
@@ -209,10 +209,10 @@ void midi_cb_synth_additive_decay_freq_ref(const MidiParameterValue *param, void
     // Recalculate envelope coefficients for all oscillators
     update_gap_limiter_coefficients();
     
-    log_info("ADDITIVE", "Decay freq ref: %.1f Hz", param->raw_value);
+    log_info("LUXSTRAL", "Decay freq ref: %.1f Hz", param->raw_value);
 }
 
-void midi_cb_synth_additive_decay_freq_beta(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxstral_decay_freq_beta(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // RT-safe: Direct atomic write to config structure
@@ -221,11 +221,11 @@ void midi_cb_synth_additive_decay_freq_beta(const MidiParameterValue *param, voi
     // Recalculate envelope coefficients for all oscillators
     update_gap_limiter_coefficients();
     
-    log_info("ADDITIVE", "Decay freq beta: %.2f", param->raw_value);
+    log_info("LUXSTRAL", "Decay freq beta: %.2f", param->raw_value);
 }
 
 /* ============================================================================
- * SYNTHESIS ADDITIVE STEREO CALLBACKS
+ * SYNTHESIS LUXSTRAL STEREO CALLBACKS
  * ============================================================================ */
 
 // Global variables for stereo fade (0.0 = mono, 1.0 = stereo)
@@ -237,14 +237,14 @@ static volatile double g_stereo_fade_start_time = 0.0;
 // Fade duration in seconds (20ms for smooth transition)
 #define STEREO_FADE_DURATION_S 0.020
 
-void midi_cb_synth_additive_stereo_toggle(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxstral_stereo_toggle(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     int new_state = (int)param->raw_value;
     int current_state = g_sp3ctra_config.stereo_mode_enabled;
     
     // DEBUG: Always log the received value
-    log_info("ADDITIVE", "Stereo toggle callback: raw_value=%.2f, new_state=%d, current_state=%d", 
+    log_info("LUXSTRAL", "Stereo toggle callback: raw_value=%.2f, new_state=%d, current_state=%d", 
              param->raw_value, new_state, current_state);
     
     if (new_state != current_state) {
@@ -258,12 +258,12 @@ void midi_cb_synth_additive_stereo_toggle(const MidiParameterValue *param, void 
         if (new_state) {
             // Initialize lock-free pan system if enabling stereo
             lock_free_pan_init();
-            log_info("ADDITIVE", "Stereo mode ENABLED (fading in)");
+            log_info("LUXSTRAL", "Stereo mode ENABLED (fading in)");
         } else {
-            log_info("ADDITIVE", "Stereo mode DISABLED (fading out)");
+            log_info("LUXSTRAL", "Stereo mode DISABLED (fading out)");
         }
     } else {
-        log_info("ADDITIVE", "Stereo mode unchanged (already %s)", new_state ? "ENABLED" : "DISABLED");
+        log_info("LUXSTRAL", "Stereo mode unchanged (already %s)", new_state ? "ENABLED" : "DISABLED");
     }
 }
 
@@ -271,7 +271,7 @@ void midi_cb_synth_additive_stereo_toggle(const MidiParameterValue *param, void 
  * Get current stereo fade factor (called from audio thread)
  * Returns 0.0 for mono, 1.0 for stereo, or intermediate value during fade
  */
-float synth_additive_get_stereo_fade_factor(void) {
+float synth_luxstral_get_stereo_fade_factor(void) {
     if (!g_stereo_fade_active) {
         // No fade active, return target state directly
         return g_sp3ctra_config.stereo_mode_enabled ? 1.0f : 0.0f;
@@ -304,23 +304,23 @@ float synth_additive_get_stereo_fade_factor(void) {
 }
 
 /* ============================================================================
- * SYNTHESIS POLYPHONIC CALLBACKS
+ * SYNTHESIS LUXSYNTH CALLBACKS
  * ============================================================================ */
 
-void midi_cb_synth_polyphonic_volume(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_volume(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // Set mix level directly (thread-safe)
-    setSynthPolyphonicMixLevel(param->value);
+    setSynthLuxSynthMixLevel(param->value);
     
-    log_info("POLYPHONIC", "Volume: %d%%", (int)(param->value * 100));
+    log_info("LUXSYNTH", "Volume: %d%%", (int)(param->value * 100));
 }
 
-void midi_cb_synth_polyphonic_reverb_send(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_reverb_send(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // Set reverb send level for polyphonic synth
-    setReverbSendPolyphonic(param->value);
+    setReverbSendLuxSynth(param->value);
     
     if (gAudioSystem && param->value > 0.0f) {
         if (!gAudioSystem->isReverbEnabled()) {
@@ -328,58 +328,58 @@ void midi_cb_synth_polyphonic_reverb_send(const MidiParameterValue *param, void 
         }
     }
     
-    log_info("POLYPHONIC", "Reverb send: %d%%", (int)(param->value * 100));
+    log_info("LUXSYNTH", "Reverb send: %d%%", (int)(param->value * 100));
 }
 
-void midi_cb_synth_polyphonic_lfo_vibrato(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_lfo_vibrato(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    synth_polyphonic_set_vibrato_rate(param->raw_value);
+    synth_luxsynth_set_vibrato_rate(param->raw_value);
     
-    log_info("POLYPHONIC", "LFO Vibrato Rate: %.2f Hz", param->raw_value);
+    log_info("LUXSYNTH", "LFO Vibrato Rate: %.2f Hz", param->raw_value);
 }
 
-void midi_cb_synth_polyphonic_lfo_vibrato_depth(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_lfo_vibrato_depth(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    synth_polyphonic_set_vibrato_depth(param->raw_value);
+    synth_luxsynth_set_vibrato_depth(param->raw_value);
     
-    log_info("POLYPHONIC", "LFO Vibrato Depth: %.2f semitones", param->raw_value);
+    log_info("LUXSYNTH", "LFO Vibrato Depth: %.2f semitones", param->raw_value);
 }
 
-void midi_cb_synth_polyphonic_env_attack(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_env_attack(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    synth_polyphonic_set_volume_adsr_attack(param->raw_value);
+    synth_luxsynth_set_volume_adsr_attack(param->raw_value);
     
-    log_info("POLYPHONIC", "Volume ADSR Attack: %d ms", (int)(param->raw_value * 1000));
+    log_info("LUXSYNTH", "Volume ADSR Attack: %d ms", (int)(param->raw_value * 1000));
 }
 
-void midi_cb_synth_polyphonic_env_decay(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_env_decay(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    synth_polyphonic_set_volume_adsr_decay(param->raw_value);
+    synth_luxsynth_set_volume_adsr_decay(param->raw_value);
     
-    log_info("POLYPHONIC", "Volume ADSR Decay: %d ms", (int)(param->raw_value * 1000));
+    log_info("LUXSYNTH", "Volume ADSR Decay: %d ms", (int)(param->raw_value * 1000));
 }
 
-void midi_cb_synth_polyphonic_env_sustain(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_env_sustain(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    synth_polyphonic_set_volume_adsr_sustain(param->value);
+    synth_luxsynth_set_volume_adsr_sustain(param->value);
     
-    log_info("POLYPHONIC", "Volume ADSR Sustain: %.0f%%", param->value * 100.0f);
+    log_info("LUXSYNTH", "Volume ADSR Sustain: %.0f%%", param->value * 100.0f);
 }
 
-void midi_cb_synth_polyphonic_env_release(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_env_release(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    synth_polyphonic_set_volume_adsr_release(param->raw_value);
+    synth_luxsynth_set_volume_adsr_release(param->raw_value);
     
-    log_info("POLYPHONIC", "Volume ADSR Release: %d ms", (int)(param->raw_value * 1000));
+    log_info("LUXSYNTH", "Volume ADSR Release: %d ms", (int)(param->raw_value * 1000));
 }
 
-void midi_cb_synth_polyphonic_note_on(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_note_on(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // Note handling is special - raw_value contains note number
@@ -387,84 +387,84 @@ void midi_cb_synth_polyphonic_note_on(const MidiParameterValue *param, void *use
     // param->value contains normalized velocity (0.0 to 1.0)
     int velocity = (int)(param->value * 127.0f);
     
-    synth_polyphonic_note_on(note_number, velocity);
+    synth_luxsynth_note_on(note_number, velocity);
 }
 
-void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_note_off(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // Note handling is special - raw_value contains note number
     int note_number = (int)param->raw_value;
     
-    synth_polyphonic_note_off(note_number);
+    synth_luxsynth_note_off(note_number);
 }
 
-void midi_cb_synth_polyphonic_filter_cutoff(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_filter_cutoff(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    synth_polyphonic_set_filter_cutoff(param->raw_value);
+    synth_luxsynth_set_filter_cutoff(param->raw_value);
     
-    log_info("POLYPHONIC", "Filter Cutoff: %.0f Hz", param->raw_value);
+    log_info("LUXSYNTH", "Filter Cutoff: %.0f Hz", param->raw_value);
 }
 
-void midi_cb_synth_polyphonic_filter_env_depth(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_filter_env_depth(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    synth_polyphonic_set_filter_env_depth(param->raw_value);
+    synth_luxsynth_set_filter_env_depth(param->raw_value);
     
-    log_info("POLYPHONIC", "Filter Env Depth: %.0f Hz", param->raw_value);
+    log_info("LUXSYNTH", "Filter Env Depth: %.0f Hz", param->raw_value);
 }
 
-void midi_cb_synth_polyphonic_filter_adsr_attack(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_filter_adsr_attack(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    synth_polyphonic_set_filter_adsr_attack(param->raw_value);
+    synth_luxsynth_set_filter_adsr_attack(param->raw_value);
     
-    log_info("POLYPHONIC", "Filter ADSR Attack: %d ms", (int)(param->raw_value * 1000));
+    log_info("LUXSYNTH", "Filter ADSR Attack: %d ms", (int)(param->raw_value * 1000));
 }
 
-void midi_cb_synth_polyphonic_filter_adsr_decay(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_filter_adsr_decay(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    synth_polyphonic_set_filter_adsr_decay(param->raw_value);
+    synth_luxsynth_set_filter_adsr_decay(param->raw_value);
     
-    log_info("POLYPHONIC", "Filter ADSR Decay: %d ms", (int)(param->raw_value * 1000));
+    log_info("LUXSYNTH", "Filter ADSR Decay: %d ms", (int)(param->raw_value * 1000));
 }
 
-void midi_cb_synth_polyphonic_filter_adsr_sustain(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_filter_adsr_sustain(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    synth_polyphonic_set_filter_adsr_sustain(param->value);
+    synth_luxsynth_set_filter_adsr_sustain(param->value);
     
-    log_info("POLYPHONIC", "Filter ADSR Sustain: %.0f%%", param->value * 100.0f);
+    log_info("LUXSYNTH", "Filter ADSR Sustain: %.0f%%", param->value * 100.0f);
 }
 
-void midi_cb_synth_polyphonic_filter_adsr_release(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxsynth_filter_adsr_release(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
-    synth_polyphonic_set_filter_adsr_release(param->raw_value);
+    synth_luxsynth_set_filter_adsr_release(param->raw_value);
     
-    log_info("POLYPHONIC", "Filter ADSR Release: %d ms", (int)(param->raw_value * 1000));
+    log_info("LUXSYNTH", "Filter ADSR Release: %d ms", (int)(param->raw_value * 1000));
 }
 
 /* ============================================================================
- * SYNTHESIS PHOTOWAVE CALLBACKS
+ * SYNTHESIS LUXWAVE CALLBACKS
  * ============================================================================ */
 
-void midi_cb_synth_photowave_volume(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_volume(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // Set mix level directly (thread-safe)
-    setSynthPhotowaveMixLevel(param->value);
+    setSynthLuxWaveMixLevel(param->value);
     
-    log_info("PHOTOWAVE", "Volume: %d%%", (int)(param->value * 100));
+    log_info("LUXWAVE", "Volume: %d%%", (int)(param->value * 100));
 }
 
-void midi_cb_synth_photowave_reverb_send(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_reverb_send(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // Set reverb send level for photowave synth
-    setReverbSendPhotowave(param->value);
+    setReverbSendLuxWave(param->value);
     
     if (gAudioSystem && param->value > 0.0f) {
         if (!gAudioSystem->isReverbEnabled()) {
@@ -472,10 +472,10 @@ void midi_cb_synth_photowave_reverb_send(const MidiParameterValue *param, void *
         }
     }
     
-    log_info("PHOTOWAVE", "Reverb send: %d%%", (int)(param->value * 100));
+    log_info("LUXWAVE", "Reverb send: %d%%", (int)(param->value * 100));
 }
 
-void midi_cb_synth_photowave_note_on(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_note_on(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // Note handling is special - raw_value contains note number
@@ -483,134 +483,134 @@ void midi_cb_synth_photowave_note_on(const MidiParameterValue *param, void *user
     // param->value contains normalized velocity (0.0 to 1.0)
     int velocity = (int)(param->value * 127.0f);
     
-    synth_photowave_note_on(&g_photowave_state, (uint8_t)note_number, (uint8_t)velocity);
+    synth_luxwave_note_on(&g_luxwave_state, (uint8_t)note_number, (uint8_t)velocity);
 }
 
-void midi_cb_synth_photowave_note_off(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_note_off(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // Note handling is special - raw_value contains note number
     int note_number = (int)param->raw_value;
     
-    synth_photowave_note_off(&g_photowave_state, (uint8_t)note_number);
+    synth_luxwave_note_off(&g_luxwave_state, (uint8_t)note_number);
 }
 
-void midi_cb_synth_photowave_modulation(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_modulation(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // CC1 (Modulation): Scan mode (0-42=L→R, 43-84=R→L, 85-127=Dual)
-    synth_photowave_control_change(&g_photowave_state, 1, (uint8_t)(param->value * 127.0f));
+    synth_luxwave_control_change(&g_luxwave_state, 1, (uint8_t)(param->value * 127.0f));
     
     if (is_startup_verbose()) {
-        log_info("MIDI", "PHOTOWAVE MODULATION (Scan Mode): %d", (int)(param->value * 127));
+        log_info("MIDI", "LUXWAVE MODULATION (Scan Mode): %d", (int)(param->value * 127));
     }
 }
 
-void midi_cb_synth_photowave_resonance(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_resonance(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // CC71 (Resonance): Blur amount (0-127 → 0.0-1.0)
-    synth_photowave_control_change(&g_photowave_state, 71, (uint8_t)(param->value * 127.0f));
+    synth_luxwave_control_change(&g_luxwave_state, 71, (uint8_t)(param->value * 127.0f));
     
     if (is_startup_verbose()) {
-        log_info("MIDI", "PHOTOWAVE RESONANCE (Blur): %d%%", (int)(param->value * 100));
+        log_info("MIDI", "LUXWAVE RESONANCE (Blur): %d%%", (int)(param->value * 100));
     }
 }
 
-void midi_cb_synth_photowave_brightness(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_brightness(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
     // CC74 (Brightness): Interpolation mode (0-63=Linear, 64-127=Cubic)
-    synth_photowave_control_change(&g_photowave_state, 74, (uint8_t)(param->value * 127.0f));
+    synth_luxwave_control_change(&g_luxwave_state, 74, (uint8_t)(param->value * 127.0f));
     
     if (is_startup_verbose()) {
-        log_info("MIDI", "PHOTOWAVE BRIGHTNESS (Interp): %d", (int)(param->value * 127));
+        log_info("MIDI", "LUXWAVE BRIGHTNESS (Interp): %d", (int)(param->value * 127));
     }
 }
 
-void midi_cb_synth_photowave_pitch(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_pitch(const MidiParameterValue *param, void *user_data) {
     (void)param;
     (void)user_data;
 
-    // Photowave is now polyphonic and controlled via MIDI notes
+    // LuxWave is now polyphonic and controlled via MIDI notes
     // This pitch CC callback is deprecated - use MIDI Note On/Off instead
     // Keeping function for backward compatibility but it does nothing
     
     if (is_startup_verbose()) {
-        log_info("MIDI", "PHOTOWAVE PITCH CC ignored (use MIDI notes for polyphonic control)");
+        log_info("MIDI", "LUXWAVE PITCH CC ignored (use MIDI notes for polyphonic control)");
     }
 }
 
-void midi_cb_synth_photowave_volume_env_attack(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_volume_env_attack(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
-    synth_photowave_set_volume_adsr_attack(param->raw_value);
-    log_info("PHOTOWAVE", "ADSR Attack: %d ms", (int)(param->raw_value * 1000));
+    synth_luxwave_set_volume_adsr_attack(param->raw_value);
+    log_info("LUXWAVE", "ADSR Attack: %d ms", (int)(param->raw_value * 1000));
 }
 
-void midi_cb_synth_photowave_volume_env_decay(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_volume_env_decay(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
-    synth_photowave_set_volume_adsr_decay(param->raw_value);
-    log_info("PHOTOWAVE", "ADSR Decay: %d ms", (int)(param->raw_value * 1000));
+    synth_luxwave_set_volume_adsr_decay(param->raw_value);
+    log_info("LUXWAVE", "ADSR Decay: %d ms", (int)(param->raw_value * 1000));
 }
 
-void midi_cb_synth_photowave_volume_env_sustain(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_volume_env_sustain(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
-    synth_photowave_set_volume_adsr_sustain(param->value);
-    log_info("PHOTOWAVE", "ADSR Sustain: %.0f%%", param->value * 100.0f);
+    synth_luxwave_set_volume_adsr_sustain(param->value);
+    log_info("LUXWAVE", "ADSR Sustain: %.0f%%", param->value * 100.0f);
 }
 
-void midi_cb_synth_photowave_volume_env_release(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_volume_env_release(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
-    synth_photowave_set_volume_adsr_release(param->raw_value);
-    log_info("PHOTOWAVE", "ADSR Release: %d ms", (int)(param->raw_value * 1000));
+    synth_luxwave_set_volume_adsr_release(param->raw_value);
+    log_info("LUXWAVE", "ADSR Release: %d ms", (int)(param->raw_value * 1000));
 }
 
-void midi_cb_synth_photowave_filter_env_attack(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_filter_env_attack(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
-    synth_photowave_set_filter_adsr_attack(param->raw_value);
-    log_info("PHOTOWAVE", "Filter ADSR Attack: %d ms", (int)(param->raw_value * 1000));
+    synth_luxwave_set_filter_adsr_attack(param->raw_value);
+    log_info("LUXWAVE", "Filter ADSR Attack: %d ms", (int)(param->raw_value * 1000));
 }
 
-void midi_cb_synth_photowave_filter_env_decay(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_filter_env_decay(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
-    synth_photowave_set_filter_adsr_decay(param->raw_value);
-    log_info("PHOTOWAVE", "Filter ADSR Decay: %d ms", (int)(param->raw_value * 1000));
+    synth_luxwave_set_filter_adsr_decay(param->raw_value);
+    log_info("LUXWAVE", "Filter ADSR Decay: %d ms", (int)(param->raw_value * 1000));
 }
 
-void midi_cb_synth_photowave_filter_env_sustain(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_filter_env_sustain(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
-    synth_photowave_set_filter_adsr_sustain(param->value);
-    log_info("PHOTOWAVE", "Filter ADSR Sustain: %.0f%%", param->value * 100.0f);
+    synth_luxwave_set_filter_adsr_sustain(param->value);
+    log_info("LUXWAVE", "Filter ADSR Sustain: %.0f%%", param->value * 100.0f);
 }
 
-void midi_cb_synth_photowave_filter_env_release(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_filter_env_release(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
-    synth_photowave_set_filter_adsr_release(param->raw_value);
-    log_info("PHOTOWAVE", "Filter ADSR Release: %d ms", (int)(param->raw_value * 1000));
+    synth_luxwave_set_filter_adsr_release(param->raw_value);
+    log_info("LUXWAVE", "Filter ADSR Release: %d ms", (int)(param->raw_value * 1000));
 }
 
-void midi_cb_synth_photowave_lfo_vibrato_rate(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_lfo_vibrato_rate(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
-    synth_photowave_set_vibrato_rate(param->raw_value);
-    log_info("PHOTOWAVE", "LFO Rate: %.2f Hz", param->raw_value);
+    synth_luxwave_set_vibrato_rate(param->raw_value);
+    log_info("LUXWAVE", "LFO Rate: %.2f Hz", param->raw_value);
 }
 
-void midi_cb_synth_photowave_lfo_vibrato_depth(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_lfo_vibrato_depth(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
-    synth_photowave_set_vibrato_depth(param->raw_value);
-    log_info("PHOTOWAVE", "LFO Depth: %.2f semitones", param->raw_value);
+    synth_luxwave_set_vibrato_depth(param->raw_value);
+    log_info("LUXWAVE", "LFO Depth: %.2f semitones", param->raw_value);
 }
 
-void midi_cb_synth_photowave_filter_cutoff(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_filter_cutoff(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
-    synth_photowave_set_filter_cutoff(param->raw_value);
-    log_info("PHOTOWAVE", "Filter Cutoff: %.0f Hz", param->raw_value);
+    synth_luxwave_set_filter_cutoff(param->raw_value);
+    log_info("LUXWAVE", "Filter Cutoff: %.0f Hz", param->raw_value);
 }
 
-void midi_cb_synth_photowave_filter_env_depth(const MidiParameterValue *param, void *user_data) {
+void midi_cb_synth_luxwave_filter_env_depth(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
-    synth_photowave_set_filter_env_depth(param->raw_value);
-    log_info("PHOTOWAVE", "Filter Env Depth: %.0f Hz", param->raw_value);
+    synth_luxwave_set_filter_env_depth(param->raw_value);
+    log_info("LUXWAVE", "Filter Env Depth: %.0f Hz", param->raw_value);
 }
 
 /* ============================================================================
@@ -902,82 +902,82 @@ void midi_callbacks_register_audio(void) {
     log_info("MIDI", "Callbacks: Audio registered");
 }
 
-void midi_callbacks_register_synth_additive(void) {
-    midi_mapping_register_callback("synth_additive_volume", midi_cb_synth_additive_volume, NULL);
-    midi_mapping_register_callback("synth_additive_reverb_send", midi_cb_synth_additive_reverb_send, NULL);
+void midi_callbacks_register_synth_luxstral(void) {
+    midi_mapping_register_callback("synth_luxstral_volume", midi_cb_synth_luxstral_volume, NULL);
+    midi_mapping_register_callback("synth_luxstral_reverb_send", midi_cb_synth_luxstral_reverb_send, NULL);
     
     // Envelope parameters
-    midi_mapping_register_callback("synth_additive_envelope_tau_up_base_ms", midi_cb_synth_additive_tau_up, NULL);
-    midi_mapping_register_callback("synth_additive_envelope_tau_down_base_ms", midi_cb_synth_additive_tau_down, NULL);
-    midi_mapping_register_callback("synth_additive_envelope_decay_freq_ref_hz", midi_cb_synth_additive_decay_freq_ref, NULL);
-    midi_mapping_register_callback("synth_additive_envelope_decay_freq_beta", midi_cb_synth_additive_decay_freq_beta, NULL);
+    midi_mapping_register_callback("synth_luxstral_envelope_tau_up_base_ms", midi_cb_synth_luxstral_tau_up, NULL);
+    midi_mapping_register_callback("synth_luxstral_envelope_tau_down_base_ms", midi_cb_synth_luxstral_tau_down, NULL);
+    midi_mapping_register_callback("synth_luxstral_envelope_decay_freq_ref_hz", midi_cb_synth_luxstral_decay_freq_ref, NULL);
+    midi_mapping_register_callback("synth_luxstral_envelope_decay_freq_beta", midi_cb_synth_luxstral_decay_freq_beta, NULL);
     
     // Stereo toggle
-    midi_mapping_register_callback("synth_additive_stereo_mode_enabled", midi_cb_synth_additive_stereo_toggle, NULL);
+    midi_mapping_register_callback("synth_luxstral_stereo_mode_enabled", midi_cb_synth_luxstral_stereo_toggle, NULL);
     
-    log_info("MIDI", "Callbacks: Additive synth registered (with envelope & stereo controls)");
+    log_info("MIDI", "Callbacks: LuxStral synth registered (with envelope & stereo controls)");
 }
 
-void midi_callbacks_register_synth_polyphonic(void) {
-    midi_mapping_register_callback("synth_polyphonic_volume", midi_cb_synth_polyphonic_volume, NULL);
-    midi_mapping_register_callback("synth_polyphonic_reverb_send", midi_cb_synth_polyphonic_reverb_send, NULL);
-    midi_mapping_register_callback("synth_polyphonic_note_on", midi_cb_synth_polyphonic_note_on, NULL);
-    midi_mapping_register_callback("synth_polyphonic_note_off", midi_cb_synth_polyphonic_note_off, NULL);
+void midi_callbacks_register_synth_luxsynth(void) {
+    midi_mapping_register_callback("synth_luxsynth_volume", midi_cb_synth_luxsynth_volume, NULL);
+    midi_mapping_register_callback("synth_luxsynth_reverb_send", midi_cb_synth_luxsynth_reverb_send, NULL);
+    midi_mapping_register_callback("synth_luxsynth_note_on", midi_cb_synth_luxsynth_note_on, NULL);
+    midi_mapping_register_callback("synth_luxsynth_note_off", midi_cb_synth_luxsynth_note_off, NULL);
     
     // Volume ADSR Envelope
-    midi_mapping_register_callback("synth_polyphonic_volume_env_attack", midi_cb_synth_polyphonic_env_attack, NULL);
-    midi_mapping_register_callback("synth_polyphonic_volume_env_decay", midi_cb_synth_polyphonic_env_decay, NULL);
-    midi_mapping_register_callback("synth_polyphonic_volume_env_sustain", midi_cb_synth_polyphonic_env_sustain, NULL);
-    midi_mapping_register_callback("synth_polyphonic_volume_env_release", midi_cb_synth_polyphonic_env_release, NULL);
+    midi_mapping_register_callback("synth_luxsynth_volume_env_attack", midi_cb_synth_luxsynth_env_attack, NULL);
+    midi_mapping_register_callback("synth_luxsynth_volume_env_decay", midi_cb_synth_luxsynth_env_decay, NULL);
+    midi_mapping_register_callback("synth_luxsynth_volume_env_sustain", midi_cb_synth_luxsynth_env_sustain, NULL);
+    midi_mapping_register_callback("synth_luxsynth_volume_env_release", midi_cb_synth_luxsynth_env_release, NULL);
     
     // Filter ADSR Envelope
-    midi_mapping_register_callback("synth_polyphonic_filter_env_attack", midi_cb_synth_polyphonic_filter_adsr_attack, NULL);
-    midi_mapping_register_callback("synth_polyphonic_filter_env_decay", midi_cb_synth_polyphonic_filter_adsr_decay, NULL);
-    midi_mapping_register_callback("synth_polyphonic_filter_env_sustain", midi_cb_synth_polyphonic_filter_adsr_sustain, NULL);
-    midi_mapping_register_callback("synth_polyphonic_filter_env_release", midi_cb_synth_polyphonic_filter_adsr_release, NULL);
+    midi_mapping_register_callback("synth_luxsynth_filter_env_attack", midi_cb_synth_luxsynth_filter_adsr_attack, NULL);
+    midi_mapping_register_callback("synth_luxsynth_filter_env_decay", midi_cb_synth_luxsynth_filter_adsr_decay, NULL);
+    midi_mapping_register_callback("synth_luxsynth_filter_env_sustain", midi_cb_synth_luxsynth_filter_adsr_sustain, NULL);
+    midi_mapping_register_callback("synth_luxsynth_filter_env_release", midi_cb_synth_luxsynth_filter_adsr_release, NULL);
     
     // LFO Vibrato
-    midi_mapping_register_callback("synth_polyphonic_lfo_vibrato_rate", midi_cb_synth_polyphonic_lfo_vibrato, NULL);
-    midi_mapping_register_callback("synth_polyphonic_lfo_vibrato_depth", midi_cb_synth_polyphonic_lfo_vibrato_depth, NULL);
+    midi_mapping_register_callback("synth_luxsynth_lfo_vibrato_rate", midi_cb_synth_luxsynth_lfo_vibrato, NULL);
+    midi_mapping_register_callback("synth_luxsynth_lfo_vibrato_depth", midi_cb_synth_luxsynth_lfo_vibrato_depth, NULL);
     
     // Filter Parameters
-    midi_mapping_register_callback("synth_polyphonic_filter_cutoff", midi_cb_synth_polyphonic_filter_cutoff, NULL);
-    midi_mapping_register_callback("synth_polyphonic_filter_env_depth", midi_cb_synth_polyphonic_filter_env_depth, NULL);
+    midi_mapping_register_callback("synth_luxsynth_filter_cutoff", midi_cb_synth_luxsynth_filter_cutoff, NULL);
+    midi_mapping_register_callback("synth_luxsynth_filter_env_depth", midi_cb_synth_luxsynth_filter_env_depth, NULL);
     
-    log_info("MIDI", "Callbacks: Polyphonic synth registered (with filter & ADSR controls)");
+    log_info("MIDI", "Callbacks: LuxSynth synth registered (with filter & ADSR controls)");
 }
 
-void midi_callbacks_register_synth_photowave(void) {
-    midi_mapping_register_callback("synth_photowave_volume", midi_cb_synth_photowave_volume, NULL);
-    midi_mapping_register_callback("synth_photowave_reverb_send", midi_cb_synth_photowave_reverb_send, NULL);
-    midi_mapping_register_callback("synth_photowave_note_on", midi_cb_synth_photowave_note_on, NULL);
-    midi_mapping_register_callback("synth_photowave_note_off", midi_cb_synth_photowave_note_off, NULL);
-    midi_mapping_register_callback("synth_photowave_pitch", midi_cb_synth_photowave_pitch, NULL);
-    midi_mapping_register_callback("synth_photowave_modulation", midi_cb_synth_photowave_modulation, NULL);
-    midi_mapping_register_callback("synth_photowave_resonance", midi_cb_synth_photowave_resonance, NULL);
-    midi_mapping_register_callback("synth_photowave_brightness", midi_cb_synth_photowave_brightness, NULL);
+void midi_callbacks_register_synth_luxwave(void) {
+    midi_mapping_register_callback("synth_luxwave_volume", midi_cb_synth_luxwave_volume, NULL);
+    midi_mapping_register_callback("synth_luxwave_reverb_send", midi_cb_synth_luxwave_reverb_send, NULL);
+    midi_mapping_register_callback("synth_luxwave_note_on", midi_cb_synth_luxwave_note_on, NULL);
+    midi_mapping_register_callback("synth_luxwave_note_off", midi_cb_synth_luxwave_note_off, NULL);
+    midi_mapping_register_callback("synth_luxwave_pitch", midi_cb_synth_luxwave_pitch, NULL);
+    midi_mapping_register_callback("synth_luxwave_modulation", midi_cb_synth_luxwave_modulation, NULL);
+    midi_mapping_register_callback("synth_luxwave_resonance", midi_cb_synth_luxwave_resonance, NULL);
+    midi_mapping_register_callback("synth_luxwave_brightness", midi_cb_synth_luxwave_brightness, NULL);
     
     // ADSR Volume Envelope
-    midi_mapping_register_callback("synth_photowave_volume_env_attack", midi_cb_synth_photowave_volume_env_attack, NULL);
-    midi_mapping_register_callback("synth_photowave_volume_env_decay", midi_cb_synth_photowave_volume_env_decay, NULL);
-    midi_mapping_register_callback("synth_photowave_volume_env_sustain", midi_cb_synth_photowave_volume_env_sustain, NULL);
-    midi_mapping_register_callback("synth_photowave_volume_env_release", midi_cb_synth_photowave_volume_env_release, NULL);
+    midi_mapping_register_callback("synth_luxwave_volume_env_attack", midi_cb_synth_luxwave_volume_env_attack, NULL);
+    midi_mapping_register_callback("synth_luxwave_volume_env_decay", midi_cb_synth_luxwave_volume_env_decay, NULL);
+    midi_mapping_register_callback("synth_luxwave_volume_env_sustain", midi_cb_synth_luxwave_volume_env_sustain, NULL);
+    midi_mapping_register_callback("synth_luxwave_volume_env_release", midi_cb_synth_luxwave_volume_env_release, NULL);
     
     // ADSR Filter Envelope
-    midi_mapping_register_callback("synth_photowave_filter_env_attack", midi_cb_synth_photowave_filter_env_attack, NULL);
-    midi_mapping_register_callback("synth_photowave_filter_env_decay", midi_cb_synth_photowave_filter_env_decay, NULL);
-    midi_mapping_register_callback("synth_photowave_filter_env_sustain", midi_cb_synth_photowave_filter_env_sustain, NULL);
-    midi_mapping_register_callback("synth_photowave_filter_env_release", midi_cb_synth_photowave_filter_env_release, NULL);
+    midi_mapping_register_callback("synth_luxwave_filter_env_attack", midi_cb_synth_luxwave_filter_env_attack, NULL);
+    midi_mapping_register_callback("synth_luxwave_filter_env_decay", midi_cb_synth_luxwave_filter_env_decay, NULL);
+    midi_mapping_register_callback("synth_luxwave_filter_env_sustain", midi_cb_synth_luxwave_filter_env_sustain, NULL);
+    midi_mapping_register_callback("synth_luxwave_filter_env_release", midi_cb_synth_luxwave_filter_env_release, NULL);
     
     // LFO Vibrato
-    midi_mapping_register_callback("synth_photowave_lfo_vibrato_rate", midi_cb_synth_photowave_lfo_vibrato_rate, NULL);
-    midi_mapping_register_callback("synth_photowave_lfo_vibrato_depth", midi_cb_synth_photowave_lfo_vibrato_depth, NULL);
+    midi_mapping_register_callback("synth_luxwave_lfo_vibrato_rate", midi_cb_synth_luxwave_lfo_vibrato_rate, NULL);
+    midi_mapping_register_callback("synth_luxwave_lfo_vibrato_depth", midi_cb_synth_luxwave_lfo_vibrato_depth, NULL);
     
     // Filter Parameters
-    midi_mapping_register_callback("synth_photowave_filter_cutoff", midi_cb_synth_photowave_filter_cutoff, NULL);
-    midi_mapping_register_callback("synth_photowave_filter_env_depth", midi_cb_synth_photowave_filter_env_depth, NULL);
+    midi_mapping_register_callback("synth_luxwave_filter_cutoff", midi_cb_synth_luxwave_filter_cutoff, NULL);
+    midi_mapping_register_callback("synth_luxwave_filter_env_depth", midi_cb_synth_luxwave_filter_env_depth, NULL);
     
-    log_info("MIDI", "Callbacks: Photowave synth registered (with reverb send, ADSR/LFO/Filter)");
+    log_info("MIDI", "Callbacks: LuxWave synth registered (with reverb send, ADSR/LFO/Filter)");
 }
 
 void midi_callbacks_register_sequencer(void *sequencer_instance) {
@@ -1065,9 +1065,9 @@ void midi_callbacks_register_system(void) {
 
 void midi_callbacks_register_all(void) {
     midi_callbacks_register_audio();
-    midi_callbacks_register_synth_additive();
-    midi_callbacks_register_synth_polyphonic();
-    midi_callbacks_register_synth_photowave();
+    midi_callbacks_register_synth_luxstral();
+    midi_callbacks_register_synth_luxsynth();
+    midi_callbacks_register_synth_luxwave();
     midi_callbacks_register_sequencer(NULL);
     midi_callbacks_register_system();
     

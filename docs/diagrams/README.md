@@ -1,4 +1,4 @@
-# Diagrammes PlantUML - Synthèse Additive Sp3ctra
+# Diagrammes PlantUML - Synthèse LuxStral Sp3ctra
 
 Ce répertoire contient les diagrammes PlantUML documentant l'architecture complète du système de synthèse additive.
 

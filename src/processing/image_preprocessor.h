@@ -19,7 +19,7 @@
 #include <stddef.h>
 #include "../../core/config.h"
 #include "../../config/config_instrument.h"
-#include "../../config/config_synth_additive.h"
+#include "../../config/config_synth_luxstral.h"
 #include "../../config/config_dmx.h"
 
 /* Maximum number of notes (static allocation) */
@@ -29,14 +29,14 @@
 
 /* Preprocessed image data structure - REFACTORED with separated buffers per synthesis */
 typedef struct {
-    /* ADDITIVE SYNTHESIS - Complete pipeline with gamma correction */
+    /* LUXSTRAL SYNTHESIS - Complete pipeline with gamma correction */
     struct {
         float grayscale[CIS_MAX_PIXELS_NB];     /* Per-pixel grayscale [0.0, 1.0] after all processing */
         float notes[PREPROCESS_MAX_NOTES];      /* Per-note averaged values [0.0, 1.0] */
         float contrast_factor;                  /* Computed contrast factor [0.0, 1.0] */
     } additive;
     
-    /* POLYPHONIC SYNTHESIS - Linear response for FFT (no gamma) */
+    /* LUXSYNTH SYNTHESIS - Linear response for FFT (no gamma) */
     struct {
         float grayscale[CIS_MAX_PIXELS_NB];     /* Per-pixel grayscale [0.0, 1.0] for FFT input */
         float magnitudes[128];                  /* Pre-computed smoothed FFT magnitudes (MAX_MAPPED_OSCILLATORS) */
@@ -52,7 +52,7 @@ typedef struct {
         int valid;                              /* 1 if FFT data is valid, 0 otherwise */
     } polyphonic;
     
-    /* PHOTOWAVE SYNTHESIS - Native RGB for waveform sampling */
+    /* LUXWAVE SYNTHESIS - Native RGB for waveform sampling */
     struct {
         uint8_t r[CIS_MAX_PIXELS_NB];          /* Red channel [0-255] */
         uint8_t g[CIS_MAX_PIXELS_NB];          /* Green channel [0-255] */
@@ -104,30 +104,30 @@ int image_preprocess_frame(
 
 /* Specialized preprocessing functions (called internally by image_preprocess_frame) */
 
-/* Additive synthesis preprocessing
+/* LuxStral synthesis preprocessing
  * Pipeline: RGB → Grayscale → Inversion (optional) → Gamma → Averaging → Contrast
  */
-void preprocess_additive(
+void preprocess_luxstral(
     const uint8_t *raw_r,
     const uint8_t *raw_g,
     const uint8_t *raw_b,
     PreprocessedImageData *out
 );
 
-/* Polyphonic synthesis preprocessing
+/* LuxSynth synthesis preprocessing
  * Pipeline: RGB → Grayscale → Inversion (optional) → FFT (no gamma for linear response)
  */
-void preprocess_polyphonic(
+void preprocess_luxsynth(
     const uint8_t *raw_r,
     const uint8_t *raw_g,
     const uint8_t *raw_b,
     PreprocessedImageData *out
 );
 
-/* Photowave synthesis preprocessing
+/* LuxWave synthesis preprocessing
  * Pipeline: Direct RGB copy (native sampling, no conversion)
  */
-void preprocess_photowave(
+void preprocess_luxwave(
     const uint8_t *raw_r,
     const uint8_t *raw_g,
     const uint8_t *raw_b,
@@ -145,7 +145,7 @@ void preprocess_photowave(
  * 
  * Note: This function maintains internal state for temporal smoothing
  */
-#ifndef DISABLE_POLYPHONIC
+#ifndef DISABLE_LUXSYNTH
 int image_preprocess_fft(PreprocessedImageData *data);
 #endif
 

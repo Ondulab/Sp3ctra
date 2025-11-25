@@ -52,8 +52,8 @@ Global sequencer parameters:
 
 #### Implemented Callbacks ✅
 - Audio Global: master_volume, reverb_mix, eq_* (8 callbacks)
-- Synth Additive: volume, reverb_send (2 callbacks)
-- Synth Polyphonic: volume, reverb_send, lfo_vibrato, env_*, note_* (8 callbacks)
+- Synth LuxStral: volume, reverb_send (2 callbacks)
+- Synth LuxSynth: volume, reverb_send, lfo_vibrato, env_*, note_* (8 callbacks)
 - System: freeze, resume (2 callbacks)
 
 **Total Implemented: 20 callbacks**

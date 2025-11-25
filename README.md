@@ -163,8 +163,8 @@ Usage: ./build/Sp3ctra [OPTIONS]
 Le projet utilise des fichiers de configuration modulaires dans `src/config/` :
 
 - `config_audio.h` : Paramètres audio (sample rate, buffer size)
-- `config_synth_additive.h` : Configuration synthèse additive
-- `config_synth_poly.h` : Configuration synthèse polyphonique
+- `config_synth_luxstral.h` : Configuration synthèse additive
+- `config_synth_luxsynth.h` : Configuration synthèse polyphonique
 - `config_display.h` : Paramètres d'affichage
 - `config_dmx.h` : Configuration DMX
 - `config_debug.h` : Options de débogage
@@ -268,10 +268,10 @@ make CFLAGS="-g -O0 -Wall -Wextra -DDEBUG"
 
 ## Migration et changements récents
 
-Le projet a récemment migré de la terminologie "IFFT" vers "Additive" pour mieux refléter l'algorithme de synthèse utilisé. Consultez `MIGRATION.md` pour les détails complets.
+Le projet a récemment migré de la terminologie "IFFT" vers "LuxStral" pour mieux refléter l'algorithme de synthèse utilisé. Consultez `MIGRATION.md` pour les détails complets.
 
 ### Changements principaux
-- `synth_IfftMode()` → `synth_AdditiveMode()`
+- `synth_IfftMode()` → `synth_LuxStralMode()`
 - Réorganisation modulaire du code source
 - Amélioration des performances et de la lisibilité
 
@@ -279,7 +279,7 @@ Le projet a récemment migré de la terminologie "IFFT" vers "Additive" pour mie
 
 - `docs/raspberry/SETUP_RASPBERRY_PI_SSHFS.md` : Configuration Raspberry Pi
 - `docs/auto_volume_spec.md` : Spécification du système de volume automatique
-- `MIGRATION.md` : Guide de migration IFFT → Additive
+- `MIGRATION.md` : Guide de migration IFFT → LuxStral
 
 ## Scripts utiles
 

@@ -12,9 +12,9 @@
 - **Performance stats**:
   ```
   Buffer miss: 15462 total (154.62%)
-    - Additive: 2032 (20.32%)
-    - Polyphonic: 3550 (35.50%)  ← Major issue!
-    - Photowave: 9880 (98.80%)
+    - LuxStral: 2032 (20.32%)
+    - LuxSynth: 3550 (35.50%)  ← Major issue!
+    - LuxWave: 9880 (98.80%)
   ```
 
 ### Root Cause
@@ -26,15 +26,15 @@
 
 ```
 Audio Callback (RtAudio):     70  (highest priority - RT critical)
-Additive Workers:             80  (already implemented)
-Polyphonic Thread:            75  (NEW - added in this fix)
-Photowave Thread:             73  (to be added if needed)
+LuxStral Workers:             80  (already implemented)
+LuxSynth Thread:            75  (NEW - added in this fix)
+LuxWave Thread:             73  (to be added if needed)
 UDP/Image Processing:         50  (non-RT, background)
 ```
 
 ### Code Changes
 
-#### Polyphonic Thread (src/synthesis/polyphonic/synth_polyphonic.c)
+#### LuxSynth Thread (src/synthesis/luxsynth/synth_luxsynth.c)
 
 **Before** (macOS-specific, could fail silently):
 ```c
@@ -44,9 +44,9 @@ struct thread_time_constraint_policy ttcpolicy;
 thread_port_t threadport = pthread_mach_thread_np(pthread_self());
 // ... complex macOS-specific code ...
 if (thread_policy_set(...) == KERN_SUCCESS) {
-  log_info("SYNTH", "Polyphonic thread: RT time constraint policy set (macOS)");
+  log_info("SYNTH", "LuxSynth thread: RT time constraint policy set (macOS)");
 } else {
-  log_warning("SYNTH", "Polyphonic thread: Failed to set RT time constraint policy (macOS)");
+  log_warning("SYNTH", "LuxSynth thread: Failed to set RT time constraint policy (macOS)");
 }
 #endif
 ```
@@ -57,7 +57,7 @@ if (thread_policy_set(...) == KERN_SUCCESS) {
 // Use the unified synth_set_rt_priority() function with macOS support
 extern int synth_set_rt_priority(pthread_t thread, int priority);
 if (synth_set_rt_priority(pthread_self(), 75) != 0) {
-  log_warning("SYNTH", "Polyphonic thread: Failed to set RT priority (continuing without RT)");
+  log_warning("SYNTH", "LuxSynth thread: Failed to set RT priority (continuing without RT)");
 }
 ```
 
@@ -106,9 +106,9 @@ sudo ./build/Sp3ctra
 ### Metrics to Monitor
 ```
 [RT_PROFILER] Buffer miss: X total (Y%)
-  - Additive: should be <5%
-  - Polyphonic: should be <5%
-  - Photowave: (ignored for now)
+  - LuxStral: should be <5%
+  - LuxSynth: should be <5%
+  - LuxWave: (ignored for now)
 ```
 
 ## Technical Details
@@ -120,12 +120,12 @@ sudo ./build/Sp3ctra
 - Must never be blocked
 - Minimal work (just copies buffers)
 
-**Priority 75 (Polyphonic Thread)**:
+**Priority 75 (LuxSynth Thread)**:
 - Slightly lower than callback
 - Generates audio buffers for callback to consume
 - Must stay ahead of callback consumption
 
-**Priority 80 (Additive Workers)**:
+**Priority 80 (LuxStral Workers)**:
 - Higher than polyphonic (more CPU-intensive)
 - 8 parallel workers need guaranteed CPU time
 - Already optimized with batch locking
@@ -139,13 +139,13 @@ sudo ./build/Sp3ctra
 
 ## Future Considerations
 
-### Photowave Thread
+### LuxWave Thread
 Currently not prioritized (ignored per user request). If needed:
 ```c
-// In synth_photowave_thread_func()
+// In synth_luxwave_thread_func()
 extern int synth_set_rt_priority(pthread_t thread, int priority);
 if (synth_set_rt_priority(pthread_self(), 73) != 0) {
-  log_warning("PHOTOWAVE", "Failed to set RT priority (continuing without RT)");
+  log_warning("LUXWAVE", "Failed to set RT priority (continuing without RT)");
 }
 ```
 
@@ -157,7 +157,7 @@ if (synth_set_rt_priority(pthread_self(), 73) != 0) {
 ## References
 
 - [MACOS_RT_PRIORITIES.md](./MACOS_RT_PRIORITIES.md) - macOS RT implementation details
-- [WORKER_TIMING_OPTIMIZATION.md](./WORKER_TIMING_OPTIMIZATION.md) - Additive synthesis mutex optimization
+- [WORKER_TIMING_OPTIMIZATION.md](./WORKER_TIMING_OPTIMIZATION.md) - LuxStral synthesis mutex optimization
 - [THREAD_MUTEX_AUDIT.md](./THREAD_MUTEX_AUDIT.md) - Complete thread architecture audit
 
 ## Commit Message

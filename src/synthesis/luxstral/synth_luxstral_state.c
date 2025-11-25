@@ -1,5 +1,5 @@
 /*
- * synth_additive_state.c
+ * synth_luxstral_state.c
  *
  * State management for additive synthesis
  * Contains freeze/fade functionality and display buffer management
@@ -8,7 +8,7 @@
  */
 
 /* Includes ------------------------------------------------------------------*/
-#include "synth_additive_state.h"
+#include "synth_luxstral_state.h"
 #include "../../config/config_instrument.h"
 #include <string.h>
 #include <stdio.h>

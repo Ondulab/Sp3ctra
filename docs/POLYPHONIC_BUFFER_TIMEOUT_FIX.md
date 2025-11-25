@@ -1,4 +1,4 @@
-# Polyphonic Buffer Timeout Optimization
+# LuxSynth Buffer Timeout Optimization
 
 **Date:** 2025-11-17  
 **Issue:** Note Off perdus et buffers polyphoniques manquants  
@@ -7,7 +7,7 @@
 ## 🔍 Problem Analysis
 
 ### Symptoms
-1. `[AUDIO] Polyphonic buffer missing!` - Thread polyphonique trop lent
+1. `[AUDIO] LuxSynth buffer missing!` - Thread polyphonique trop lent
 2. `Voice X cleaned up (invalid timestamp)` - Timestamps invalides
 3. Note Off perdus - Voices coincées en RELEASE
 
@@ -15,7 +15,7 @@
 
 #### 1. Thread Polyphonique Trop Lent (Cause Principale)
 ```c
-// AVANT (synth_polyphonic.c ligne ~485)
+// AVANT (synth_luxsynth.c ligne ~485)
 const int MAX_WAIT_ITERATIONS = 500; // ~50ms max wait
 ```
 
@@ -38,7 +38,7 @@ Le backoff n'était pas assez agressif au début, causant des latences inutiles.
 
 ### 1. Réduction Drastique du Timeout
 ```c
-// APRÈS (synth_polyphonic.c ligne ~485)
+// APRÈS (synth_luxsynth.c ligne ~485)
 // CRITICAL: Reduced timeout for better RT performance (10ms max instead of 50ms)
 const int MAX_WAIT_ITERATIONS = 100; // ~10ms max wait (realistic for RT at 48kHz)
 ```
@@ -110,7 +110,7 @@ Les modifications respectent les contraintes temps-réel:
 2. Lancer l'application
 3. Jouer des notes MIDI rapides (staccato)
 4. Observer les logs pour:
-   - Fréquence des "Polyphonic buffer missing"
+   - Fréquence des "LuxSynth buffer missing"
    - Présence de "invalid timestamp"
    - Note Off perdus
 
@@ -122,9 +122,9 @@ Les modifications respectent les contraintes temps-réel:
 
 ## 📝 Related Issues
 
-- **POLYPHONIC_INVALID_TIMESTAMP_ANALYSIS.md** - Analyse des timestamps invalides
+- **LUXSYNTH_INVALID_TIMESTAMP_ANALYSIS.md** - Analyse des timestamps invalides
 - **AUDIO_BUFFER_SYNC_FIX.md** - Synchronisation des buffers audio
-- **POLYPHONIC_FFT_OPTIMIZATION.md** - Optimisations FFT
+- **LUXSYNTH_FFT_OPTIMIZATION.md** - Optimisations FFT
 
 ## 🔮 Future Improvements
 

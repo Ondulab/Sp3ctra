@@ -8,8 +8,8 @@
 #include "auto_volume.h"
 #include "audio_c_interface.h" /* C interface for audio operations */
 #include "config_loader.h"     /* Runtime configuration */
-#include "config_synth_additive.h" /* For IMU_ACTIVE_THRESHOLD_X */
-#include "../../synthesis/additive/synth_additive.h"    /* For synth_get_last_contrast_factor() */
+#include "config_synth_luxstral.h" /* For IMU_ACTIVE_THRESHOLD_X */
+#include "../../synthesis/luxstral/synth_luxstral.h"    /* For synth_get_last_contrast_factor() */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

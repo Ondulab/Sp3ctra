@@ -1,4 +1,4 @@
-# Polyphonic Configuration Redundancy Analysis
+# LuxSynth Configuration Redundancy Analysis
 
 **Date:** 2025-11-23  
 **Status:** Analysis Complete  
@@ -8,7 +8,7 @@
 
 The polyphonic synthesis configuration in `sp3ctra.ini` contains **significant redundancy** between two sections:
 - `[polyphonic]` - Engine default parameters (loaded at startup)
-- `[synth_polyphonic]` - MIDI-controllable parameters (runtime control)
+- `[synth_luxsynth]` - MIDI-controllable parameters (runtime control)
 
 **Total redundant lines:** ~48 configuration lines (parameters + metadata)
 
@@ -19,10 +19,10 @@ The polyphonic synthesis configuration in `sp3ctra.ini` contains **significant r
 ```
 sp3ctra.ini
 ├── [polyphonic]           → Loads into g_sp3ctra_config.poly_*
-│   └── Used by: synth_polyphonic_init()
+│   └── Used by: synth_luxsynth_init()
 │
-└── [synth_polyphonic]     → Parsed by MIDI mapping system
-    └── Used by: MIDI callbacks → synth_polyphonic_set_*() functions
+└── [synth_luxsynth]     → Parsed by MIDI mapping system
+    └── Used by: MIDI callbacks → synth_luxsynth_set_*() functions
 ```
 
 ### 2. Redundant Parameter Groups
@@ -38,7 +38,7 @@ volume_adsr_attack_s_scaling = exponential
 # ... (decay, sustain, release with same pattern)
 ```
 
-**[synth_polyphonic] section:**
+**[synth_luxsynth] section:**
 ```ini
 volume_env_attack = 0.01
 volume_env_attack_min = 0.001
@@ -49,7 +49,7 @@ volume_env_attack_scaling = exponential
 
 **Code mapping:**
 - `[polyphonic]` → `g_sp3ctra_config.poly_volume_adsr_attack_s`
-- `[synth_polyphonic]` → MIDI callback → `synth_polyphonic_set_volume_adsr_attack()`
+- `[synth_luxsynth]` → MIDI callback → `synth_luxsynth_set_volume_adsr_attack()`
 - **Both modify the same global config variable!**
 
 #### B. Filter ADSR Envelope (16 lines)
@@ -72,9 +72,9 @@ Same redundancy pattern:
 
 ### 3. Code Flow Analysis
 
-#### Initialization (synth_polyphonic.c)
+#### Initialization (synth_luxsynth.c)
 ```c
-void synth_polyphonicMode_init(void) {
+void synth_luxsynthMode_init(void) {
     // Reads from [polyphonic] section
     global_spectral_filter_params.base_cutoff_hz = 
         g_sp3ctra_config.poly_filter_cutoff_hz;
@@ -91,15 +91,15 @@ void synth_polyphonicMode_init(void) {
 
 #### MIDI Runtime Control (midi_callbacks.cpp)
 ```cpp
-case PARAM_SYNTH_POLYPHONIC_VOLUME_ENV_ATTACK:
-    // Reads from [synth_polyphonic] section
-    synth_polyphonic_set_volume_adsr_attack(param->raw_value);
+case PARAM_SYNTH_LUXSYNTH_VOLUME_ENV_ATTACK:
+    // Reads from [synth_luxsynth] section
+    synth_luxsynth_set_volume_adsr_attack(param->raw_value);
     break;
 ```
 
-#### Setter Functions (synth_polyphonic.c)
+#### Setter Functions (synth_luxsynth.c)
 ```c
-void synth_polyphonic_set_volume_adsr_attack(float attack_s) {
+void synth_luxsynth_set_volume_adsr_attack(float attack_s) {
     // MODIFIES THE SAME GLOBAL CONFIG!
     g_sp3ctra_config.poly_volume_adsr_attack_s = attack_s;
     
@@ -117,14 +117,14 @@ void synth_polyphonic_set_volume_adsr_attack(float attack_s) {
 This pattern follows the **MIDI parameter mapping architecture** used throughout Sp3ctra:
 
 1. **Engine section** (`[polyphonic]`): Defines default values loaded at startup
-2. **MIDI section** (`[synth_polyphonic]`): Defines MIDI-controllable parameters with ranges/scaling
+2. **MIDI section** (`[synth_luxsynth]`): Defines MIDI-controllable parameters with ranges/scaling
 3. **Both sections** ultimately control the same runtime variables
 
 **Similar patterns exist for:**
-- `[photowave]` + `[synth_photowave]`
-- `[synth_additive]` (envelope parameters)
+- `[photowave]` + `[synth_luxwave]`
+- `[synth_luxstral]` (envelope parameters)
 
-### 5. Parameters Unique to Polyphonic Synthesis
+### 5. Parameters Unique to LuxSynth Synthesis
 
 These are **NOT redundant** and specific to the FFT-based polyphonic engine:
 
@@ -147,9 +147,9 @@ norm_factor_bin0 = 1000000.0           # FFT normalization
 norm_factor_harmonics = 500000.0       # FFT normalization
 ```
 
-### 6. Comparison with Photowave
+### 6. Comparison with LuxWave
 
-Photowave has the **same redundancy pattern**:
+LuxWave has the **same redundancy pattern**:
 
 ```ini
 [photowave]
@@ -159,7 +159,7 @@ scan_mode = 2
 interp_mode = 0
 amplitude = 0.20
 
-[synth_photowave]
+[synth_luxwave]
 # MIDI-controllable parameters (REDUNDANT with photowave)
 volume_env_attack = 0.01
 filter_env_attack = 0.02
@@ -201,8 +201,8 @@ The redundancy stems from the **dual-purpose configuration system**:
 
 **Changes required:**
 - Remove `[polyphonic]` section entirely
-- Load all defaults from `[synth_polyphonic]`
-- Update `config_parser_table.h` to read from `synth_polyphonic` section
+- Load all defaults from `[synth_luxsynth]`
+- Update `config_parser_table.h` to read from `synth_luxsynth` section
 - Risk: breaks consistency with other synthesis modes
 
 **Effort:** Medium (affects config loader, parser table)
@@ -221,7 +221,7 @@ The redundancy stems from the **dual-purpose configuration system**:
 
 The redundancy is **intentional by design**, not a bug. It reflects the dual nature of parameters:
 1. **Static defaults** (loaded at startup from `[polyphonic]`)
-2. **MIDI control metadata** (ranges, scaling from `[synth_polyphonic]`)
+2. **MIDI control metadata** (ranges, scaling from `[synth_luxsynth]`)
 
 Both sections ultimately control the same runtime variables (`g_sp3ctra_config.poly_*`), but serve different purposes in the configuration architecture.
 
@@ -232,6 +232,6 @@ Both sections ultimately control the same runtime variables (`g_sp3ctra_config.p
 - `sp3ctra.ini` - Configuration file with redundant sections
 - `src/config/config_loader.h` - Config structure definition
 - `src/config/config_parser_table.h` - Parameter parsing table
-- `src/synthesis/polyphonic/synth_polyphonic.c` - Uses poly_* config variables
+- `src/synthesis/luxsynth/synth_luxsynth.c` - Uses poly_* config variables
 - `src/communication/midi/midi_callbacks.cpp` - MIDI parameter handlers
 - `midi_mapping.ini` - MIDI CC to parameter mapping

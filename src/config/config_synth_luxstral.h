@@ -1,9 +1,9 @@
-/* config_synth_additive.h */
+/* config_synth_luxstral.h */
 
-#ifndef __CONFIG_SYNTH_ADDITIVE_H__
-#define __CONFIG_SYNTH_ADDITIVE_H__
+#ifndef __CONFIG_SYNTH_LUXSTRAL_H__
+#define __CONFIG_SYNTH_LUXSTRAL_H__
 
-#include "config_loader.h"  // For g_additive_config
+#include "config_loader.h"  // For g_luxstral_config
 #include "config_audio.h"   // For AUDIO_BUFFER_SIZE and SAMPLING_FREQUENCY
 #include "config_instrument.h"  // For CIS_MAX_PIXELS_NB
 
@@ -66,12 +66,12 @@
  * Debug Auto-Freeze (for development)
  * After N received images, freeze synth data (keep reception and pipeline running).
  **************************************************************************************/
-#ifndef ADDITIVE_DEBUG_AUTOFREEZE_ENABLE
-#define ADDITIVE_DEBUG_AUTOFREEZE_ENABLE 0
+#ifndef LUXSTRAL_DEBUG_AUTOFREEZE_ENABLE
+#define LUXSTRAL_DEBUG_AUTOFREEZE_ENABLE 0
 #endif
 
-#ifndef ADDITIVE_DEBUG_AUTOFREEZE_AFTER_IMAGES
-#define ADDITIVE_DEBUG_AUTOFREEZE_AFTER_IMAGES 5000
+#ifndef LUXSTRAL_DEBUG_AUTOFREEZE_AFTER_IMAGES
+#define LUXSTRAL_DEBUG_AUTOFREEZE_AFTER_IMAGES 5000
 #endif
 
-#endif // __CONFIG_SYNTH_ADDITIVE_H__
+#endif // __CONFIG_SYNTH_LUXSTRAL_H__

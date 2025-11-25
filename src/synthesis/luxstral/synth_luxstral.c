@@ -1,13 +1,13 @@
 /*
- * synth_additive.c - Main additive synthesis module (refactored)
+ * synth_luxstral.c - Main additive synthesis module (refactored)
  *
  * This file serves as the main entry point for the additive synthesis system.
  * The actual implementation has been split into specialized modules:
- * - synth_additive_algorithms.c: Centralized core algorithms
- * - synth_additive_math.c: Mathematical operations and utilities
- * - synth_additive_stereo.c: Stereo processing and panning
- * - synth_additive_state.c: State management and data freeze functionality
- * - synth_additive_threading.c: Multi-threading and worker management
+ * - synth_luxstral_algorithms.c: Centralized core algorithms
+ * - synth_luxstral_math.c: Mathematical operations and utilities
+ * - synth_luxstral_stereo.c: Stereo processing and panning
+ * - synth_luxstral_state.c: State management and data freeze functionality
+ * - synth_luxstral_threading.c: Multi-threading and worker management
  *
  * Created on: 24 avr. 2019
  * Author: zhonx
@@ -17,16 +17,16 @@
 #include "config.h"
 
 // Include all the specialized modules
-#include "synth_additive_algorithms.h"
-#include "synth_additive_math.h"
+#include "synth_luxstral_algorithms.h"
+#include "synth_luxstral_math.h"
 #include "pow_approx.h"
-#include "synth_additive_stereo.h"
-#include "synth_additive_state.h"
-#include "synth_additive_threading.h"
-#include "synth_additive_runtime.h"
+#include "synth_luxstral_stereo.h"
+#include "synth_luxstral_state.h"
+#include "synth_luxstral_threading.h"
+#include "synth_luxstral_runtime.h"
 
 // Main header
-#include "synth_additive.h"
+#include "synth_luxstral.h"
 
 // Runtime configuration
 #include "../../config/config_instrument.h"
@@ -51,7 +51,7 @@
 #include "image_debug.h"
 #include "lock_free_pan.h"
 #include "../../config/config_debug.h"
-#include "../../config/config_synth_additive.h"
+#include "../../config/config_synth_luxstral.h"
 #include "../../audio/buffers/audio_image_buffers.h"
 #include "../../audio/buffers/doublebuffer.h"
 #include "../../audio/rtaudio/audio_c_api.h"
@@ -81,7 +81,7 @@ static _Atomic float g_last_contrast_factor = 0.0f;
 /* Global context variables (moved from shared.c) */
 struct shared_var shared_var;
 
-// Persistent dynamically-sized buffers (allocated on first use; freed in synth_additive_cleanup)
+// Persistent dynamically-sized buffers (allocated on first use; freed in synth_luxstral_cleanup)
 static float *additiveBuffer   = NULL;
 static float *sumVolumeBuffer  = NULL;
 static float *maxVolumeBuffer  = NULL;
@@ -91,7 +91,7 @@ static float *stereoBuffer_L   = NULL;
 static float *stereoBuffer_R   = NULL;
 
 // Cleanup function to release persistent buffers (registered via atexit)
-void synth_additive_cleanup(void) {
+void synth_luxstral_cleanup(void) {
   if (additiveBuffer)  { free(additiveBuffer);  additiveBuffer = NULL; }
   if (sumVolumeBuffer) { free(sumVolumeBuffer); sumVolumeBuffer = NULL; }
   if (maxVolumeBuffer) { free(maxVolumeBuffer); maxVolumeBuffer = NULL; }
@@ -128,7 +128,7 @@ int32_t synth_IfftInit(void) {
   // Register cleanup functions
   atexit(synth_runtime_free_buffers);
   atexit(synth_shutdown_thread_pool);
-  atexit(synth_additive_cleanup);
+  atexit(synth_luxstral_cleanup);
 
   // Initialize default parameters
   wavesGeneratorParams.commaPerSemitone = g_sp3ctra_config.comma_per_semitone;
@@ -239,7 +239,7 @@ int32_t synth_IfftInit(void) {
 }
 
 /**
- * @brief  Optimized version of the Additive synthesis with a persistent thread pool
+ * @brief  Optimized version of the LuxStral synthesis with a persistent thread pool
  * @param  imageData Grayscale input data
  * @param  audioDataLeft Left channel audio output buffer (stereo mode)
  * @param  audioDataRight Right channel audio output buffer (stereo mode)
@@ -248,9 +248,9 @@ int32_t synth_IfftInit(void) {
  */
 void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRight, float contrast_factor, DoubleBuffer *db) {
 
-  // Additive mode (limited logs)
+  // LuxStral mode (limited logs)
   if (log_counter % LOG_FREQUENCY == 0) {
-    // printf("===== Additive Mode called (optimized) =====\n");
+    // printf("===== LuxStral Mode called (optimized) =====\n");
   }
 
   static int buff_idx;
@@ -350,8 +350,8 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     // Float32 version: combine float buffers directly
     for (int i = 0; i < num_workers; i++) {
       synth_thread_worker_t *w = &thread_pool[i];
-      if (w->thread_additiveBuffer) {
-        add_float(w->thread_additiveBuffer, additiveBuffer,
+      if (w->thread_luxstralBuffer) {
+        add_float(w->thread_luxstralBuffer, additiveBuffer,
                   additiveBuffer, g_sp3ctra_config.audio_buffer_size);
       }
       if (w->thread_sumVolumeBuffer) {
@@ -464,9 +464,9 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     
     // Float32 version: combine float stereo buffers directly
     for (int i = 0; i < num_workers; i++) {
-      add_float(thread_pool[i].thread_additiveBuffer_L, stereoBuffer_L,
+      add_float(thread_pool[i].thread_luxstralBuffer_L, stereoBuffer_L,
                 stereoBuffer_L, g_sp3ctra_config.audio_buffer_size);
-      add_float(thread_pool[i].thread_additiveBuffer_R, stereoBuffer_R,
+      add_float(thread_pool[i].thread_luxstralBuffer_R, stereoBuffer_R,
                 stereoBuffer_R, g_sp3ctra_config.audio_buffer_size);
     }
     
@@ -625,7 +625,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   
   // If timeout, log warning but continue (graceful degradation)
   if (wait_iterations >= MAX_WAIT_ITERATIONS) {
-    log_warning("SYNTH", "Additive: Buffer wait timeout (callback too slow)");
+    log_warning("SYNTH", "LuxStral: Buffer wait timeout (callback too slow)");
   }
 
   // 🎯 USE PREPROCESSED DATA: Get all preprocessed data in single mutex lock (optimized)
@@ -636,13 +636,13 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
   pthread_mutex_unlock(&db->mutex);
 
   // Debug auto-freeze after N images: keep reception active but freeze synth data
-#if ADDITIVE_DEBUG_AUTOFREEZE_ENABLE
+#if LUXSTRAL_DEBUG_AUTOFREEZE_ENABLE
   {
     static uint32_t g_image_count = 0;
     g_image_count++;
-    if (g_image_count == (uint32_t)ADDITIVE_DEBUG_AUTOFREEZE_AFTER_IMAGES) {
+    if (g_image_count == (uint32_t)LUXSTRAL_DEBUG_AUTOFREEZE_AFTER_IMAGES) {
       pthread_mutex_lock(&g_synth_data_freeze_mutex);
-      // Hard freeze (no fade) - synth_additive.c logic will snapshot current g_grayScale_live
+      // Hard freeze (no fade) - synth_luxstral.c logic will snapshot current g_grayScale_live
       g_is_synth_data_frozen = 1;
       g_is_synth_data_fading_out = 0;
       pthread_mutex_unlock(&g_synth_data_freeze_mutex);
@@ -725,7 +725,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
 
   // NOTE: g_displayable_synth_R/G/B buffers are now updated in multithreading.c
   // with the MIXED RGB colors from the sequencer (not grayscale conversion)
-  // Additive synthesis finished
+  // LuxStral synthesis finished
 
   // RT-SAFE: Record timestamp and mark buffers as ready using atomic stores (no mutex needed)
   struct timeval tv;

@@ -59,9 +59,9 @@ void sfClock_restart(sfClock *clock) { (void)clock; }
 #include "image_debug.h"
 #include "logger.h"
 #include "multithreading.h"
-#include "synth_additive.h"
-#include "synth_polyphonic.h" // Added for the new FFT synth mode
-#include "synth_photowave.h"  // Added for Photowave synthesis
+#include "synth_luxstral.h"
+#include "synth_luxsynth.h" // Added for the new FFT synth mode
+#include "synth_luxwave.h"  // Added for LuxWave synthesis
 #include "udp.h"
 #include "../processing/image_preprocessor.h"
 #include "../processing/image_sequencer.h"
@@ -142,7 +142,7 @@ int main(int argc, char **argv) {
   
   /* Load Sp3ctra configuration */
   log_info("CONFIG", "Loading Sp3ctra configuration...");
-  if (load_additive_config("sp3ctra.ini") != 0) {
+  if (load_luxstral_config("sp3ctra.ini") != 0) {
     log_error("CONFIG", "Failed to load configuration. Exiting.");
     return EXIT_FAILURE;
   }
@@ -336,7 +336,7 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
       }
       
-      printf("🔧 Additive oscillator debug enabled (%d samples%s)\n", 
+      printf("🔧 LuxStral oscillator debug enabled (%d samples%s)\n", 
              capture_samples, enable_markers ? ", markers enabled" : "");
       // Configure oscillator volume capture with runtime parameters
       image_debug_configure_oscillator_capture(1, capture_samples, enable_markers);
@@ -479,20 +479,20 @@ int main(int argc, char **argv) {
   audio_Init();
 
   // Determine synthesis modes based on configuration
-  int enable_polyphonic_synth = 1;
-  int enable_additive_synth = 1;
+  int enable_luxsynth_synth = 1;
+  int enable_luxstral_synth = 1;
   int enable_midi = 1;
   int midi_connected = 0;
 
   // Check manual disable flags (highest priority)
-#ifdef DISABLE_POLYPHONIC
-  enable_polyphonic_synth = 0;
-  printf("Polyphonic synthesis DISABLED by configuration\n");
+#ifdef DISABLE_LUXSYNTH
+  enable_luxsynth_synth = 0;
+  printf("LuxSynth synthesis DISABLED by configuration\n");
 #endif
 
-#ifdef DISABLE_ADDITIVE
-  enable_additive_synth = 0;
-  printf("ADDITIVE synthesis DISABLED by configuration\n");
+#ifdef DISABLE_LUXSTRAL
+  enable_luxstral_synth = 0;
+  printf("LUXSTRAL synthesis DISABLED by configuration\n");
 #endif
 
 #if !ENABLE_MIDI_POLLING
@@ -542,29 +542,29 @@ int main(int argc, char **argv) {
     if (midi_connected) {
       log_info("MIDI", "Controller connected");
       // Setup note callbacks if MIDI connected successfully
-      midi_set_note_on_callback(synth_polyphonic_note_on);
-      midi_set_note_off_callback(synth_polyphonic_note_off);
-      log_info("MIDI", "Note On/Off callbacks for synth_polyphonic registered via C API");
+      midi_set_note_on_callback(synth_luxsynth_note_on);
+      midi_set_note_off_callback(synth_luxsynth_note_off);
+      log_info("MIDI", "Note On/Off callbacks for synth_luxsynth registered via C API");
     } else {
       log_info("MIDI", "No controller found");
     }
   }
 
   // Check automatic polyphonic disable based on MIDI presence
-#if AUTO_DISABLE_POLYPHONIC_WITHOUT_MIDI
-  if (!midi_connected && enable_polyphonic_synth) {
-    enable_polyphonic_synth = 0;
+#if AUTO_DISABLE_LUXSYNTH_WITHOUT_MIDI
+  if (!midi_connected && enable_luxsynth_synth) {
+    enable_luxsynth_synth = 0;
     printf(
-        "Polyphonic synthesis AUTO-DISABLED - no MIDI controller detected\n");
+        "LuxSynth synthesis AUTO-DISABLED - no MIDI controller detected\n");
   }
 #endif
 
   // Display final synthesis configuration
   log_info("CONFIG", "========== SYNTHESIS CONFIGURATION ==========");
-  log_info("CONFIG", "ADDITIVE synthesis: %s",
-         enable_additive_synth ? "ENABLED" : "DISABLED");
-  log_info("CONFIG", "POLYPHONIC synthesis: %s",
-         enable_polyphonic_synth ? "ENABLED" : "DISABLED");
+  log_info("CONFIG", "LUXSTRAL synthesis: %s",
+         enable_luxstral_synth ? "ENABLED" : "DISABLED");
+  log_info("CONFIG", "LUXSYNTH synthesis: %s",
+         enable_luxsynth_synth ? "ENABLED" : "DISABLED");
   log_info("CONFIG", "MIDI polling: %s", enable_midi ? "ENABLED" : "DISABLED");
   if (enable_midi) {
     log_info("CONFIG", "MIDI connected: %s", midi_connected ? "YES" : "NO");
@@ -605,8 +605,8 @@ int main(int argc, char **argv) {
   }
   
   synth_IfftInit();
-  synth_polyphonicMode_init(); // Initialize the polyphonic synth mode
-  synth_photowave_mode_init(); // Initialize the Photowave synth mode
+  synth_luxsynthMode_init(); // Initialize the polyphonic synth mode
+  synth_luxwave_mode_init(); // Initialize the LuxWave synth mode
   display_Init(window);
   // visual_freeze_init(); // Removed: Old visual-only freeze
   synth_data_freeze_init();         // Initialize synth data freeze feature
@@ -742,9 +742,9 @@ int main(int argc, char **argv) {
 
   // Create and start the polyphonic synth thread conditionally
   int polyphonic_thread_created = 0;
-  if (enable_polyphonic_synth) {
+  if (enable_luxsynth_synth) {
     if (pthread_create(&fftSynthThreadId, NULL,
-                       synth_polyphonicMode_thread_func,
+                       synth_luxsynthMode_thread_func,
                        (void *)&context) != 0) {
       perror("Error creating polyphonic synth thread");
       // Consider cleanup for other threads if this fails mid-startup
@@ -755,38 +755,38 @@ int main(int argc, char **argv) {
       return EXIT_FAILURE;
     }
     polyphonic_thread_created = 1;
-    log_info("THREAD", "Polyphonic synthesis thread started successfully");
+    log_info("THREAD", "LuxSynth synthesis thread started successfully");
     // Optionally set scheduling parameters for fftSynthThreadId as well if
     // needed
   } else {
-    log_info("THREAD", "Polyphonic synthesis thread NOT created (disabled by configuration)");
+    log_info("THREAD", "LuxSynth synthesis thread NOT created (disabled by configuration)");
   }
 
-  // Create and start the Photowave synth thread
+  // Create and start the LuxWave synth thread
   pthread_t photowaveThreadId;
   if (pthread_create(&photowaveThreadId, NULL,
-                     synth_photowave_thread_func,
+                     synth_luxwave_thread_func,
                      (void *)&context) != 0) {
-    perror("Error creating Photowave synth thread");
+    perror("Error creating LuxWave synth thread");
 #ifndef NO_SFML
     if (window)
       sfRenderWindow_destroy(window);
 #endif
     return EXIT_FAILURE;
   }
-  log_info("THREAD", "Photowave synthesis thread started successfully");
+  log_info("THREAD", "LuxWave synthesis thread started successfully");
   
-  // Apply Photowave configuration from sp3ctra.ini
-  synth_photowave_apply_config(&g_photowave_state);
+  // Apply LuxWave configuration from sp3ctra.ini
+  synth_luxwave_apply_config(&g_luxwave_state);
   
-  // Photowave is now polyphonic and controlled via MIDI notes
+  // LuxWave is now polyphonic and controlled via MIDI notes
   // No need to set a default frequency - it will respond to MIDI Note On events
-  log_info("PHOTOWAVE", "Polyphonic photowave synthesis initialized (8 voices)");
+  log_info("LUXWAVE", "LuxSynth photowave synthesis initialized (8 voices)");
   
   // Log initial mix level for debugging
-  extern float getSynthPhotowaveMixLevel(void);
-  log_info("PHOTOWAVE_DEBUG", "Initial mix level at startup: %.2f (%.0f%%)", 
-           getSynthPhotowaveMixLevel(), getSynthPhotowaveMixLevel() * 100.0f);
+  extern float getSynthLuxWaveMixLevel(void);
+  log_info("LUXWAVE_DEBUG", "Initial mix level at startup: %.2f (%.0f%%)", 
+           getSynthLuxWaveMixLevel(), getSynthLuxWaveMixLevel() * 100.0f);
 
   /* Main loop (gestion des événements et rendu) */
   // sfEvent event; // Unused variable
@@ -948,13 +948,13 @@ int main(int argc, char **argv) {
   // Join the polyphonic synth thread only if it was created
   if (polyphonic_thread_created) {
     pthread_join(fftSynthThreadId, NULL);
-    printf("Polyphonic synthesis thread terminated\n");
+    printf("LuxSynth synthesis thread terminated\n");
   }
 
-  // Stop and join the Photowave synth thread
-  synth_photowave_thread_stop();  // Signal thread to stop BEFORE joining
+  // Stop and join the LuxWave synth thread
+  synth_luxwave_thread_stop();  // Signal thread to stop BEFORE joining
   pthread_join(photowaveThreadId, NULL);
-  printf("Photowave synthesis thread terminated\n");
+  printf("LuxWave synthesis thread terminated\n");
 
 #ifdef USE_DMX
   if (use_dmx && dmxFd >= 0) {
@@ -966,7 +966,7 @@ int main(int argc, char **argv) {
   // visual_freeze_cleanup(); // Removed: Old visual-only freeze
   displayable_synth_buffers_cleanup(); // Cleanup displayable synth buffers
   synth_data_freeze_cleanup();         // Cleanup synth data freeze resources
-  synth_photowave_mode_cleanup();      // Cleanup Photowave synthesis resources
+  synth_luxwave_mode_cleanup();      // Cleanup LuxWave synthesis resources
   
   // Cleanup image sequencer
   if (imageSequencer) {

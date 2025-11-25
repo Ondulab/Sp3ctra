@@ -16,13 +16,13 @@ The catastrophic mutex contention in additive synthesis was unique due to its sp
 
 | Thread | Architecture | Mutex Pattern | Locks/Buffer | Status |
 |--------|-------------|---------------|--------------|--------|
-| **Additive Synthesis** | 8 parallel workers | Per-note preprocessing | 6912 → 1 | ✅ **OPTIMIZED** |
-| **Polyphonic Synthesis** | Single thread | Batch preprocessing | 1 | ✅ **ALREADY OPTIMAL** |
-| **Photowave Synthesis** | Single thread | No preprocessing | 0 | ✅ **ALREADY OPTIMAL** |
+| **LuxStral Synthesis** | 8 parallel workers | Per-note preprocessing | 6912 → 1 | ✅ **OPTIMIZED** |
+| **LuxSynth Synthesis** | Single thread | Batch preprocessing | 1 | ✅ **ALREADY OPTIMAL** |
+| **LuxWave Synthesis** | Single thread | No preprocessing | 0 | ✅ **ALREADY OPTIMAL** |
 
 ## Detailed Analysis
 
-### 1. Additive Synthesis (OPTIMIZED)
+### 1. LuxStral Synthesis (OPTIMIZED)
 
 **Architecture**: Multi-threaded with 8 workers
 
@@ -59,9 +59,9 @@ pthread_mutex_unlock(&db->mutex);
 
 ---
 
-### 2. Polyphonic Synthesis (ALREADY OPTIMAL)
+### 2. LuxSynth Synthesis (ALREADY OPTIMAL)
 
-**File**: `src/synthesis/polyphonic/synth_polyphonic.c`
+**File**: `src/synthesis/luxsynth/synth_luxsynth.c`
 
 **Architecture**: Single-threaded synthesis with pre-computed FFT
 
@@ -97,7 +97,7 @@ static void read_preprocessed_fft_magnitudes(DoubleBuffer *image_db) {
 ```c
 // Double buffering with condition variables (standard pattern)
 pthread_mutex_lock(&polyphonic_audio_buffers[local_producer_idx].mutex);
-synth_polyphonicMode_process(buffer, size);
+synth_luxsynthMode_process(buffer, size);
 polyphonic_audio_buffers[local_producer_idx].ready = 1;
 pthread_cond_signal(&polyphonic_audio_buffers[local_producer_idx].cond);
 pthread_mutex_unlock(&polyphonic_audio_buffers[local_producer_idx].mutex);
@@ -107,20 +107,20 @@ pthread_mutex_unlock(&polyphonic_audio_buffers[local_producer_idx].mutex);
 
 ---
 
-### 3. Photowave Synthesis (ALREADY OPTIMAL)
+### 3. LuxWave Synthesis (ALREADY OPTIMAL)
 
-**File**: `src/synthesis/photowave/synth_photowave.c`
+**File**: `src/synthesis/luxwave/synth_luxwave.c`
 
 **Architecture**: Single-threaded synthesis with direct image sampling
 
 **Mutex Usage Analysis**:
 
 ```c
-// Function: synth_photowave_thread_func()
-void *synth_photowave_thread_func(void *arg) {
+// Function: synth_luxwave_thread_func()
+void *synth_luxwave_thread_func(void *arg) {
     while (photowave_thread_running) {
         // NO MUTEX for preprocessing - reads image_line directly!
-        synth_photowave_process(&g_photowave_state, temp_left, temp_right, buffer_size);
+        synth_luxwave_process(&g_luxwave_state, temp_left, temp_right, buffer_size);
         
         // Only mutex for buffer synchronization
         __atomic_store_n(&photowave_audio_buffers[write_index].ready, 1, __ATOMIC_RELEASE);
@@ -139,7 +139,7 @@ void *synth_photowave_thread_func(void *arg) {
 ```c
 // Direct pointer access - no mutex needed
 static float sample_waveform_linear(const uint8_t *image_line, int pixel_count,
-                                   float phase, PhotowaveScanMode scan_mode) {
+                                   float phase, LuxWaveScanMode scan_mode) {
     // Reads image_line directly without locking
     float sample0 = ((float)image_line[pixel_index] / 127.5f) - 1.0f;
     float sample1 = ((float)image_line[pixel_index + 1] / 127.5f) - 1.0f;
@@ -151,9 +151,9 @@ static float sample_waveform_linear(const uint8_t *image_line, int pixel_count,
 
 ---
 
-## Why Additive Was Different
+## Why LuxStral Was Different
 
-### Unique Factors in Additive Synthesis
+### Unique Factors in LuxStral Synthesis
 
 1. **Massive Parallelism**: 8 workers processing simultaneously
 2. **High Note Count**: 3456 notes (vs 128 oscillators in polyphonic)
@@ -163,25 +163,25 @@ static float sample_waveform_linear(const uint8_t *image_line, int pixel_count,
 
 ### Why Others Don't Have This Problem
 
-**Polyphonic**:
+**LuxSynth**:
 - Single thread (no contention)
 - Batch copy already implemented
 - Lower data volume (128 oscillators)
 
-**Photowave**:
+**LuxWave**:
 - Single thread (no contention)
 - Lock-free image access
 - No preprocessing step
 
 ## Performance Comparison
 
-### Current Performance (After Additive Optimization)
+### Current Performance (After LuxStral Optimization)
 
 | Synthesis Mode | Threads | Mutex Locks/Buffer | Avg Time | Max Time | Status |
 |----------------|---------|-------------------|----------|----------|--------|
-| Additive | 8 workers | 1 | 600µs | 1200µs | ✅ Excellent |
-| Polyphonic | 1 thread | 1 | ~500µs | ~800µs | ✅ Excellent |
-| Photowave | 1 thread | 0 | ~400µs | ~600µs | ✅ Excellent |
+| LuxStral | 8 workers | 1 | 600µs | 1200µs | ✅ Excellent |
+| LuxSynth | 1 thread | 1 | ~500µs | ~800µs | ✅ Excellent |
+| LuxWave | 1 thread | 0 | ~400µs | ~600µs | ✅ Excellent |
 
 All synthesis modes are now performing optimally within their RT budgets.
 
@@ -229,7 +229,7 @@ The mutex optimization applied to additive synthesis was a **targeted fix for a 
 
 ## References
 
-- [WORKER_TIMING_OPTIMIZATION.md](./WORKER_TIMING_OPTIMIZATION.md) - Additive synthesis optimization details
+- [WORKER_TIMING_OPTIMIZATION.md](./WORKER_TIMING_OPTIMIZATION.md) - LuxStral synthesis optimization details
 - [MACOS_RT_PRIORITIES.md](./MACOS_RT_PRIORITIES.md) - RT priorities implementation
 - [RT_DETERMINISTIC_THREADING_ACTIVATION.md](./RT_DETERMINISTIC_THREADING_ACTIVATION.md) - RT threading guide
 

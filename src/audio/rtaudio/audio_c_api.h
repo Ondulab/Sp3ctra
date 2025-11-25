@@ -54,20 +54,20 @@ void setMinimalCallbackMode(int enabled);
 void setMinimalTestVolume(float volume);
 
 // Control synth mix levels (thread-safe)
-void setSynthAdditiveMixLevel(float level);  // 0.0 - 1.0
-void setSynthPolyphonicMixLevel(float level); // 0.0 - 1.0
-void setSynthPhotowaveMixLevel(float level);  // 0.0 - 1.0
-float getSynthAdditiveMixLevel(void);
-float getSynthPolyphonicMixLevel(void);
-float getSynthPhotowaveMixLevel(void);
+void setSynthLuxStralMixLevel(float level);  // 0.0 - 1.0
+void setSynthLuxSynthMixLevel(float level); // 0.0 - 1.0
+void setSynthLuxWaveMixLevel(float level);  // 0.0 - 1.0
+float getSynthLuxStralMixLevel(void);
+float getSynthLuxSynthMixLevel(void);
+float getSynthLuxWaveMixLevel(void);
 
 // Control reverb send levels (thread-safe)
-void setReverbSendAdditive(float level);     // 0.0 - 1.0
-void setReverbSendPolyphonic(float level);   // 0.0 - 1.0
-void setReverbSendPhotowave(float level);    // 0.0 - 1.0
-float getReverbSendAdditive(void);
-float getReverbSendPolyphonic(void);
-float getReverbSendPhotowave(void);
+void setReverbSendLuxStral(float level);     // 0.0 - 1.0
+void setReverbSendLuxSynth(float level);   // 0.0 - 1.0
+void setReverbSendLuxWave(float level);    // 0.0 - 1.0
+float getReverbSendLuxStral(void);
+float getReverbSendLuxSynth(void);
+float getReverbSendLuxWave(void);
 
 #ifdef __cplusplus
 }

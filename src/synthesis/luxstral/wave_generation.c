@@ -22,8 +22,8 @@
 
 /* Global variables definitions (moved from shared.c) */
 volatile struct waveParams wavesGeneratorParams;
-volatile struct wave *waves = NULL;  // Now a pointer (allocated in synth_additive_runtime.c)
-volatile float *unitary_waveform = NULL;  // Now a pointer (allocated in synth_additive_runtime.c)
+volatile struct wave *waves = NULL;  // Now a pointer (allocated in synth_luxstral_runtime.c)
+volatile float *unitary_waveform = NULL;  // Now a pointer (allocated in synth_luxstral_runtime.c)
 
 /* Private includes ----------------------------------------------------------*/
 

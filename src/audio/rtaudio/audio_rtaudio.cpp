@@ -3,13 +3,13 @@
 #include "audio_rtaudio.h"
 #include "audio_c_api.h"
 #include "midi_controller.h" // For gMidiController
-#include "synth_polyphonic.h" // For polyphonic_audio_buffers and related variables
-#include "../../synthesis/photowave/synth_photowave.h" // For photowave_audio_buffers
+#include "synth_luxsynth.h" // For polyphonic_audio_buffers and related variables
+#include "../../synthesis/luxwave/synth_luxwave.h" // For photowave_audio_buffers
 #include "../../config/config_debug.h"    // For debug configuration macros
 #include "../../config/config_audio.h"    // For HDMI format configuration
 #include "../../config/config_loader.h"   // For runtime configuration access
 #include "../../utils/image_debug.h"      // For continuous volume capture
-#include "../../synthesis/additive/wave_generation.h"  // For waves[] access
+#include "../../synthesis/luxstral/wave_generation.h"  // For waves[] access
 #include "../../utils/logger.h"           // For structured logging
 #include "../../utils/rt_profiler.h"      // For RT performance profiling
 #include <algorithm>         // For std::transform
@@ -35,14 +35,14 @@ AudioSystem *gAudioSystem = nullptr;
 
 // Global variables for synth mix levels (accessed from audio callback)
 // Volatile ensures thread visibility on modern architectures
-static volatile float g_synth_additive_mix_level = 1.0f;
-static volatile float g_synth_polyphonic_mix_level = 0.5f;
-static volatile float g_synth_photowave_mix_level = 0.0f;  // Photowave disabled by default
+static volatile float g_synth_luxstral_mix_level = 1.0f;
+static volatile float g_synth_luxsynth_mix_level = 0.5f;
+static volatile float g_synth_luxwave_mix_level = 0.0f;  // LuxWave disabled by default
 
 // Global variables for reverb send levels (accessed from audio callback)
-static volatile float g_reverb_send_additive = 1.0f;   // 100% reverb send for additive by default
-static volatile float g_reverb_send_polyphonic = 0.5f; // 50% reverb send for polyphonic by default
-static volatile float g_reverb_send_photowave = 0.0f;  // No reverb send for photowave by default
+static volatile float g_reverb_send_luxstral = 1.0f;   // 100% reverb send for additive by default
+static volatile float g_reverb_send_luxsynth = 0.5f; // 50% reverb send for polyphonic by default
+static volatile float g_reverb_send_luxwave = 0.0f;  // No reverb send for photowave by default
 
 // Global variables to store requested audio device before AudioSystem is created
 extern "C" {
@@ -137,7 +137,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   
   // DESYNC TRACKING: Monitor when photowave reads without additive (causes distortion)
   static uint64_t additive_missing_streak = 0;
-  static uint64_t photowave_read_without_additive = 0;
+  static uint64_t photowave_read_without_luxstral = 0;
   static uint64_t last_sync_check_time_us = 0;
 
   // Cache volume level to avoid repeated access
@@ -151,14 +151,14 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   }
   
   // Read mix levels from global variables (controlled via MIDI)
-  float cached_level_additive = g_synth_additive_mix_level;
-  float cached_level_polyphonic = g_synth_polyphonic_mix_level;
-  float cached_level_photowave = g_synth_photowave_mix_level;
+  float cached_level_luxstral = g_synth_luxstral_mix_level;
+  float cached_level_luxsynth = g_synth_luxsynth_mix_level;
+  float cached_level_luxwave = g_synth_luxwave_mix_level;
   
   // Read reverb send levels from global variables (controlled via MIDI)
-  float cached_reverb_send_additive = g_reverb_send_additive;
-  float cached_reverb_send_polyphonic = g_reverb_send_polyphonic;
-  float cached_reverb_send_photowave = g_reverb_send_photowave;
+  float cached_reverb_send_luxstral = g_reverb_send_luxstral;
+  float cached_reverb_send_luxsynth = g_reverb_send_luxsynth;
+  float cached_reverb_send_luxwave = g_reverb_send_luxwave;
 
   unsigned int framesToRender = nFrames;
 
@@ -170,9 +170,9 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         (framesToRender < framesAvailable) ? framesToRender : framesAvailable;
 
     // Get source pointers directly - avoid memcpy when possible
-    float *source_additive_left = nullptr;
-    float *source_additive_right = nullptr;
-    float *source_photowave = nullptr;
+    float *source_luxstral_left = nullptr;
+    float *source_luxstral_right = nullptr;
+    float *source_luxwave = nullptr;
 
     // SYNCHRONIZED BUFFER ACCESS: All synths read from same offset
     // This prevents temporal desynchronization and audio artifacts
@@ -188,13 +188,13 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     if (!additive_ready) {
       additive_missing_streak++;
       if (photowave_ready) {
-        photowave_read_without_additive++;
+        photowave_read_without_luxstral++;
       }
     }
     
-    // Additive synthesis (stereo)
+    // LuxStral synthesis (stereo)
     if (buffers_L[additive_read_buffer].ready == 1) {
-      source_additive_left = &buffers_L[additive_read_buffer].data[global_read_offset];
+      source_luxstral_left = &buffers_L[additive_read_buffer].data[global_read_offset];
       
       // Measure latency only at start of buffer read (global_read_offset == 0)
       if (global_read_offset == 0 && buffers_L[additive_read_buffer].write_timestamp_us > 0) {
@@ -215,10 +215,10 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       }
     }
     if (buffers_R[additive_read_buffer].ready == 1) {
-      source_additive_right = &buffers_R[additive_read_buffer].data[global_read_offset];
+      source_luxstral_right = &buffers_R[additive_read_buffer].data[global_read_offset];
     }
 
-    // Polyphonic synthesis (stereo with spectral panning)
+    // LuxSynth synthesis (stereo with spectral panning)
     float *source_fft_left = nullptr;
     float *source_fft_right = nullptr;
     if (polyphonic_audio_buffers[polyphonic_read_buffer].ready == 1) {
@@ -246,9 +246,9 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       }
     }
 
-    // Photowave synthesis (mono)
+    // LuxWave synthesis (mono)
     if (photowave_audio_buffers[photowave_read_buffer].ready == 1) {
-      source_photowave = &photowave_audio_buffers[photowave_read_buffer]
+      source_luxwave = &photowave_audio_buffers[photowave_read_buffer]
                              .data[global_read_offset];
     }
 
@@ -261,16 +261,16 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       // This ensures volume control affects both dry signal AND reverb send
       // When volume=0%, both dry and reverb should be silent
       
-      // Add Additive synthesis contribution - separate left and right channels
+      // Add LuxStral synthesis contribution - separate left and right channels
       // Volume is applied here, creating the "post-volume" signal
       float additive_with_volume_left = 0.0f;
       float additive_with_volume_right = 0.0f;
-      if (source_additive_left) {
-        additive_with_volume_left = source_additive_left[i] * cached_level_additive;
+      if (source_luxstral_left) {
+        additive_with_volume_left = source_luxstral_left[i] * cached_level_luxstral;
         dry_sample_left += additive_with_volume_left;
       }
-      if (source_additive_right) {
-        additive_with_volume_right = source_additive_right[i] * cached_level_additive;
+      if (source_luxstral_right) {
+        additive_with_volume_right = source_luxstral_right[i] * cached_level_luxstral;
         dry_sample_right += additive_with_volume_right;
       }
       
@@ -280,10 +280,10 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       if (++debug_counter >= 4800) {
         debug_counter = 0;
         printf("SIGNAL DEBUG: dry_L=%.6f, dry_R=%.6f, additive_level=%.3f, reverb_send=%.3f\n",
-               dry_sample_left, dry_sample_right, cached_level_additive, cached_reverb_send_additive);
-        if (source_additive_left) {
+               dry_sample_left, dry_sample_right, cached_level_luxstral, cached_reverb_send_luxstral);
+        if (source_luxstral_left) {
           printf("SOURCE DEBUG: additive_L=%.6f, additive_R=%.6f\n",
-                 source_additive_left[i], source_additive_right ? source_additive_right[i] : 0.0f);
+                 source_luxstral_left[i], source_luxstral_right ? source_luxstral_right[i] : 0.0f);
         }
       }
 #endif
@@ -293,20 +293,20 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       float polyphonic_with_volume_left = 0.0f;
       float polyphonic_with_volume_right = 0.0f;
       if (source_fft_left && source_fft_right) {
-        polyphonic_with_volume_left = source_fft_left[i] * cached_level_polyphonic;
-        polyphonic_with_volume_right = source_fft_right[i] * cached_level_polyphonic;
+        polyphonic_with_volume_left = source_fft_left[i] * cached_level_luxsynth;
+        polyphonic_with_volume_right = source_fft_right[i] * cached_level_luxsynth;
         dry_sample_left += polyphonic_with_volume_left;
         dry_sample_right += polyphonic_with_volume_right;
       }
 
-      // Add Photowave contribution (same for both channels)
+      // Add LuxWave contribution (same for both channels)
       // CPU OPTIMIZATION: Skip photowave processing if mix level is essentially zero
-      // RACE CONDITION FIX: Removed additive dependency check (source_additive_left)
-      // Photowave now produces buffers continuously, so no sync protection needed
+      // RACE CONDITION FIX: Removed additive dependency check (source_luxstral_left)
+      // LuxWave now produces buffers continuously, so no sync protection needed
       // Volume is applied here, creating the "post-volume" signal
       float photowave_with_volume = 0.0f;
-      if (source_photowave && cached_level_photowave > 0.01f) {
-        photowave_with_volume = source_photowave[i] * cached_level_photowave;
+      if (source_luxwave && cached_level_luxwave > 0.01f) {
+        photowave_with_volume = source_luxwave[i] * cached_level_luxwave;
         dry_sample_left += photowave_with_volume;
         dry_sample_right += photowave_with_volume;
       }
@@ -318,9 +318,9 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       // CRITICAL FIX: Detect when ALL reverb sends go to zero and clear reverb buffers
       // This prevents "ghost reverb" from lingering when sends are cut
       static bool all_sends_zero_last_frame = false;
-      bool all_sends_zero = (cached_reverb_send_additive <= 0.01f &&
-                             cached_reverb_send_polyphonic <= 0.01f &&
-                             cached_reverb_send_photowave <= 0.01f);
+      bool all_sends_zero = (cached_reverb_send_luxstral <= 0.01f &&
+                             cached_reverb_send_luxsynth <= 0.01f &&
+                             cached_reverb_send_luxwave <= 0.01f);
       
       // If transitioning from "at least one send active" to "all sends zero"
       // then clear the reverb buffers immediately
@@ -334,8 +334,8 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       static int reverb_debug_counter = 0;
       if (++reverb_debug_counter >= 4800) {
         reverb_debug_counter = 0;
-        printf("REVERB CONDITION: ENABLE_REVERB=%d, reverbEnabled=%d, send_additive=%.3f, send_poly=%.3f, send_photowave=%.3f, all_zero=%d\n",
-               ENABLE_REVERB, reverbEnabled ? 1 : 0, cached_reverb_send_additive, cached_reverb_send_polyphonic, cached_reverb_send_photowave, all_sends_zero ? 1 : 0);
+        printf("REVERB CONDITION: ENABLE_REVERB=%d, reverbEnabled=%d, send_luxstral=%.3f, send_poly=%.3f, send_luxwave=%.3f, all_zero=%d\n",
+               ENABLE_REVERB, reverbEnabled ? 1 : 0, cached_reverb_send_luxstral, cached_reverb_send_luxsynth, cached_reverb_send_luxwave, all_sends_zero ? 1 : 0);
       }
 #endif
       
@@ -347,26 +347,26 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         // Volume control (mix level) is applied BEFORE reverb send
         // This ensures volume=0% results in complete silence (dry + reverb)
         // The reverb_send parameter controls how much of the POST-VOLUME signal goes to reverb
-        if (source_additive_left && cached_reverb_send_additive > 0.01f) {
-          reverb_input_left += additive_with_volume_left * cached_reverb_send_additive;
+        if (source_luxstral_left && cached_reverb_send_luxstral > 0.01f) {
+          reverb_input_left += additive_with_volume_left * cached_reverb_send_luxstral;
         }
-        if (source_additive_right && cached_reverb_send_additive > 0.01f) {
-          reverb_input_right += additive_with_volume_right * cached_reverb_send_additive;
+        if (source_luxstral_right && cached_reverb_send_luxstral > 0.01f) {
+          reverb_input_right += additive_with_volume_right * cached_reverb_send_luxstral;
         }
         // CRITICAL FIX: Reverb send now uses POST-VOLUME signal for polyphonic
         // Volume control (mix level) is applied BEFORE reverb send
         // This ensures volume=0% results in complete silence (dry + reverb)
-        if (source_fft_left && cached_reverb_send_polyphonic > 0.01f) {
-          reverb_input_left += polyphonic_with_volume_left * cached_reverb_send_polyphonic;
+        if (source_fft_left && cached_reverb_send_luxsynth > 0.01f) {
+          reverb_input_left += polyphonic_with_volume_left * cached_reverb_send_luxsynth;
         }
-        if (source_fft_right && cached_reverb_send_polyphonic > 0.01f) {
-          reverb_input_right += polyphonic_with_volume_right * cached_reverb_send_polyphonic;
+        if (source_fft_right && cached_reverb_send_luxsynth > 0.01f) {
+          reverb_input_right += polyphonic_with_volume_right * cached_reverb_send_luxsynth;
         }
 
         // Add photowave signal to reverb (using post-volume signal)
-        if (source_photowave && cached_reverb_send_photowave > 0.01f) {
-          reverb_input_left += photowave_with_volume * cached_reverb_send_photowave;
-          reverb_input_right += photowave_with_volume * cached_reverb_send_photowave;
+        if (source_luxwave && cached_reverb_send_luxwave > 0.01f) {
+          reverb_input_left += photowave_with_volume * cached_reverb_send_luxwave;
+          reverb_input_right += photowave_with_volume * cached_reverb_send_luxwave;
         }
 
         // Single-sample reverb processing (optimized) - use average of
@@ -429,7 +429,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     if (global_read_offset >= (unsigned int)g_sp3ctra_config.audio_buffer_size) {
       // Mark all current buffers as consumed (RT-SAFE atomic operations)
       
-      // Additive synthesis buffers
+      // LuxStral synthesis buffers
       if (buffers_L[additive_read_buffer].ready == 1) {
         __atomic_store_n(&buffers_L[additive_read_buffer].ready, 0, __ATOMIC_RELEASE);
       }
@@ -437,12 +437,12 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         __atomic_store_n(&buffers_R[additive_read_buffer].ready, 0, __ATOMIC_RELEASE);
       }
       
-      // Polyphonic synthesis buffer
+      // LuxSynth synthesis buffer
       if (polyphonic_audio_buffers[polyphonic_read_buffer].ready == 1) {
         __atomic_store_n(&polyphonic_audio_buffers[polyphonic_read_buffer].ready, 0, __ATOMIC_RELEASE);
       }
       
-      // Photowave synthesis buffer
+      // LuxWave synthesis buffer
       if (photowave_audio_buffers[photowave_read_buffer].ready == 1) {
         __atomic_store_n(&photowave_audio_buffers[photowave_read_buffer].ready, 0, __ATOMIC_RELEASE);
         // CRITICAL FIX: Signal the photowave thread that buffer has been consumed
@@ -484,28 +484,28 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   
   // BUFFER MISSING DETECTION: Report to RT profiler (no printf in RT callback)
   if (buffers_L[additive_read_buffer].ready != 1 || buffers_R[additive_read_buffer].ready != 1) {
-    rt_profiler_report_buffer_miss_additive(&g_rt_profiler);
+    rt_profiler_report_buffer_miss_luxstral(&g_rt_profiler);
   }
   
   if (polyphonic_audio_buffers[polyphonic_read_buffer].ready != 1) {
-    rt_profiler_report_buffer_miss_polyphonic(&g_rt_profiler);
+    rt_profiler_report_buffer_miss_luxsynth(&g_rt_profiler);
   }
   
   if (photowave_audio_buffers[photowave_read_buffer].ready != 1) {
-    rt_profiler_report_buffer_miss_photowave(&g_rt_profiler);
+    rt_profiler_report_buffer_miss_luxwave(&g_rt_profiler);
   }
   
   // DESYNC MONITORING: Report photowave desync events periodically
   if (current_time_us - last_sync_check_time_us > 1000000ULL) { // Every 1 second
-    if (photowave_read_without_additive > 0) {
-      printf("[SYNC WARNING] Photowave desync events: %llu (additive missing: %llu)\n",
-             photowave_read_without_additive, additive_missing_streak);
+    if (photowave_read_without_luxstral > 0) {
+      printf("[SYNC WARNING] LuxWave desync events: %llu (additive missing: %llu)\n",
+             photowave_read_without_luxstral, additive_missing_streak);
       printf("[SYNC INFO] Sync protection active: photowave skipped when additive missing\n");
       fflush(stdout);
     }
     // Reset counters for next interval
     additive_missing_streak = 0;
-    photowave_read_without_additive = 0;
+    photowave_read_without_luxstral = 0;
     last_sync_check_time_us = current_time_us;
   }
 
@@ -1575,82 +1575,82 @@ void setMinimalTestVolume(float volume) {
   printf("🔊 Minimal test volume set to: %.2f\n", minimal_test_volume);
 }
 
-void setSynthAdditiveMixLevel(float level) {
+void setSynthLuxStralMixLevel(float level) {
   // Clamp to valid range
   if (level < 0.0f) level = 0.0f;
   if (level > 1.0f) level = 1.0f;
   
   // Volatile write (thread-safe for float on modern architectures)
-  g_synth_additive_mix_level = level;
+  g_synth_luxstral_mix_level = level;
 }
 
-void setSynthPolyphonicMixLevel(float level) {
+void setSynthLuxSynthMixLevel(float level) {
   // Clamp to valid range
   if (level < 0.0f) level = 0.0f;
   if (level > 1.0f) level = 1.0f;
   
   // Volatile write (thread-safe for float on modern architectures)
-  g_synth_polyphonic_mix_level = level;
+  g_synth_luxsynth_mix_level = level;
 }
 
-float getSynthAdditiveMixLevel(void) {
-  return g_synth_additive_mix_level;
+float getSynthLuxStralMixLevel(void) {
+  return g_synth_luxstral_mix_level;
 }
 
-float getSynthPolyphonicMixLevel(void) {
-  return g_synth_polyphonic_mix_level;
+float getSynthLuxSynthMixLevel(void) {
+  return g_synth_luxsynth_mix_level;
 }
 
-void setSynthPhotowaveMixLevel(float level) {
+void setSynthLuxWaveMixLevel(float level) {
   // Clamp to valid range
   if (level < 0.0f) level = 0.0f;
   if (level > 1.0f) level = 1.0f;
   
   // Volatile write (thread-safe for float on modern architectures)
-  g_synth_photowave_mix_level = level;
+  g_synth_luxwave_mix_level = level;
 }
 
-float getSynthPhotowaveMixLevel(void) {
-  return g_synth_photowave_mix_level;
+float getSynthLuxWaveMixLevel(void) {
+  return g_synth_luxwave_mix_level;
 }
 
-void setReverbSendAdditive(float level) {
+void setReverbSendLuxStral(float level) {
   // Clamp to valid range
   if (level < 0.0f) level = 0.0f;
   if (level > 1.0f) level = 1.0f;
   
   // Volatile write (thread-safe for float on modern architectures)
-  g_reverb_send_additive = level;
+  g_reverb_send_luxstral = level;
 }
 
-float getReverbSendAdditive(void) {
-  return g_reverb_send_additive;
+float getReverbSendLuxStral(void) {
+  return g_reverb_send_luxstral;
 }
 
-void setReverbSendPolyphonic(float level) {
+void setReverbSendLuxSynth(float level) {
   // Clamp to valid range
   if (level < 0.0f) level = 0.0f;
   if (level > 1.0f) level = 1.0f;
   
   // Volatile write (thread-safe for float on modern architectures)
-  g_reverb_send_polyphonic = level;
+  g_reverb_send_luxsynth = level;
 }
 
-float getReverbSendPolyphonic(void) {
-  return g_reverb_send_polyphonic;
+float getReverbSendLuxSynth(void) {
+  return g_reverb_send_luxsynth;
 }
 
-void setReverbSendPhotowave(float level) {
+void setReverbSendLuxWave(float level) {
   // Clamp to valid range
   if (level < 0.0f) level = 0.0f;
   if (level > 1.0f) level = 1.0f;
   
   // Volatile write (thread-safe for float on modern architectures)
-  g_reverb_send_photowave = level;
+  g_reverb_send_luxwave = level;
 }
 
-float getReverbSendPhotowave(void) {
-  return g_reverb_send_photowave;
+float getReverbSendLuxWave(void) {
+  return g_reverb_send_luxwave;
 }
 
 } // extern "C"

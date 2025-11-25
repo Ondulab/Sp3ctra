@@ -2,7 +2,7 @@
 
 #include "config_loader.h"
 #include "config_parser_table.h"
-#include "config_synth_additive.h"
+#include "config_synth_luxstral.h"
 #include "../utils/logger.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,55 +80,55 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     // Noise gate parameters
     .noise_gate_threshold = 0.005f,
 
-    // Image processing parameters - ADDITIVE SYNTHESIS
+    // Image processing parameters - LUXSTRAL SYNTHESIS
     .additive_enable_non_linear_mapping = 1,      // Enable gamma correction by default
     .additive_gamma_value = 4.8f,                 // Default gamma value
     .additive_contrast_min = 0.21f,               // Minimum volume for blurred images
     .additive_contrast_stride = 1.0f,             // Pixel sampling stride
     .additive_contrast_adjustment_power = 0.5f,   // Contrast curve exponent
     
-    // Photowave synthesis parameters
+    // LuxWave synthesis parameters
     .photowave_continuous_mode = 0,     // 0 = Only on MIDI notes
     .photowave_scan_mode = 0,           // 0 = Left to Right
     .photowave_interp_mode = 0,         // 0 = Linear interpolation
     .photowave_amplitude = 0.5f,        // 50% amplitude
     
-    // Polyphonic synthesis parameters
+    // LuxSynth synthesis parameters
     .poly_num_voices = 8,               // 8 polyphonic voices
     .poly_max_oscillators = 128,        // 128 oscillators per voice
     
-    // Polyphonic ADSR Volume parameters
+    // LuxSynth ADSR Volume parameters
     .poly_volume_adsr_attack_s = 0.01f,
     .poly_volume_adsr_decay_s = 0.1f,
     .poly_volume_adsr_sustain_level = 0.8f,
     .poly_volume_adsr_release_s = 0.2f,
     
-    // Polyphonic ADSR Filter parameters
+    // LuxSynth ADSR Filter parameters
     .poly_filter_adsr_attack_s = 0.02f,
     .poly_filter_adsr_decay_s = 0.2f,
     .poly_filter_adsr_sustain_level = 0.1f,
     .poly_filter_adsr_release_s = 0.3f,
     
-    // Polyphonic LFO parameters
+    // LuxSynth LFO parameters
     .poly_lfo_rate_hz = 5.0f,
     .poly_lfo_depth_semitones = 0.25f,
     
-    // Polyphonic spectral filter parameters
+    // LuxSynth spectral filter parameters
     .poly_filter_cutoff_hz = 8000.0f,
     .poly_filter_env_depth_hz = -7800.0f,
     
-    // Polyphonic performance parameters
+    // LuxSynth performance parameters
     .poly_master_volume = 0.20f,
     .poly_amplitude_gamma = 2.0f,
     .poly_min_audible_amplitude = 0.001f,
     .poly_high_freq_harmonic_limit_hz = 8000.0f,
     
-    // Polyphonic advanced parameters
+    // LuxSynth advanced parameters
     .poly_amplitude_smoothing_alpha = 0.1f,
     .poly_norm_factor_bin0 = 881280.0f * 1.1f,
     .poly_norm_factor_harmonics = 220320.0f * 2.0f,
     
-    // Polyphonic harmonicity parameters (color-based timbre control)
+    // LuxSynth harmonicity parameters (color-based timbre control)
     .poly_detune_max_cents = 10.0f,             // Maximum detune for semi-harmonic sounds
     .poly_harmonicity_curve_exponent = 1.0f     // Linear response curve by default
 };
@@ -307,7 +307,7 @@ static int is_midi_parameter(const char* section, const char* key) {
         return 1;
     }
     
-    if (strcmp(section, "synth_additive") == 0) {
+    if (strcmp(section, "synth_luxstral") == 0) {
         // MIDI-only additive synth parameters (runtime control only)
         if (strcmp(key, "volume") == 0) return 1;
         if (strcmp(key, "reverb_send") == 0) return 1;
@@ -315,7 +315,7 @@ static int is_midi_parameter(const char* section, const char* key) {
         if (strcmp(key, "stereo_mode_enabled") == 0) return 1;
     }
     
-    if (strcmp(section, "synth_photowave") == 0) {
+    if (strcmp(section, "synth_luxwave") == 0) {
         // MIDI-only photowave parameters (runtime control only)
         // NOTE: Base parameters like filter_cutoff, volume_env_attack, etc.
         // are NOT blocked - they load defaults from config file
@@ -329,7 +329,7 @@ static int is_midi_parameter(const char* section, const char* key) {
         if (strcmp(key, "brightness") == 0) return 1;
     }
     
-    if (strcmp(section, "synth_polyphonic") == 0) {
+    if (strcmp(section, "synth_luxsynth") == 0) {
         // MIDI-only polyphonic parameters (runtime control only)
         if (strcmp(key, "volume") == 0) return 1;
         if (strcmp(key, "reverb_send") == 0) return 1;
@@ -629,7 +629,7 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "\n");
     
     fprintf(file, "[photowave]\n");
-    fprintf(file, "# Photowave synthesis - transforms image lines into audio waveforms\n");
+    fprintf(file, "# LuxWave synthesis - transforms image lines into audio waveforms\n");
     fprintf(file, "# Continuous mode: 0=only on MIDI notes, 1=always generating\n");
     fprintf(file, "continuous_mode = %d\n", DEFAULT_CONFIG.photowave_continuous_mode);
     fprintf(file, "\n");
@@ -644,7 +644,7 @@ int create_default_config_file(const char* config_file_path) {
     fprintf(file, "\n");
     
     fprintf(file, "[polyphonic]\n");
-    fprintf(file, "# Polyphonic synthesis configuration\n");
+    fprintf(file, "# LuxSynth synthesis configuration\n");
     fprintf(file, "# Number of simultaneous polyphonic voices (1-32)\n");
     fprintf(file, "# Higher values = more notes but higher CPU load\n");
     fprintf(file, "# Total oscillators = num_voices × max_oscillators\n");
@@ -741,7 +741,7 @@ int create_default_config_file(const char* config_file_path) {
  * INI File Parser
  **************************************************************************************/
 
-int load_additive_config(const char* config_file_path) {
+int load_luxstral_config(const char* config_file_path) {
     FILE* file = fopen(config_file_path, "r");
     
     // If file doesn't exist, create it with default values

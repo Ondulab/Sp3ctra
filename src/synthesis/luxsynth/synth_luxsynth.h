@@ -1,12 +1,12 @@
 /*
- * synth_polyphonic.h
+ * synth_luxsynth.h
  *
  *  Created on: 16 May 2025
  *      Author: Cline
  */
 
-#ifndef SYNTH_POLYPHONIC_H
-#define SYNTH_POLYPHONIC_H
+#ifndef SYNTH_LUXSYNTH_H
+#define SYNTH_LUXSYNTH_H
 
 #include "config.h" // For AUDIO_BUFFER_SIZE, SAMPLING_FREQUENCY, CIS_MAX_PIXELS_NB
 #include "kissfft/kiss_fftr.h" // For real FFT
@@ -104,41 +104,41 @@ extern LfoState global_vibrato_lfo; // Global LFO for vibrato
 extern "C" {
 #endif
 
-void synth_polyphonicMode_init(void);
-void synth_polyphonicMode_process(float *audio_buffer_left,
+void synth_luxsynthMode_init(void);
+void synth_luxsynthMode_process(float *audio_buffer_left,
                                   float *audio_buffer_right,
                                   unsigned int buffer_size);
-void *synth_polyphonicMode_thread_func(
+void *synth_luxsynthMode_thread_func(
     void *arg); // Renamed to avoid conflict if
-                // synth_polyphonicMode_thread is used elsewhere
+                // synth_luxsynthMode_thread is used elsewhere
 
-// MIDI Note handling functions for synth_polyphonic
-void synth_polyphonic_note_on(int noteNumber, int velocity);
-void synth_polyphonic_note_off(int noteNumber);
+// MIDI Note handling functions for synth_luxsynth
+void synth_luxsynth_note_on(int noteNumber, int velocity);
+void synth_luxsynth_note_off(int noteNumber);
 
-// Functions to set ADSR parameters for synth_polyphonic volume envelope
-void synth_polyphonic_set_volume_adsr_attack(float attack_s);
-void synth_polyphonic_set_volume_adsr_decay(float decay_s);
-void synth_polyphonic_set_volume_adsr_sustain(
+// Functions to set ADSR parameters for synth_luxsynth volume envelope
+void synth_luxsynth_set_volume_adsr_attack(float attack_s);
+void synth_luxsynth_set_volume_adsr_decay(float decay_s);
+void synth_luxsynth_set_volume_adsr_sustain(
     float sustain_level); // 0.0 to 1.0
-void synth_polyphonic_set_volume_adsr_release(float release_s);
+void synth_luxsynth_set_volume_adsr_release(float release_s);
 
 // Functions to set LFO parameters
-void synth_polyphonic_set_vibrato_rate(float rate_hz);
-void synth_polyphonic_set_vibrato_depth(float depth_semitones);
+void synth_luxsynth_set_vibrato_rate(float rate_hz);
+void synth_luxsynth_set_vibrato_depth(float depth_semitones);
 
 // Functions to set filter parameters
-void synth_polyphonic_set_filter_cutoff(float cutoff_hz);
-void synth_polyphonic_set_filter_env_depth(float depth_hz);
+void synth_luxsynth_set_filter_cutoff(float cutoff_hz);
+void synth_luxsynth_set_filter_env_depth(float depth_hz);
 
 // Functions to set filter ADSR parameters
-void synth_polyphonic_set_filter_adsr_attack(float attack_s);
-void synth_polyphonic_set_filter_adsr_decay(float decay_s);
-void synth_polyphonic_set_filter_adsr_sustain(float sustain_level);
-void synth_polyphonic_set_filter_adsr_release(float release_s);
+void synth_luxsynth_set_filter_adsr_attack(float attack_s);
+void synth_luxsynth_set_filter_adsr_decay(float decay_s);
+void synth_luxsynth_set_filter_adsr_sustain(float sustain_level);
+void synth_luxsynth_set_filter_adsr_release(float release_s);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* SYNTH_POLYPHONIC_H */
+#endif /* SYNTH_LUXSYNTH_H */

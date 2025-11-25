@@ -1,4 +1,4 @@
-# Configuration Runtime de la Synthèse Additive
+# Configuration Runtime de la Synthèse LuxStral
 
 ## Vue d'ensemble
 
@@ -41,12 +41,12 @@ Contrôle les paramètres de base de la synthèse additive.
 | `volume_increment` | int | 1-100 | 1 | Incrément de volume |
 | `volume_decrement` | int | 1-100 | 1 | Décrément de volume |
 
-**Note importante :** Le paramètre `pixels_per_note` reste une constante de compilation (définie dans `config_synth_additive.h`) car il est utilisé pour dimensionner des tableaux dans des structures. Il ne peut pas être modifié à l'exécution.
+**Note importante :** Le paramètre `pixels_per_note` reste une constante de compilation (définie dans `config_synth_luxstral.h`) car il est utilisé pour dimensionner des tableaux dans des structures. Il ne peut pas être modifié à l'exécution.
 
 ## Exemple de fichier de configuration
 
 ```ini
-# Sp3ctra Additive Synthesis Configuration
+# Sp3ctra LuxStral Synthesis Configuration
 # This file was automatically generated with default values
 # Modify these values as needed - the program will validate them on startup
 
@@ -109,7 +109,7 @@ Supprimez le fichier `additive_synth.ini` et redémarrez l'application.
 ### Fichiers impliqués
 - `src/config/config_loader.h` : Interface du système de configuration
 - `src/config/config_loader.c` : Implémentation du parseur INI et validation
-- `src/config/config_synth_additive.h` : Définitions des structures de données
+- `src/config/config_synth_luxstral.h` : Définitions des structures de données
 - `additive_synth.ini` : Fichier de configuration runtime
 
 ### Intégration

@@ -1,8 +1,8 @@
 /*
- * synth_polyphonic.c
+ * synth_luxsynth.c
  */
 
-#include "synth_polyphonic.h"
+#include "synth_luxsynth.h"
 #include "config.h"
 #include "context.h"
 #include "doublebuffer.h"
@@ -67,7 +67,7 @@ float global_inharmonic_ratios[MAX_MAPPED_OSCILLATORS];   // Per-harmonic freque
 SpectralFilterParams global_spectral_filter_params;
 LfoState global_vibrato_lfo; // Definition for the global LFO
 
-// Polyphonic synthesis related globals
+// LuxSynth synthesis related globals
 FftAudioDataBuffer polyphonic_audio_buffers[2];
 volatile int polyphonic_current_buffer_index = 0;
 pthread_mutex_t polyphonic_buffer_index_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -75,7 +75,7 @@ pthread_mutex_t polyphonic_buffer_index_mutex = PTHREAD_MUTEX_INITIALIZER;
 extern volatile int keepRunning;
 
 // --- Initialization ---
-void synth_polyphonicMode_init(void) {
+void synth_luxsynthMode_init(void) {
   int i, j;
   
   // Load runtime configuration values
@@ -165,7 +165,7 @@ void synth_polyphonicMode_init(void) {
                        g_sp3ctra_config.poly_filter_adsr_release_s, (float)g_sp3ctra_config.sampling_frequency);
   }
   log_info("SYNTH", "%d polyphonic voices initialized", g_num_poly_voices);
-  log_info("SYNTH", "Polyphonic mode initialized (FFT computed in UDP thread)");
+  log_info("SYNTH", "LuxSynth mode initialized (FFT computed in UDP thread)");
 }
 
 // --- Audio Processing ---
@@ -173,13 +173,13 @@ void synth_polyphonicMode_init(void) {
 // Counter for rate-limiting polyphonic debug prints
 // Print roughly once per second (assuming SAMPLING_FREQUENCY=44100,
 // AUDIO_BUFFER_SIZE=512 -> ~86 calls/sec)
-#define POLYPHONIC_PRINT_INTERVAL 86
+#define LUXSYNTH_PRINT_INTERVAL 86
 
-void synth_polyphonicMode_process(float *audio_buffer_left,
+void synth_luxsynthMode_process(float *audio_buffer_left,
                                   float *audio_buffer_right,
                                   unsigned int buffer_size) {
   if (audio_buffer_left == NULL || audio_buffer_right == NULL) {
-    fprintf(stderr, "synth_polyphonicMode_process: audio_buffer is NULL\n");
+    fprintf(stderr, "synth_luxsynthMode_process: audio_buffer is NULL\n");
     return;
   }
   memset(audio_buffer_left, 0, buffer_size * sizeof(float));
@@ -411,23 +411,23 @@ static void read_preprocessed_fft_magnitudes(DoubleBuffer *image_db) {
 }
 
 // --- Main Thread Function ---
-void *synth_polyphonicMode_thread_func(void *arg) {
+void *synth_luxsynthMode_thread_func(void *arg) {
   DoubleBuffer *image_db = NULL;
   if (arg != NULL) {
     Context *ctx = (Context *)arg;
     image_db = ctx->doubleBuffer;
   } else {
-    log_warning("SYNTH", "Polyphonic thread: No context provided, no DoubleBuffer available");
+    log_warning("SYNTH", "LuxSynth thread: No context provided, no DoubleBuffer available");
   }
   
   // Set RT priority for polyphonic synthesis thread (priority 75, between callback at 70 and additive workers at 80)
   // Use the unified synth_set_rt_priority() function with macOS support
   extern int synth_set_rt_priority(pthread_t thread, int priority);
   if (synth_set_rt_priority(pthread_self(), 75) != 0) {
-    log_warning("SYNTH", "Polyphonic thread: Failed to set RT priority (continuing without RT)");
+    log_warning("SYNTH", "LuxSynth thread: Failed to set RT priority (continuing without RT)");
   }
   
-  log_info("SYNTH", "Polyphonic synthesis thread started");
+  log_info("SYNTH", "LuxSynth synthesis thread started");
   srand(time(NULL));
 
   while (keepRunning) {
@@ -436,7 +436,7 @@ void *synth_polyphonicMode_thread_func(void *arg) {
     if (image_db != NULL) {
       read_preprocessed_fft_magnitudes(image_db);
     } else {
-      log_warning("SYNTH", "Polyphonic thread: No DoubleBuffer, using silence");
+      log_warning("SYNTH", "LuxSynth thread: No DoubleBuffer, using silence");
       memset(global_smoothed_magnitudes, 0, sizeof(global_smoothed_magnitudes));
     }
 
@@ -467,13 +467,13 @@ void *synth_polyphonicMode_thread_func(void *arg) {
     
     // If timeout, log warning but continue (graceful degradation)
     if (wait_iterations >= MAX_WAIT_ITERATIONS) {
-      log_warning("SYNTH", "Polyphonic: Buffer wait timeout (callback too slow)");
+      log_warning("SYNTH", "LuxSynth: Buffer wait timeout (callback too slow)");
     }
     
     pthread_mutex_lock(&polyphonic_audio_buffers[local_producer_idx].mutex);
     
     // TRUE STEREO: Pass separate L/R buffers for spectral panning
-    synth_polyphonicMode_process(
+    synth_luxsynthMode_process(
         polyphonic_audio_buffers[local_producer_idx].data_left,
         polyphonic_audio_buffers[local_producer_idx].data_right,
         g_sp3ctra_config.audio_buffer_size);
@@ -494,7 +494,7 @@ void *synth_polyphonicMode_thread_func(void *arg) {
   }
 
 cleanup_thread:
-  log_info("SYNTH", "Polyphonic synthesis thread stopping");
+  log_info("SYNTH", "LuxSynth synthesis thread stopping");
   return NULL;
 }
 
@@ -708,9 +708,9 @@ static float midi_note_to_frequency(int noteNumber) {
   return 440.0f * powf(2.0f, (float)(noteNumber - 69) / 12.0f);
 }
 
-void synth_polyphonic_note_on(int noteNumber, int velocity) {
+void synth_luxsynth_note_on(int noteNumber, int velocity) {
   if (velocity <= 0) {
-    synth_polyphonic_note_off(noteNumber);
+    synth_luxsynth_note_off(noteNumber);
     return;
   }
 
@@ -741,7 +741,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
     }
     if (candidate_idx != -1) {
       voice_idx = candidate_idx;
-      printf("POLYPHONIC: Stealing quietest release voice %d for note %d (Env: %.2f)\n",
+      printf("LUXSYNTH: Stealing quietest release voice %d for note %d (Env: %.2f)\n",
              voice_idx, noteNumber, lowest_env_output);
     }
   }
@@ -765,7 +765,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
     }
     if (candidate_idx != -1) {
       voice_idx = candidate_idx;
-      printf("POLYPHONIC: Last resort - stealing oldest active voice %d for note %d (Order: %llu)\n",
+      printf("LUXSYNTH: Last resort - stealing oldest active voice %d for note %d (Order: %llu)\n",
              voice_idx, noteNumber, oldest_order);
     }
   }
@@ -778,7 +778,7 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
   // more complex fallback.
   if (voice_idx == -1) {
     voice_idx = 0; // Default to stealing voice 0 if no other candidate found
-    printf("POLYPHONIC: Critical fallback. Stealing voice 0 for note %d\n",
+    printf("LUXSYNTH: Critical fallback. Stealing voice 0 for note %d\n",
            noteNumber);
   }
 
@@ -809,13 +809,13 @@ void synth_polyphonic_note_on(int noteNumber, int velocity) {
   adsr_trigger_attack(
       &voice->filter_adsr); // and set state to ATTACK, current_output to 0
 
-  printf("POLYPHONIC: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f "
+  printf("LUXSYNTH: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f "
          "Hz, Order: %llu -> ADSR Attack\n",
          voice_idx, noteNumber, velocity, voice->last_velocity,
          voice->fundamental_frequency, voice->last_triggered_order);
 }
 
-void synth_polyphonic_note_off(int noteNumber) {
+void synth_luxsynth_note_off(int noteNumber) {
   // Priority 1: Find the OLDEST voice with this note number that is ACTIVE (not in RELEASE or IDLE)
   int oldest_voice_idx = -1;
   unsigned long long oldest_order = g_current_trigger_order + 1;
@@ -867,15 +867,15 @@ void synth_polyphonic_note_off(int noteNumber) {
       adsr_trigger_release(&poly_voices[oldest_voice_idx].volume_adsr);
       adsr_trigger_release(&poly_voices[oldest_voice_idx].filter_adsr);
       poly_voices[oldest_voice_idx].voice_state = ADSR_STATE_RELEASE;
-      printf("POLYPHONIC: Voice %d Note Off: %d -> ADSR Release\n", 
+      printf("LUXSYNTH: Voice %d Note Off: %d -> ADSR Release\n", 
              oldest_voice_idx, noteNumber);
     }
     // Clear midi_note_number now that Note Off has been processed
     poly_voices[oldest_voice_idx].midi_note_number = -1;
   } else {
     // DEBUG: Log when no voice is found for Note Off (should be very rare now)
-    printf("POLYPHONIC: WARNING - Note Off %d: No voice found (neither active nor idle)!\n", noteNumber);
-    printf("POLYPHONIC: Voice states: ");
+    printf("LUXSYNTH: WARNING - Note Off %d: No voice found (neither active nor idle)!\n", noteNumber);
+    printf("LUXSYNTH: Voice states: ");
     for (int i = 0; i < g_num_poly_voices; ++i) {
       printf("[%d:note=%d,state=%d] ", i, poly_voices[i].midi_note_number, poly_voices[i].voice_state);
     }
@@ -911,7 +911,7 @@ static float lfo_process(LfoState *lfo) {
 }
 
 // --- ADSR Parameter Setters ---
-void synth_polyphonic_set_volume_adsr_attack(float attack_s) {
+void synth_luxsynth_set_volume_adsr_attack(float attack_s) {
   if (attack_s < 0.0f)
     attack_s = 0.0f;
   g_sp3ctra_config.poly_volume_adsr_attack_s = attack_s;
@@ -924,7 +924,7 @@ void synth_polyphonic_set_volume_adsr_attack(float attack_s) {
   }
 }
 
-void synth_polyphonic_set_volume_adsr_decay(float decay_s) {
+void synth_luxsynth_set_volume_adsr_decay(float decay_s) {
   if (decay_s < 0.0f)
     decay_s = 0.0f;
   g_sp3ctra_config.poly_volume_adsr_decay_s = decay_s;
@@ -937,7 +937,7 @@ void synth_polyphonic_set_volume_adsr_decay(float decay_s) {
   }
 }
 
-void synth_polyphonic_set_volume_adsr_sustain(float sustain_level) {
+void synth_luxsynth_set_volume_adsr_sustain(float sustain_level) {
   if (sustain_level < 0.0f)
     sustain_level = 0.0f;
   if (sustain_level > 1.0f)
@@ -953,7 +953,7 @@ void synth_polyphonic_set_volume_adsr_sustain(float sustain_level) {
   }
 }
 
-void synth_polyphonic_set_volume_adsr_release(float release_s) {
+void synth_luxsynth_set_volume_adsr_release(float release_s) {
   if (release_s < 0.0f)
     release_s = 0.0f;
   g_sp3ctra_config.poly_volume_adsr_release_s = release_s;
@@ -968,7 +968,7 @@ void synth_polyphonic_set_volume_adsr_release(float release_s) {
 }
 
 // --- LFO Parameter Setters ---
-void synth_polyphonic_set_vibrato_rate(float rate_hz) {
+void synth_luxsynth_set_vibrato_rate(float rate_hz) {
   if (rate_hz < 0.0f)
     rate_hz = 0.0f;
   // Potentially add a max rate limit, e.g., 20Hz or 30Hz
@@ -978,7 +978,7 @@ void synth_polyphonic_set_vibrato_rate(float rate_hz) {
   // printf("SYNTH_FFT: Global Vibrato LFO Rate set to: %.2f Hz\n", rate_hz);
 }
 
-void synth_polyphonic_set_vibrato_depth(float depth_semitones) {
+void synth_luxsynth_set_vibrato_depth(float depth_semitones) {
   // Depth can be positive or negative, typically small values like -2 to 2
   // semitones
   global_vibrato_lfo.depth_semitones = depth_semitones;
@@ -987,7 +987,7 @@ void synth_polyphonic_set_vibrato_depth(float depth_semitones) {
 }
 
 // --- Filter Parameter Setters ---
-void synth_polyphonic_set_filter_cutoff(float cutoff_hz) {
+void synth_luxsynth_set_filter_cutoff(float cutoff_hz) {
   if (cutoff_hz < 20.0f)
     cutoff_hz = 20.0f;
   if (cutoff_hz > (float)g_sp3ctra_config.sampling_frequency / 2.0f)
@@ -997,7 +997,7 @@ void synth_polyphonic_set_filter_cutoff(float cutoff_hz) {
   // printf("SYNTH_FFT: Global Filter Cutoff set to: %.0f Hz\n", cutoff_hz);
 }
 
-void synth_polyphonic_set_filter_env_depth(float depth_hz) {
+void synth_luxsynth_set_filter_env_depth(float depth_hz) {
   // Depth can be positive or negative
   // Typical range: -10000 to +10000 Hz
   global_spectral_filter_params.filter_env_depth = depth_hz;
@@ -1005,7 +1005,7 @@ void synth_polyphonic_set_filter_env_depth(float depth_hz) {
 }
 
 // --- Filter ADSR Parameter Setters ---
-void synth_polyphonic_set_filter_adsr_attack(float attack_s) {
+void synth_luxsynth_set_filter_adsr_attack(float attack_s) {
   if (attack_s < 0.0f)
     attack_s = 0.0f;
   g_sp3ctra_config.poly_filter_adsr_attack_s = attack_s;
@@ -1017,7 +1017,7 @@ void synth_polyphonic_set_filter_adsr_attack(float attack_s) {
   }
 }
 
-void synth_polyphonic_set_filter_adsr_decay(float decay_s) {
+void synth_luxsynth_set_filter_adsr_decay(float decay_s) {
   if (decay_s < 0.0f)
     decay_s = 0.0f;
   g_sp3ctra_config.poly_filter_adsr_decay_s = decay_s;
@@ -1029,7 +1029,7 @@ void synth_polyphonic_set_filter_adsr_decay(float decay_s) {
   }
 }
 
-void synth_polyphonic_set_filter_adsr_sustain(float sustain_level) {
+void synth_luxsynth_set_filter_adsr_sustain(float sustain_level) {
   if (sustain_level < 0.0f)
     sustain_level = 0.0f;
   if (sustain_level > 1.0f)
@@ -1043,7 +1043,7 @@ void synth_polyphonic_set_filter_adsr_sustain(float sustain_level) {
   }
 }
 
-void synth_polyphonic_set_filter_adsr_release(float release_s) {
+void synth_luxsynth_set_filter_adsr_release(float release_s) {
   if (release_s < 0.0f)
     release_s = 0.0f;
   g_sp3ctra_config.poly_filter_adsr_release_s = release_s;

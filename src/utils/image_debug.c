@@ -4,7 +4,7 @@
 #include "logger.h"
 #include "config_debug.h"
 #include "config_audio.h"
-#include "../synthesis/additive/wave_generation.h"
+#include "../synthesis/luxstral/wave_generation.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

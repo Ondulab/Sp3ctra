@@ -1,4 +1,4 @@
-# Additive Volume Master Control Fix
+# LuxStral Volume Master Control Fix
 
 **Date:** 2025-11-25  
 **Status:** ✅ Fixed  
@@ -20,13 +20,13 @@ In the audio callback (`handleCallback` in `audio_rtaudio.cpp`), the signal rout
 ### Before (Incorrect)
 ```cpp
 // 1. Dry signal: volume applied
-dry_sample_left += source_additive_left[i] * cached_level_additive;
+dry_sample_left += source_luxstral_left[i] * cached_level_luxstral;
 
 // 2. Reverb signal: volume NOT applied ❌
-reverb_input_left += source_additive_left[i] * cached_reverb_send_additive;
+reverb_input_left += source_luxstral_left[i] * cached_reverb_send_luxstral;
 ```
 
-The reverb send was using the **raw signal** (`source_additive_left[i]`) without applying the volume control (`cached_level_additive`).
+The reverb send was using the **raw signal** (`source_luxstral_left[i]`) without applying the volume control (`cached_level_luxstral`).
 
 **Result:** When `volume=0%`:
 - Dry path = 0 (silence) ✅
@@ -39,14 +39,14 @@ Apply the volume control **BEFORE** splitting the signal to dry and reverb paths
 ### After (Correct)
 ```cpp
 // 1. Apply volume to create "post-volume" signal
-float additive_with_volume_left = source_additive_left[i] * cached_level_additive;
-float additive_with_volume_right = source_additive_right[i] * cached_level_additive;
+float additive_with_volume_left = source_luxstral_left[i] * cached_level_luxstral;
+float additive_with_volume_right = source_luxstral_right[i] * cached_level_luxstral;
 
 // 2. Route post-volume signal to dry
 dry_sample_left += additive_with_volume_left;
 
 // 3. Route post-volume signal to reverb
-reverb_input_left += additive_with_volume_left * cached_reverb_send_additive;
+reverb_input_left += additive_with_volume_left * cached_reverb_send_luxstral;
 ```
 
 **Result:** When `volume=0%`:
@@ -76,15 +76,15 @@ Raw Signal (100%)
 ### File: `src/audio/rtaudio/audio_rtaudio.cpp`
 
 **Modified sections:**
-1. **Additive synthesis routing** (lines ~460-480)
+1. **LuxStral synthesis routing** (lines ~460-480)
    - Created `additive_with_volume_left` and `additive_with_volume_right` variables
    - Applied volume before routing to dry and reverb
 
-2. **Polyphonic synthesis routing** (lines ~490-500)
+2. **LuxSynth synthesis routing** (lines ~490-500)
    - Created `polyphonic_with_volume` variable
    - Applied volume before routing to dry and reverb
 
-3. **Photowave synthesis routing** (lines ~510-520)
+3. **LuxWave synthesis routing** (lines ~510-520)
    - Created `photowave_with_volume` variable
    - Applied volume before routing to dry and reverb
 
@@ -111,18 +111,18 @@ Raw Signal (100%)
 
 ## Impact
 
-- **Additive synthesis:** Volume now correctly controls both dry and reverb paths
-- **Polyphonic synthesis:** Same fix applied for consistency
-- **Photowave synthesis:** Same fix applied for consistency
+- **LuxStral synthesis:** Volume now correctly controls both dry and reverb paths
+- **LuxSynth synthesis:** Same fix applied for consistency
+- **LuxWave synthesis:** Same fix applied for consistency
 - **Performance:** No performance impact (same number of operations)
 - **RT-safety:** Maintained (no allocations, no locks in audio callback)
 
 ## Related Parameters
 
-- `volume` (CC37): Additive synthesis mix level (0.0-1.0)
+- `volume` (CC37): LuxStral synthesis mix level (0.0-1.0)
   - Now acts as **master volume** before signal split
   
-- `reverb_send` (CC33): Additive reverb send amount (0.0-1.0)
+- `reverb_send` (CC33): LuxStral reverb send amount (0.0-1.0)
   - Now controls how much of the **post-volume** signal goes to reverb
 
 ## Semantic Clarification

@@ -1,4 +1,4 @@
-# Photowave RT Optimization - Buffer Miss Elimination
+# LuxWave RT Optimization - Buffer Miss Elimination
 
 **Date:** 2025-11-24  
 **Status:** ✅ Implemented  
@@ -13,9 +13,9 @@
 - **RT performance:** Sub-optimal due to blocking synchronization
 
 ### Root Cause
-Photowave was using a different synchronization pattern than polyphonic:
+LuxWave was using a different synchronization pattern than polyphonic:
 ```c
-// PHOTOWAVE (OLD - PROBLEMATIC)
+// LUXWAVE (OLD - PROBLEMATIC)
 pthread_mutex_lock(&buffer.mutex);
 pthread_cond_timedwait(&buffer.cond, &buffer.mutex, &timeout);
 pthread_mutex_unlock(&buffer.mutex);
@@ -23,7 +23,7 @@ pthread_mutex_unlock(&buffer.mutex);
 
 While polyphonic used an RT-optimal pattern:
 ```c
-// POLYPHONIC (OPTIMAL)
+// LUXSYNTH (OPTIMAL)
 while (__atomic_load_n(&buffer.ready, __ATOMIC_ACQUIRE) == 1) {
     nanosleep(&sleep_time, NULL);  // Exponential backoff
     wait_iterations++;
@@ -59,7 +59,7 @@ Added RT priority (75) to photowave thread, matching polyphonic:
 ```c
 extern int synth_set_rt_priority(pthread_t thread, int priority);
 if (synth_set_rt_priority(pthread_self(), 75) != 0) {
-    log_warning("PHOTOWAVE", "Thread: Failed to set RT priority (continuing without RT)");
+    log_warning("LUXWAVE", "Thread: Failed to set RT priority (continuing without RT)");
 }
 ```
 
@@ -103,9 +103,9 @@ Wake-up latency: 5-100µs (controlled exponential backoff)
 ### RT Priority Hierarchy
 ```
 Audio Callback:     70 (highest - must never block)
-Polyphonic Thread:  75 (RT synthesis)
-Photowave Thread:   75 (RT synthesis) ← NEW
-Additive Workers:   80 (RT synthesis)
+LuxSynth Thread:  75 (RT synthesis)
+LuxWave Thread:   75 (RT synthesis) ← NEW
+LuxStral Workers:   80 (RT synthesis)
 ```
 
 ### Why This Works
@@ -117,7 +117,7 @@ Additive Workers:   80 (RT synthesis)
 ## Code Changes
 
 ### Modified Files
-- `src/synthesis/photowave/synth_photowave.c`
+- `src/synthesis/luxwave/synth_luxwave.c`
   - Replaced `pthread_cond_timedwait()` with atomic + nanosleep pattern
   - Added RT priority assignment
   - Updated thread startup log message
@@ -146,8 +146,8 @@ Additive Workers:   80 (RT synthesis)
 ```
 
 ## Related Documents
-- `docs/PHOTOWAVE_RACE_CONDITION_FIX.md` - Previous race condition fix
-- `docs/POLYPHONIC_BUFFER_TIMEOUT_FIX.md` - Polyphonic RT optimization reference
+- `docs/LUXWAVE_RACE_CONDITION_FIX.md` - Previous race condition fix
+- `docs/LUXSYNTH_BUFFER_TIMEOUT_FIX.md` - LuxSynth RT optimization reference
 - `docs/RT_PRIORITIES_SYNTHESIS_THREADS.md` - RT priority documentation
 - `docs/MACOS_RT_PRIORITIES.md` - macOS RT constraints
 

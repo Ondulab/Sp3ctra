@@ -91,7 +91,7 @@ while (!synth_pool_shutdown) {
 
 ### 3. Modifier `synth_IfftMode()` pour utiliser les barrières
 
-Dans `synth_additive.c`, remplacer la section de lancement des workers :
+Dans `synth_luxstral.c`, remplacer la section de lancement des workers :
 
 ```c
 // ANCIEN CODE

@@ -1,5 +1,5 @@
 /*
- * synth_additive_stereo.c
+ * synth_luxstral_stereo.c
  *
  * Stereo processing and color temperature analysis for additive synthesis
  * Contains functions for panoramization, contrast calculation, and color analysis
@@ -8,9 +8,9 @@
  */
 
 /* Includes ------------------------------------------------------------------*/
-#include "synth_additive_stereo.h"
-#include "synth_additive_math.h"  // For VOLUME_AMP_RESOLUTION
-#include "../../config/config_synth_additive.h"
+#include "synth_luxstral_stereo.h"
+#include "synth_luxstral_math.h"  // For VOLUME_AMP_RESOLUTION
+#include "../../config/config_synth_luxstral.h"
 #include "../../config/config_audio.h"
 #include <math.h>
 #include <stdio.h>

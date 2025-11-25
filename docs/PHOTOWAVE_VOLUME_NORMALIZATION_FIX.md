@@ -1,4 +1,4 @@
-# Photowave Volume Normalization Fix
+# LuxWave Volume Normalization Fix
 
 **Date:** 2025-11-18  
 **Issue:** Volume fluctuations when releasing notes in polyphonic chords  
@@ -6,7 +6,7 @@
 
 ## Problem Description
 
-When playing chords in Photowave mode and releasing all fingers except one note, the remaining note's volume would briefly fluctuate and then increase abnormally. This created an unpleasant audible artifact during chord releases.
+When playing chords in LuxWave mode and releasing all fingers except one note, the remaining note's volume would briefly fluctuate and then increase abnormally. This created an unpleasant audible artifact during chord releases.
 
 ## Root Cause Analysis
 
@@ -15,7 +15,7 @@ The issue was caused by **dynamic voice normalization** in the audio processing 
 ```c
 // PROBLEMATIC CODE (removed)
 int active_voices = 0;
-for (v = 0; v < NUM_PHOTOWAVE_VOICES; v++) {
+for (v = 0; v < NUM_LUXWAVE_VOICES; v++) {
     // ... process voice ...
     active_voices++;
 }
@@ -39,11 +39,11 @@ if (active_voices > 1) {
 
 ## Solution
 
-Aligned Photowave's volume handling with the **Polyphonic synthesis mode**, which uses a simpler and more stable approach:
+Aligned LuxWave's volume handling with the **LuxSynth synthesis mode**, which uses a simpler and more stable approach:
 
 ```c
 // NEW CODE (fixed)
-for (v = 0; v < NUM_PHOTOWAVE_VOICES; v++) {
+for (v = 0; v < NUM_LUXWAVE_VOICES; v++) {
     // ... process voice ...
     master_sum += final_sample;
 }
@@ -78,10 +78,10 @@ master_sum = clamp_float(master_sum, -1.0f, 1.0f);
 ## Technical Details
 
 ### Modified File
-- `src/synthesis/photowave/synth_photowave.c`
+- `src/synthesis/luxwave/synth_luxwave.c`
 
 ### Modified Function
-- `synth_photowave_process()` (lines ~750-830)
+- `synth_luxwave_process()` (lines ~750-830)
 
 ### Removed Code
 - `int active_voices` counter
@@ -97,8 +97,8 @@ master_sum = clamp_float(master_sum, -1.0f, 1.0f);
 
 ## Related Documentation
 
-- [Photowave Synthesis Specification](PHOTOWAVE_SYNTHESIS_SPECIFICATION.md)
-- [Polyphonic Buffer Timeout Fix](POLYPHONIC_BUFFER_TIMEOUT_FIX.md)
+- [LuxWave Synthesis Specification](LUXWAVE_SYNTHESIS_SPECIFICATION.md)
+- [LuxSynth Buffer Timeout Fix](LUXSYNTH_BUFFER_TIMEOUT_FIX.md)
 - [Audio Buffer Sync Fix](AUDIO_BUFFER_SYNC_FIX.md)
 
 ## Notes

@@ -1,4 +1,4 @@
-# PHOTOWAVE SYNTHESIS - TECHNICAL SPECIFICATION
+# LUXWAVE SYNTHESIS - TECHNICAL SPECIFICATION
 
 **Version**: 1.0  
 **Date**: 08/11/2025  
@@ -11,7 +11,7 @@
 
 ### 1.1 Concept
 
-The **Photowave** mode transforms an image line directly into an audio waveform through spatial→temporal transduction. Each pixel luminance value becomes an audio sample, creating a "dynamic optical wavetable".
+The **LuxWave** mode transforms an image line directly into an audio waveform through spatial→temporal transduction. Each pixel luminance value becomes an audio sample, creating a "dynamic optical wavetable".
 
 **Fundamental Principle**:
 ```
@@ -23,8 +23,8 @@ Reading Frequency        →  Note Pitch
 
 ### 1.2 System Integration
 
-- **Position**: New synthesis mode (third engine after Additive and Polyphonic)
-- **Enum**: Add `PHOTOWAVE_MODE` to `synthModeTypeDef`
+- **Position**: New synthesis mode (third engine after LuxStral and LuxSynth)
+- **Enum**: Add `LUXWAVE_MODE` to `synthModeTypeDef`
 - **Architecture**: Autonomous module reusing existing infrastructure
 - **Compatibility**: Raspberry Pi 5 + macOS, real-time constraints respected
 
@@ -114,38 +114,38 @@ float midi_to_freq(int midi_note) {
 ### 3.1 Modular Structure
 
 ```
-src/synthesis/photowave/
-├── synth_photowave.h                    # Public API
-├── synth_photowave.c                    # Main implementation
-├── synth_photowave_state.h              # State structures
-├── synth_photowave_state.c              # State management (init/cleanup)
-├── synth_photowave_interpolation.h      # Linear/cubic interpolation
-├── synth_photowave_interpolation.c
-├── synth_photowave_blur.h               # Spatial blur filter
-├── synth_photowave_blur.c
-└── synth_photowave_runtime.h            # RT-safe parameters (atomics)
+src/synthesis/luxwave/
+├── synth_luxwave.h                    # Public API
+├── synth_luxwave.c                    # Main implementation
+├── synth_luxwave_state.h              # State structures
+├── synth_luxwave_state.c              # State management (init/cleanup)
+├── synth_luxwave_interpolation.h      # Linear/cubic interpolation
+├── synth_luxwave_interpolation.c
+├── synth_luxwave_blur.h               # Spatial blur filter
+├── synth_luxwave_blur.c
+└── synth_luxwave_runtime.h            # RT-safe parameters (atomics)
 ```
 
 ### 3.2 Key Data Structures
 
-**PhotowaveScanMode** (enum)
+**LuxWaveScanMode** (enum)
 ```c
 typedef enum {
-    PHOTOWAVE_SCAN_LR = 0,      // Left to Right
-    PHOTOWAVE_SCAN_RL,          // Right to Left
-    PHOTOWAVE_SCAN_DUAL         // Ping-pong (both directions)
-} PhotowaveScanMode;
+    LUXWAVE_SCAN_LR = 0,      // Left to Right
+    LUXWAVE_SCAN_RL,          // Right to Left
+    LUXWAVE_SCAN_DUAL         // Ping-pong (both directions)
+} LuxWaveScanMode;
 ```
 
-**PhotowaveInterpMode** (enum)
+**LuxWaveInterpMode** (enum)
 ```c
 typedef enum {
-    PHOTOWAVE_INTERP_LINEAR = 0,
-    PHOTOWAVE_INTERP_CUBIC
-} PhotowaveInterpMode;
+    LUXWAVE_INTERP_LINEAR = 0,
+    LUXWAVE_INTERP_CUBIC
+} LuxWaveInterpMode;
 ```
 
-**PhotowaveState** (main RT-safe structure)
+**LuxWaveState** (main RT-safe structure)
 ```c
 typedef struct {
     // Reading phase [0.0, 1.0 or 2.0]
@@ -153,8 +153,8 @@ typedef struct {
     float phase_increment;       // Computed from MIDI note
     
     // Configuration
-    PhotowaveScanMode scan_mode;
-    PhotowaveInterpMode interp_mode;
+    LuxWaveScanMode scan_mode;
+    LuxWaveInterpMode interp_mode;
     int midi_note;               // MIDI note [0-127]
     float blur_amount;           // Blur factor [0.0-1.0]
     
@@ -171,31 +171,31 @@ typedef struct {
     volatile int active_buffer;  // Active buffer index (atomic)
     
     float volume;                // Master volume [0.0, 1.0]
-} PhotowaveState;
+} LuxWaveState;
 ```
 
-**PhotowaveConfig** (global configuration)
+**LuxWaveConfig** (global configuration)
 ```c
 typedef struct {
-    PhotowaveScanMode scan_mode;     // Default: L→R
-    PhotowaveInterpMode interp_mode; // Default: LINEAR
+    LuxWaveScanMode scan_mode;     // Default: L→R
+    LuxWaveInterpMode interp_mode; // Default: LINEAR
     float blur_amount;               // Default: 0.0
     float volume;                    // Default: 0.7
     int midi_note_default;           // Default: 60 (C4)
-} PhotowaveConfig;
+} LuxWaveConfig;
 ```
 
 ### 3.3 Public API (Headers)
 
 **Initialization/Cleanup**:
 ```c
-int32_t synth_photowave_init(void);
-void synth_photowave_cleanup(void);
+int32_t synth_luxwave_init(void);
+void synth_luxwave_cleanup(void);
 ```
 
 **Audio Processing (RT-critical)**:
 ```c
-void synth_photowave_process(float *audio_left, 
+void synth_luxwave_process(float *audio_left, 
                               float *audio_right,
                               unsigned int buffer_size,
                               struct DoubleBuffer *db);
@@ -203,18 +203,18 @@ void synth_photowave_process(float *audio_left,
 
 **Configuration (thread-safe)**:
 ```c
-void synth_photowave_set_midi_note(int midi_note);
-void synth_photowave_set_scan_mode(PhotowaveScanMode mode);
-void synth_photowave_set_interpolation(PhotowaveInterpMode mode);
-void synth_photowave_set_blur_amount(float amount);
-void synth_photowave_set_volume(float volume);
+void synth_luxwave_set_midi_note(int midi_note);
+void synth_luxwave_set_scan_mode(LuxWaveScanMode mode);
+void synth_luxwave_set_interpolation(LuxWaveInterpMode mode);
+void synth_luxwave_set_blur_amount(float amount);
+void synth_luxwave_set_volume(float volume);
 ```
 
 **Getters**:
 ```c
-float synth_photowave_get_current_frequency(void);
-PhotowaveScanMode synth_photowave_get_scan_mode(void);
-int synth_photowave_get_midi_note(void);
+float synth_luxwave_get_current_frequency(void);
+LuxWaveScanMode synth_luxwave_get_scan_mode(void);
+int synth_luxwave_get_midi_note(void);
 ```
 
 ### 3.4 Data Flow
@@ -224,7 +224,7 @@ int synth_photowave_get_midi_note(void);
         ↓
    [DoubleBuffer] ← Complete grayscale line
         ↓
-[Photowave Thread] ← Non-RT thread
+[LuxWave Thread] ← Non-RT thread
    • Copy line to inactive buffer
    • Apply blur if necessary
    • Atomic buffer swap
@@ -243,15 +243,15 @@ int synth_photowave_get_midi_note(void);
 **Required Modifications**:
 
 1. **`src/core/context.h`**:
-   - Add `PHOTOWAVE_MODE` to `synthModeTypeDef` enum
+   - Add `LUXWAVE_MODE` to `synthModeTypeDef` enum
 
 2. **`src/core/main.c`**:
-   - Add `PHOTOWAVE_MODE` case in mode selection switch
-   - Call `synth_photowave_process()` in callback
+   - Add `LUXWAVE_MODE` case in mode selection switch
+   - Call `synth_luxwave_process()` in callback
 
 3. **`src/communication/midi/midi_callbacks.cpp`**:
-   - Route Note On/Off to `synth_photowave_set_midi_note()`
-   - Route CC to Photowave parameters
+   - Route Note On/Off to `synth_luxwave_set_midi_note()`
+   - Route CC to LuxWave parameters
 
 4. **`src/config/config_loader.c`**:
    - Parse `[photowave]` section in `sp3ctra.ini`
@@ -319,15 +319,15 @@ midi_note_default = 60     # C4 (default pitch)
 **Estimated Duration**: 2-3 hours
 
 **Tasks**:
-- [ ] Create directory `src/synthesis/photowave/`
+- [ ] Create directory `src/synthesis/luxwave/`
 - [ ] Create main headers (`.h`)
-  - `synth_photowave.h` (public API)
-  - `synth_photowave_state.h` (structures)
-  - `synth_photowave_interpolation.h`
-  - `synth_photowave_blur.h`
-- [ ] Define enums (`PhotowaveScanMode`, `PhotowaveInterpMode`)
-- [ ] Define structures (`PhotowaveState`, `PhotowaveConfig`)
-- [ ] Add `PHOTOWAVE_MODE` to `src/core/context.h`
+  - `synth_luxwave.h` (public API)
+  - `synth_luxwave_state.h` (structures)
+  - `synth_luxwave_interpolation.h`
+  - `synth_luxwave_blur.h`
+- [ ] Define enums (`LuxWaveScanMode`, `LuxWaveInterpMode`)
+- [ ] Define structures (`LuxWaveState`, `LuxWaveConfig`)
+- [ ] Add `LUXWAVE_MODE` to `src/core/context.h`
 
 **Deliverables**:
 - Complete headers with documentation
@@ -339,11 +339,11 @@ midi_note_default = 60     # C4 (default pitch)
 **Estimated Duration**: 2 hours
 
 **Tasks**:
-- [ ] Implement `synth_photowave_init()`
+- [ ] Implement `synth_luxwave_init()`
   - Allocate buffers (line_buffer_a/b, blur_buffer_a/b)
   - Size = `get_cis_pixels_nb()` (DPI-dependent)
   - Initialize default state
-- [ ] Implement `synth_photowave_cleanup()`
+- [ ] Implement `synth_luxwave_cleanup()`
   - Free memory
   - Reset global state
 - [ ] Add to `Makefile`
@@ -359,7 +359,7 @@ midi_note_default = 60     # C4 (default pitch)
 **Estimated Duration**: 4-5 hours
 
 **Tasks**:
-- [ ] Implement `synth_photowave_process()` (simple version)
+- [ ] Implement `synth_luxwave_process()` (simple version)
   - Read line from `DoubleBuffer`
   - Generate samples with phase increment
   - Basic linear interpolation
@@ -385,7 +385,7 @@ midi_note_default = 60     # C4 (default pitch)
 - [ ] Implement R→L and DUAL modes in `process()`
   - Position calculation per scan_mode
   - Test correct wrapping
-- [ ] Implement blur filter (`synth_photowave_blur.c`)
+- [ ] Implement blur filter (`synth_luxwave_blur.c`)
   - Moving average with variable kernel
   - Circular wrap
   - Optimization (avoid divisions)
@@ -418,10 +418,10 @@ midi_note_default = 60     # C4 (default pitch)
 
 **Tasks**:
 - [ ] Add callbacks in `src/communication/midi/midi_callbacks.cpp`
-  - Note On → `synth_photowave_set_midi_note()`
-  - CC1 → `synth_photowave_set_scan_mode()`
-  - CC7 → `synth_photowave_set_volume()`
-  - CC71 → `synth_photowave_set_blur_amount()`
+  - Note On → `synth_luxwave_set_midi_note()`
+  - CC1 → `synth_luxwave_set_scan_mode()`
+  - CC7 → `synth_luxwave_set_volume()`
+  - CC71 → `synth_luxwave_set_blur_amount()`
 - [ ] Implement pitch bend (optional)
 - [ ] Add section to `midi_mapping.ini`
 - [ ] Test with physical MIDI controller
@@ -437,7 +437,7 @@ midi_note_default = 60     # C4 (default pitch)
 
 **Tasks**:
 - [ ] Add `[photowave]` section parsing in `config_loader.c`
-- [ ] Create `config_photowave.h` structure
+- [ ] Create `config_luxwave.h` structure
 - [ ] Load parameters at startup
 - [ ] Test default values + overrides
 
@@ -447,9 +447,9 @@ midi_note_default = 60     # C4 (default pitch)
 **Estimated Duration**: 2 hours
 
 **Tasks**:
-- [ ] Add `PHOTOWAVE_MODE` case in `src/core/main.c`
-- [ ] Route to `synth_photowave_process()` in callback
-- [ ] Implement mode switching (IFFT/DWAVE/PHOTOWAVE)
+- [ ] Add `LUXWAVE_MODE` case in `src/core/main.c`
+- [ ] Route to `synth_luxwave_process()` in callback
+- [ ] Implement mode switching (IFFT/DWAVE/LUXWAVE)
 - [ ] Test transitions without crashes
 
 ---
@@ -487,7 +487,7 @@ midi_note_default = 60     # C4 (default pitch)
 
 **Tasks**:
 - [ ] Document API in headers (Doxygen style)
-- [ ] Create `docs/PHOTOWAVE_USER_GUIDE.md`
+- [ ] Create `docs/LUXWAVE_USER_GUIDE.md`
   - Concept explanation
   - Parameters and their effects
   - Usage examples
@@ -562,18 +562,18 @@ midi_note_default = 60     # C4 (default pitch)
 ### 10.1 Main Processing Loop
 
 ```c
-void synth_photowave_process(float *left, float *right, 
+void synth_luxwave_process(float *left, float *right, 
                               unsigned int samples,
                               DoubleBuffer *db) {
-    PhotowaveState *state = &g_photowave_state;
+    LuxWaveState *state = &g_luxwave_state;
     
     for (int i = 0; i < samples; i++) {
         // 1. Calculate position in line
         float position;
-        if (state->scan_mode == PHOTOWAVE_SCAN_LR) {
+        if (state->scan_mode == LUXWAVE_SCAN_LR) {
             position = state->phase * state->line_width;
         }
-        else if (state->scan_mode == PHOTOWAVE_SCAN_RL) {
+        else if (state->scan_mode == LUXWAVE_SCAN_RL) {
             position = (1.0f - state->phase) * state->line_width;
         }
         else { // DUAL
@@ -602,7 +602,7 @@ void synth_photowave_process(float *left, float *right,
         state->phase += state->phase_increment;
         
         // 6. Wrap phase
-        float period = (state->scan_mode == PHOTOWAVE_SCAN_DUAL) ? 2.0f : 1.0f;
+        float period = (state->scan_mode == LUXWAVE_SCAN_DUAL) ? 2.0f : 1.0f;
         if (state->phase >= period) {
             state->phase -= period;
         }
@@ -651,7 +651,7 @@ void apply_blur(float *line_in, float *line_out, int width, float amount) {
 
 ## 11. REFERENCES
 
-- **Existing Synthesis Modes**: `src/synthesis/additive/`, `src/synthesis/polyphonic/`
+- **Existing Synthesis Modes**: `src/synthesis/luxstral/`, `src/synthesis/luxsynth/`
 - **Audio Infrastructure**: `src/audio/rtaudio/`
 - **MIDI System**: `src/communication/midi/`
 - **Configuration**: `src/config/config_loader.c`

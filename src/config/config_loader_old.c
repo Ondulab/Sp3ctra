@@ -1,7 +1,7 @@
 /* config_loader.c */
 
 #include "config_loader.h"
-#include "config_synth_additive.h"
+#include "config_synth_luxstral.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -403,7 +403,7 @@ void validate_config(const sp3ctra_config_t* config) {
  * INI File Parser
  **************************************************************************************/
 
-int load_additive_config(const char* config_file_path) {
+int load_luxstral_config(const char* config_file_path) {
     FILE* file = fopen(config_file_path, "r");
     
     // If file doesn't exist, create it with default values
