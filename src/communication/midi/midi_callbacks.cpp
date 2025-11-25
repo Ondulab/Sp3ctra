@@ -336,9 +336,7 @@ void midi_cb_synth_polyphonic_lfo_vibrato(const MidiParameterValue *param, void 
     
     synth_polyphonic_set_vibrato_rate(param->raw_value);
     
-    if (is_startup_verbose()) {
-        log_info("MIDI", "VIBRATO LFO SPEED: %.2f Hz", param->raw_value);
-    }
+    log_info("POLYPHONIC", "LFO Vibrato Rate: %.2f Hz", param->raw_value);
 }
 
 void midi_cb_synth_polyphonic_lfo_vibrato_depth(const MidiParameterValue *param, void *user_data) {
