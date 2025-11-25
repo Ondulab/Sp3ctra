@@ -55,13 +55,13 @@ extern volatile int32_t audioBuff[];
 extern int params_size;
 
 #ifdef __LINUX__
-// Vérifier si SFML est désactivé
+// Check if SFML is disabled
 #ifdef NO_SFML
-// Déclarations simplifiées pour compilation sans SFML
+// Simplified declarations for compilation without SFML
 // Utiliser la forme struct pour permettre les pointeurs opaques
 typedef struct sfRenderWindow sfRenderWindow;
 typedef struct sfEvent sfEvent;
-// Ajoutez d'autres types si nécessaire, ex:
+// Add other types if needed, ex:
 // typedef struct sfTexture sfTexture;
 #else
 // SFML disponible sur Linux
@@ -69,15 +69,15 @@ typedef struct sfEvent sfEvent;
 #include <SFML/Network.h>
 #endif // NO_SFML
 #else  // Pas __LINUX__ (par exemple macOS)
-// Sur les autres plateformes (comme macOS), vérifier si SFML est désactivé
+// On other platforms (like macOS), check if SFML is disabled
 #ifdef NO_SFML
-// Déclarations simplifiées pour compilation sans SFML
+// Simplified declarations for compilation without SFML
 // Utiliser la forme struct pour permettre les pointeurs opaques
 typedef struct sfRenderWindow sfRenderWindow;
 typedef struct sfEvent sfEvent;
-// Ajoutez d'autres types si nécessaire
+// Add other types if needed
 #else
-// SFML disponible sur macOS (et NO_SFML n'est pas défini)
+// SFML available on macOS (and NO_SFML is not defined)
 #include <SFML/Graphics.h>
 #include <SFML/Network.h>
 #endif // NO_SFML

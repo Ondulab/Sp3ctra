@@ -29,10 +29,10 @@
 class ZitaRev1 {
 public:
   enum {
-    ROOMSIZE = 0, // 0-1: taille de la pièce (affecte le temps de réverbération)
-    DAMPING = 1,  // 0-1: amortissement des hautes fréquences
-    WIDTH = 2,    // 0-1: largeur stéréo
-    PREDELAY = 3, // 0-1: délai initial
+    ROOMSIZE = 0, // 0-1: room size (affects reverb time)
+    DAMPING = 1,  // 0-1: high frequency damping
+    WIDTH = 2,    // 0-1: stereo width
+    PREDELAY = 3, // 0-1: initial delay
     MIX = 4,      // 0-1: mix dry/wet
     NUM_PARAMS
   };
@@ -61,17 +61,17 @@ public:
                unsigned int numSamples);
 
 private:
-  // Constantes
-  static const int MAX_DELAY_SIZE = 65536;   // Taille max des lignes de délai (~1.5s @ 44.1kHz)
+  // Constants
+  static const int MAX_DELAY_SIZE = 65536;   // Max delay line size (~1.5s @ 44.1kHz)
   static const int MAX_PREDELAY_SIZE = 4800; // 100ms @ 48kHz
-  static const int NUM_DELAY_LINES = 8;      // Nombre de lignes de délai
+  static const int NUM_DELAY_LINES = 8;      // Number of delay lines
 
-  // Paramètres
+  // Parameters
   float _parameters[NUM_PARAMS];
   float _sampleRate;
 
   // Gains
-  float _gain0; // Gain interne de la réverbération (deprecated, use _currentGain0)
+  float _gain0; // Internal reverb gain (deprecated, use _currentGain0)
   float _gain1; // Dry gain
   float _gain2; // Wet gain
   
@@ -80,18 +80,18 @@ private:
   float _targetGain0;   // Target gain value
   float _smoothingCoeff; // Smoothing coefficient (lower = slower/smoother)
 
-  // Buffers de délai
+  // Delay buffers
   float _delayLines[NUM_DELAY_LINES][MAX_DELAY_SIZE];
   int _delayIndices[NUM_DELAY_LINES];
   int _delaySizes[NUM_DELAY_LINES];
-  float _lpSamples[NUM_DELAY_LINES]; // Échantillons filtrés (passe-bas)
+  float _lpSamples[NUM_DELAY_LINES]; // Filtered samples (low-pass)
 
-  // Buffer de pré-delay
+  // Pre-delay buffer
   float _preDelayBuffer[MAX_PREDELAY_SIZE];
   int _preDelayIndex;
   int _preDelaySize;
 
-  // Méthodes privées
+  // Private methods
   float readDelay(int line);
   void writeDelay(int line, float sample);
   void updateReverbParameters();

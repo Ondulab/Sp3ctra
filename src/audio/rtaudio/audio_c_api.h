@@ -36,7 +36,7 @@ extern AudioDataBuffers buffers_R[2];
 extern volatile int current_buffer_index;
 extern pthread_mutex_t buffer_index_mutex;
 
-// Fonctions C pour la compatibilité
+// C functions for compatibility
 void resetAudioDataBufferOffset(void);
 void initAudioData(AudioData *audioData, UInt32 numChannels, UInt32 bufferSize);
 void audio_Init(void);

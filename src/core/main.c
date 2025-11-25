@@ -686,8 +686,8 @@ int main(int argc, char **argv) {
 #ifndef NO_SFML
   sfSprite *backgroundSprite = NULL;
   sfSprite *foregroundSprite = NULL;
-  // Ce bloc ne s'exécute que si SFML est activé
-  // Créer les textures uniquement si la fenêtre SFML est demandée
+  // This block only executes if SFML is enabled
+  // Create textures only if SFML window is requested
   if (use_sfml_window) {
     int texture_width = get_cis_pixels_nb();
     backgroundTexture = sfTexture_create(texture_width, WINDOWS_HEIGHT);
@@ -737,7 +737,7 @@ int main(int argc, char **argv) {
   }
 
   struct sched_param param;
-  param.sched_priority = 50; // Priorité plus modérée pour le Jetson Nano
+  param.sched_priority = 50; // More moderate priority for Jetson Nano
   pthread_setschedparam(audioThreadId, SCHED_RR, &param);
 
   // Create and start the polyphonic synth thread conditionally
@@ -792,7 +792,7 @@ int main(int argc, char **argv) {
   // sfEvent event; // Unused variable
 #ifndef NO_SFML
   sfClock *clock = NULL;
-  // Créer l'horloge uniquement si SFML est utilisé
+  // Create clock only if SFML is used
   clock = sfClock_create();
 #endif // NO_SFML
 
@@ -847,24 +847,24 @@ int main(int argc, char **argv) {
       }
     }
 #else
-    // Si NO_SFML est défini, mais que use_sfml_window est vrai,
-    // cela indique une incohérence de configuration.
+    // If NO_SFML is defined, but use_sfml_window is true,
+    // this indicates a configuration inconsistency.
     // On pourrait ajouter un avertissement ici, ou simplement ne rien faire.
     if (use_sfml_window && window) {
-      // Ce bloc ne devrait pas être atteint si NO_SFML est défini et que window
+      // This block should not be reached if NO_SFML is defined and window
       // est NULL. Si window est non-NULL ici, c'est une erreur de logique dans
-      // la création de la fenêtre.
+      // window creation.
     }
 #endif // NO_SFML
 
     /* Vérifier si le double buffer contient de nouvelles données */
     pthread_mutex_lock(&db.mutex);
     if (db.dataReady) {
-      // Copier les données live depuis le double buffer
+      // Copy live data from double buffer
       memcpy(local_main_R, db.processingBuffer_R, nb_pixels);
       memcpy(local_main_G, db.processingBuffer_G, nb_pixels);
       memcpy(local_main_B, db.processingBuffer_B, nb_pixels);
-      db.dataReady = 0; // Marquer comme consommé par la boucle principale
+      db.dataReady = 0; // Mark as consumed by main loop
       process_this_frame_main_loop = 1;
     }
     pthread_mutex_unlock(&db.mutex);
@@ -887,7 +887,7 @@ int main(int argc, char **argv) {
       }
 
       /* Calcul de la couleur moyenne et mise à jour du contexte DMX */
-      // DMX utilise les données copiées local_main_R,G,B (qui sont les données
+      // DMX uses copied data local_main_R,G,B (which is the data
       // live de db.processingBuffer)
       if (use_dmx && dmxCtx->spots && dmxCtx->num_spots > 0) {
         computeAverageColorPerZone(local_main_R, local_main_G, local_main_B,
@@ -900,27 +900,27 @@ int main(int argc, char **argv) {
       }
 
 #ifdef PRINT_FPS
-      frameCount++; // Compter chaque trame traitée
+      frameCount++; // Count each processed frame
 #endif
     }
 
 #ifdef PRINT_FPS
     float elapsedTime = 0.0f;
 #ifndef NO_SFML
-    if (clock) { // Vérifier si clock a été initialisé
+    if (clock) { // Check if clock was initialized
       elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
       if (elapsedTime >= 1.0f) {
         float fps = frameCount / elapsedTime;
         (void)fps; // Mark fps as used to silence warning if printf is commented
-        // printf("Processing rate: %.2f FPS\n", fps); // Supprimé ou commenté
+        // printf("Processing rate: %.2f FPS\n", fps); // Removed or commented
         sfClock_restart(clock);
-        frameCount = 0; // Réinitialiser frameCount ici
+        frameCount = 0; // Reset frameCount here
       }
     }
 #else
-    // Alternative pour le timing si NO_SFML est défini et que PRINT_FPS est
-    // actif (nécessiterait une implémentation de clock non-SFML, comme celles
-    // au début du fichier) Pour l'instant, on ne fait rien pour le FPS si
+    // Alternative for timing if NO_SFML is defined and PRINT_FPS is
+    // active (would require non-SFML clock implementation, like those
+    // at start of file) For now, we do nothing for FPS if
     // NO_SFML.
     (void)elapsedTime; // Supprimer l'avertissement unused
 #endif // NO_SFML
@@ -998,11 +998,11 @@ int main(int argc, char **argv) {
 
   /* Nettoyage des ressources graphiques */
 #ifndef NO_SFML
-  // Ce bloc ne s'exécute que si SFML est activé
-  // Nettoyer seulement si la fenêtre SFML était utilisée
+  // This block only executes if SFML is enabled
+  // Clean up only if SFML window was used
   if (use_sfml_window &&
-      window) { // window ne sera non-NULL que si use_sfml_window était vrai ET
-                // la création a réussi
+      window) { // window will be non-NULL only if use_sfml_window was true AND
+                // creation succeeded
     if (backgroundTexture)
       sfTexture_destroy(backgroundTexture);
     if (foregroundTexture)

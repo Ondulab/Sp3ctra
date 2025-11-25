@@ -21,7 +21,7 @@ private:
   std::mutex bufferMutex;
   std::atomic<bool> isRunning;
 
-  // Paramètres audio
+  // Audio parameters
   unsigned int sampleRate;
   unsigned int bufferSize;
   unsigned int channels;
@@ -38,28 +38,28 @@ private:
   // Volume control
   float masterVolume;
 
-  // Paramètres de réverbération
-  static const int REVERB_BUFFER_SIZE = 32768; // Pour compatibilité arrière
-  float *reverbBuffer;                         // Pour compatibilité arrière
-  // int reverbWriteIndex;                        // Pour compatibilité arrière
+  // Reverb parameters
+  static const int REVERB_BUFFER_SIZE = 32768; // For backward compatibility
+  float *reverbBuffer;                         // For backward compatibility
+  // int reverbWriteIndex;                        // For backward compatibility
   // - Unused
-  int reverbDelays[8]; // Pour compatibilité arrière
+  int reverbDelays[8]; // For backward compatibility
 
-  // Nouvelle implémentation basée sur ZitaRev1
+  // New implementation based on ZitaRev1
   ZitaRev1
-      zitaRev; // Instance de ZitaRev1 pour une réverbération de haute qualité
+      zitaRev; // ZitaRev1 instance for high-quality reverb
 
   float reverbMix;      // Dry/Wet mix (0.0 - 1.0)
-  float reverbRoomSize; // Taille de la pièce (0.0 - 1.0)
+  float reverbRoomSize; // Room size (0.0 - 1.0)
   float reverbDamping;  // Amortissement (0.0 - 1.0)
-  float reverbWidth;    // Largeur stéréo (0.0 - 1.0)
-  bool reverbEnabled;   // Activation/désactivation de la réverbération
+  float reverbWidth;    // Stereo width (0.0 - 1.0)
+  bool reverbEnabled;   // Enable/disable reverb
 
   // === MULTI-THREADED REVERB SYSTEM ===
   static const int REVERB_THREAD_BUFFER_SIZE =
       8192; // Buffer circulaire pour thread reverb
 
-  // Buffer circulaire pour données d'entrée de la réverbération (thread-safe)
+  // Circular buffer for reverb input data (thread-safe)
   struct ReverbInputBuffer {
     float data[REVERB_THREAD_BUFFER_SIZE];
     std::atomic<int> write_pos;
@@ -71,7 +71,7 @@ private:
     }
   } reverbInputBuffer;
 
-  // Buffer circulaire pour données de sortie de la réverbération (thread-safe)
+  // Circular buffer for reverb output data (thread-safe)
   struct ReverbOutputBuffer {
     float left[REVERB_THREAD_BUFFER_SIZE];
     float right[REVERB_THREAD_BUFFER_SIZE];
@@ -85,13 +85,13 @@ private:
     }
   } reverbOutputBuffer;
 
-  // Thread de traitement de la réverbération
+  // Reverb processing thread
   std::thread reverbThread;
   std::atomic<bool> reverbThreadRunning;
   std::condition_variable reverbCondition;
   std::mutex reverbMutex;
 
-  // Fonction principale du thread de réverbération
+  // Main reverb thread function
   void reverbThreadFunction();
 
   // Fonctions pour les buffers circulaires thread-safe
@@ -100,7 +100,7 @@ private:
   bool writeToReverbOutput(float sampleL, float sampleR);
   bool readFromReverbOutput(float &sampleL, float &sampleR);
 
-  // Fonction de traitement de la réverbération optimisée pour callback
+  // Reverb processing function optimized for callback
   void processReverbOptimized(float inputL, float inputR, float &outputL,
                               float &outputR);
 
@@ -116,27 +116,27 @@ public:
   void stop();
   bool isActive() const;
 
-  // Fonctions pour interagir avec le système audio
+  // Functions to interact with audio system
   bool setAudioData(const float *data, size_t size);
 
-  // Informations sur le système audio
+  // Audio system information
   std::vector<std::string> getAvailableDevices();
   bool setDevice(unsigned int deviceId);
   unsigned int getCurrentDevice() const;
   void setRequestedDeviceId(int deviceId);
 
-  // Accesseur pour l'objet RtAudio (à utiliser avec précaution)
+  // Accessor for RtAudio object (use with caution)
   RtAudio *getAudioDevice() const { return audio; }
 
   // Volume control
   void setMasterVolume(float volume);
   float getMasterVolume() const;
 
-  // Paramètres de latence
+  // Latency parameters
   bool setBufferSize(unsigned int size);
   unsigned int getBufferSize() const;
 
-  // Contrôle de réverbération
+  // Reverb control
   void enableReverb(bool enable);
   bool isReverbEnabled() const;
   void setReverbMix(float mix);
@@ -149,10 +149,10 @@ public:
   float getReverbWidth() const;
 };
 
-// Fonction globale pour la rétrocompatibilité minimale
+// Global function for minimal backward compatibility
 extern AudioSystem *gAudioSystem;
 
-// Ces fonctions peuvent être conservées pour la compatibilité
+// These functions can be kept for compatibility
 extern "C" {
 void audio_Init(void);
 void audio_Cleanup();

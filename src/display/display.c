@@ -9,22 +9,22 @@
 #include <stdint.h> // Pour uint8_t, uint32_t et autres types entiers de taille fixe
 
 #ifdef __LINUX__
-// Sur Linux, vérifier si SFML est explicitement désactivé
+// On Linux, check if SFML is explicitly disabled
 #ifndef NO_SFML
 // SFML/CSFML disponible sur Linux
-// Utiliser les en-têtes SFML/CSFML pour les fichiers C
-// Note: Homebrew installe les en-têtes CSFML dans le même répertoire que SFML
+// Use SFML/CSFML headers for C files
+// Note: Homebrew installs CSFML headers in the same directory as SFML
 #include <SFML/Graphics.h>
-#include <SFML/Network.h> // Si SFML/Network est utilisé
+#include <SFML/Network.h> // If SFML/Network is used
 #endif                    // NO_SFML
 #else                     // Pas __LINUX__ (par exemple macOS)
 // Sur les autres plateformes (comme macOS), on suppose que SFML/CSFML est
-// disponible à moins que NO_SFML ne soit également défini pour ces plateformes.
+// available unless NO_SFML is also defined for these platforms.
 #ifndef NO_SFML
-// Utiliser les en-têtes SFML/CSFML pour les fichiers C
-// Note: Homebrew installe les en-têtes CSFML dans le même répertoire que SFML
+// Use SFML/CSFML headers for C files
+// Note: Homebrew installs CSFML headers in the same directory as SFML
 #include <SFML/Graphics.h>
-#include <SFML/Network.h> // Si SFML/Network est utilisé
+#include <SFML/Network.h> // If SFML/Network is used
 #endif                    // NO_SFML
 #endif                    // __LINUX__
 #include <errno.h>
@@ -59,7 +59,7 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
                    uint8_t *buffer_B, sfTexture *background_texture,
                    sfTexture *foreground_texture) {
 #ifndef NO_SFML
-  // En mode CLI, la présence d'une fenêtre SFML est optionnelle.
+  // In CLI mode, SFML window presence is optional.
   // Si elle n'est pas disponible, on quitte simplement la fonction.
   if (!window || !background_texture || !foreground_texture) {
     return;
@@ -154,11 +154,11 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
 #endif
 }
 
-// Ancienne fonction utilisant un buffer 32-bit combiné
+// Old function using combined 32-bit buffer
 void printImage(sfRenderWindow *window, int32_t *image_buff,
                 sfTexture *background_texture, sfTexture *foreground_texture) {
 #ifndef NO_SFML
-  // En mode CLI, la présence d'une fenêtre SFML est optionnelle.
+  // In CLI mode, SFML window presence is optional.
   // Si elle n'est pas disponible, on quitte simplement la fonction.
   if (!window || !background_texture || !foreground_texture) {
     return;
@@ -239,7 +239,7 @@ void printRawData(sfRenderWindow *window, uint32_t *image_buff,
                   sfTexture *background_texture,
                   sfTexture *foreground_texture) {
 #ifndef NO_SFML
-  // En mode CLI, la présence d'une fenêtre SFML est optionnelle.
+  // In CLI mode, SFML window presence is optional.
   // Si elle n'est pas disponible, on quitte simplement la fonction.
   if (!window || !background_texture || !foreground_texture) {
     return;

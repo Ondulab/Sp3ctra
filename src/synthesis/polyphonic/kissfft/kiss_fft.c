@@ -36,8 +36,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  4*4*4*2
  */
 
-// Structure kiss_fft_state est déjà définie dans kiss_fft.h
-// Pas besoin de la redéfinir ici
+// Structure kiss_fft_state is already defined in kiss_fft.h
+// No need to redefine it here
 
 /*
   Explanation of macros dealing with complex math:

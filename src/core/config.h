@@ -3,10 +3,10 @@
 #ifndef __CONFIG_H__
 #define __CONFIG_H__
 
-// Configurations de base et de débogage
+// Basic and debug configurations
 #include "../config/config_debug.h"
 
-// Configurations matérielles
+// Hardware configurations
 // clang-format off
 #include "../config/config_instrument.h"
 #include "../config/config_display.h"
@@ -14,7 +14,7 @@
 #include "../config/config_dmx.h"
 // clang-format on
 
-// Configurations des modes de synthèse
+// Synthesis mode configurations
 #include "../config/config_synth_additive.h"
 #include "../config/config_synth_poly.h"
 

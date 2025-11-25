@@ -70,7 +70,7 @@
 // Mutex to ensure thread-safe synthesis processing for stereo channels
 static pthread_mutex_t g_synth_process_mutex;
 
-// Variables pour la limitation des logs (affichage périodique)
+// Variables for log limiting (periodic display)
 static uint32_t log_counter = 0;
 
 static int32_t *imageRef = NULL; // Dynamically allocated
