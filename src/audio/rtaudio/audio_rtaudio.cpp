@@ -172,7 +172,6 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
     // Get source pointers directly - avoid memcpy when possible
     float *source_additive_left = nullptr;
     float *source_additive_right = nullptr;
-    float *source_fft = nullptr;
     float *source_photowave = nullptr;
 
     // SYNCHRONIZED BUFFER ACCESS: All synths read from same offset
@@ -219,10 +218,14 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       source_additive_right = &buffers_R[additive_read_buffer].data[global_read_offset];
     }
 
-    // Polyphonic synthesis (mono)
+    // Polyphonic synthesis (stereo with spectral panning)
+    float *source_fft_left = nullptr;
+    float *source_fft_right = nullptr;
     if (polyphonic_audio_buffers[polyphonic_read_buffer].ready == 1) {
-      source_fft = &polyphonic_audio_buffers[polyphonic_read_buffer]
-                        .data[global_read_offset];
+      source_fft_left = &polyphonic_audio_buffers[polyphonic_read_buffer]
+                             .data_left[global_read_offset];
+      source_fft_right = &polyphonic_audio_buffers[polyphonic_read_buffer]
+                              .data_right[global_read_offset];
       
       // Measure latency only at start of buffer read
       if (global_read_offset == 0 && polyphonic_audio_buffers[polyphonic_read_buffer].write_timestamp_us > 0) {
@@ -276,10 +279,10 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       }
 #endif
 
-      // Add polyphonic contribution (same for both channels)
-      if (source_fft) {
-        dry_sample_left += source_fft[i] * cached_level_polyphonic;
-        dry_sample_right += source_fft[i] * cached_level_polyphonic;
+      // Add polyphonic contribution (true stereo with spectral panning)
+      if (source_fft_left && source_fft_right) {
+        dry_sample_left += source_fft_left[i] * cached_level_polyphonic;
+        dry_sample_right += source_fft_right[i] * cached_level_polyphonic;
       }
 
       // Add Photowave contribution (same for both channels)
@@ -332,10 +335,12 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
         if (source_additive_right && cached_reverb_send_additive > 0.01f) {
           reverb_input_right += source_additive_right[i] * cached_reverb_send_additive;
         }
-        if (source_fft && cached_reverb_send_polyphonic > 0.01f) {
-          float polyphonic_reverb = source_fft[i] * cached_reverb_send_polyphonic;
-          reverb_input_left += polyphonic_reverb;
-          reverb_input_right += polyphonic_reverb;
+        // Add polyphonic signal to reverb (true stereo with spectral panning)
+        if (source_fft_left && cached_reverb_send_polyphonic > 0.01f) {
+          reverb_input_left += source_fft_left[i] * cached_reverb_send_polyphonic;
+        }
+        if (source_fft_right && cached_reverb_send_polyphonic > 0.01f) {
+          reverb_input_right += source_fft_right[i] * cached_reverb_send_polyphonic;
         }
 
         // Add photowave signal to reverb (independent of mix level)
