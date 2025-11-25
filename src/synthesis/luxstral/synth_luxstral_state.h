@@ -1,5 +1,5 @@
 /*
- * synth_additive_state.h
+ * synth_luxstral_state.h
  *
  * State management for additive synthesis
  * Contains freeze/fade functionality and display buffer management
@@ -7,8 +7,8 @@
  * Author: zhonx
  */
 
-#ifndef __SYNTH_ADDITIVE_STATE_H__
-#define __SYNTH_ADDITIVE_STATE_H__
+#ifndef __SYNTH_LUXSTRAL_STATE_H__
+#define __SYNTH_LUXSTRAL_STATE_H__
 
 /* Includes ------------------------------------------------------------------*/
 #include "../../core/config.h"
@@ -50,4 +50,4 @@ void displayable_synth_buffers_cleanup(void);
 }
 #endif
 
-#endif /* __SYNTH_ADDITIVE_STATE_H__ */
+#endif /* __SYNTH_LUXSTRAL_STATE_H__ */

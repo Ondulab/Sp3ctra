@@ -1,5 +1,5 @@
 /*
- * synth_additive_runtime.h
+ * synth_luxstral_runtime.h
  *
  * Runtime configuration for additive synthesis
  * Manages dynamic allocation based on pixels_per_note parameter
@@ -7,8 +7,8 @@
  * Author: zhonx
  */
 
-#ifndef __SYNTH_ADDITIVE_RUNTIME_H__
-#define __SYNTH_ADDITIVE_RUNTIME_H__
+#ifndef __SYNTH_LUXSTRAL_RUNTIME_H__
+#define __SYNTH_LUXSTRAL_RUNTIME_H__
 
 #include <stdint.h>
 
@@ -62,4 +62,4 @@ struct wave* synth_runtime_get_waves(void);
  */
 float* synth_runtime_get_unitary_waveform(void);
 
-#endif /* __SYNTH_ADDITIVE_RUNTIME_H__ */
+#endif /* __SYNTH_LUXSTRAL_RUNTIME_H__ */

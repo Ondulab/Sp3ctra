@@ -84,19 +84,19 @@ void rt_profiler_report_underrun(RTProfiler *profiler) {
     log_error("RT_PROFILER", "UNDERRUN #%llu detected!", count);
 }
 
-void rt_profiler_report_buffer_miss_additive(RTProfiler *profiler) {
+void rt_profiler_report_buffer_miss_luxstral(RTProfiler *profiler) {
     if (!profiler->enabled) return;
-    atomic_fetch_add(&profiler->buffer_miss_additive, 1);
+    atomic_fetch_add(&profiler->buffer_miss_luxstral, 1);
 }
 
-void rt_profiler_report_buffer_miss_polyphonic(RTProfiler *profiler) {
+void rt_profiler_report_buffer_miss_luxsynth(RTProfiler *profiler) {
     if (!profiler->enabled) return;
-    atomic_fetch_add(&profiler->buffer_miss_polyphonic, 1);
+    atomic_fetch_add(&profiler->buffer_miss_luxsynth, 1);
 }
 
-void rt_profiler_report_buffer_miss_photowave(RTProfiler *profiler) {
+void rt_profiler_report_buffer_miss_luxwave(RTProfiler *profiler) {
     if (!profiler->enabled) return;
-    atomic_fetch_add(&profiler->buffer_miss_photowave, 1);
+    atomic_fetch_add(&profiler->buffer_miss_luxwave, 1);
 }
 
 void rt_profiler_mutex_lock_start(RTProfiler *profiler) {
@@ -140,9 +140,9 @@ void rt_profiler_print_stats(RTProfiler *profiler) {
     float cpu_percent = rt_profiler_get_cpu_percent(profiler);
     
     uint64_t underruns = atomic_load(&profiler->underrun_count);
-    uint64_t miss_add = atomic_load(&profiler->buffer_miss_additive);
-    uint64_t miss_poly = atomic_load(&profiler->buffer_miss_polyphonic);
-    uint64_t miss_photo = atomic_load(&profiler->buffer_miss_photowave);
+    uint64_t miss_add = atomic_load(&profiler->buffer_miss_luxstral);
+    uint64_t miss_poly = atomic_load(&profiler->buffer_miss_luxsynth);
+    uint64_t miss_photo = atomic_load(&profiler->buffer_miss_luxwave);
     uint64_t miss_total = miss_add + miss_poly + miss_photo;
     
     log_debug("RT_PROFILER", "=== Performance Stats (after %llu callbacks) ===", 
@@ -160,9 +160,9 @@ void rt_profiler_print_stats(RTProfiler *profiler) {
         
         log_debug("RT_PROFILER", "  Buffer miss: %llu total (%.2f%%)", miss_total,
                  (miss_total * 100.0f) / profiler->callback_count);
-        log_debug("RT_PROFILER", "    - Additive: %llu (%.2f%%)", miss_add, miss_rate_add);
-        log_debug("RT_PROFILER", "    - Polyphonic: %llu (%.2f%%)", miss_poly, miss_rate_poly);
-        log_debug("RT_PROFILER", "    - Photowave: %llu (%.2f%%)", miss_photo, miss_rate_photo);
+        log_debug("RT_PROFILER", "    - LuxStral: %llu (%.2f%%)", miss_add, miss_rate_add);
+        log_debug("RT_PROFILER", "    - LuxSynth: %llu (%.2f%%)", miss_poly, miss_rate_poly);
+        log_debug("RT_PROFILER", "    - LuxWave: %llu (%.2f%%)", miss_photo, miss_rate_photo);
     } else {
         log_debug("RT_PROFILER", "  Buffer miss: 0 (0.00%%)");
     }
@@ -192,9 +192,9 @@ void rt_profiler_reset(RTProfiler *profiler) {
     profiler->total_callback_time_us = 0;
     profiler->max_callback_time_us = 0;
     atomic_store(&profiler->underrun_count, 0);
-    atomic_store(&profiler->buffer_miss_additive, 0);
-    atomic_store(&profiler->buffer_miss_polyphonic, 0);
-    atomic_store(&profiler->buffer_miss_photowave, 0);
+    atomic_store(&profiler->buffer_miss_luxstral, 0);
+    atomic_store(&profiler->buffer_miss_luxsynth, 0);
+    atomic_store(&profiler->buffer_miss_luxwave, 0);
     profiler->mutex_lock_attempts = 0;
     profiler->mutex_contentions = 0;
     profiler->mutex_total_wait_us = 0;
@@ -230,9 +230,9 @@ int rt_profiler_is_healthy(RTProfiler *profiler) {
     }
     
     /* Check buffer miss rate */
-    uint64_t miss_add = atomic_load(&profiler->buffer_miss_additive);
-    uint64_t miss_poly = atomic_load(&profiler->buffer_miss_polyphonic);
-    uint64_t miss_photo = atomic_load(&profiler->buffer_miss_photowave);
+    uint64_t miss_add = atomic_load(&profiler->buffer_miss_luxstral);
+    uint64_t miss_poly = atomic_load(&profiler->buffer_miss_luxsynth);
+    uint64_t miss_photo = atomic_load(&profiler->buffer_miss_luxwave);
     uint64_t miss_total = miss_add + miss_poly + miss_photo;
     
     if (miss_total > 0) {

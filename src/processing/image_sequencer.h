@@ -50,7 +50,7 @@ typedef enum {
 /* Blend modes for mixing sequences */
 typedef enum {
     BLEND_MODE_MIX,          // Weighted average (classic crossfade)
-    BLEND_MODE_ADD,          // Additive blend (both at max in center)
+    BLEND_MODE_ADD,          // LuxStral blend (both at max in center)
     BLEND_MODE_SCREEN,       // Screen blend (brightens, like Photoshop)
     BLEND_MODE_MASK          // Multiplicative masking (darkens)
 } BlendMode;

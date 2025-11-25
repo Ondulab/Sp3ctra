@@ -3,7 +3,7 @@
 #ifndef __CONFIG_AUDIO_H__
 #define __CONFIG_AUDIO_H__
 
-#include "config_loader.h"  // For g_additive_config access
+#include "config_loader.h"  // For g_luxstral_config access
 
 /**************************************************************************************
  * Audio Effects Definitions
@@ -17,8 +17,8 @@
 #define DEFAULT_REVERB_PREDELAY      0.08f   // Default pre-delay in seconds (0.0 - 0.1)
 
 // Reverb Send Levels - Default values when no MIDI controller is connected
-#define DEFAULT_REVERB_SEND_ADDITIVE 0.9f    // Default reverb send for additive synthesis (0.0 - 1.0)
-#define DEFAULT_REVERB_SEND_POLYPHONIC 0.3f  // Default reverb send for polyphonic synthesis (0.0 - 1.0)
+#define DEFAULT_REVERB_SEND_LUXSTRAL 0.9f    // Default reverb send for additive synthesis (0.0 - 1.0)
+#define DEFAULT_REVERB_SEND_LUXSYNTH 0.3f  // Default reverb send for polyphonic synthesis (0.0 - 1.0)
 
 /**************************************************************************************
  * Audio Buffer Configuration - Hybrid Approach

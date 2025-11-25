@@ -10,8 +10,8 @@
 #include "audio_rtaudio.h"
 #include "config.h"
 #include "../../config/config_audio.h" // For DEFAULT_REVERB_SEND_* defines
-#include "synth_additive.h" // For synth data freeze global variables and mutex
-#include "synth_polyphonic.h" // For synth_polyphonic_set_vibrato_rate
+#include "synth_luxstral.h" // For synth data freeze global variables and mutex
+#include "synth_luxsynth.h" // For synth_luxsynth_set_vibrato_rate
 #include "three_band_eq.h"
 #include "../../utils/logger.h"
 #include <algorithm>

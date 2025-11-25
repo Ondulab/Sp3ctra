@@ -48,9 +48,9 @@ typedef struct {
     atomic_uint_fast64_t underrun_count;
     
     /* Buffer miss tracking (atomic for thread safety) */
-    atomic_uint_fast64_t buffer_miss_additive;
-    atomic_uint_fast64_t buffer_miss_polyphonic;
-    atomic_uint_fast64_t buffer_miss_photowave;
+    atomic_uint_fast64_t buffer_miss_luxstral;
+    atomic_uint_fast64_t buffer_miss_luxsynth;
+    atomic_uint_fast64_t buffer_miss_luxwave;
     
     /* Mutex contention tracking */
     uint64_t mutex_lock_attempts;
@@ -115,7 +115,7 @@ void rt_profiler_report_underrun(RTProfiler *profiler);
  * 
  * @param profiler Profiler instance
  */
-void rt_profiler_report_buffer_miss_additive(RTProfiler *profiler);
+void rt_profiler_report_buffer_miss_luxstral(RTProfiler *profiler);
 
 /**
  * @brief Report a buffer miss for polyphonic synthesis
@@ -123,7 +123,7 @@ void rt_profiler_report_buffer_miss_additive(RTProfiler *profiler);
  * 
  * @param profiler Profiler instance
  */
-void rt_profiler_report_buffer_miss_polyphonic(RTProfiler *profiler);
+void rt_profiler_report_buffer_miss_luxsynth(RTProfiler *profiler);
 
 /**
  * @brief Report a buffer miss for photowave synthesis
@@ -131,7 +131,7 @@ void rt_profiler_report_buffer_miss_polyphonic(RTProfiler *profiler);
  * 
  * @param profiler Profiler instance
  */
-void rt_profiler_report_buffer_miss_photowave(RTProfiler *profiler);
+void rt_profiler_report_buffer_miss_luxwave(RTProfiler *profiler);
 
 /**
  * @brief Record a mutex lock attempt

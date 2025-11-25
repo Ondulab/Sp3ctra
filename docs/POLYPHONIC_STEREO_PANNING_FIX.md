@@ -1,4 +1,4 @@
-# Polyphonic Stereo Panning Implementation & Fix
+# LuxSynth Stereo Panning Implementation & Fix
 
 **Date:** 2025-11-25  
 **Status:** Diagnostic completed, fix in progress  
@@ -26,10 +26,10 @@ typedef struct {
 
 **Solution needed:** Two separate buffers for L/R channels
 
-### 2. Thread Function Issue (synth_polyphonic.c:407)
+### 2. Thread Function Issue (synth_luxsynth.c:407)
 
 ```c
-synth_polyphonicMode_process(
+synth_luxsynthMode_process(
     polyphonic_audio_buffers[local_producer_idx].data,
     polyphonic_audio_buffers[local_producer_idx].data,  // ❌ SAME BUFFER!
     g_sp3ctra_config.audio_buffer_size);
@@ -40,7 +40,7 @@ synth_polyphonicMode_process(
 ### 3. Audio Callback Issue (audio_rtaudio.cpp:162-235)
 
 ```cpp
-// Polyphonic synthesis (mono)  ← Comment reveals the issue!
+// LuxSynth synthesis (mono)  ← Comment reveals the issue!
 if (polyphonic_audio_buffers[polyphonic_read_buffer].ready == 1) {
   source_fft = &polyphonic_audio_buffers[polyphonic_read_buffer]
                     .data[global_read_offset];
@@ -48,8 +48,8 @@ if (polyphonic_audio_buffers[polyphonic_read_buffer].ready == 1) {
 
 // Later in mixing:
 if (source_fft) {
-  dry_sample_left += source_fft[i] * cached_level_polyphonic;
-  dry_sample_right += source_fft[i] * cached_level_polyphonic;  // ❌ Duplication!
+  dry_sample_left += source_fft[i] * cached_level_luxsynth;
+  dry_sample_right += source_fft[i] * cached_level_luxsynth;  // ❌ Duplication!
 }
 ```
 
@@ -63,7 +63,7 @@ if (source_fft) {
    - Logs L/R gains for first 8 harmonics every 100ms
    - Confirms gains are being copied from preprocessing
 
-2. **Generated Output** (`synth_polyphonicMode_process`):
+2. **Generated Output** (`synth_luxsynthMode_process`):
    - Logs average L/R levels every 100ms
    - Shows if stereo separation exists in generated audio
 
@@ -96,13 +96,13 @@ typedef struct {
 } FftAudioDataBuffer;
 ```
 
-### Phase 2: Update Polyphonic Thread
+### Phase 2: Update LuxSynth Thread
 
-**File:** `src/synthesis/polyphonic/synth_polyphonic.c`
+**File:** `src/synthesis/luxsynth/synth_luxsynth.c`
 
 **Init function:**
 ```c
-void synth_polyphonicMode_init(void) {
+void synth_luxsynthMode_init(void) {
   // ...
   for (i = 0; i < 2; ++i) {
     // Allocate separate L/R buffers
@@ -116,7 +116,7 @@ void synth_polyphonicMode_init(void) {
 
 **Thread function:**
 ```c
-synth_polyphonicMode_process(
+synth_luxsynthMode_process(
     polyphonic_audio_buffers[local_producer_idx].data_left,   // ✅ Separate L
     polyphonic_audio_buffers[local_producer_idx].data_right,  // ✅ Separate R
     g_sp3ctra_config.audio_buffer_size);
@@ -127,7 +127,7 @@ synth_polyphonicMode_process(
 **File:** `src/audio/rtaudio/audio_rtaudio.cpp`
 
 ```cpp
-// Polyphonic synthesis (stereo)  ← Update comment!
+// LuxSynth synthesis (stereo)  ← Update comment!
 float *source_fft_left = nullptr;
 float *source_fft_right = nullptr;
 
@@ -140,15 +140,15 @@ if (polyphonic_audio_buffers[polyphonic_read_buffer].ready == 1) {
 
 // Later in mixing:
 if (source_fft_left && source_fft_right) {
-  dry_sample_left += source_fft_left[i] * cached_level_polyphonic;   // ✅ True L
-  dry_sample_right += source_fft_right[i] * cached_level_polyphonic; // ✅ True R
+  dry_sample_left += source_fft_left[i] * cached_level_luxsynth;   // ✅ True L
+  dry_sample_right += source_fft_right[i] * cached_level_luxsynth; // ✅ True R
 }
 ```
 
 ## Implementation Checklist
 
-- [x] Add diagnostic traces in synth_polyphonic.c
-- [x] Add diagnostic traces in synth_polyphonic_process
+- [x] Add diagnostic traces in synth_luxsynth.c
+- [x] Add diagnostic traces in synth_luxsynth_process
 - [x] Compile with traces active
 - [ ] Run and confirm mono duplication via traces
 - [ ] Modify FftAudioDataBuffer structure (add data_left/data_right)
@@ -190,8 +190,8 @@ After fix:
 ## Related Files
 
 - `src/audio/buffers/doublebuffer.h` - Buffer structure
-- `src/synthesis/polyphonic/synth_polyphonic.c` - Synthesis thread
-- `src/synthesis/polyphonic/synth_polyphonic.h` - Public API
+- `src/synthesis/luxsynth/synth_luxsynth.c` - Synthesis thread
+- `src/synthesis/luxsynth/synth_luxsynth.h` - Public API
 - `src/audio/rtaudio/audio_rtaudio.cpp` - Audio callback
 - `src/processing/image_preprocessor.c` - Color FFT & pan calculation
 

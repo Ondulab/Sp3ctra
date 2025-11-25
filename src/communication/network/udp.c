@@ -21,7 +21,7 @@
 #include "error.h"
 #include "logger.h"
 #include "udp.h"
-#include "../synthesis/photowave/synth_photowave.h"
+#include "../synthesis/luxwave/synth_luxwave.h"
 
 // #define CALIBRATION
 // #define SSS_MOD_MODE

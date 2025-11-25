@@ -1,5 +1,5 @@
 /*
- * synth_additive_math.c
+ * synth_luxstral_math.c
  *
  * Mathematical utilities for additive synthesis
  * Contains reusable mathematical functions and color conversion utilities
@@ -8,7 +8,7 @@
  */
 
 /* Includes ------------------------------------------------------------------*/
-#include "synth_additive_math.h"
+#include "synth_luxstral_math.h"
 #include <stdio.h>
 
 /* Private user code ---------------------------------------------------------*/
@@ -32,7 +32,7 @@ void clip_int32(int32_t *array, int32_t min, int32_t max, size_t length) {
 
 #if !defined(__LINUX__) || !defined(__ARM_NEON)
 // Standard C implementations (used on non-Linux platforms or when NEON is not available)
-// On Linux with NEON, optimized versions from synth_additive_math_neon.c are used instead
+// On Linux with NEON, optimized versions from synth_luxstral_math_neon.c are used instead
 
 void mult_float(const float *a, const float *b, float *result, size_t length) {
   for (size_t i = 0; i < length; ++i) {
@@ -72,7 +72,7 @@ void fill_int32(int32_t value, int32_t *array, size_t length) {
 
 #if !defined(__LINUX__) || !defined(__ARM_NEON)
 // Standard C implementation (used on non-Linux platforms or when NEON is not available)
-// On Linux with NEON, the optimized version from synth_additive_math_neon.c is used instead
+// On Linux with NEON, the optimized version from synth_luxstral_math_neon.c is used instead
 void apply_volume_weighting(float *sum_buffer, const float *volume_buffer, 
                            float exponent, size_t length) {
   // Import pow_unit_fast for power calculation

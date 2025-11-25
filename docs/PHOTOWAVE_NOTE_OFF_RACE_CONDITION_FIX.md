@@ -1,4 +1,4 @@
-# Photowave Note Off Race Condition Fix
+# LuxWave Note Off Race Condition Fix
 
 **Date:** 2025-11-24  
 **Status:** ✅ FIXED  
@@ -7,7 +7,7 @@
 ## Problem Description
 
 ### Symptom
-Photowave synthesis was experiencing "stuck notes" where Note Off messages would fail to find the corresponding voice, resulting in WARNING messages:
+LuxWave synthesis was experiencing "stuck notes" where Note Off messages would fail to find the corresponding voice, resulting in WARNING messages:
 
 ```
 SYNTH_POLY: WARNING - Note Off 62: No voice found (neither active nor idle)!
@@ -15,18 +15,18 @@ SYNTH_POLY: WARNING - Note Off 69: No voice found (neither active nor idle)!
 SYNTH_POLY: WARNING - Note Off 67: No voice found (neither active nor idle)!
 ```
 
-**Note:** Photowave uses the polyphonic synthesis system (`synth_polyphonic`) internally for voice management, which is why the warnings show "SYNTH_POLY" prefix.
+**Note:** LuxWave uses the polyphonic synthesis system (`synth_luxsynth`) internally for voice management, which is why the warnings show "SYNTH_POLY" prefix.
 
 ### Root Cause
 Race condition between ADSR envelope reaching IDLE state and Note Off message arrival:
 
 1. **Voice becomes IDLE** (ADSR Release phase completes)
-   - `synth_photowave_process()` detects `vol_adsr < MIN_AUDIBLE_AMPLITUDE && state == IDLE`
+   - `synth_luxwave_process()` detects `vol_adsr < MIN_AUDIBLE_AMPLITUDE && state == IDLE`
    - Sets `voice->active = false`
    - **BUT** `voice->midi_note` was NOT cleared
 
 2. **Note Off arrives** (slightly delayed)
-   - `synth_photowave_note_off()` searches for voice with matching `midi_note`
+   - `synth_luxwave_note_off()` searches for voice with matching `midi_note`
    - **Only searches ACTIVE voices** (not in RELEASE or IDLE)
    - **Fails to find the voice** because it's already IDLE
    - Results in WARNING message
@@ -39,23 +39,23 @@ With very short ADSR Release times (e.g., 0.2s), the envelope can reach IDLE sta
 ### Two-Phase Fix
 
 #### Phase 1: Preserve `midi_note` in IDLE State
-Modified `synth_photowave_process()` to NOT clear `midi_note` when voice becomes IDLE:
+Modified `synth_luxwave_process()` to NOT clear `midi_note` when voice becomes IDLE:
 
 ```c
 if (vol_adsr < MIN_AUDIBLE_AMPLITUDE && voice->volume_adsr.state == ADSR_STATE_IDLE) {
     voice->active = false;
     // NOTE: midi_note is intentionally NOT cleared here to allow late Note Off messages
-    // It will be cleared when the Note Off is processed in synth_photowave_note_off()
+    // It will be cleared when the Note Off is processed in synth_luxwave_note_off()
     continue;
 }
 ```
 
 #### Phase 2: Search RELEASE and IDLE Voices (Grace Period)
-Modified `synth_photowave_note_off()` to search RELEASE voices first, then IDLE voices:
+Modified `synth_luxwave_note_off()` to search RELEASE voices first, then IDLE voices:
 
 ```c
 // Priority 1: Find the OLDEST ACTIVE voice with this note number (not in RELEASE or IDLE)
-for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
     if (state->voices[i].midi_note == note &&
         state->voices[i].active &&
         state->voices[i].volume_adsr.state != ADSR_STATE_IDLE &&
@@ -66,11 +66,11 @@ for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
 
 // Priority 2: If no active voice found, search in RELEASE voices (duplicate/late Note Off)
 if (oldest_voice_idx == -1) {
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
         if (state->voices[i].midi_note == note &&
             state->voices[i].volume_adsr.state == ADSR_STATE_RELEASE) {
             oldest_voice_idx = i;
-            log_debug("PHOTOWAVE", "Duplicate Note Off %d handled via RELEASE voice %d (already releasing)", note, i);
+            log_debug("LUXWAVE", "Duplicate Note Off %d handled via RELEASE voice %d (already releasing)", note, i);
             break;
         }
     }
@@ -78,11 +78,11 @@ if (oldest_voice_idx == -1) {
 
 // Priority 3: If still not found, search in IDLE voices (grace period for very late Note Off)
 if (oldest_voice_idx == -1) {
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
         if (state->voices[i].midi_note == note &&
             state->voices[i].volume_adsr.state == ADSR_STATE_IDLE) {
             oldest_voice_idx = i;
-            log_debug("PHOTOWAVE", "Late Note Off %d handled via IDLE voice %d (grace period)", note, i);
+            log_debug("LUXWAVE", "Late Note Off %d handled via IDLE voice %d (grace period)", note, i);
             break;
         }
     }
@@ -111,9 +111,9 @@ if (oldest_voice_idx != -1) {
 
 ## Files Modified
 
-- `src/synthesis/photowave/synth_photowave.c`
-  - Modified `synth_photowave_process()` to preserve `midi_note` in IDLE voices
-  - Modified `synth_photowave_note_off()` to search IDLE voices and clear `midi_note` after processing
+- `src/synthesis/luxwave/synth_luxwave.c`
+  - Modified `synth_luxwave_process()` to preserve `midi_note` in IDLE voices
+  - Modified `synth_luxwave_note_off()` to search IDLE voices and clear `midi_note` after processing
 
 ## Testing
 
@@ -137,7 +137,7 @@ if (oldest_voice_idx != -1) {
 ## Related Issues
 
 This fix is identical to the one applied to the polyphonic synthesis system:
-- See `docs/POLYPHONIC_NOTE_OFF_RACE_CONDITION_FIX.md`
+- See `docs/LUXSYNTH_NOTE_OFF_RACE_CONDITION_FIX.md`
 
 Both systems share the same underlying voice management architecture, so the same race condition existed in both.
 

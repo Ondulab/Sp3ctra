@@ -53,10 +53,10 @@ static const config_param_def_t CONFIG_PARAMS[] = {
     CONFIG_PARAM("instrument", "sensor_dpi", PARAM_TYPE_INT, 
                  sensor_dpi, 200, 400),
     
-    // Additive synthesis section (frequency mapping)
-    CONFIG_PARAM("synth_additive", "low_frequency", PARAM_TYPE_FLOAT, 
+    // LuxStral synthesis section (frequency mapping)
+    CONFIG_PARAM("synth_luxstral", "low_frequency", PARAM_TYPE_FLOAT, 
                  low_frequency, 20.0f, 20000.0f),
-    CONFIG_PARAM("synth_additive", "high_frequency", PARAM_TYPE_FLOAT, 
+    CONFIG_PARAM("synth_luxstral", "high_frequency", PARAM_TYPE_FLOAT, 
                  high_frequency, 20.0f, 20000.0f),
     
     // Envelope slew section
@@ -82,7 +82,7 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  stereo_temperature_curve_exponent, 0.1f, 2.0f),
     
     // Threading section
-    CONFIG_PARAM("synth_additive", "num_workers", PARAM_TYPE_INT,
+    CONFIG_PARAM("synth_luxstral", "num_workers", PARAM_TYPE_INT,
                  num_workers, 1, 8),
     
     // Summation normalization section
@@ -97,111 +97,111 @@ static const config_param_def_t CONFIG_PARAMS[] = {
     CONFIG_PARAM("summation_normalization", "noise_gate_threshold", PARAM_TYPE_FLOAT,
                  noise_gate_threshold, 0.0f, 0.1f),
     
-    // Image processing - ADDITIVE SYNTHESIS
-    CONFIG_PARAM("image_processing_additive", "invert_intensity", PARAM_TYPE_BOOL, 
+    // Image processing - LUXSTRAL SYNTHESIS
+    CONFIG_PARAM("image_processing_luxstral", "invert_intensity", PARAM_TYPE_BOOL, 
                  invert_intensity, 0, 1),
-    CONFIG_PARAM("image_processing_additive", "enable_non_linear_mapping", PARAM_TYPE_BOOL, 
+    CONFIG_PARAM("image_processing_luxstral", "enable_non_linear_mapping", PARAM_TYPE_BOOL, 
                  additive_enable_non_linear_mapping, 0, 1),
-    CONFIG_PARAM("image_processing_additive", "gamma_value", PARAM_TYPE_FLOAT, 
+    CONFIG_PARAM("image_processing_luxstral", "gamma_value", PARAM_TYPE_FLOAT, 
                  additive_gamma_value, 0.1f, 10.0f),
-    CONFIG_PARAM("image_processing_additive", "contrast_min", PARAM_TYPE_FLOAT, 
+    CONFIG_PARAM("image_processing_luxstral", "contrast_min", PARAM_TYPE_FLOAT, 
                  additive_contrast_min, 0.0f, 1.0f),
-    CONFIG_PARAM("image_processing_additive", "contrast_stride", PARAM_TYPE_FLOAT, 
+    CONFIG_PARAM("image_processing_luxstral", "contrast_stride", PARAM_TYPE_FLOAT, 
                  additive_contrast_stride, 1.0f, 10.0f),
-    CONFIG_PARAM("image_processing_additive", "contrast_adjustment_power", PARAM_TYPE_FLOAT, 
+    CONFIG_PARAM("image_processing_luxstral", "contrast_adjustment_power", PARAM_TYPE_FLOAT, 
                  additive_contrast_adjustment_power, 0.1f, 5.0f),
     
-    // Photowave synthesis section - all parameters now in synth_photowave
-    CONFIG_PARAM("synth_photowave", "continuous_mode", PARAM_TYPE_BOOL,
+    // LuxWave synthesis section - all parameters now in synth_luxwave
+    CONFIG_PARAM("synth_luxwave", "continuous_mode", PARAM_TYPE_BOOL,
                  photowave_continuous_mode, 0, 1),
-    CONFIG_PARAM("synth_photowave", "scan_mode", PARAM_TYPE_INT,
+    CONFIG_PARAM("synth_luxwave", "scan_mode", PARAM_TYPE_INT,
                  photowave_scan_mode, 0, 2),
-    CONFIG_PARAM("synth_photowave", "interp_mode", PARAM_TYPE_INT,
+    CONFIG_PARAM("synth_luxwave", "interp_mode", PARAM_TYPE_INT,
                  photowave_interp_mode, 0, 1),
-    CONFIG_PARAM("synth_photowave", "amplitude", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxwave", "amplitude", PARAM_TYPE_FLOAT,
                  photowave_amplitude, 0.0f, 1.0f),
     
-    // Photowave ADSR Volume parameters
-    CONFIG_PARAM("synth_photowave", "volume_env_attack", PARAM_TYPE_FLOAT,
+    // LuxWave ADSR Volume parameters
+    CONFIG_PARAM("synth_luxwave", "volume_env_attack", PARAM_TYPE_FLOAT,
                  photowave_volume_adsr_attack_s, 0.001f, 5.0f),
-    CONFIG_PARAM("synth_photowave", "volume_env_decay", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxwave", "volume_env_decay", PARAM_TYPE_FLOAT,
                  photowave_volume_adsr_decay_s, 0.001f, 5.0f),
-    CONFIG_PARAM("synth_photowave", "volume_env_sustain", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxwave", "volume_env_sustain", PARAM_TYPE_FLOAT,
                  photowave_volume_adsr_sustain_level, 0.0f, 1.0f),
-    CONFIG_PARAM("synth_photowave", "volume_env_release", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxwave", "volume_env_release", PARAM_TYPE_FLOAT,
                  photowave_volume_adsr_release_s, 0.001f, 10.0f),
     
-    // Photowave ADSR Filter parameters
-    CONFIG_PARAM("synth_photowave", "filter_env_attack", PARAM_TYPE_FLOAT,
+    // LuxWave ADSR Filter parameters
+    CONFIG_PARAM("synth_luxwave", "filter_env_attack", PARAM_TYPE_FLOAT,
                  photowave_filter_adsr_attack_s, 0.001f, 5.0f),
-    CONFIG_PARAM("synth_photowave", "filter_env_decay", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxwave", "filter_env_decay", PARAM_TYPE_FLOAT,
                  photowave_filter_adsr_decay_s, 0.001f, 5.0f),
-    CONFIG_PARAM("synth_photowave", "filter_env_sustain", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxwave", "filter_env_sustain", PARAM_TYPE_FLOAT,
                  photowave_filter_adsr_sustain_level, 0.0f, 1.0f),
-    CONFIG_PARAM("synth_photowave", "filter_env_release", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxwave", "filter_env_release", PARAM_TYPE_FLOAT,
                  photowave_filter_adsr_release_s, 0.001f, 10.0f),
     
-    // Photowave LFO parameters
-    CONFIG_PARAM("synth_photowave", "lfo_vibrato_rate", PARAM_TYPE_FLOAT,
+    // LuxWave LFO parameters
+    CONFIG_PARAM("synth_luxwave", "lfo_vibrato_rate", PARAM_TYPE_FLOAT,
                  photowave_lfo_rate_hz, 0.0f, 20.0f),
-    CONFIG_PARAM("synth_photowave", "lfo_vibrato_depth", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxwave", "lfo_vibrato_depth", PARAM_TYPE_FLOAT,
                  photowave_lfo_depth_semitones, 0.0f, 2.0f),
     
-    // Photowave spectral filter parameters
-    CONFIG_PARAM("synth_photowave", "filter_cutoff", PARAM_TYPE_FLOAT,
+    // LuxWave spectral filter parameters
+    CONFIG_PARAM("synth_luxwave", "filter_cutoff", PARAM_TYPE_FLOAT,
                  photowave_filter_cutoff_hz, 100.0f, 20000.0f),
-    CONFIG_PARAM("synth_photowave", "filter_env_depth", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxwave", "filter_env_depth", PARAM_TYPE_FLOAT,
                  photowave_filter_env_depth_hz, -10000.0f, 10000.0f),
     
-    // Polyphonic synthesis section - all parameters now in synth_polyphonic
-    CONFIG_PARAM("synth_polyphonic", "num_voices", PARAM_TYPE_INT, 
+    // LuxSynth synthesis section - all parameters now in synth_luxsynth
+    CONFIG_PARAM("synth_luxsynth", "num_voices", PARAM_TYPE_INT, 
                  poly_num_voices, 1, 32),
-    CONFIG_PARAM("synth_polyphonic", "max_oscillators", PARAM_TYPE_INT, 
+    CONFIG_PARAM("synth_luxsynth", "max_oscillators", PARAM_TYPE_INT, 
                  poly_max_oscillators, 1, 256),
     
-    // Polyphonic ADSR Volume parameters
-    CONFIG_PARAM("synth_polyphonic", "volume_env_attack", PARAM_TYPE_FLOAT,
+    // LuxSynth ADSR Volume parameters
+    CONFIG_PARAM("synth_luxsynth", "volume_env_attack", PARAM_TYPE_FLOAT,
                  poly_volume_adsr_attack_s, 0.0f, 10.0f),
-    CONFIG_PARAM("synth_polyphonic", "volume_env_decay", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "volume_env_decay", PARAM_TYPE_FLOAT,
                  poly_volume_adsr_decay_s, 0.0f, 10.0f),
-    CONFIG_PARAM("synth_polyphonic", "volume_env_sustain", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "volume_env_sustain", PARAM_TYPE_FLOAT,
                  poly_volume_adsr_sustain_level, 0.0f, 1.0f),
-    CONFIG_PARAM("synth_polyphonic", "volume_env_release", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "volume_env_release", PARAM_TYPE_FLOAT,
                  poly_volume_adsr_release_s, 0.0f, 10.0f),
     
-    // Polyphonic ADSR Filter parameters
-    CONFIG_PARAM("synth_polyphonic", "filter_env_attack", PARAM_TYPE_FLOAT,
+    // LuxSynth ADSR Filter parameters
+    CONFIG_PARAM("synth_luxsynth", "filter_env_attack", PARAM_TYPE_FLOAT,
                  poly_filter_adsr_attack_s, 0.0f, 10.0f),
-    CONFIG_PARAM("synth_polyphonic", "filter_env_decay", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "filter_env_decay", PARAM_TYPE_FLOAT,
                  poly_filter_adsr_decay_s, 0.0f, 10.0f),
-    CONFIG_PARAM("synth_polyphonic", "filter_env_sustain", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "filter_env_sustain", PARAM_TYPE_FLOAT,
                  poly_filter_adsr_sustain_level, 0.0f, 1.0f),
-    CONFIG_PARAM("synth_polyphonic", "filter_env_release", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "filter_env_release", PARAM_TYPE_FLOAT,
                  poly_filter_adsr_release_s, 0.0f, 10.0f),
     
-    // Polyphonic LFO parameters
-    CONFIG_PARAM("synth_polyphonic", "lfo_vibrato_rate", PARAM_TYPE_FLOAT,
+    // LuxSynth LFO parameters
+    CONFIG_PARAM("synth_luxsynth", "lfo_vibrato_rate", PARAM_TYPE_FLOAT,
                  poly_lfo_rate_hz, 0.0f, 30.0f),
-    CONFIG_PARAM("synth_polyphonic", "lfo_vibrato_depth", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "lfo_vibrato_depth", PARAM_TYPE_FLOAT,
                  poly_lfo_depth_semitones, -12.0f, 12.0f),
     
-    // Polyphonic spectral filter parameters
-    CONFIG_PARAM("synth_polyphonic", "filter_cutoff", PARAM_TYPE_FLOAT,
+    // LuxSynth spectral filter parameters
+    CONFIG_PARAM("synth_luxsynth", "filter_cutoff", PARAM_TYPE_FLOAT,
                  poly_filter_cutoff_hz, 20.0f, 20000.0f),
-    CONFIG_PARAM("synth_polyphonic", "filter_env_depth", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "filter_env_depth", PARAM_TYPE_FLOAT,
                  poly_filter_env_depth_hz, -20000.0f, 20000.0f),
     
-    // Polyphonic performance parameters
-    CONFIG_PARAM("synth_polyphonic", "master_volume", PARAM_TYPE_FLOAT,
+    // LuxSynth performance parameters
+    CONFIG_PARAM("synth_luxsynth", "master_volume", PARAM_TYPE_FLOAT,
                  poly_master_volume, 0.0f, 1.0f),
-    CONFIG_PARAM("synth_polyphonic", "amplitude_gamma", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "amplitude_gamma", PARAM_TYPE_FLOAT,
                  poly_amplitude_gamma, 0.1f, 5.0f),
-    CONFIG_PARAM("synth_polyphonic", "min_audible_amplitude", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "min_audible_amplitude", PARAM_TYPE_FLOAT,
                  poly_min_audible_amplitude, 0.0f, 0.1f),
-    CONFIG_PARAM("synth_polyphonic", "high_freq_harmonic_limit_hz", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "high_freq_harmonic_limit_hz", PARAM_TYPE_FLOAT,
                  poly_high_freq_harmonic_limit_hz, 1000.0f, 20000.0f),
     
-    // Polyphonic advanced parameters
+    // LuxSynth advanced parameters
     CONFIG_PARAM("polyphonic", "amplitude_smoothing_alpha", PARAM_TYPE_FLOAT,
                  poly_amplitude_smoothing_alpha, 0.0f, 1.0f),
     CONFIG_PARAM("polyphonic", "norm_factor_bin0", PARAM_TYPE_FLOAT,
@@ -209,7 +209,7 @@ static const config_param_def_t CONFIG_PARAMS[] = {
     CONFIG_PARAM("polyphonic", "norm_factor_harmonics", PARAM_TYPE_FLOAT,
                  poly_norm_factor_harmonics, 1.0f, 10000000.0f),
     
-    // Polyphonic harmonicity parameters (color-based timbre control)
+    // LuxSynth harmonicity parameters (color-based timbre control)
     CONFIG_PARAM("polyphonic", "detune_max_cents", PARAM_TYPE_FLOAT,
                  poly_detune_max_cents, 0.0f, 50.0f),
     CONFIG_PARAM("polyphonic", "harmonicity_curve_exponent", PARAM_TYPE_FLOAT,
@@ -240,11 +240,11 @@ static const deprecated_param_t DEPRECATED_PARAMS[] = {
     {"auto_volume", "imu_filter_alpha_x", "compile-time constant"},
     {"auto_volume", "auto_volume_active_level", "compile-time constant"},
     {"auto_volume", "auto_volume_poll_ms", "compile-time constant"},
-    {"image_processing", "enable_non_linear_mapping", "moved to [image_processing_additive]"},
-    {"image_processing", "gamma_value", "moved to [image_processing_additive]"},
-    {"summation_normalization", "contrast_min", "moved to [image_processing_additive]"},
-    {"summation_normalization", "contrast_stride", "moved to [image_processing_additive]"},
-    {"summation_normalization", "contrast_adjustment_power", "moved to [image_processing_additive]"},
+    {"image_processing", "enable_non_linear_mapping", "moved to [image_processing_luxstral]"},
+    {"image_processing", "gamma_value", "moved to [image_processing_luxstral]"},
+    {"summation_normalization", "contrast_min", "moved to [image_processing_luxstral]"},
+    {"summation_normalization", "contrast_stride", "moved to [image_processing_luxstral]"},
+    {"summation_normalization", "contrast_adjustment_power", "moved to [image_processing_luxstral]"},
 };
 
 #define DEPRECATED_PARAMS_COUNT (sizeof(DEPRECATED_PARAMS) / sizeof(DEPRECATED_PARAMS[0]))

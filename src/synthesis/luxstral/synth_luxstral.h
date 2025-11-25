@@ -1,5 +1,5 @@
 /*
- * synth_additive.h
+ * synth_luxstral.h
  *
  * Main header for additive synthesis engine
  * Includes all modular components of the refactored additive synthesis system
@@ -8,8 +8,8 @@
  */
 
 /* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __SYNTH_ADDITIVE_H
-#define __SYNTH_ADDITIVE_H
+#ifndef __SYNTH_LUXSTRAL_H
+#define __SYNTH_LUXSTRAL_H
 
 /* Includes ------------------------------------------------------------------*/
 #include "../../config/config_instrument.h"  // For CIS_MAX_PIXELS_NB
@@ -35,14 +35,14 @@ typedef struct {
     int single_osc;                 // -1 if range, otherwise single oscillator number
     int start_osc;                  // Start of range (for ranges)
     int end_osc;                    // End of range (for ranges)
-} debug_additive_osc_config_t;
+} debug_luxstral_osc_config_t;
 
 /* Module Headers (included after constants definition) ----------------------*/
-#include "synth_additive_math.h"
-#include "synth_additive_stereo.h"
-#include "synth_additive_state.h"
-#include "synth_additive_threading.h"
-#include "synth_additive_algorithms.h"
+#include "synth_luxstral_math.h"
+#include "synth_luxstral_stereo.h"
+#include "synth_luxstral_state.h"
+#include "synth_luxstral_threading.h"
+#include "synth_luxstral_algorithms.h"
 
 /* Core API function declarations -------------------------------------------*/
 
@@ -69,7 +69,7 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G, uint8_t *buffer_B,
  * @param contrast Contrast adjustment parameter
  */
 void synth_IfftMode(float *imageData, float *audioLeft, float *audioRight, float contrast, struct DoubleBuffer *db);
-void synth_additive_cleanup(void);
+void synth_luxstral_cleanup(void);
 
 /**
  * @brief Get the last calculated contrast factor (thread-safe)
@@ -78,4 +78,4 @@ void synth_additive_cleanup(void);
  */
 float synth_get_last_contrast_factor(void);
 
-#endif /* __SYNTH_ADDITIVE_H */
+#endif /* __SYNTH_LUXSTRAL_H */

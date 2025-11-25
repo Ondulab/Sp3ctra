@@ -1,5 +1,5 @@
 /*
- * synth_additive_algorithms.h
+ * synth_luxstral_algorithms.h
  *
  * Centralized algorithms for additive synthesis
  * Contains core processing algorithms used by both threading and sequential modes
@@ -8,12 +8,12 @@
  * Created: 21 sep. 2025
  */
 
-#ifndef SYNTH_ADDITIVE_ALGORITHMS_H
-#define SYNTH_ADDITIVE_ALGORITHMS_H
+#ifndef SYNTH_LUXSTRAL_ALGORITHMS_H
+#define SYNTH_LUXSTRAL_ALGORITHMS_H
 
 /* Includes ------------------------------------------------------------------*/
 #include <stdint.h>
-#include "../../config/config_synth_additive.h"
+#include "../../config/config_synth_luxstral.h"
 #include "wave_generation.h"
 
 #ifdef __cplusplus
@@ -70,4 +70,4 @@ void generate_waveform_samples(int note, float *waveBuffer, const float *precomp
 }
 #endif
 
-#endif /* SYNTH_ADDITIVE_ALGORITHMS_H */
+#endif /* SYNTH_LUXSTRAL_ALGORITHMS_H */

@@ -1,5 +1,5 @@
 /*
- * synth_additive_threading.c
+ * synth_luxstral_threading.c
  *
  * Thread pool management for additive synthesis
  * Contains persistent thread pool and parallel processing functionality
@@ -8,9 +8,9 @@
  */
 
 /* Includes ------------------------------------------------------------------*/
-#include "synth_additive_threading.h"
-#include "synth_additive_algorithms.h"
-#include "synth_additive_math.h"
+#include "synth_luxstral_threading.h"
+#include "synth_luxstral_algorithms.h"
+#include "synth_luxstral_math.h"
 #include "pow_approx.h"
 #include "wave_generation.h"
 #include "../../audio/pan/lock_free_pan.h"
@@ -87,7 +87,7 @@ static inline void synth_release_capture_buffers_if_disabled(synth_thread_worker
 
 /* External declarations -----------------------------------------------------*/
 #ifdef DEBUG_OSC
-extern debug_additive_osc_config_t g_debug_osc_config;
+extern debug_luxstral_osc_config_t g_debug_osc_config;
 #endif
 
 /* Global variables ----------------------------------------------------------*/
@@ -110,7 +110,7 @@ barrier_t g_worker_end_barrier;
 volatile int g_use_barriers = 1;  // Enable barriers by default for deterministic execution
 
 /* RT-safe double buffering system */
-rt_safe_buffer_t g_rt_additive_buffer = {0};
+rt_safe_buffer_t g_rt_luxstral_buffer = {0};
 rt_safe_buffer_t g_rt_stereo_L_buffer = {0};  
 rt_safe_buffer_t g_rt_stereo_R_buffer = {0};
 
@@ -171,11 +171,11 @@ int synth_init_thread_pool(void) {
       int notes_this = worker->end_note - worker->start_note;
       
       // Allocate dynamic buffers
-      worker->thread_additiveBuffer = (float*)calloc(buf, sizeof(float));
+      worker->thread_luxstralBuffer = (float*)calloc(buf, sizeof(float));
       worker->thread_sumVolumeBuffer = (float*)calloc(buf, sizeof(float));
       worker->thread_maxVolumeBuffer = (float*)calloc(buf, sizeof(float));
-      worker->thread_additiveBuffer_L = (float*)calloc(buf, sizeof(float));
-      worker->thread_additiveBuffer_R = (float*)calloc(buf, sizeof(float));
+      worker->thread_luxstralBuffer_L = (float*)calloc(buf, sizeof(float));
+      worker->thread_luxstralBuffer_R = (float*)calloc(buf, sizeof(float));
       worker->waveBuffer = (float*)calloc(buf, sizeof(float));
       worker->volumeBuffer = (float*)calloc(buf, sizeof(float));
       
@@ -208,8 +208,8 @@ int synth_init_thread_pool(void) {
       worker->temp_waveBuffer_R = (float*)calloc(buf, sizeof(float));
       
       // Check all allocations
-      if (!worker->thread_additiveBuffer || !worker->thread_sumVolumeBuffer || !worker->thread_maxVolumeBuffer ||
-          !worker->thread_additiveBuffer_L || !worker->thread_additiveBuffer_R || !worker->waveBuffer || !worker->volumeBuffer ||
+      if (!worker->thread_luxstralBuffer || !worker->thread_sumVolumeBuffer || !worker->thread_maxVolumeBuffer ||
+          !worker->thread_luxstralBuffer_L || !worker->thread_luxstralBuffer_R || !worker->waveBuffer || !worker->volumeBuffer ||
           !worker->imageBuffer_q31 || !worker->imageBuffer_f32 ||
           !worker->precomputed_new_idx || !worker->precomputed_wave_data || !worker->precomputed_volume ||
           !worker->precomputed_pan_position || !worker->precomputed_left_gain || !worker->precomputed_right_gain ||
@@ -285,13 +285,13 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
   synth_release_capture_buffers_if_disabled(worker);
 
   // Initialize output buffers to zero
-  fill_float(0, worker->thread_additiveBuffer, g_sp3ctra_config.audio_buffer_size);
+  fill_float(0, worker->thread_luxstralBuffer, g_sp3ctra_config.audio_buffer_size);
   fill_float(0, worker->thread_sumVolumeBuffer, g_sp3ctra_config.audio_buffer_size);
   fill_float(0, worker->thread_maxVolumeBuffer, g_sp3ctra_config.audio_buffer_size);
 
   // Initialize stereo buffers - CRITICAL FIX: must zero these buffers! (always present)
-  fill_float(0, worker->thread_additiveBuffer_L, g_sp3ctra_config.audio_buffer_size);
-  fill_float(0, worker->thread_additiveBuffer_R, g_sp3ctra_config.audio_buffer_size);
+  fill_float(0, worker->thread_luxstralBuffer_L, g_sp3ctra_config.audio_buffer_size);
+  fill_float(0, worker->thread_luxstralBuffer_R, g_sp3ctra_config.audio_buffer_size);
 
   // DEPRECATED: Old preprocessing removed - now using preprocessed_data.additive.notes[]
   // The preprocessing is done centrally in image_preprocessor.c
@@ -369,21 +369,21 @@ void synth_process_worker_range(synth_thread_worker_t *worker) {
       worker->last_right_gain[local_note_idx] = end_right;
       
       // ✅ OPTIMIZATION: Direct pointer usage (avoid temp variables)
-      add_float(worker->temp_waveBuffer_L, worker->thread_additiveBuffer_L,
-                worker->thread_additiveBuffer_L, audio_buffer_size);
-      add_float(worker->temp_waveBuffer_R, worker->thread_additiveBuffer_R,
-                worker->thread_additiveBuffer_R, audio_buffer_size);
+      add_float(worker->temp_waveBuffer_L, worker->thread_luxstralBuffer_L,
+                worker->thread_luxstralBuffer_L, audio_buffer_size);
+      add_float(worker->temp_waveBuffer_R, worker->thread_luxstralBuffer_R,
+                worker->thread_luxstralBuffer_R, audio_buffer_size);
     } else {
       // Mono mode: Duplicate mono signal to both L/R channels (center panning)
-      add_float(wave_buf, worker->thread_additiveBuffer_L,
-                worker->thread_additiveBuffer_L, audio_buffer_size);
-      add_float(wave_buf, worker->thread_additiveBuffer_R,
-                worker->thread_additiveBuffer_R, audio_buffer_size);
+      add_float(wave_buf, worker->thread_luxstralBuffer_L,
+                worker->thread_luxstralBuffer_L, audio_buffer_size);
+      add_float(wave_buf, worker->thread_luxstralBuffer_R,
+                worker->thread_luxstralBuffer_R, audio_buffer_size);
     }
 
-    // Additive summation for mono or combined processing
-    add_float(wave_buf, worker->thread_additiveBuffer,
-              worker->thread_additiveBuffer, audio_buffer_size);
+    // LuxStral summation for mono or combined processing
+    add_float(wave_buf, worker->thread_luxstralBuffer,
+              worker->thread_luxstralBuffer, audio_buffer_size);
     
     // Intelligent volume weighting: strong oscillators dominate over weak background noise
     // ✅ OPTIMIZATION: Use hoisted constant for weighting exponent
@@ -563,11 +563,11 @@ void synth_shutdown_thread_pool(void) {
     pthread_join(worker_threads[i], NULL);
 
     // Free dynamically allocated worker buffers
-    free(thread_pool[i].thread_additiveBuffer);    thread_pool[i].thread_additiveBuffer = NULL;
+    free(thread_pool[i].thread_luxstralBuffer);    thread_pool[i].thread_luxstralBuffer = NULL;
     free(thread_pool[i].thread_sumVolumeBuffer);   thread_pool[i].thread_sumVolumeBuffer = NULL;
     free(thread_pool[i].thread_maxVolumeBuffer);   thread_pool[i].thread_maxVolumeBuffer = NULL;
-    free(thread_pool[i].thread_additiveBuffer_L);  thread_pool[i].thread_additiveBuffer_L = NULL;
-    free(thread_pool[i].thread_additiveBuffer_R);  thread_pool[i].thread_additiveBuffer_R = NULL;
+    free(thread_pool[i].thread_luxstralBuffer_L);  thread_pool[i].thread_luxstralBuffer_L = NULL;
+    free(thread_pool[i].thread_luxstralBuffer_R);  thread_pool[i].thread_luxstralBuffer_R = NULL;
     free(thread_pool[i].waveBuffer);               thread_pool[i].waveBuffer = NULL;
     free(thread_pool[i].volumeBuffer);             thread_pool[i].volumeBuffer = NULL;
     free(thread_pool[i].imageBuffer_q31);          thread_pool[i].imageBuffer_q31 = NULL;
@@ -624,15 +624,15 @@ int init_rt_safe_buffers(void) {
   int buffer_size = g_sp3ctra_config.audio_buffer_size;
   
   // Initialize additive buffer
-  g_rt_additive_buffer.buffers[0] = (float*)calloc(buffer_size, sizeof(float));
-  g_rt_additive_buffer.buffers[1] = (float*)calloc(buffer_size, sizeof(float));
-  if (!g_rt_additive_buffer.buffers[0] || !g_rt_additive_buffer.buffers[1]) {
+  g_rt_luxstral_buffer.buffers[0] = (float*)calloc(buffer_size, sizeof(float));
+  g_rt_luxstral_buffer.buffers[1] = (float*)calloc(buffer_size, sizeof(float));
+  if (!g_rt_luxstral_buffer.buffers[0] || !g_rt_luxstral_buffer.buffers[1]) {
     log_error("SYNTH", "Failed to allocate RT additive buffers");
     return -1;
   }
-  g_rt_additive_buffer.ready_buffer = 0;  // RT reads from buffer 0 initially
-  g_rt_additive_buffer.worker_buffer = 1; // Workers write to buffer 1 initially
-  pthread_mutex_init(&g_rt_additive_buffer.swap_mutex, NULL);
+  g_rt_luxstral_buffer.ready_buffer = 0;  // RT reads from buffer 0 initially
+  g_rt_luxstral_buffer.worker_buffer = 1; // Workers write to buffer 1 initially
+  pthread_mutex_init(&g_rt_luxstral_buffer.swap_mutex, NULL);
 
   // Initialize stereo L buffer  
   g_rt_stereo_L_buffer.buffers[0] = (float*)calloc(buffer_size, sizeof(float));
@@ -666,9 +666,9 @@ int init_rt_safe_buffers(void) {
  */
 void cleanup_rt_safe_buffers(void) {
   // Cleanup additive buffer
-  if (g_rt_additive_buffer.buffers[0]) { free(g_rt_additive_buffer.buffers[0]); g_rt_additive_buffer.buffers[0] = NULL; }
-  if (g_rt_additive_buffer.buffers[1]) { free(g_rt_additive_buffer.buffers[1]); g_rt_additive_buffer.buffers[1] = NULL; }
-  pthread_mutex_destroy(&g_rt_additive_buffer.swap_mutex);
+  if (g_rt_luxstral_buffer.buffers[0]) { free(g_rt_luxstral_buffer.buffers[0]); g_rt_luxstral_buffer.buffers[0] = NULL; }
+  if (g_rt_luxstral_buffer.buffers[1]) { free(g_rt_luxstral_buffer.buffers[1]); g_rt_luxstral_buffer.buffers[1] = NULL; }
+  pthread_mutex_destroy(&g_rt_luxstral_buffer.swap_mutex);
 
   // Cleanup stereo L buffer
   if (g_rt_stereo_L_buffer.buffers[0]) { free(g_rt_stereo_L_buffer.buffers[0]); g_rt_stereo_L_buffer.buffers[0] = NULL; }
@@ -689,11 +689,11 @@ void cleanup_rt_safe_buffers(void) {
  */
 void rt_safe_swap_buffers(void) {
   // Swap additive buffer (non-blocking for non-RT thread)
-  pthread_mutex_lock(&g_rt_additive_buffer.swap_mutex);
-  int old_ready = g_rt_additive_buffer.ready_buffer;
-  g_rt_additive_buffer.ready_buffer = g_rt_additive_buffer.worker_buffer;
-  g_rt_additive_buffer.worker_buffer = old_ready;
-  pthread_mutex_unlock(&g_rt_additive_buffer.swap_mutex);
+  pthread_mutex_lock(&g_rt_luxstral_buffer.swap_mutex);
+  int old_ready = g_rt_luxstral_buffer.ready_buffer;
+  g_rt_luxstral_buffer.ready_buffer = g_rt_luxstral_buffer.worker_buffer;
+  g_rt_luxstral_buffer.worker_buffer = old_ready;
+  pthread_mutex_unlock(&g_rt_luxstral_buffer.swap_mutex);
 
   // Swap stereo L buffer  
   pthread_mutex_lock(&g_rt_stereo_L_buffer.swap_mutex);

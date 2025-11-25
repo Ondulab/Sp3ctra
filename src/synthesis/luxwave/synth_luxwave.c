@@ -1,9 +1,9 @@
 /**
- * @file synth_photowave.c
- * @brief Photowave synthesis engine implementation with polyphony, ADSR, and LFO
+ * @file synth_luxwave.c
+ * @brief LuxWave synthesis engine implementation with polyphony, ADSR, and LFO
  */
 
-#include "synth_photowave.h"
+#include "synth_luxwave.h"
 #include "config_loader.h"  // For g_sp3ctra_config
 #include "logger.h"         // For logging
 #include "context.h"        // For Context structure
@@ -23,8 +23,8 @@
  * GLOBAL VARIABLES (for thread integration)
  * ========================================================================== */
 
-// Double buffer for Photowave audio output
-PhotowaveAudioBuffer photowave_audio_buffers[2];
+// Double buffer for LuxWave audio output
+LuxWaveAudioBuffer photowave_audio_buffers[2];
 
 // Current buffer index for producer thread
 volatile int photowave_current_buffer_index = 0;
@@ -32,8 +32,8 @@ volatile int photowave_current_buffer_index = 0;
 // Mutex for buffer index synchronization
 pthread_mutex_t photowave_buffer_index_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Global Photowave state instance
-PhotowaveState g_photowave_state = {0};
+// Global LuxWave state instance
+LuxWaveState g_luxwave_state = {0};
 
 // Thread running flag
 static volatile int photowave_thread_running = 0;
@@ -42,31 +42,31 @@ static volatile int photowave_thread_running = 0;
 static uint64_t photowave_total_buffers_processed = 0;
 static uint64_t photowave_total_wait_timeouts = 0;
 static uint64_t photowave_last_stats_print_time_us = 0;
-#define PHOTOWAVE_STATS_PRINT_INTERVAL_US 5000000ULL  // Print stats every 5 seconds
+#define LUXWAVE_STATS_PRINT_INTERVAL_US 5000000ULL  // Print stats every 5 seconds
 
 /* ============================================================================
  * GLOBAL ADSR/LFO/FILTER PARAMETERS
  * ========================================================================== */
 
 // Volume ADSR runtime values (initialized from config)
-static float G_PHOTOWAVE_VOLUME_ATTACK_S = 0.01f;
-static float G_PHOTOWAVE_VOLUME_DECAY_S = 0.1f;
-static float G_PHOTOWAVE_VOLUME_SUSTAIN = 0.8f;
-static float G_PHOTOWAVE_VOLUME_RELEASE_S = 0.2f;
+static float G_LUXWAVE_VOLUME_ATTACK_S = 0.01f;
+static float G_LUXWAVE_VOLUME_DECAY_S = 0.1f;
+static float G_LUXWAVE_VOLUME_SUSTAIN = 0.8f;
+static float G_LUXWAVE_VOLUME_RELEASE_S = 0.2f;
 
 // Filter ADSR runtime values (initialized from config)
-static float G_PHOTOWAVE_FILTER_ATTACK_S = 0.02f;
-static float G_PHOTOWAVE_FILTER_DECAY_S = 0.2f;
-static float G_PHOTOWAVE_FILTER_SUSTAIN = 0.3f;
-static float G_PHOTOWAVE_FILTER_RELEASE_S = 0.3f;
+static float G_LUXWAVE_FILTER_ATTACK_S = 0.02f;
+static float G_LUXWAVE_FILTER_DECAY_S = 0.2f;
+static float G_LUXWAVE_FILTER_SUSTAIN = 0.3f;
+static float G_LUXWAVE_FILTER_RELEASE_S = 0.3f;
 
 // LFO runtime values (initialized from config)
-static float G_PHOTOWAVE_LFO_RATE_HZ = 5.0f;
-static float G_PHOTOWAVE_LFO_DEPTH_SEMITONES = 0.25f;
+static float G_LUXWAVE_LFO_RATE_HZ = 5.0f;
+static float G_LUXWAVE_LFO_DEPTH_SEMITONES = 0.25f;
 
 // Filter runtime values (initialized from config)
-static float G_PHOTOWAVE_FILTER_CUTOFF_HZ = 12000.0f;
-static float G_PHOTOWAVE_FILTER_ENV_DEPTH = -6000.0f;
+static float G_LUXWAVE_FILTER_CUTOFF_HZ = 12000.0f;
+static float G_LUXWAVE_FILTER_ENV_DEPTH = -6000.0f;
 
 /* ============================================================================
  * PRIVATE HELPER FUNCTIONS
@@ -270,9 +270,9 @@ static float lfo_process(LfoState *lfo) {
  * LOWPASS FILTER IMPLEMENTATION
  * ========================================================================== */
 
-static void lowpass_init(PhotowaveLowpassFilter *filter, float sample_rate) {
-    filter->base_cutoff_hz = G_PHOTOWAVE_FILTER_CUTOFF_HZ;
-    filter->filter_env_depth = G_PHOTOWAVE_FILTER_ENV_DEPTH;
+static void lowpass_init(LuxWaveLowpassFilter *filter, float sample_rate) {
+    filter->base_cutoff_hz = G_LUXWAVE_FILTER_CUTOFF_HZ;
+    filter->filter_env_depth = G_LUXWAVE_FILTER_ENV_DEPTH;
     filter->prev_output = 0.0f;
     
     float rc = 1.0f / (TWO_PI * filter->base_cutoff_hz);
@@ -286,7 +286,7 @@ static void lowpass_init(PhotowaveLowpassFilter *filter, float sample_rate) {
  * ========================================================================== */
 
 static float sample_waveform_linear(const uint8_t *image_line, int pixel_count,
-                                   float phase, PhotowaveScanMode scan_mode) {
+                                   float phase, LuxWaveScanMode scan_mode) {
     if (!image_line || pixel_count <= 0) return 0.0f;
     
     // DC BLOCKING FIX: Calculate the mean pixel value to remove DC offset
@@ -303,13 +303,13 @@ static float sample_waveform_linear(const uint8_t *image_line, int pixel_count,
     
     float pixel_pos;
     switch (scan_mode) {
-        case PHOTOWAVE_SCAN_LEFT_TO_RIGHT:
+        case LUXWAVE_SCAN_LEFT_TO_RIGHT:
             pixel_pos = phase * (float)(pixel_count - 1);
             break;
-        case PHOTOWAVE_SCAN_RIGHT_TO_LEFT:
+        case LUXWAVE_SCAN_RIGHT_TO_LEFT:
             pixel_pos = (1.0f - phase) * (float)(pixel_count - 1);
             break;
-        case PHOTOWAVE_SCAN_DUAL:
+        case LUXWAVE_SCAN_DUAL:
             if (phase < 0.5f) {
                 pixel_pos = (phase * 2.0f) * (float)(pixel_count - 1);
             } else {
@@ -341,30 +341,30 @@ static float sample_waveform_linear(const uint8_t *image_line, int pixel_count,
  * INITIALIZATION & CLEANUP
  * ========================================================================== */
 
-int synth_photowave_init(PhotowaveState *state, float sample_rate, int pixel_count) {
+int synth_luxwave_init(LuxWaveState *state, float sample_rate, int pixel_count) {
     int i;
     
     if (!state) return -1;
     if (sample_rate <= 0.0f) return -2;
-    if (pixel_count <= 0 || pixel_count > PHOTOWAVE_MAX_PIXELS) return -3;
+    if (pixel_count <= 0 || pixel_count > LUXWAVE_MAX_PIXELS) return -3;
     
-    memset(state, 0, sizeof(PhotowaveState));
+    memset(state, 0, sizeof(LuxWaveState));
     
-    state->config.scan_mode = PHOTOWAVE_SCAN_LEFT_TO_RIGHT;
-    state->config.interp_mode = PHOTOWAVE_INTERP_LINEAR;
-    state->config.amplitude = PHOTOWAVE_DEFAULT_AMPLITUDE;
+    state->config.scan_mode = LUXWAVE_SCAN_LEFT_TO_RIGHT;
+    state->config.interp_mode = LUXWAVE_INTERP_LINEAR;
+    state->config.amplitude = LUXWAVE_DEFAULT_AMPLITUDE;
     
     state->sample_rate = sample_rate;
     state->pixel_count = pixel_count;
     state->f_min = sample_rate / (float)pixel_count;
-    state->f_max = PHOTOWAVE_MAX_FREQUENCY;
+    state->f_max = LUXWAVE_MAX_FREQUENCY;
     
     state->current_trigger_order = 0;
     
-    lfo_init(&state->global_vibrato_lfo, G_PHOTOWAVE_LFO_RATE_HZ, 
-             G_PHOTOWAVE_LFO_DEPTH_SEMITONES, sample_rate);
+    lfo_init(&state->global_vibrato_lfo, G_LUXWAVE_LFO_RATE_HZ, 
+             G_LUXWAVE_LFO_DEPTH_SEMITONES, sample_rate);
     
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
         state->voices[i].phase = 0.0f;
         state->voices[i].frequency = state->f_min;
         state->voices[i].midi_note = 0;
@@ -372,12 +372,12 @@ int synth_photowave_init(PhotowaveState *state, float sample_rate, int pixel_cou
         state->voices[i].active = false;
         state->voices[i].trigger_order = 0;
         
-        adsr_init_envelope(&state->voices[i].volume_adsr, G_PHOTOWAVE_VOLUME_ATTACK_S,
-                          G_PHOTOWAVE_VOLUME_DECAY_S, G_PHOTOWAVE_VOLUME_SUSTAIN,
-                          G_PHOTOWAVE_VOLUME_RELEASE_S, sample_rate);
-        adsr_init_envelope(&state->voices[i].filter_adsr, G_PHOTOWAVE_FILTER_ATTACK_S,
-                          G_PHOTOWAVE_FILTER_DECAY_S, G_PHOTOWAVE_FILTER_SUSTAIN,
-                          G_PHOTOWAVE_FILTER_RELEASE_S, sample_rate);
+        adsr_init_envelope(&state->voices[i].volume_adsr, G_LUXWAVE_VOLUME_ATTACK_S,
+                          G_LUXWAVE_VOLUME_DECAY_S, G_LUXWAVE_VOLUME_SUSTAIN,
+                          G_LUXWAVE_VOLUME_RELEASE_S, sample_rate);
+        adsr_init_envelope(&state->voices[i].filter_adsr, G_LUXWAVE_FILTER_ATTACK_S,
+                          G_LUXWAVE_FILTER_DECAY_S, G_LUXWAVE_FILTER_SUSTAIN,
+                          G_LUXWAVE_FILTER_RELEASE_S, sample_rate);
         
         lowpass_init(&state->voices[i].lowpass, sample_rate);
     }
@@ -388,16 +388,16 @@ int synth_photowave_init(PhotowaveState *state, float sample_rate, int pixel_cou
     return 0;
 }
 
-void synth_photowave_cleanup(PhotowaveState *state) {
+void synth_luxwave_cleanup(LuxWaveState *state) {
     if (!state) return;
-    memset(state, 0, sizeof(PhotowaveState));
+    memset(state, 0, sizeof(LuxWaveState));
 }
 
 /* ============================================================================
  * AUDIO PROCESSING (RT-SAFE)
  * ========================================================================== */
 
-void synth_photowave_process(PhotowaveState *state,
+void synth_luxwave_process(LuxWaveState *state,
                              float *output_left,
                              float *output_right,
                              int num_frames) {
@@ -416,8 +416,8 @@ void synth_photowave_process(PhotowaveState *state,
     // OPTIMIZATION: Cache frequently used values
     const float sample_rate_inv = 1.0f / state->sample_rate;
     const float amplitude = state->config.amplitude;
-    const PhotowaveScanMode scan_mode = state->config.scan_mode;
-    const float phase_mult = (scan_mode == PHOTOWAVE_SCAN_DUAL) ? 2.0f : 1.0f;
+    const LuxWaveScanMode scan_mode = state->config.scan_mode;
+    const float phase_mult = (scan_mode == LUXWAVE_SCAN_DUAL) ? 2.0f : 1.0f;
     
     for (i = 0; i < num_frames; i++) {
         float master_sum = 0.0f;
@@ -435,8 +435,8 @@ void synth_photowave_process(PhotowaveState *state,
             }
         }
         
-        for (v = 0; v < NUM_PHOTOWAVE_VOICES; v++) {
-            PhotowaveVoice *voice = &state->voices[v];
+        for (v = 0; v < NUM_LUXWAVE_VOICES; v++) {
+            LuxWaveVoice *voice = &state->voices[v];
             
             float vol_adsr = adsr_get_output(&voice->volume_adsr);
             float filt_adsr = adsr_get_output(&voice->filter_adsr);
@@ -444,7 +444,7 @@ void synth_photowave_process(PhotowaveState *state,
             if (vol_adsr < MIN_AUDIBLE_AMPLITUDE && voice->volume_adsr.state == ADSR_STATE_IDLE) {
                 voice->active = false;
                 // NOTE: midi_note is intentionally NOT cleared here to allow late Note Off messages
-                // It will be cleared when the Note Off is processed in synth_photowave_note_off()
+                // It will be cleared when the Note Off is processed in synth_luxwave_note_off()
                 continue;
             }
             
@@ -495,29 +495,29 @@ void synth_photowave_process(PhotowaveState *state,
  * PARAMETER SETTERS (RT-SAFE)
  * ========================================================================== */
 
-void synth_photowave_set_image_line(PhotowaveState *state,
+void synth_luxwave_set_image_line(LuxWaveState *state,
                                    const uint8_t *image_line,
                                    int pixel_count) {
     if (!state) return;
     
     state->image_line = image_line;
-    if (pixel_count > 0 && pixel_count <= PHOTOWAVE_MAX_PIXELS) {
+    if (pixel_count > 0 && pixel_count <= LUXWAVE_MAX_PIXELS) {
         state->pixel_count = pixel_count;
         state->f_min = state->sample_rate / (float)pixel_count;
     }
 }
 
-void synth_photowave_set_scan_mode(PhotowaveState *state, PhotowaveScanMode mode) {
+void synth_luxwave_set_scan_mode(LuxWaveState *state, LuxWaveScanMode mode) {
     if (!state) return;
     state->config.scan_mode = mode;
 }
 
-void synth_photowave_set_interp_mode(PhotowaveState *state, PhotowaveInterpMode mode) {
+void synth_luxwave_set_interp_mode(LuxWaveState *state, LuxWaveInterpMode mode) {
     if (!state) return;
     state->config.interp_mode = mode;
 }
 
-void synth_photowave_set_amplitude(PhotowaveState *state, float amplitude) {
+void synth_luxwave_set_amplitude(LuxWaveState *state, float amplitude) {
     if (!state) return;
     state->config.amplitude = clamp_float(amplitude, 0.0f, 1.0f);
 }
@@ -526,101 +526,101 @@ void synth_photowave_set_amplitude(PhotowaveState *state, float amplitude) {
  * ADSR PARAMETER SETTERS
  * ========================================================================== */
 
-void synth_photowave_set_volume_adsr_attack(float attack_s) {
+void synth_luxwave_set_volume_adsr_attack(float attack_s) {
     int i;
     if (attack_s < 0.0f) attack_s = 0.0f;
-    G_PHOTOWAVE_VOLUME_ATTACK_S = attack_s;
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
-        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].volume_adsr,
-            G_PHOTOWAVE_VOLUME_ATTACK_S, G_PHOTOWAVE_VOLUME_DECAY_S,
-            G_PHOTOWAVE_VOLUME_SUSTAIN, G_PHOTOWAVE_VOLUME_RELEASE_S,
-            g_photowave_state.sample_rate);
+    G_LUXWAVE_VOLUME_ATTACK_S = attack_s;
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_luxwave_state.voices[i].volume_adsr,
+            G_LUXWAVE_VOLUME_ATTACK_S, G_LUXWAVE_VOLUME_DECAY_S,
+            G_LUXWAVE_VOLUME_SUSTAIN, G_LUXWAVE_VOLUME_RELEASE_S,
+            g_luxwave_state.sample_rate);
     }
 }
 
-void synth_photowave_set_volume_adsr_decay(float decay_s) {
+void synth_luxwave_set_volume_adsr_decay(float decay_s) {
     int i;
     if (decay_s < 0.0f) decay_s = 0.0f;
-    G_PHOTOWAVE_VOLUME_DECAY_S = decay_s;
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
-        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].volume_adsr,
-            G_PHOTOWAVE_VOLUME_ATTACK_S, G_PHOTOWAVE_VOLUME_DECAY_S,
-            G_PHOTOWAVE_VOLUME_SUSTAIN, G_PHOTOWAVE_VOLUME_RELEASE_S,
-            g_photowave_state.sample_rate);
+    G_LUXWAVE_VOLUME_DECAY_S = decay_s;
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_luxwave_state.voices[i].volume_adsr,
+            G_LUXWAVE_VOLUME_ATTACK_S, G_LUXWAVE_VOLUME_DECAY_S,
+            G_LUXWAVE_VOLUME_SUSTAIN, G_LUXWAVE_VOLUME_RELEASE_S,
+            g_luxwave_state.sample_rate);
     }
 }
 
-void synth_photowave_set_volume_adsr_sustain(float sustain_level) {
+void synth_luxwave_set_volume_adsr_sustain(float sustain_level) {
     int i;
     if (sustain_level < 0.0f) sustain_level = 0.0f;
     if (sustain_level > 1.0f) sustain_level = 1.0f;
-    G_PHOTOWAVE_VOLUME_SUSTAIN = sustain_level;
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
-        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].volume_adsr,
-            G_PHOTOWAVE_VOLUME_ATTACK_S, G_PHOTOWAVE_VOLUME_DECAY_S,
-            G_PHOTOWAVE_VOLUME_SUSTAIN, G_PHOTOWAVE_VOLUME_RELEASE_S,
-            g_photowave_state.sample_rate);
+    G_LUXWAVE_VOLUME_SUSTAIN = sustain_level;
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_luxwave_state.voices[i].volume_adsr,
+            G_LUXWAVE_VOLUME_ATTACK_S, G_LUXWAVE_VOLUME_DECAY_S,
+            G_LUXWAVE_VOLUME_SUSTAIN, G_LUXWAVE_VOLUME_RELEASE_S,
+            g_luxwave_state.sample_rate);
     }
 }
 
-void synth_photowave_set_volume_adsr_release(float release_s) {
+void synth_luxwave_set_volume_adsr_release(float release_s) {
     int i;
     if (release_s < 0.0f) release_s = 0.0f;
-    G_PHOTOWAVE_VOLUME_RELEASE_S = release_s;
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
-        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].volume_adsr,
-            G_PHOTOWAVE_VOLUME_ATTACK_S, G_PHOTOWAVE_VOLUME_DECAY_S,
-            G_PHOTOWAVE_VOLUME_SUSTAIN, G_PHOTOWAVE_VOLUME_RELEASE_S,
-            g_photowave_state.sample_rate);
+    G_LUXWAVE_VOLUME_RELEASE_S = release_s;
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_luxwave_state.voices[i].volume_adsr,
+            G_LUXWAVE_VOLUME_ATTACK_S, G_LUXWAVE_VOLUME_DECAY_S,
+            G_LUXWAVE_VOLUME_SUSTAIN, G_LUXWAVE_VOLUME_RELEASE_S,
+            g_luxwave_state.sample_rate);
     }
 }
 
-void synth_photowave_set_filter_adsr_attack(float attack_s) {
+void synth_luxwave_set_filter_adsr_attack(float attack_s) {
     int i;
     if (attack_s < 0.0f) attack_s = 0.0f;
-    G_PHOTOWAVE_FILTER_ATTACK_S = attack_s;
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
-        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].filter_adsr,
-            G_PHOTOWAVE_FILTER_ATTACK_S, G_PHOTOWAVE_FILTER_DECAY_S,
-            G_PHOTOWAVE_FILTER_SUSTAIN, G_PHOTOWAVE_FILTER_RELEASE_S,
-            g_photowave_state.sample_rate);
+    G_LUXWAVE_FILTER_ATTACK_S = attack_s;
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_luxwave_state.voices[i].filter_adsr,
+            G_LUXWAVE_FILTER_ATTACK_S, G_LUXWAVE_FILTER_DECAY_S,
+            G_LUXWAVE_FILTER_SUSTAIN, G_LUXWAVE_FILTER_RELEASE_S,
+            g_luxwave_state.sample_rate);
     }
 }
 
-void synth_photowave_set_filter_adsr_decay(float decay_s) {
+void synth_luxwave_set_filter_adsr_decay(float decay_s) {
     int i;
     if (decay_s < 0.0f) decay_s = 0.0f;
-    G_PHOTOWAVE_FILTER_DECAY_S = decay_s;
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
-        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].filter_adsr,
-            G_PHOTOWAVE_FILTER_ATTACK_S, G_PHOTOWAVE_FILTER_DECAY_S,
-            G_PHOTOWAVE_FILTER_SUSTAIN, G_PHOTOWAVE_FILTER_RELEASE_S,
-            g_photowave_state.sample_rate);
+    G_LUXWAVE_FILTER_DECAY_S = decay_s;
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_luxwave_state.voices[i].filter_adsr,
+            G_LUXWAVE_FILTER_ATTACK_S, G_LUXWAVE_FILTER_DECAY_S,
+            G_LUXWAVE_FILTER_SUSTAIN, G_LUXWAVE_FILTER_RELEASE_S,
+            g_luxwave_state.sample_rate);
     }
 }
 
-void synth_photowave_set_filter_adsr_sustain(float sustain_level) {
+void synth_luxwave_set_filter_adsr_sustain(float sustain_level) {
     int i;
     if (sustain_level < 0.0f) sustain_level = 0.0f;
     if (sustain_level > 1.0f) sustain_level = 1.0f;
-    G_PHOTOWAVE_FILTER_SUSTAIN = sustain_level;
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
-        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].filter_adsr,
-            G_PHOTOWAVE_FILTER_ATTACK_S, G_PHOTOWAVE_FILTER_DECAY_S,
-            G_PHOTOWAVE_FILTER_SUSTAIN, G_PHOTOWAVE_FILTER_RELEASE_S,
-            g_photowave_state.sample_rate);
+    G_LUXWAVE_FILTER_SUSTAIN = sustain_level;
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_luxwave_state.voices[i].filter_adsr,
+            G_LUXWAVE_FILTER_ATTACK_S, G_LUXWAVE_FILTER_DECAY_S,
+            G_LUXWAVE_FILTER_SUSTAIN, G_LUXWAVE_FILTER_RELEASE_S,
+            g_luxwave_state.sample_rate);
     }
 }
 
-void synth_photowave_set_filter_adsr_release(float release_s) {
+void synth_luxwave_set_filter_adsr_release(float release_s) {
     int i;
     if (release_s < 0.0f) release_s = 0.0f;
-    G_PHOTOWAVE_FILTER_RELEASE_S = release_s;
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
-        adsr_update_settings_and_recalculate_rates(&g_photowave_state.voices[i].filter_adsr,
-            G_PHOTOWAVE_FILTER_ATTACK_S, G_PHOTOWAVE_FILTER_DECAY_S,
-            G_PHOTOWAVE_FILTER_SUSTAIN, G_PHOTOWAVE_FILTER_RELEASE_S,
-            g_photowave_state.sample_rate);
+    G_LUXWAVE_FILTER_RELEASE_S = release_s;
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
+        adsr_update_settings_and_recalculate_rates(&g_luxwave_state.voices[i].filter_adsr,
+            G_LUXWAVE_FILTER_ATTACK_S, G_LUXWAVE_FILTER_DECAY_S,
+            G_LUXWAVE_FILTER_SUSTAIN, G_LUXWAVE_FILTER_RELEASE_S,
+            g_luxwave_state.sample_rate);
     }
 }
 
@@ -628,38 +628,38 @@ void synth_photowave_set_filter_adsr_release(float release_s) {
  * LFO PARAMETER SETTERS
  * ========================================================================== */
 
-void synth_photowave_set_vibrato_rate(float rate_hz) {
+void synth_luxwave_set_vibrato_rate(float rate_hz) {
     if (rate_hz < 0.0f) rate_hz = 0.0f;
-    g_photowave_state.global_vibrato_lfo.rate_hz = rate_hz;
-    g_photowave_state.global_vibrato_lfo.phase_increment = 
-        TWO_PI * rate_hz / g_photowave_state.sample_rate;
+    g_luxwave_state.global_vibrato_lfo.rate_hz = rate_hz;
+    g_luxwave_state.global_vibrato_lfo.phase_increment = 
+        TWO_PI * rate_hz / g_luxwave_state.sample_rate;
 }
 
-void synth_photowave_set_vibrato_depth(float depth_semitones) {
-    g_photowave_state.global_vibrato_lfo.depth_semitones = depth_semitones;
+void synth_luxwave_set_vibrato_depth(float depth_semitones) {
+    g_luxwave_state.global_vibrato_lfo.depth_semitones = depth_semitones;
 }
 
 /* ============================================================================
  * FILTER PARAMETER SETTERS
  * ========================================================================== */
 
-void synth_photowave_set_filter_cutoff(float cutoff_hz) {
+void synth_luxwave_set_filter_cutoff(float cutoff_hz) {
     int i;
     if (cutoff_hz < 20.0f) cutoff_hz = 20.0f;
-    if (cutoff_hz > g_photowave_state.sample_rate / 2.0f) {
-        cutoff_hz = g_photowave_state.sample_rate / 2.0f;
+    if (cutoff_hz > g_luxwave_state.sample_rate / 2.0f) {
+        cutoff_hz = g_luxwave_state.sample_rate / 2.0f;
     }
-    G_PHOTOWAVE_FILTER_CUTOFF_HZ = cutoff_hz;
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
-        g_photowave_state.voices[i].lowpass.base_cutoff_hz = cutoff_hz;
+    G_LUXWAVE_FILTER_CUTOFF_HZ = cutoff_hz;
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
+        g_luxwave_state.voices[i].lowpass.base_cutoff_hz = cutoff_hz;
     }
 }
 
-void synth_photowave_set_filter_env_depth(float depth_hz) {
+void synth_luxwave_set_filter_env_depth(float depth_hz) {
     int i;
-    G_PHOTOWAVE_FILTER_ENV_DEPTH = depth_hz;
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
-        g_photowave_state.voices[i].lowpass.filter_env_depth = depth_hz;
+    G_LUXWAVE_FILTER_ENV_DEPTH = depth_hz;
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
+        g_luxwave_state.voices[i].lowpass.filter_env_depth = depth_hz;
     }
 }
 
@@ -667,17 +667,17 @@ void synth_photowave_set_filter_env_depth(float depth_hz) {
  * MIDI CONTROL (RT-SAFE)
  * ========================================================================== */
 
-void synth_photowave_note_on(PhotowaveState *state, uint8_t note, uint8_t velocity) {
+void synth_luxwave_note_on(LuxWaveState *state, uint8_t note, uint8_t velocity) {
     int i, voice_idx;
     unsigned long long oldest_order;
     float quietest_env;
-    PhotowaveVoice *voice;
+    LuxWaveVoice *voice;
     
     if (!state) return;
     
     // MIDI protocol: Note On with velocity=0 is actually a Note Off
     if (velocity == 0) {
-        synth_photowave_note_off(state, note);
+        synth_luxwave_note_off(state, note);
         return;
     }
     
@@ -685,7 +685,7 @@ void synth_photowave_note_on(PhotowaveState *state, uint8_t note, uint8_t veloci
     voice_idx = -1;
     
     // Priority 1: Find IDLE voice
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
         if (state->voices[i].volume_adsr.state == ADSR_STATE_IDLE) {
             voice_idx = i;
             break;
@@ -695,7 +695,7 @@ void synth_photowave_note_on(PhotowaveState *state, uint8_t note, uint8_t veloci
     // Priority 2: Steal oldest active (non-release) voice
     if (voice_idx == -1) {
         oldest_order = state->current_trigger_order + 1;
-        for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
             if (state->voices[i].volume_adsr.state != ADSR_STATE_RELEASE &&
                 state->voices[i].volume_adsr.state != ADSR_STATE_IDLE) {
                 if (state->voices[i].trigger_order < oldest_order) {
@@ -709,7 +709,7 @@ void synth_photowave_note_on(PhotowaveState *state, uint8_t note, uint8_t veloci
     // Priority 3: Steal quietest release voice
     if (voice_idx == -1) {
         quietest_env = 2.0f;
-        for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
             if (state->voices[i].volume_adsr.state == ADSR_STATE_RELEASE) {
                 if (state->voices[i].volume_adsr.current_output < quietest_env) {
                     quietest_env = state->voices[i].volume_adsr.current_output;
@@ -733,12 +733,12 @@ void synth_photowave_note_on(PhotowaveState *state, uint8_t note, uint8_t veloci
     voice->trigger_order = state->current_trigger_order;
     
     // Initialize ADSR with current global parameters
-    adsr_init_envelope(&voice->volume_adsr, G_PHOTOWAVE_VOLUME_ATTACK_S,
-                      G_PHOTOWAVE_VOLUME_DECAY_S, G_PHOTOWAVE_VOLUME_SUSTAIN,
-                      G_PHOTOWAVE_VOLUME_RELEASE_S, state->sample_rate);
-    adsr_init_envelope(&voice->filter_adsr, G_PHOTOWAVE_FILTER_ATTACK_S,
-                      G_PHOTOWAVE_FILTER_DECAY_S, G_PHOTOWAVE_FILTER_SUSTAIN,
-                      G_PHOTOWAVE_FILTER_RELEASE_S, state->sample_rate);
+    adsr_init_envelope(&voice->volume_adsr, G_LUXWAVE_VOLUME_ATTACK_S,
+                      G_LUXWAVE_VOLUME_DECAY_S, G_LUXWAVE_VOLUME_SUSTAIN,
+                      G_LUXWAVE_VOLUME_RELEASE_S, state->sample_rate);
+    adsr_init_envelope(&voice->filter_adsr, G_LUXWAVE_FILTER_ATTACK_S,
+                      G_LUXWAVE_FILTER_DECAY_S, G_LUXWAVE_FILTER_SUSTAIN,
+                      G_LUXWAVE_FILTER_RELEASE_S, state->sample_rate);
     
     // Trigger attacks
     adsr_trigger_attack(&voice->volume_adsr);
@@ -747,12 +747,12 @@ void synth_photowave_note_on(PhotowaveState *state, uint8_t note, uint8_t veloci
     // Reset filter state
     voice->lowpass.prev_output = 0.0f;
     
-    // Log Note On with same format as POLYPHONIC
-    printf("PHOTOWAVE: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f Hz, Order: %llu -> ADSR Attack\n",
+    // Log Note On with same format as LUXSYNTH
+    printf("LUXWAVE: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f Hz, Order: %llu -> ADSR Attack\n",
            voice_idx, note, velocity, (float)velocity / 127.0f, voice->frequency, voice->trigger_order);
 }
 
-void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
+void synth_luxwave_note_off(LuxWaveState *state, uint8_t note) {
     int i;
     int oldest_voice_idx = -1;
     unsigned long long oldest_order = state->current_trigger_order + 1;
@@ -761,7 +761,7 @@ void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
     
     // Priority 1: Find the OLDEST ACTIVE voice with this note number (not in RELEASE or IDLE)
     // This ensures we only release the first instance of the note, not all of them
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
         if (state->voices[i].midi_note == note &&
             state->voices[i].active &&
             state->voices[i].volume_adsr.state != ADSR_STATE_IDLE &&
@@ -778,11 +778,11 @@ void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
     // This handles duplicate Note Off messages or late arrivals when voice is already releasing
     // NOTE: Do NOT check 'active' flag here - voices in RELEASE may have active=false
     if (oldest_voice_idx == -1) {
-        for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
             if (state->voices[i].midi_note == note &&
                 state->voices[i].volume_adsr.state == ADSR_STATE_RELEASE) {
                 oldest_voice_idx = i;
-                log_debug("PHOTOWAVE", "Duplicate Note Off %d handled via RELEASE voice %d (already releasing)", 
+                log_debug("LUXWAVE", "Duplicate Note Off %d handled via RELEASE voice %d (already releasing)", 
                           note, i);
                 // NOTE: Do NOT clear midi_note here - allows future duplicates to be detected
                 return; // Early return - duplicate Note Off, nothing to do
@@ -793,11 +793,11 @@ void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
     // Priority 3: If still not found, search in IDLE voices (grace period for very late Note Off)
     // This handles the race condition where ADSR reaches IDLE before Note Off arrives
     if (oldest_voice_idx == -1) {
-        for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+        for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
             if (state->voices[i].midi_note == note &&
                 state->voices[i].volume_adsr.state == ADSR_STATE_IDLE) {
                 oldest_voice_idx = i;
-                log_debug("PHOTOWAVE", "Late Note Off %d handled via IDLE voice %d (grace period)", note, i);
+                log_debug("LUXWAVE", "Late Note Off %d handled via IDLE voice %d (grace period)", note, i);
                 break; // Take first IDLE voice found with this note
             }
         }
@@ -810,8 +810,8 @@ void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
             state->voices[oldest_voice_idx].volume_adsr.state != ADSR_STATE_RELEASE) {
             adsr_trigger_release(&state->voices[oldest_voice_idx].volume_adsr);
             adsr_trigger_release(&state->voices[oldest_voice_idx].filter_adsr);
-            // Log Note Off with same format as POLYPHONIC
-            printf("PHOTOWAVE: Voice %d Note Off: %d -> ADSR Release\n", oldest_voice_idx, note);
+            // Log Note Off with same format as LUXSYNTH
+            printf("LUXWAVE: Voice %d Note Off: %d -> ADSR Release\n", oldest_voice_idx, note);
         }
         
         // Clear midi_note AFTER processing Note Off (prevents future late Note Offs from finding this voice)
@@ -819,8 +819,8 @@ void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
         
     } else {
         // No voice found - this should be rare now with the grace period
-        printf("PHOTOWAVE: WARNING - Note Off %d: No voice found (neither active nor idle)!\n", note);
-        printf("PHOTOWAVE: Voice states: [0:note=%d,state=%d] [1:note=%d,state=%d] [2:note=%d,state=%d] [3:note=%d,state=%d] [4:note=%d,state=%d] [5:note=%d,state=%d] [6:note=%d,state=%d] [7:note=%d,state=%d]\n",
+        printf("LUXWAVE: WARNING - Note Off %d: No voice found (neither active nor idle)!\n", note);
+        printf("LUXWAVE: Voice states: [0:note=%d,state=%d] [1:note=%d,state=%d] [2:note=%d,state=%d] [3:note=%d,state=%d] [4:note=%d,state=%d] [5:note=%d,state=%d] [6:note=%d,state=%d] [7:note=%d,state=%d]\n",
                    state->voices[0].midi_note, state->voices[0].volume_adsr.state,
                    state->voices[1].midi_note, state->voices[1].volume_adsr.state,
                    state->voices[2].midi_note, state->voices[2].volume_adsr.state,
@@ -832,20 +832,20 @@ void synth_photowave_note_off(PhotowaveState *state, uint8_t note) {
     }
 }
 
-void synth_photowave_control_change(PhotowaveState *state, uint8_t cc_number, uint8_t cc_value) {
+void synth_luxwave_control_change(LuxWaveState *state, uint8_t cc_number, uint8_t cc_value) {
     if (!state) return;
     
     switch (cc_number) {
         case 1: // CC1 (Modulation): Scan mode
             if (cc_value < 43) {
-                state->config.scan_mode = PHOTOWAVE_SCAN_LEFT_TO_RIGHT;
-                log_info("PHOTOWAVE", "Scan mode: L→R (CC1=%d, range 0-42)", cc_value);
+                state->config.scan_mode = LUXWAVE_SCAN_LEFT_TO_RIGHT;
+                log_info("LUXWAVE", "Scan mode: L→R (CC1=%d, range 0-42)", cc_value);
             } else if (cc_value < 85) {
-                state->config.scan_mode = PHOTOWAVE_SCAN_RIGHT_TO_LEFT;
-                log_info("PHOTOWAVE", "Scan mode: R→L (CC1=%d, range 43-84)", cc_value);
+                state->config.scan_mode = LUXWAVE_SCAN_RIGHT_TO_LEFT;
+                log_info("LUXWAVE", "Scan mode: R→L (CC1=%d, range 43-84)", cc_value);
             } else {
-                state->config.scan_mode = PHOTOWAVE_SCAN_DUAL;
-                log_info("PHOTOWAVE", "Scan mode: Dual (CC1=%d, range 85-127)", cc_value);
+                state->config.scan_mode = LUXWAVE_SCAN_DUAL;
+                log_info("LUXWAVE", "Scan mode: Dual (CC1=%d, range 85-127)", cc_value);
             }
             break;
             
@@ -864,19 +864,19 @@ void synth_photowave_control_change(PhotowaveState *state, uint8_t cc_number, ui
  * PARAMETER GETTERS
  * ========================================================================== */
 
-PhotowaveConfig synth_photowave_get_config(const PhotowaveState *state) {
-    PhotowaveConfig config = {0};
+LuxWaveConfig synth_luxwave_get_config(const LuxWaveState *state) {
+    LuxWaveConfig config = {0};
     if (state) {
         config = state->config;
     }
     return config;
 }
 
-bool synth_photowave_is_note_active(const PhotowaveState *state) {
+bool synth_luxwave_is_note_active(const LuxWaveState *state) {
     int i;
     if (!state) return false;
     
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
         if (state->voices[i].active && 
             state->voices[i].volume_adsr.state != ADSR_STATE_IDLE) {
             return true;
@@ -890,66 +890,66 @@ bool synth_photowave_is_note_active(const PhotowaveState *state) {
  * ========================================================================== */
 
 /**
- * @brief Load global parameters from config (must be called BEFORE synth_photowave_init)
+ * @brief Load global parameters from config (must be called BEFORE synth_luxwave_init)
  * 
  * This function loads the global ADSR/LFO/Filter parameters from g_sp3ctra_config
- * into the static global variables. It must be called before synth_photowave_init()
+ * into the static global variables. It must be called before synth_luxwave_init()
  * so that the voices are initialized with the correct values.
  */
-static void synth_photowave_load_global_params(void) {
+static void synth_luxwave_load_global_params(void) {
     // Apply ADSR Volume parameters from config
-    G_PHOTOWAVE_VOLUME_ATTACK_S = g_sp3ctra_config.photowave_volume_adsr_attack_s;
-    G_PHOTOWAVE_VOLUME_DECAY_S = g_sp3ctra_config.photowave_volume_adsr_decay_s;
-    G_PHOTOWAVE_VOLUME_SUSTAIN = g_sp3ctra_config.photowave_volume_adsr_sustain_level;
-    G_PHOTOWAVE_VOLUME_RELEASE_S = g_sp3ctra_config.photowave_volume_adsr_release_s;
+    G_LUXWAVE_VOLUME_ATTACK_S = g_sp3ctra_config.photowave_volume_adsr_attack_s;
+    G_LUXWAVE_VOLUME_DECAY_S = g_sp3ctra_config.photowave_volume_adsr_decay_s;
+    G_LUXWAVE_VOLUME_SUSTAIN = g_sp3ctra_config.photowave_volume_adsr_sustain_level;
+    G_LUXWAVE_VOLUME_RELEASE_S = g_sp3ctra_config.photowave_volume_adsr_release_s;
     
     // Apply ADSR Filter parameters from config
-    G_PHOTOWAVE_FILTER_ATTACK_S = g_sp3ctra_config.photowave_filter_adsr_attack_s;
-    G_PHOTOWAVE_FILTER_DECAY_S = g_sp3ctra_config.photowave_filter_adsr_decay_s;
-    G_PHOTOWAVE_FILTER_SUSTAIN = g_sp3ctra_config.photowave_filter_adsr_sustain_level;
-    G_PHOTOWAVE_FILTER_RELEASE_S = g_sp3ctra_config.photowave_filter_adsr_release_s;
+    G_LUXWAVE_FILTER_ATTACK_S = g_sp3ctra_config.photowave_filter_adsr_attack_s;
+    G_LUXWAVE_FILTER_DECAY_S = g_sp3ctra_config.photowave_filter_adsr_decay_s;
+    G_LUXWAVE_FILTER_SUSTAIN = g_sp3ctra_config.photowave_filter_adsr_sustain_level;
+    G_LUXWAVE_FILTER_RELEASE_S = g_sp3ctra_config.photowave_filter_adsr_release_s;
     
     // Apply LFO parameters from config
-    G_PHOTOWAVE_LFO_RATE_HZ = g_sp3ctra_config.photowave_lfo_rate_hz;
-    G_PHOTOWAVE_LFO_DEPTH_SEMITONES = g_sp3ctra_config.photowave_lfo_depth_semitones;
+    G_LUXWAVE_LFO_RATE_HZ = g_sp3ctra_config.photowave_lfo_rate_hz;
+    G_LUXWAVE_LFO_DEPTH_SEMITONES = g_sp3ctra_config.photowave_lfo_depth_semitones;
     
     // Apply Filter parameters from config
-    G_PHOTOWAVE_FILTER_CUTOFF_HZ = g_sp3ctra_config.photowave_filter_cutoff_hz;
-    G_PHOTOWAVE_FILTER_ENV_DEPTH = g_sp3ctra_config.photowave_filter_env_depth_hz;
+    G_LUXWAVE_FILTER_CUTOFF_HZ = g_sp3ctra_config.photowave_filter_cutoff_hz;
+    G_LUXWAVE_FILTER_ENV_DEPTH = g_sp3ctra_config.photowave_filter_env_depth_hz;
     
-    log_info("PHOTOWAVE", "Global parameters loaded from config:");
-    log_info("PHOTOWAVE", "  ADSR Volume: A=%.3fs D=%.3fs S=%.2f R=%.3fs",
-             G_PHOTOWAVE_VOLUME_ATTACK_S, G_PHOTOWAVE_VOLUME_DECAY_S, 
-             G_PHOTOWAVE_VOLUME_SUSTAIN, G_PHOTOWAVE_VOLUME_RELEASE_S);
-    log_info("PHOTOWAVE", "  ADSR Filter: A=%.3fs D=%.3fs S=%.2f R=%.3fs",
-             G_PHOTOWAVE_FILTER_ATTACK_S, G_PHOTOWAVE_FILTER_DECAY_S,
-             G_PHOTOWAVE_FILTER_SUSTAIN, G_PHOTOWAVE_FILTER_RELEASE_S);
-    log_info("PHOTOWAVE", "  LFO: rate=%.2fHz depth=%.2f semitones",
-             G_PHOTOWAVE_LFO_RATE_HZ, G_PHOTOWAVE_LFO_DEPTH_SEMITONES);
-    log_info("PHOTOWAVE", "  Filter: cutoff=%.0fHz env_depth=%.0fHz",
-             G_PHOTOWAVE_FILTER_CUTOFF_HZ, G_PHOTOWAVE_FILTER_ENV_DEPTH);
+    log_info("LUXWAVE", "Global parameters loaded from config:");
+    log_info("LUXWAVE", "  ADSR Volume: A=%.3fs D=%.3fs S=%.2f R=%.3fs",
+             G_LUXWAVE_VOLUME_ATTACK_S, G_LUXWAVE_VOLUME_DECAY_S, 
+             G_LUXWAVE_VOLUME_SUSTAIN, G_LUXWAVE_VOLUME_RELEASE_S);
+    log_info("LUXWAVE", "  ADSR Filter: A=%.3fs D=%.3fs S=%.2f R=%.3fs",
+             G_LUXWAVE_FILTER_ATTACK_S, G_LUXWAVE_FILTER_DECAY_S,
+             G_LUXWAVE_FILTER_SUSTAIN, G_LUXWAVE_FILTER_RELEASE_S);
+    log_info("LUXWAVE", "  LFO: rate=%.2fHz depth=%.2f semitones",
+             G_LUXWAVE_LFO_RATE_HZ, G_LUXWAVE_LFO_DEPTH_SEMITONES);
+    log_info("LUXWAVE", "  Filter: cutoff=%.0fHz env_depth=%.0fHz",
+             G_LUXWAVE_FILTER_CUTOFF_HZ, G_LUXWAVE_FILTER_ENV_DEPTH);
 }
 
-void synth_photowave_apply_config(PhotowaveState *state) {
+void synth_luxwave_apply_config(LuxWaveState *state) {
     if (!state) return;
     
     // Apply basic photowave config to state
-    state->config.scan_mode = (PhotowaveScanMode)g_sp3ctra_config.photowave_scan_mode;
-    state->config.interp_mode = (PhotowaveInterpMode)g_sp3ctra_config.photowave_interp_mode;
+    state->config.scan_mode = (LuxWaveScanMode)g_sp3ctra_config.photowave_scan_mode;
+    state->config.interp_mode = (LuxWaveInterpMode)g_sp3ctra_config.photowave_interp_mode;
     state->config.amplitude = g_sp3ctra_config.photowave_amplitude;
     
-    log_info("PHOTOWAVE", "State configuration applied: scan_mode=%d, interp_mode=%d, amplitude=%.2f",
+    log_info("LUXWAVE", "State configuration applied: scan_mode=%d, interp_mode=%d, amplitude=%.2f",
              state->config.scan_mode, state->config.interp_mode, state->config.amplitude);
 }
 
-void synth_photowave_mode_init(void) {
+void synth_luxwave_mode_init(void) {
     int i, pixel_count, result;
     
-    log_info("PHOTOWAVE", "Initializing polyphonic photowave synthesis mode");
+    log_info("LUXWAVE", "Initializing polyphonic photowave synthesis mode");
     
     // CRITICAL: Load global parameters from config BEFORE initializing voices
     // This ensures that lowpass_init() uses the correct filter cutoff values
-    synth_photowave_load_global_params();
+    synth_luxwave_load_global_params();
     
     for (i = 0; i < 2; i++) {
         pthread_mutex_init(&photowave_audio_buffers[i].mutex, NULL);
@@ -966,28 +966,28 @@ void synth_photowave_mode_init(void) {
     __atomic_store_n(&photowave_current_buffer_index, 0, __ATOMIC_SEQ_CST);
     
     pixel_count = get_cis_pixels_nb();
-    result = synth_photowave_init(&g_photowave_state, g_sp3ctra_config.sampling_frequency, pixel_count);
+    result = synth_luxwave_init(&g_luxwave_state, g_sp3ctra_config.sampling_frequency, pixel_count);
     
     if (result == 0) {
-        log_info("PHOTOWAVE", "Initialized: %.1f Hz sample rate, %d pixels, %d voices, f_min=%.2f Hz",
-                 g_sp3ctra_config.sampling_frequency, pixel_count, NUM_PHOTOWAVE_VOICES, 
-                 g_photowave_state.f_min);
+        log_info("LUXWAVE", "Initialized: %.1f Hz sample rate, %d pixels, %d voices, f_min=%.2f Hz",
+                 g_sp3ctra_config.sampling_frequency, pixel_count, NUM_LUXWAVE_VOICES, 
+                 g_luxwave_state.f_min);
         
-        synth_photowave_apply_config(&g_photowave_state);
+        synth_luxwave_apply_config(&g_luxwave_state);
     } else {
-        log_error("PHOTOWAVE", "Initialization failed with error code %d", result);
+        log_error("LUXWAVE", "Initialization failed with error code %d", result);
     }
 }
 
-void synth_photowave_thread_stop(void) {
+void synth_luxwave_thread_stop(void) {
     photowave_thread_running = 0;
-    log_info("PHOTOWAVE", "Thread stop signal sent");
+    log_info("LUXWAVE", "Thread stop signal sent");
 }
 
-void synth_photowave_mode_cleanup(void) {
+void synth_luxwave_mode_cleanup(void) {
     int i;
     
-    synth_photowave_cleanup(&g_photowave_state);
+    synth_luxwave_cleanup(&g_luxwave_state);
     
     for (i = 0; i < 2; i++) {
         if (photowave_audio_buffers[i].data) {
@@ -998,13 +998,13 @@ void synth_photowave_mode_cleanup(void) {
         pthread_cond_destroy(&photowave_audio_buffers[i].cond);
     }
     
-    log_info("PHOTOWAVE", "Cleanup complete");
+    log_info("LUXWAVE", "Cleanup complete");
 }
 
-void *synth_photowave_thread_func(void *arg) {
+void *synth_luxwave_thread_func(void *arg) {
     int buffer_size, write_index;
     float *temp_left, *temp_right;
-    extern float getSynthPhotowaveMixLevel(void);
+    extern float getSynthLuxWaveMixLevel(void);
     struct timeval tv_start, tv_end, tv_stats;
     uint64_t process_time_us, current_time_us;
     uint64_t max_process_time_us = 0;
@@ -1016,10 +1016,10 @@ void *synth_photowave_thread_func(void *arg) {
     // Use the unified synth_set_rt_priority() function with macOS support
     extern int synth_set_rt_priority(pthread_t thread, int priority);
     if (synth_set_rt_priority(pthread_self(), 75) != 0) {
-        log_warning("PHOTOWAVE", "Thread: Failed to set RT priority (continuing without RT)");
+        log_warning("LUXWAVE", "Thread: Failed to set RT priority (continuing without RT)");
     }
     
-    log_info("PHOTOWAVE", "Thread started with RT-optimized synchronization (nanosleep + exponential backoff)");
+    log_info("LUXWAVE", "Thread started with RT-optimized synchronization (nanosleep + exponential backoff)");
     photowave_thread_running = 1;
     
     buffer_size = g_sp3ctra_config.audio_buffer_size;
@@ -1027,7 +1027,7 @@ void *synth_photowave_thread_func(void *arg) {
     temp_right = (float *)malloc(buffer_size * sizeof(float));
     
     if (!temp_left || !temp_right) {
-        log_error("PHOTOWAVE", "Failed to allocate temporary buffers");
+        log_error("LUXWAVE", "Failed to allocate temporary buffers");
         if (temp_left) free(temp_left);
         if (temp_right) free(temp_right);
         return NULL;
@@ -1041,7 +1041,7 @@ void *synth_photowave_thread_func(void *arg) {
         // RACE CONDITION FIX: Always produce buffers (like polyphonic mode)
         // This eliminates the race condition where the audio callback could be called
         // before the first buffer is ready after a note on event.
-        // When inactive, synth_photowave_process() will generate silence.
+        // When inactive, synth_luxwave_process() will generate silence.
         
         pthread_mutex_lock(&photowave_buffer_index_mutex);
         write_index = photowave_current_buffer_index;
@@ -1067,7 +1067,7 @@ void *synth_photowave_thread_func(void *arg) {
         // If timeout, log warning but continue (graceful degradation)
         if (wait_iterations >= MAX_WAIT_ITERATIONS) {
             photowave_total_wait_timeouts++;
-            log_warning("PHOTOWAVE", "Buffer wait timeout (callback too slow)");
+            log_warning("LUXWAVE", "Buffer wait timeout (callback too slow)");
         }
         
         if (!photowave_thread_running) {
@@ -1078,7 +1078,7 @@ void *synth_photowave_thread_func(void *arg) {
         gettimeofday(&tv_start, NULL);
         
         // Process audio
-        synth_photowave_process(&g_photowave_state, temp_left, temp_right, buffer_size);
+        synth_luxwave_process(&g_luxwave_state, temp_left, temp_right, buffer_size);
         
         // Calculate processing time
         gettimeofday(&tv_end, NULL);
@@ -1108,7 +1108,7 @@ void *synth_photowave_thread_func(void *arg) {
         gettimeofday(&tv_stats, NULL);
         current_time_us = (uint64_t)tv_stats.tv_sec * 1000000ULL + (uint64_t)tv_stats.tv_usec;
         
-        if (current_time_us - photowave_last_stats_print_time_us >= PHOTOWAVE_STATS_PRINT_INTERVAL_US) {
+        if (current_time_us - photowave_last_stats_print_time_us >= LUXWAVE_STATS_PRINT_INTERVAL_US) {
             if (photowave_total_buffers_processed > 0) {
                 // Reset statistics for next interval (stats collection continues silently)
                 max_process_time_us = 0;
@@ -1123,6 +1123,6 @@ void *synth_photowave_thread_func(void *arg) {
     free(temp_left);
     free(temp_right);
     
-    log_info("PHOTOWAVE", "Thread stopped");
+    log_info("LUXWAVE", "Thread stopped");
     return NULL;
 }

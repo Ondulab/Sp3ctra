@@ -365,18 +365,18 @@ static int create_default_midi_mapping_file(const char *mapping_file) {
     fprintf(file, "eq_mid_freq=none              # EQ mid frequency center\n\n");
     
     fprintf(file, "# ============================================================================\n");
-    fprintf(file, "# SYNTHESIS ADDITIVE\n");
+    fprintf(file, "# SYNTHESIS LUXSTRAL\n");
     fprintf(file, "# ============================================================================\n\n");
-    fprintf(file, "[SYNTH_ADDITIVE]\n");
-    fprintf(file, "volume=none                   # Additive synthesis mix level\n");
-    fprintf(file, "reverb_send=none              # Additive reverb send amount\n\n");
+    fprintf(file, "[SYNTH_LUXSTRAL]\n");
+    fprintf(file, "volume=none                   # LuxStral synthesis mix level\n");
+    fprintf(file, "reverb_send=none              # LuxStral reverb send amount\n\n");
     
     fprintf(file, "# ============================================================================\n");
-    fprintf(file, "# SYNTHESIS POLYPHONIC\n");
+    fprintf(file, "# SYNTHESIS LUXSYNTH\n");
     fprintf(file, "# ============================================================================\n\n");
-    fprintf(file, "[SYNTH_POLYPHONIC]\n");
-    fprintf(file, "volume=none                   # Polyphonic synthesis mix level\n");
-    fprintf(file, "reverb_send=none              # Polyphonic reverb send amount\n");
+    fprintf(file, "[SYNTH_LUXSYNTH]\n");
+    fprintf(file, "volume=none                   # LuxSynth synthesis mix level\n");
+    fprintf(file, "reverb_send=none              # LuxSynth reverb send amount\n");
     fprintf(file, "note_on=none                  # MIDI note on (use NOTE:* for all notes)\n");
     fprintf(file, "note_off=none                 # MIDI note off (use NOTE:* for all notes)\n");
     fprintf(file, "volume_env_attack=none        # Volume envelope attack time\n");

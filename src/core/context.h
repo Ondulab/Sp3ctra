@@ -14,7 +14,7 @@
 typedef enum {
     IFFT_MODE = 0,
     DWAVE_MODE,
-    PHOTOWAVE_MODE,
+    LUXWAVE_MODE,
     MENU_MODE
 } synthModeTypeDef;
 

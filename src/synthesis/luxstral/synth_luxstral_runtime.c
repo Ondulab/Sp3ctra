@@ -1,12 +1,12 @@
 /*
- * synth_additive_runtime.c
+ * synth_luxstral_runtime.c
  *
  * Runtime configuration implementation for additive synthesis
  *
  * Author: zhonx
  */
 
-#include "synth_additive_runtime.h"
+#include "synth_luxstral_runtime.h"
 #include "config.h"
 #include "logger.h"
 #include "wave_generation.h"

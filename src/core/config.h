@@ -15,7 +15,7 @@
 // clang-format on
 
 // Synthesis mode configurations
-#include "../config/config_synth_additive.h"
-#include "../config/config_synth_poly.h"
+#include "../config/config_synth_luxstral.h"
+#include "../config/config_synth_luxsynth.h"
 
 #endif // __CONFIG_H__

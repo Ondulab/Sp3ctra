@@ -7,7 +7,7 @@
 #include <math.h>
 #include <string.h>
 #include "../config/config.h"
-#include "../synthesis/additive/synth_additive.h"
+#include "../synthesis/luxstral/synth_luxstral.h"
 #include "../audio/buffers/audio_image_buffers.h"
 
 // External references
@@ -24,7 +24,7 @@ void diagnose_audio_pipeline(void) {
     printf("📍 Current buffer index: %d\n", current_idx);
     
     // 2. Check additive synthesis buffers
-    printf("\n🎵 ADDITIVE SYNTHESIS BUFFERS:\n");
+    printf("\n🎵 LUXSTRAL SYNTHESIS BUFFERS:\n");
     
     // Check Left buffer
     float left_min = 0.0f, left_max = 0.0f, left_sum = 0.0f;

@@ -1,5 +1,5 @@
 /*
- * synth_additive_threading_rt.c
+ * synth_luxstral_threading_rt.c
  *
  * Real-time deterministic threading extensions
  * Implements barrier synchronization and RT priorities
@@ -7,7 +7,7 @@
  * Author: zhonx
  */
 
-#include "synth_additive_threading.h"
+#include "synth_luxstral_threading.h"
 #include "../../utils/logger.h"
 #include <errno.h>
 #include <string.h>

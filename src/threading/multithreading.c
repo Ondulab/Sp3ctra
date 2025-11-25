@@ -6,18 +6,18 @@
 #include "config.h"
 #include "config_instrument.h"
 #include "config_loader.h"
-#include "config_synth_additive.h" /* For IMU_FILTER_ALPHA_X, AUTO_VOLUME_POLL_MS */
+#include "config_synth_luxstral.h" /* For IMU_FILTER_ALPHA_X, AUTO_VOLUME_POLL_MS */
 #include "context.h"
 #include "display.h"
 #include "dmx.h"
 #include "error.h"
-#include "synth_additive.h"
+#include "synth_luxstral.h"
 #include "udp.h"
 #include "image_debug.h"
 #include "logger.h"
 #include "../processing/image_preprocessor.h"
 #include "../processing/image_sequencer.h"
-#include "../synthesis/photowave/synth_photowave.h"
+#include "../synthesis/luxwave/synth_luxwave.h"
 #include <time.h>
 
 /* External sequencer instance */
@@ -108,7 +108,7 @@ void initDoubleBuffer(DoubleBuffer *db) {
   db->preprocessed_data.additive.contrast_factor = 1.0f;
   
   /* Initialize polyphonic synthesis data */
-#ifndef DISABLE_POLYPHONIC
+#ifndef DISABLE_LUXSYNTH
   memset(db->preprocessed_data.polyphonic.grayscale, 0, sizeof(db->preprocessed_data.polyphonic.grayscale));
   memset(db->preprocessed_data.polyphonic.magnitudes, 0, sizeof(db->preprocessed_data.polyphonic.magnitudes));
   db->preprocessed_data.polyphonic.valid = 0;
@@ -349,8 +349,8 @@ void *udpThread(void *arg) {
 
 #ifdef DEBUG_IMU_PACKETS
       log_debug("IMU", "raw_x=%.6f filtered=%.6f threshold=%.6f active=%s", raw_x,
-                ctx->imu_x_filtered, g_additive_config.imu_active_threshold_x,
-                (fabsf(ctx->imu_x_filtered) >= g_additive_config.imu_active_threshold_x) ? "YES" : "NO");
+                ctx->imu_x_filtered, g_luxstral_config.imu_active_threshold_x,
+                (fabsf(ctx->imu_x_filtered) >= g_luxstral_config.imu_active_threshold_x) ? "YES" : "NO");
 #endif
 #ifdef DEBUG_UDP
       log_debug("UDP", "IMU raw_x=%.6f filtered=%.6f", raw_x, ctx->imu_x_filtered);
@@ -484,14 +484,14 @@ void *udpThread(void *arg) {
         log_error("THREAD", "Image preprocessing failed");
       }
       
-      /* Step 2.5: FFT is already calculated in preprocess_polyphonic() */
+      /* Step 2.5: FFT is already calculated in preprocess_luxsynth() */
       /* No additional action needed - FFT data is in preprocessed_temp.polyphonic */
 
-      /* 🎵 PHOTOWAVE FIX: Pass grayscale image data to Photowave synthesis thread
-       * This connects the scanner data pipeline to Photowave for audio generation
-       * Note: Photowave will convert RGB to grayscale internally, so we pass mixed_R
+      /* 🎵 LUXWAVE FIX: Pass grayscale image data to LuxWave synthesis thread
+       * This connects the scanner data pipeline to LuxWave for audio generation
+       * Note: LuxWave will convert RGB to grayscale internally, so we pass mixed_R
        */
-      synth_photowave_set_image_line(&g_photowave_state, 
+      synth_luxwave_set_image_line(&g_luxwave_state, 
                                      mixed_R, 
                                      nb_pixels);
 
@@ -511,7 +511,7 @@ void *udpThread(void *arg) {
       pthread_mutex_unlock(&db->mutex);
       
       /* 🎨 DISPLAY FIX: Update global display buffers with MIXED RGB colors
-       * This replaces the grayscale→RGB conversion in synth_additive.c
+       * This replaces the grayscale→RGB conversion in synth_luxstral.c
        */
       
       /* DEBUG: Pixel difference check - DISABLED (too verbose in production) */

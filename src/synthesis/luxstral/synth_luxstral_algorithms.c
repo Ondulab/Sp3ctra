@@ -1,5 +1,5 @@
 /*
- * synth_additive_algorithms.c
+ * synth_luxstral_algorithms.c
  *
  * Centralized algorithms for additive synthesis
  * Contains core processing algorithms used by both threading and sequential modes
@@ -9,8 +9,8 @@
  */
 
 /* Includes ------------------------------------------------------------------*/
-#include "synth_additive_algorithms.h"
-#include "synth_additive_math.h"
+#include "synth_luxstral_algorithms.h"
+#include "synth_luxstral_math.h"
 #include "wave_generation.h"
 #include "../../core/context.h"
 #include "../../config/config_debug.h"
@@ -30,7 +30,7 @@
 void update_gap_limiter_coefficients(void) {
     // Safety check: waves array must be initialized before we can update coefficients
     if (waves == NULL) {
-        log_warning("ADDITIVE", "update_gap_limiter_coefficients: waves is NULL, skipping");
+        log_warning("LUXSTRAL", "update_gap_limiter_coefficients: waves is NULL, skipping");
         return;  // Silently return if called before initialization
     }
     

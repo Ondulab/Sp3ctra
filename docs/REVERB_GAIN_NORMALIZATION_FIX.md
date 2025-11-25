@@ -73,7 +73,7 @@ Suppression de la fonction `processReverb()` non utilisée:
                     │                           │
                     ▼                           ▼
         ┌───────────────────┐       ┌───────────────────┐
-        │  Source Additive  │       │ Source Polyphonic │
+        │  Source LuxStral  │       │ Source LuxSynth │
         │   (stereo L/R)    │       │      (mono)       │
         └─────────┬─────────┘       └─────────┬─────────┘
                   │                           │
@@ -174,9 +174,9 @@ Détection automatique dans le callback audio:
 ```cpp
 // Détecter quand TOUS les reverb sends passent à zéro
 static bool all_sends_zero_last_frame = false;
-bool all_sends_zero = (cached_reverb_send_additive <= 0.01f &&
-                       cached_reverb_send_polyphonic <= 0.01f &&
-                       cached_reverb_send_photowave <= 0.01f);
+bool all_sends_zero = (cached_reverb_send_luxstral <= 0.01f &&
+                       cached_reverb_send_luxsynth <= 0.01f &&
+                       cached_reverb_send_luxwave <= 0.01f);
 
 // Si transition de "au moins un send actif" vers "tous sends à 0"
 // alors vider immédiatement les buffers de reverb

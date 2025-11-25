@@ -24,8 +24,8 @@ ifeq ($(UNAME_S),Darwin)
     # Include directories for macOS
     INCLUDES = -I/opt/homebrew/include -I$(SFML_INCLUDE) \
                -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects \
-               -Isrc/audio/pan -Isrc/synthesis/additive -Isrc/synthesis/polyphonic \
-               -Isrc/synthesis/polyphonic/kissfft -Isrc/synthesis/photowave -Isrc/synthesis/common \
+               -Isrc/audio/pan -Isrc/synthesis/luxstral -Isrc/synthesis/luxsynth \
+               -Isrc/synthesis/luxsynth/kissfft -Isrc/synthesis/luxwave -Isrc/synthesis/common \
                -Isrc/communication/network -Isrc/communication/midi \
                -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
     
@@ -48,8 +48,8 @@ else
     # Include directories for Linux
     INCLUDES = -I/usr/include -I/usr/local/include $(LIBFTDI_CFLAGS) \
                -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects \
-               -Isrc/audio/pan -Isrc/synthesis/additive -Isrc/synthesis/polyphonic \
-               -Isrc/synthesis/polyphonic/kissfft -Isrc/synthesis/photowave -Isrc/synthesis/common \
+               -Isrc/audio/pan -Isrc/synthesis/luxstral -Isrc/synthesis/luxsynth \
+               -Isrc/synthesis/luxsynth/kissfft -Isrc/synthesis/luxwave -Isrc/synthesis/common \
                -Isrc/communication/network -Isrc/communication/midi \
                -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
     
@@ -70,30 +70,30 @@ AUDIO_BUFFERS_SOURCES = src/audio/buffers/audio_image_buffers.c
 AUDIO_PAN_SOURCES = src/audio/pan/lock_free_pan.c
 AUDIO_EFFECTS_SOURCES = src/audio/effects/auto_volume.c src/audio/effects/pareq.cpp \
                         src/audio/effects/three_band_eq.cpp src/audio/effects/ZitaRev1.cpp
-# Additive synthesis sources (base)
-SYNTHESIS_ADDITIVE_BASE_SOURCES = src/synthesis/additive/synth_additive.c src/synthesis/additive/wave_generation.c \
-                                  src/synthesis/additive/synth_additive_stereo.c \
-                                  src/synthesis/additive/synth_additive_state.c src/synthesis/additive/synth_additive_threading.c \
-                                  src/synthesis/additive/synth_additive_threading_rt.c \
-                                  src/synthesis/additive/synth_additive_algorithms.c src/synthesis/additive/pow_approx.c \
-                                  src/synthesis/additive/synth_additive_runtime.c
+# LuxStral synthesis sources (base)
+SYNTHESIS_LUXSTRAL_BASE_SOURCES = src/synthesis/luxstral/synth_luxstral.c src/synthesis/luxstral/wave_generation.c \
+                                  src/synthesis/luxstral/synth_luxstral_stereo.c \
+                                  src/synthesis/luxstral/synth_luxstral_state.c src/synthesis/luxstral/synth_luxstral_threading.c \
+                                  src/synthesis/luxstral/synth_luxstral_threading_rt.c \
+                                  src/synthesis/luxstral/synth_luxstral_algorithms.c src/synthesis/luxstral/pow_approx.c \
+                                  src/synthesis/luxstral/synth_luxstral_runtime.c
 
 # Math sources: on ARM, compile both standard (for base functions) and NEON (for optimized apply_volume_weighting)
 ifeq ($(UNAME_S),Linux)
     # Linux/Raspberry Pi: Use both standard (base functions) and NEON-optimized version
-    SYNTHESIS_ADDITIVE_MATH_SOURCES = src/synthesis/additive/synth_additive_math.c \
-                                      src/synthesis/additive/synth_additive_math_neon.c
+    SYNTHESIS_LUXSTRAL_MATH_SOURCES = src/synthesis/luxstral/synth_luxstral_math.c \
+                                      src/synthesis/luxstral/synth_luxstral_math_neon.c
 else
     # macOS and others: Use standard C version only
-    SYNTHESIS_ADDITIVE_MATH_SOURCES = src/synthesis/additive/synth_additive_math.c
+    SYNTHESIS_LUXSTRAL_MATH_SOURCES = src/synthesis/luxstral/synth_luxstral_math.c
 endif
 
 # Combine additive synthesis sources
-SYNTHESIS_ADDITIVE_SOURCES = $(SYNTHESIS_ADDITIVE_BASE_SOURCES) $(SYNTHESIS_ADDITIVE_MATH_SOURCES)
-SYNTHESIS_POLYPHONIC_SOURCES = src/synthesis/polyphonic/synth_polyphonic.c \
-                               src/synthesis/polyphonic/kissfft/kiss_fft.c \
-                               src/synthesis/polyphonic/kissfft/kiss_fftr.c
-SYNTHESIS_PHOTOWAVE_SOURCES = src/synthesis/photowave/synth_photowave.c
+SYNTHESIS_LUXSTRAL_SOURCES = $(SYNTHESIS_LUXSTRAL_BASE_SOURCES) $(SYNTHESIS_LUXSTRAL_MATH_SOURCES)
+SYNTHESIS_LUXSYNTH_SOURCES = src/synthesis/luxsynth/synth_luxsynth.c \
+                               src/synthesis/luxsynth/kissfft/kiss_fft.c \
+                               src/synthesis/luxsynth/kissfft/kiss_fftr.c
+SYNTHESIS_LUXWAVE_SOURCES = src/synthesis/luxwave/synth_luxwave.c
 COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/midi/midi_controller.cpp \
                         src/communication/midi/midi_mapping.c \
@@ -112,8 +112,8 @@ endif
 
 # All sources
 ALL_SOURCES = $(CORE_SOURCES) $(CONFIG_SOURCES) $(AUDIO_RTAUDIO_SOURCES) $(AUDIO_BUFFERS_SOURCES) \
-              $(AUDIO_PAN_SOURCES) $(AUDIO_EFFECTS_SOURCES) $(SYNTHESIS_ADDITIVE_SOURCES) \
-              $(SYNTHESIS_POLYPHONIC_SOURCES) $(SYNTHESIS_PHOTOWAVE_SOURCES) $(COMMUNICATION_SOURCES) $(PROCESSING_SOURCES) \
+              $(AUDIO_PAN_SOURCES) $(AUDIO_EFFECTS_SOURCES) $(SYNTHESIS_LUXSTRAL_SOURCES) \
+              $(SYNTHESIS_LUXSYNTH_SOURCES) $(SYNTHESIS_LUXWAVE_SOURCES) $(COMMUNICATION_SOURCES) $(PROCESSING_SOURCES) \
               $(DISPLAY_SOURCES) $(THREADING_SOURCES) $(UTILS_SOURCES)
 
 # Object files

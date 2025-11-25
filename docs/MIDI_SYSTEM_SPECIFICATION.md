@@ -102,25 +102,25 @@ src/communication/midi/
 | `eq_high_gain` | Gain hautes fréquences | [-24.0, 24.0] | 0.0 | dB |
 | `eq_mid_freq` | Fréquence centrale médiums | [250, 5000] | 1000 | Hz |
 
-### 3.2 Synthèse Additive
+### 3.2 Synthèse LuxStral
 
 | Paramètre | Description | Range | Default | Unité |
 |-----------|-------------|-------|---------|-------|
-| `synth_additive_volume` | Niveau de mix | [0.0, 1.0] | 1.0 | normalized |
-| `synth_additive_reverb_send` | Envoi vers réverb | [0.0, 1.0] | 0.2 | normalized |
+| `synth_luxstral_volume` | Niveau de mix | [0.0, 1.0] | 1.0 | normalized |
+| `synth_luxstral_reverb_send` | Envoi vers réverb | [0.0, 1.0] | 0.2 | normalized |
 
 ### 3.3 Synthèse Polyphonique
 
 | Paramètre | Description | Range | Default | Unité |
 |-----------|-------------|-------|---------|-------|
-| `synth_polyphonic_volume` | Niveau de mix | [0.0, 1.0] | 0.5 | normalized |
-| `synth_polyphonic_reverb_send` | Envoi vers réverb | [0.0, 1.0] | 0.3 | normalized |
-| `synth_polyphonic_lfo_vibrato` | Vitesse LFO vibrato | [0.1, 10.0] | 5.0 | Hz |
-| `synth_polyphonic_env_attack` | Temps d'attaque enveloppe | [0.02, 2.0] | 0.1 | seconds |
-| `synth_polyphonic_env_decay` | Temps de decay enveloppe | [0.02, 2.0] | 0.2 | seconds |
-| `synth_polyphonic_env_release` | Temps de release enveloppe | [0.02, 2.0] | 0.3 | seconds |
-| `synth_polyphonic_note_on` | Déclenchement note | MIDI Note | - | note number |
-| `synth_polyphonic_note_off` | Relâchement note | MIDI Note | - | note number |
+| `synth_luxsynth_volume` | Niveau de mix | [0.0, 1.0] | 0.5 | normalized |
+| `synth_luxsynth_reverb_send` | Envoi vers réverb | [0.0, 1.0] | 0.3 | normalized |
+| `synth_luxsynth_lfo_vibrato` | Vitesse LFO vibrato | [0.1, 10.0] | 5.0 | Hz |
+| `synth_luxsynth_env_attack` | Temps d'attaque enveloppe | [0.02, 2.0] | 0.1 | seconds |
+| `synth_luxsynth_env_decay` | Temps de decay enveloppe | [0.02, 2.0] | 0.2 | seconds |
+| `synth_luxsynth_env_release` | Temps de release enveloppe | [0.02, 2.0] | 0.3 | seconds |
+| `synth_luxsynth_note_on` | Déclenchement note | MIDI Note | - | note number |
+| `synth_luxsynth_note_off` | Relâchement note | MIDI Note | - | note number |
 
 ### 3.4 Séquenceur - Player 1 à 5
 
@@ -210,18 +210,18 @@ eq_high_gain=none
 eq_mid_freq=none
 
 # ============================================================================
-# SYNTHESIS ADDITIVE
+# SYNTHESIS LUXSTRAL
 # ============================================================================
 
-[SYNTH_ADDITIVE]
+[SYNTH_LUXSTRAL]
 volume=none
 reverb_send=none
 
 # ============================================================================
-# SYNTHESIS POLYPHONIC
+# SYNTHESIS LUXSYNTH
 # ============================================================================
 
-[SYNTH_POLYPHONIC]
+[SYNTH_LUXSYNTH]
 volume=none
 reverb_send=none
 lfo_vibrato=none
@@ -409,46 +409,46 @@ unit=Hz
 description=EQ mid frequency center
 
 # ----------------------------------------------------------------------------
-# SYNTHESIS ADDITIVE
+# SYNTHESIS LUXSTRAL
 # ----------------------------------------------------------------------------
 
-[SYNTH_ADDITIVE.volume]
+[SYNTH_LUXSTRAL.volume]
 default=1.0
 min=0.0
 max=1.0
 scaling=linear
 unit=normalized
-description=Additive synthesis mix level
+description=LuxStral synthesis mix level
 
-[SYNTH_ADDITIVE.reverb_send]
+[SYNTH_LUXSTRAL.reverb_send]
 default=0.2
 min=0.0
 max=1.0
 scaling=linear
 unit=normalized
-description=Additive synthesis reverb send amount
+description=LuxStral synthesis reverb send amount
 
 # ----------------------------------------------------------------------------
-# SYNTHESIS POLYPHONIC
+# SYNTHESIS LUXSYNTH
 # ----------------------------------------------------------------------------
 
-[SYNTH_POLYPHONIC.volume]
+[SYNTH_LUXSYNTH.volume]
 default=0.5
 min=0.0
 max=1.0
 scaling=linear
 unit=normalized
-description=Polyphonic synthesis mix level
+description=LuxSynth synthesis mix level
 
-[SYNTH_POLYPHONIC.reverb_send]
+[SYNTH_LUXSYNTH.reverb_send]
 default=0.3
 min=0.0
 max=1.0
 scaling=linear
 unit=normalized
-description=Polyphonic synthesis reverb send amount
+description=LuxSynth synthesis reverb send amount
 
-[SYNTH_POLYPHONIC.lfo_vibrato]
+[SYNTH_LUXSYNTH.lfo_vibrato]
 default=5.0
 min=0.1
 max=10.0
@@ -456,7 +456,7 @@ scaling=exponential
 unit=Hz
 description=LFO vibrato rate
 
-[SYNTH_POLYPHONIC.env_attack]
+[SYNTH_LUXSYNTH.env_attack]
 default=0.1
 min=0.02
 max=2.0
@@ -464,7 +464,7 @@ scaling=exponential
 unit=seconds
 description=Volume envelope attack time
 
-[SYNTH_POLYPHONIC.env_decay]
+[SYNTH_LUXSYNTH.env_decay]
 default=0.2
 min=0.02
 max=2.0
@@ -472,7 +472,7 @@ scaling=exponential
 unit=seconds
 description=Volume envelope decay time
 
-[SYNTH_POLYPHONIC.env_release]
+[SYNTH_LUXSYNTH.env_release]
 default=0.3
 min=0.02
 max=2.0
@@ -733,24 +733,24 @@ void midi_cb_audio_eq_high_gain(const MidiParameterValue *param, void *user_data
 void midi_cb_audio_eq_mid_freq(const MidiParameterValue *param, void *user_data);
 
 /* ============================================================================
- * SYNTHESIS ADDITIVE CALLBACKS
+ * SYNTHESIS LUXSTRAL CALLBACKS
  * ============================================================================ */
 
-void midi_cb_synth_additive_volume(const MidiParameterValue *param, void *user_data);
-void midi_cb_synth_additive_reverb_send(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_luxstral_volume(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_luxstral_reverb_send(const MidiParameterValue *param, void *user_data);
 
 /* ============================================================================
- * SYNTHESIS POLYPHONIC CALLBACKS
+ * SYNTHESIS LUXSYNTH CALLBACKS
  * ============================================================================ */
 
-void midi_cb_synth_polyphonic_volume(const MidiParameterValue *param, void *user_data);
-void midi_cb_synth_polyphonic_reverb_send(const MidiParameterValue *param, void *user_data);
-void midi_cb_synth_polyphonic_lfo_vibrato(const MidiParameterValue *param, void *user_data);
-void midi_cb_synth_polyphonic_env_attack(const MidiParameterValue *param, void *user_data);
-void midi_cb_synth_polyphonic_env_decay(const MidiParameterValue *param, void *user_data);
-void midi_cb_synth_polyphonic_env_release(const MidiParameterValue *param, void *user_data);
-void midi_cb_synth_polyphonic_note_on(const MidiParameterValue *param, void *user_data);
-void midi_cb_synth_polyphonic_note_off(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_luxsynth_volume(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_luxsynth_reverb_send(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_luxsynth_lfo_vibrato(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_luxsynth_env_attack(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_luxsynth_env_decay(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_luxsynth_env_release(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_luxsynth_note_on(const MidiParameterValue *param, void *user_data);
+void midi_cb_synth_luxsynth_note_off(const MidiParameterValue *param, void *user_data);
 
 /* ============================================================================
  * SEQUENCER PLAYER CALLBACKS (generic, player ID in user_data)
@@ -787,8 +787,8 @@ void midi_cb_system_resume(const MidiParameterValue *param, void *user_data);
 
 /* Register all callbacks for a specific module */
 void midi_callbacks_register_audio(void);
-void midi_callbacks_register_synth_additive(void);
-void midi_callbacks_register_synth_polyphonic(void);
+void midi_callbacks_register_synth_luxstral(void);
+void midi_callbacks_register_synth_luxsynth(void);
 void midi_callbacks_register_sequencer(void *sequencer_instance);
 void midi_callbacks_register_system(void);
 

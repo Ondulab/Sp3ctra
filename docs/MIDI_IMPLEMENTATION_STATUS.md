@@ -60,7 +60,7 @@ Implémentation en cours du système MIDI unifié selon la spécification défin
 - [x] EQ (low/mid/high gain, mid frequency)
 - [x] Auto-activation des effets
 
-### ✅ Callbacks Synthèse Additive
+### ✅ Callbacks Synthèse LuxStral
 - [x] Volume
 - [x] Reverb send
 - [x] Envelope attack (tau_up_base_ms)
@@ -219,8 +219,8 @@ MIDI_SCALE_DISCRETE    // y = min + round(x * (max - min))
 ### Fichiers Existants Utilisés
 - `src/audio/rtaudio/audio_rtaudio.h` (AudioSystem)
 - `src/audio/effects/three_band_eq.h` (ThreeBandEQ)
-- `src/synthesis/additive/synth_additive.h`
-- `src/synthesis/polyphonic/synth_polyphonic.h`
+- `src/synthesis/luxstral/synth_luxstral.h`
+- `src/synthesis/luxsynth/synth_luxsynth.h`
 - `src/communication/midi/midi_controller.h` (MidiController)
 
 ### Bibliothèques Externes

@@ -1,4 +1,4 @@
-# Photowave Note Off Active Flag Fix
+# LuxWave Note Off Active Flag Fix
 
 **Date:** 2025-11-24  
 **Status:** ✅ Fixed  
@@ -9,20 +9,20 @@
 Notes were getting stuck in the photowave synthesis engine. Analysis of logs showed:
 
 ```
-[01:04:49] [WARNING] [PHOTOWAVE] WARNING - Note Off 50: No voice found (neither active nor idle)!
-[01:04:49] [WARNING] [PHOTOWAVE] Voice states: [0:note=0,state=0] [1:note=0,state=4] [2:note=50,state=3]
+[01:04:49] [WARNING] [LUXWAVE] WARNING - Note Off 50: No voice found (neither active nor idle)!
+[01:04:49] [WARNING] [LUXWAVE] Voice states: [0:note=0,state=0] [1:note=0,state=4] [2:note=50,state=3]
 ```
 
 **Critical observation:** Voice 2 had `note=50` and `state=3` (ADSR_STATE_RELEASE), but the Note Off handler couldn't find it!
 
 ## Root Cause
 
-The bug was in the **Priority 2** search logic of `synth_photowave_note_off()`:
+The bug was in the **Priority 2** search logic of `synth_luxwave_note_off()`:
 
 ```c
 // BUGGY CODE (Priority 2)
 if (oldest_voice_idx == -1) {
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
         if (state->voices[i].midi_note == note &&
             state->voices[i].active &&  // ❌ BUG: This check is wrong!
             state->voices[i].volume_adsr.state == ADSR_STATE_RELEASE) {
@@ -38,14 +38,14 @@ if (oldest_voice_idx == -1) {
 1. Voice receives Note On → `active = true`, enters ATTACK state
 2. ADSR progresses through ATTACK → DECAY → SUSTAIN
 3. Voice stealing occurs (new Note On) → voice enters RELEASE state
-4. **In `synth_photowave_process()`:** When ADSR reaches IDLE, `active` is set to `false`
+4. **In `synth_luxwave_process()`:** When ADSR reaches IDLE, `active` is set to `false`
 5. Note Off arrives → searches Priority 2 (RELEASE voices)
 6. **BUG:** Priority 2 checks `active == true`, but voice has `active = false`
 7. **Result:** Voice not found, note stays stuck
 
 ### Why `active` Can Be False in RELEASE
 
-In `synth_photowave_process()`:
+In `synth_luxwave_process()`:
 
 ```c
 if (vol_adsr < MIN_AUDIBLE_AMPLITUDE && voice->volume_adsr.state == ADSR_STATE_IDLE) {
@@ -65,11 +65,11 @@ This means a voice in RELEASE can have `active = false` if it has already transi
 // FIXED CODE (Priority 2)
 // NOTE: Do NOT check 'active' flag here - voices in RELEASE may have active=false
 if (oldest_voice_idx == -1) {
-    for (i = 0; i < NUM_PHOTOWAVE_VOICES; i++) {
+    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
         if (state->voices[i].midi_note == note &&
             state->voices[i].volume_adsr.state == ADSR_STATE_RELEASE) {
             oldest_voice_idx = i;
-            log_debug("PHOTOWAVE", "Duplicate Note Off %d handled via RELEASE voice %d (already releasing)", 
+            log_debug("LUXWAVE", "Duplicate Note Off %d handled via RELEASE voice %d (already releasing)", 
                       note, i);
             break;
         }
@@ -105,9 +105,9 @@ The fix should be tested with:
 
 ## Related Files
 
-- `src/synthesis/photowave/synth_photowave.c` - Main fix implementation
-- `docs/PHOTOWAVE_NOTE_OFF_RACE_CONDITION_FIX.md` - Previous related fix
-- `docs/POLYPHONIC_NOTE_OFF_RACE_CONDITION_FIX.md` - Similar fix for polyphonic engine
+- `src/synthesis/luxwave/synth_luxwave.c` - Main fix implementation
+- `docs/LUXWAVE_NOTE_OFF_RACE_CONDITION_FIX.md` - Previous related fix
+- `docs/LUXSYNTH_NOTE_OFF_RACE_CONDITION_FIX.md` - Similar fix for polyphonic engine
 
 ## Notes
 

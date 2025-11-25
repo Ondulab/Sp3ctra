@@ -12,18 +12,18 @@ Le message d'erreur "Voice X cleaned up (invalid timestamp)" indique une **condi
 
 ### 1. **Race Condition sur `release_start_timestamp_us`** (CRITIQUE)
 
-**Localisation**: `synth_polyphonic.c`, lignes 217-237 et 1009-1024
+**Localisation**: `synth_luxsynth.c`, lignes 217-237 et 1009-1024
 
 **Problème**:
 ```c
-// Thread MIDI (synth_polyphonic_note_off) - ligne 1009
+// Thread MIDI (synth_luxsynth_note_off) - ligne 1009
 struct timeval tv;
 gettimeofday(&tv, NULL);
 uint64_t timestamp = (uint64_t)tv.tv_sec * 1000000ULL + (uint64_t)tv.tv_usec;
 __atomic_store_n(&poly_voices[oldest_voice_idx].release_start_timestamp_us, 
                  timestamp, __ATOMIC_RELEASE);
 
-// Thread Audio RT (synth_polyphonicMode_process) - ligne 221
+// Thread Audio RT (synth_luxsynthMode_process) - ligne 221
 uint64_t release_timestamp = __atomic_load_n(&current_voice->release_start_timestamp_us, 
                                               __ATOMIC_ACQUIRE);
 ```
@@ -49,7 +49,7 @@ if (release_timestamp > current_time_us) {
 
 ### 2. **Initialisation Incomplète des Voix Non-Utilisées** (RÉSOLU)
 
-**Localisation**: `synth_polyphonic.c`, ligne 113
+**Localisation**: `synth_luxsynth.c`, ligne 113
 
 **Problème initial**: Seules les `g_num_poly_voices` premières voix étaient initialisées, laissant les slots `[g_num_poly_voices..MAX_POLY_VOICES-1]` avec des valeurs aléatoires en mémoire.
 
@@ -66,7 +66,7 @@ for (i = 0; i < MAX_POLY_VOICES; ++i) {
 
 ### 3. **Fenêtre de Vulnérabilité dans `note_on()`** (CRITIQUE)
 
-**Localisation**: `synth_polyphonic.c`, lignes 970-987
+**Localisation**: `synth_luxsynth.c`, lignes 970-987
 
 **Problème**: Entre le vol de voix et la réinitialisation du timestamp, il existe une fenêtre où:
 
@@ -131,7 +131,7 @@ voice->release_start_timestamp_us = 0; // CRITICAL: Reset timestamp
 **Principe**: Protéger toute la séquence d'opérations sur une voix
 
 ```c
-// Dans synth_polyphonic.h
+// Dans synth_luxsynth.h
 typedef struct {
     // ... existing fields ...
     pthread_mutex_t voice_mutex;  // NEW: Per-voice mutex
@@ -321,10 +321,10 @@ poly_debug_voice_stealing = 1
 
 ### C. Références Code
 
-- `synth_polyphonic.c:217-237` - Validation timestamp (bug trigger)
-- `synth_polyphonic.c:970-987` - Note On (voice stealing)
-- `synth_polyphonic.c:1009-1024` - Note Off (timestamp write)
-- `synth_polyphonic.h:48-52` - Structure SynthVoice
+- `synth_luxsynth.c:217-237` - Validation timestamp (bug trigger)
+- `synth_luxsynth.c:970-987` - Note On (voice stealing)
+- `synth_luxsynth.c:1009-1024` - Note Off (timestamp write)
+- `synth_luxsynth.h:48-52` - Structure SynthVoice
 
 ## Conclusion
 

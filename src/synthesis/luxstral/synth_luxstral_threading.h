@@ -1,5 +1,5 @@
 /*
- * synth_additive_threading.h
+ * synth_luxstral_threading.h
  *
  * Thread pool management for additive synthesis
  * Contains persistent thread pool and parallel processing functionality
@@ -7,12 +7,12 @@
  * Author: zhonx
  */
 
-#ifndef __SYNTH_ADDITIVE_THREADING_H__
-#define __SYNTH_ADDITIVE_THREADING_H__
+#ifndef __SYNTH_LUXSTRAL_THREADING_H__
+#define __SYNTH_LUXSTRAL_THREADING_H__
 
 /* Includes ------------------------------------------------------------------*/
 #include "../../core/config.h"
-#include "../../config/config_synth_additive.h"
+#include "../../config/config_synth_luxstral.h"
 #include "../../config/config_instrument.h"  // For CIS_MAX_PIXELS_NB
 #include <stdint.h>
 #include <stddef.h>
@@ -34,15 +34,15 @@ typedef struct synth_thread_worker_s {
   float *imageData;   // Input image data (shared, normalized float [0, 1])
 
   // Local output buffers per thread - Float32 (legacy)
-  float *thread_additiveBuffer;
+  float *thread_luxstralBuffer;
   float *thread_sumVolumeBuffer;
   float *thread_maxVolumeBuffer;
   
   // Stereo buffers for direct L/R accumulation (always present) - Float32
   // In mono mode: L = R = duplicated signal
   // In stereo mode: L and R with per-oscillator panning
-  float *thread_additiveBuffer_L;
-  float *thread_additiveBuffer_R;
+  float *thread_luxstralBuffer_L;
+  float *thread_luxstralBuffer_R;
 
 
   // Local work buffers (avoids VLA on stack) - Float32 (dynamically allocated)
@@ -147,7 +147,7 @@ typedef struct {
   pthread_mutex_t swap_mutex; // Protects buffer swapping (non-RT thread only)
 } rt_safe_buffer_t;
 
-extern rt_safe_buffer_t g_rt_additive_buffer;
+extern rt_safe_buffer_t g_rt_luxstral_buffer;
 extern rt_safe_buffer_t g_rt_stereo_L_buffer;  
 extern rt_safe_buffer_t g_rt_stereo_R_buffer;
 
@@ -156,4 +156,4 @@ int init_rt_safe_buffers(void);
 void cleanup_rt_safe_buffers(void);
 void rt_safe_swap_buffers(void); // Called by workers when done (non-RT)
 
-#endif /* __SYNTH_ADDITIVE_THREADING_H__ */
+#endif /* __SYNTH_LUXSTRAL_THREADING_H__ */

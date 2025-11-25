@@ -11,7 +11,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "config.h"
-#include "synth_additive.h"
+#include "synth_luxstral.h"
 #include <stdint.h>
 
 /* Private includes ----------------------------------------------------------*/

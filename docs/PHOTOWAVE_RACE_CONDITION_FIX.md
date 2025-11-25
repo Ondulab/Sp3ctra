@@ -1,4 +1,4 @@
-# Photowave Race Condition Fix
+# LuxWave Race Condition Fix
 
 **Date:** 2025-11-24  
 **Issue:** Random audio distortion on photowave synthesis at note on events  
@@ -19,12 +19,12 @@ The photowave thread was using **conditional buffer production** to save CPU:
 ```c
 // OLD CODE (PROBLEMATIC)
 while (photowave_thread_running) {
-    if (getSynthPhotowaveMixLevel() < 0.01f) {
+    if (getSynthLuxWaveMixLevel() < 0.01f) {
         usleep(10000);  // Sleep if disabled
         continue;       // NO BUFFER PRODUCED
     }
     
-    if (!synth_photowave_is_note_active(&g_photowave_state)) {
+    if (!synth_luxwave_is_note_active(&g_luxwave_state)) {
         usleep(5000);   // Sleep if no notes
         continue;       // NO BUFFER PRODUCED
     }
@@ -38,10 +38,10 @@ This created a **race condition** at note on events:
 ```
 T=0ms:   MIDI Note On arrives
 T=1ms:   Audio callback called
-         → Photowave buffer NOT ready (thread still sleeping)
+         → LuxWave buffer NOT ready (thread still sleeping)
          → Sync protection blocks photowave (requires additive ready)
          → Result: SILENCE or PARTIAL BUFFER
-T=3ms:   Photowave thread wakes up and generates buffer
+T=3ms:   LuxWave thread wakes up and generates buffer
          → TOO LATE! Callback already passed
 T=4ms:   Next callback
          → Buffer ready but phase/timing DESYNCHRONIZED
@@ -54,7 +54,7 @@ The audio callback had an additional check that made things worse:
 
 ```cpp
 // OLD CODE (TOO RESTRICTIVE)
-if (source_photowave && cached_level_photowave > 0.01f && source_additive_left) {
+if (source_luxwave && cached_level_luxwave > 0.01f && source_luxstral_left) {
     // Only mix photowave if additive is also ready
 }
 ```
@@ -63,7 +63,7 @@ This meant photowave was **silenced** whenever additive had a buffer miss, causi
 
 ## Solution
 
-### 1. Continuous Buffer Production (Like Polyphonic Mode)
+### 1. Continuous Buffer Production (Like LuxSynth Mode)
 
 Changed photowave thread to **always produce buffers**, even when inactive:
 
@@ -71,9 +71,9 @@ Changed photowave thread to **always produce buffers**, even when inactive:
 // NEW CODE (STABLE)
 while (photowave_thread_running) {
     // ALWAYS generate buffer
-    synth_photowave_process(&g_photowave_state, temp_left, temp_right, buffer_size);
+    synth_luxwave_process(&g_luxwave_state, temp_left, temp_right, buffer_size);
     
-    // When inactive, synth_photowave_process() generates silence
+    // When inactive, synth_luxwave_process() generates silence
     // But buffer ALWAYS exists and is ready!
 }
 ```
@@ -92,7 +92,7 @@ while (photowave_thread_running) {
 
 ```cpp
 // NEW CODE (INDEPENDENT)
-if (source_photowave && cached_level_photowave > 0.01f) {
+if (source_luxwave && cached_level_luxwave > 0.01f) {
     // Mix photowave independently
     // No dependency on additive buffer state
 }
@@ -102,31 +102,31 @@ if (source_photowave && cached_level_photowave > 0.01f) {
 
 ### Files Modified
 
-1. **src/synthesis/photowave/synth_photowave.c**
-   - Removed conditional sleep/skip logic in `synth_photowave_thread_func()`
+1. **src/synthesis/luxwave/synth_luxwave.c**
+   - Removed conditional sleep/skip logic in `synth_luxwave_thread_func()`
    - Thread now produces buffers continuously
    - Added comment explaining race condition fix
 
 2. **src/audio/rtaudio/audio_rtaudio.cpp**
-   - Removed `&& source_additive_left` condition from photowave mixing
+   - Removed `&& source_luxstral_left` condition from photowave mixing
    - Added comment explaining the fix
 
-### Comparison with Polyphonic Mode
+### Comparison with LuxSynth Mode
 
-**Polyphonic** (always worked correctly):
+**LuxSynth** (always worked correctly):
 ```c
 while (keepRunning) {
     // ALWAYS generates buffer
-    synth_polyphonicMode_process(buffer, size);
+    synth_luxsynthMode_process(buffer, size);
     // Even if no notes active → buffer filled with silence
 }
 ```
 
-**Photowave** (now matches polyphonic behavior):
+**LuxWave** (now matches polyphonic behavior):
 ```c
 while (photowave_thread_running) {
     // ALWAYS generates buffer (like polyphonic)
-    synth_photowave_process(buffer, size);
+    synth_luxwave_process(buffer, size);
     // Even if no notes active → buffer filled with silence
 }
 ```
@@ -166,7 +166,7 @@ while (photowave_thread_running) {
 ## Related Issues
 
 - Buffer miss profiler warnings (now accurate)
-- Photowave/additive desynchronization (resolved)
+- LuxWave/additive desynchronization (resolved)
 - First note attack artifacts (eliminated)
 
 ## Future Considerations

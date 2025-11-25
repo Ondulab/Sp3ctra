@@ -10,7 +10,7 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include "config.h"
-#include "../../synthesis/additive/synth_additive.h"  // For MAX_NUMBER_OF_NOTES
+#include "../../synthesis/luxstral/synth_luxstral.h"  // For MAX_NUMBER_OF_NOTES
 
 #ifdef __cplusplus
 extern "C" {
