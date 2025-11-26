@@ -94,6 +94,7 @@ SYNTHESIS_LUXSYNTH_SOURCES = src/synthesis/luxsynth/synth_luxsynth.c \
                                src/synthesis/luxsynth/kissfft/kiss_fft.c \
                                src/synthesis/luxsynth/kissfft/kiss_fftr.c
 SYNTHESIS_LUXWAVE_SOURCES = src/synthesis/luxwave/synth_luxwave.c
+SYNTHESIS_COMMON_SOURCES = src/synthesis/common/voice_manager.c
 COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/midi/midi_controller.cpp \
                         src/communication/midi/midi_mapping.c \
@@ -113,7 +114,8 @@ endif
 # All sources
 ALL_SOURCES = $(CORE_SOURCES) $(CONFIG_SOURCES) $(AUDIO_RTAUDIO_SOURCES) $(AUDIO_BUFFERS_SOURCES) \
               $(AUDIO_PAN_SOURCES) $(AUDIO_EFFECTS_SOURCES) $(SYNTHESIS_LUXSTRAL_SOURCES) \
-              $(SYNTHESIS_LUXSYNTH_SOURCES) $(SYNTHESIS_LUXWAVE_SOURCES) $(COMMUNICATION_SOURCES) $(PROCESSING_SOURCES) \
+              $(SYNTHESIS_LUXSYNTH_SOURCES) $(SYNTHESIS_LUXWAVE_SOURCES) $(SYNTHESIS_COMMON_SOURCES) \
+              $(COMMUNICATION_SOURCES) $(PROCESSING_SOURCES) \
               $(DISPLAY_SOURCES) $(THREADING_SOURCES) $(UTILS_SOURCES)
 
 # Object files

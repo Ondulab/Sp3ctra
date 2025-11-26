@@ -353,7 +353,6 @@ void synth_luxsynthMode_process(float *audio_buffer_left,
     audio_buffer_left[sample_idx] = master_sample_left;
     audio_buffer_right[sample_idx] = master_sample_right;
   }
-  
 }
 
 // --- Image & FFT Processing ---
@@ -741,8 +740,10 @@ void synth_luxsynth_note_on(int noteNumber, int velocity) {
     }
     if (candidate_idx != -1) {
       voice_idx = candidate_idx;
-      printf("LUXSYNTH: Stealing quietest release voice %d for note %d (Env: %.2f)\n",
-             voice_idx, noteNumber, lowest_env_output);
+      int old_note = poly_voices[voice_idx].midi_note_number;
+      log_debug("SYNTH_POLY", "Stealing quietest release voice %d (old note %d, env %.2f) for new note %d",
+                voice_idx, old_note, lowest_env_output, noteNumber);
+      // NOTE: Do NOT clear midi_note_number here - let grace period handle late Note Off
     }
   }
 
@@ -765,8 +766,20 @@ void synth_luxsynth_note_on(int noteNumber, int velocity) {
     }
     if (candidate_idx != -1) {
       voice_idx = candidate_idx;
-      printf("LUXSYNTH: Last resort - stealing oldest active voice %d for note %d (Order: %llu)\n",
-             voice_idx, noteNumber, oldest_order);
+      // CRITICAL FIX: Before stealing, trigger release for the old note
+      // BUT keep midi_note_number intact to allow late Note Off to find it via grace period
+      int old_note = poly_voices[voice_idx].midi_note_number;
+      if (old_note != -1) {
+        adsr_trigger_release(&poly_voices[voice_idx].volume_adsr);
+        adsr_trigger_release(&poly_voices[voice_idx].filter_adsr);
+        poly_voices[voice_idx].voice_state = ADSR_STATE_RELEASE;
+        log_debug("SYNTH_POLY", "Last resort - stealing voice %d: releasing old note %d (will be overwritten by note %d, Order: %llu)",
+                  voice_idx, old_note, noteNumber, oldest_order);
+        // NOTE: Do NOT clear midi_note_number here - let the grace period handle late Note Off
+      } else {
+        log_debug("SYNTH_POLY", "Last resort - stealing oldest active voice %d for note %d (Order: %llu)",
+                  voice_idx, noteNumber, oldest_order);
+      }
     }
   }
 
@@ -809,10 +822,9 @@ void synth_luxsynth_note_on(int noteNumber, int velocity) {
   adsr_trigger_attack(
       &voice->filter_adsr); // and set state to ATTACK, current_output to 0
 
-  printf("LUXSYNTH: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f "
-         "Hz, Order: %llu -> ADSR Attack\n",
-         voice_idx, noteNumber, velocity, voice->last_velocity,
-         voice->fundamental_frequency, voice->last_triggered_order);
+  log_debug("SYNTH_POLY", "Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f Hz, Order: %llu -> ADSR Attack",
+            voice_idx, noteNumber, velocity, voice->last_velocity,
+            voice->fundamental_frequency, voice->last_triggered_order);
 }
 
 void synth_luxsynth_note_off(int noteNumber) {
@@ -867,11 +879,12 @@ void synth_luxsynth_note_off(int noteNumber) {
       adsr_trigger_release(&poly_voices[oldest_voice_idx].volume_adsr);
       adsr_trigger_release(&poly_voices[oldest_voice_idx].filter_adsr);
       poly_voices[oldest_voice_idx].voice_state = ADSR_STATE_RELEASE;
-      printf("LUXSYNTH: Voice %d Note Off: %d -> ADSR Release\n", 
-             oldest_voice_idx, noteNumber);
+      log_debug("SYNTH_POLY", "Voice %d Note Off: %d -> ADSR Release", 
+                oldest_voice_idx, noteNumber);
     }
-    // Clear midi_note_number now that Note Off has been processed
-    poly_voices[oldest_voice_idx].midi_note_number = -1;
+    // CRITICAL: Do NOT clear midi_note_number here!
+    // Keep it intact so voice stealing can log the old note properly
+    // It will be overwritten by the next note_on() that uses this voice
   } else {
     // DEBUG: Log when no voice is found for Note Off (should be very rare now)
     printf("LUXSYNTH: WARNING - Note Off %d: No voice found (neither active nor idle)!\n", noteNumber);

@@ -7,6 +7,7 @@
 #include "config_loader.h"  // For g_sp3ctra_config
 #include "logger.h"         // For logging
 #include "context.h"        // For Context structure
+#include "../common/voice_manager.h"  // For unified voice management
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -394,6 +395,39 @@ void synth_luxwave_cleanup(LuxWaveState *state) {
 }
 
 /* ============================================================================
+ * VOICE MANAGER CALLBACKS (forward declarations for use in process function)
+ * ========================================================================== */
+
+/**
+ * @brief Callback to extract voice metadata for voice_manager
+ */
+static VoiceMetadata luxwave_get_voice_metadata(void *voices, int voice_idx) {
+    LuxWaveVoice *v = &((LuxWaveVoice*)voices)[voice_idx];
+    return (VoiceMetadata){
+        .midi_note = (int)v->midi_note,
+        .trigger_order = v->trigger_order,
+        .adsr_state = v->volume_adsr.state,
+        .adsr_output = v->volume_adsr.current_output
+    };
+}
+
+/**
+ * @brief Callback to set MIDI note for voice_manager
+ */
+static void luxwave_set_voice_note(void *voices, int voice_idx, int midi_note) {
+    LuxWaveVoice *v = &((LuxWaveVoice*)voices)[voice_idx];
+    v->midi_note = (midi_note < 0) ? 0 : (uint8_t)midi_note;
+}
+
+/**
+ * @brief Callback to get ADSR state for voice_manager
+ */
+static AdsrState luxwave_get_voice_state(void *voices, int voice_idx) {
+    LuxWaveVoice *v = &((LuxWaveVoice*)voices)[voice_idx];
+    return v->volume_adsr.state;
+}
+
+/* ============================================================================
  * AUDIO PROCESSING (RT-SAFE)
  * ========================================================================== */
 
@@ -487,7 +521,7 @@ void synth_luxwave_process(LuxWaveState *state,
         output_left[i] = master_sum;
         output_right[i] = master_sum;
     }
-    
+
     state->samples_generated += num_frames;
 }
 
@@ -668,9 +702,7 @@ void synth_luxwave_set_filter_env_depth(float depth_hz) {
  * ========================================================================== */
 
 void synth_luxwave_note_on(LuxWaveState *state, uint8_t note, uint8_t velocity) {
-    int i, voice_idx;
-    unsigned long long oldest_order;
-    float quietest_env;
+    int voice_idx;
     LuxWaveVoice *voice;
     
     if (!state) return;
@@ -681,46 +713,31 @@ void synth_luxwave_note_on(LuxWaveState *state, uint8_t note, uint8_t velocity) 
         return;
     }
     
+    // Use voice_manager for unified voice allocation
     state->current_trigger_order++;
-    voice_idx = -1;
+    voice_idx = voice_manager_allocate(
+        state->voices, NUM_LUXWAVE_VOICES,
+        luxwave_get_voice_metadata, luxwave_set_voice_note,
+        note, state->current_trigger_order
+    );
     
-    // Priority 1: Find IDLE voice
-    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
-        if (state->voices[i].volume_adsr.state == ADSR_STATE_IDLE) {
-            voice_idx = i;
-            break;
-        }
+    if (voice_idx < 0) {
+        printf("LUXWAVE: ERROR - Failed to allocate voice for note %d\n", note);
+        return;
     }
     
-    // Priority 2: Steal oldest active (non-release) voice
-    if (voice_idx == -1) {
-        oldest_order = state->current_trigger_order + 1;
-        for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
-            if (state->voices[i].volume_adsr.state != ADSR_STATE_RELEASE &&
-                state->voices[i].volume_adsr.state != ADSR_STATE_IDLE) {
-                if (state->voices[i].trigger_order < oldest_order) {
-                    oldest_order = state->voices[i].trigger_order;
-                    voice_idx = i;
-                }
-            }
-        }
+    // CRITICAL FIX: If we're stealing an active voice (last resort), release the old note
+    // BUT keep midi_note intact to allow late Note Off to find it via grace period
+    if (state->voices[voice_idx].active && 
+        state->voices[voice_idx].midi_note != 0 && 
+        state->voices[voice_idx].midi_note != note) {
+        int old_note = state->voices[voice_idx].midi_note;
+        adsr_trigger_release(&state->voices[voice_idx].volume_adsr);
+        adsr_trigger_release(&state->voices[voice_idx].filter_adsr);
+        log_debug("SYNTH_LUXWAVE", "Voice %d stolen: releasing old note %d (will be overwritten by note %d)",
+                  voice_idx, old_note, note);
+        // NOTE: Do NOT clear midi_note here - let the grace period handle late Note Off
     }
-    
-    // Priority 3: Steal quietest release voice
-    if (voice_idx == -1) {
-        quietest_env = 2.0f;
-        for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
-            if (state->voices[i].volume_adsr.state == ADSR_STATE_RELEASE) {
-                if (state->voices[i].volume_adsr.current_output < quietest_env) {
-                    quietest_env = state->voices[i].volume_adsr.current_output;
-                    voice_idx = i;
-                }
-            }
-        }
-    }
-    
-    // Fallback: steal voice 0
-    if (voice_idx == -1) voice_idx = 0;
     
     voice = &state->voices[voice_idx];
     
@@ -748,87 +765,31 @@ void synth_luxwave_note_on(LuxWaveState *state, uint8_t note, uint8_t velocity) 
     voice->lowpass.prev_output = 0.0f;
     
     // Log Note On with same format as LUXSYNTH
-    printf("LUXWAVE: Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f Hz, Order: %llu -> ADSR Attack\n",
-           voice_idx, note, velocity, (float)velocity / 127.0f, voice->frequency, voice->trigger_order);
+    log_debug("SYNTH_LUXWAVE", "Voice %d Note On: %d, Vel: %d (Norm: %.2f), Freq: %.2f Hz, Order: %llu -> ADSR Attack",
+              voice_idx, note, velocity, (float)velocity / 127.0f, voice->frequency, voice->trigger_order);
 }
 
 void synth_luxwave_note_off(LuxWaveState *state, uint8_t note) {
-    int i;
-    int oldest_voice_idx = -1;
-    unsigned long long oldest_order = state->current_trigger_order + 1;
+    int voice_idx;
     
     if (!state) return;
     
-    // Priority 1: Find the OLDEST ACTIVE voice with this note number (not in RELEASE or IDLE)
-    // This ensures we only release the first instance of the note, not all of them
-    for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
-        if (state->voices[i].midi_note == note &&
-            state->voices[i].active &&
-            state->voices[i].volume_adsr.state != ADSR_STATE_IDLE &&
-            state->voices[i].volume_adsr.state != ADSR_STATE_RELEASE) {
-            // Find the oldest (lowest trigger order) voice with this note
-            if (state->voices[i].trigger_order < oldest_order) {
-                oldest_order = state->voices[i].trigger_order;
-                oldest_voice_idx = i;
-            }
-        }
-    }
+    // Use voice_manager for unified voice release with grace period
+    voice_idx = voice_manager_release(
+        state->voices, NUM_LUXWAVE_VOICES,
+        luxwave_get_voice_metadata, luxwave_get_voice_state,
+        luxwave_set_voice_note, note
+    );
     
-    // Priority 2: If no active voice found, search in RELEASE voices (duplicate/late Note Off)
-    // This handles duplicate Note Off messages or late arrivals when voice is already releasing
-    // NOTE: Do NOT check 'active' flag here - voices in RELEASE may have active=false
-    if (oldest_voice_idx == -1) {
-        for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
-            if (state->voices[i].midi_note == note &&
-                state->voices[i].volume_adsr.state == ADSR_STATE_RELEASE) {
-                oldest_voice_idx = i;
-                log_debug("LUXWAVE", "Duplicate Note Off %d handled via RELEASE voice %d (already releasing)", 
-                          note, i);
-                // NOTE: Do NOT clear midi_note here - allows future duplicates to be detected
-                return; // Early return - duplicate Note Off, nothing to do
-            }
-        }
-    }
-    
-    // Priority 3: If still not found, search in IDLE voices (grace period for very late Note Off)
-    // This handles the race condition where ADSR reaches IDLE before Note Off arrives
-    if (oldest_voice_idx == -1) {
-        for (i = 0; i < NUM_LUXWAVE_VOICES; i++) {
-            if (state->voices[i].midi_note == note &&
-                state->voices[i].volume_adsr.state == ADSR_STATE_IDLE) {
-                oldest_voice_idx = i;
-                log_debug("LUXWAVE", "Late Note Off %d handled via IDLE voice %d (grace period)", note, i);
-                break; // Take first IDLE voice found with this note
-            }
-        }
-    }
-    
-    // Process the Note Off
-    if (oldest_voice_idx != -1) {
-        // Only trigger release if not already IDLE or RELEASE
-        if (state->voices[oldest_voice_idx].volume_adsr.state != ADSR_STATE_IDLE &&
-            state->voices[oldest_voice_idx].volume_adsr.state != ADSR_STATE_RELEASE) {
-            adsr_trigger_release(&state->voices[oldest_voice_idx].volume_adsr);
-            adsr_trigger_release(&state->voices[oldest_voice_idx].filter_adsr);
-            // Log Note Off with same format as LUXSYNTH
-            printf("LUXWAVE: Voice %d Note Off: %d -> ADSR Release\n", oldest_voice_idx, note);
-        }
-        
-        // Clear midi_note AFTER processing Note Off (prevents future late Note Offs from finding this voice)
-        state->voices[oldest_voice_idx].midi_note = 0;
-        
-    } else {
-        // No voice found - this should be rare now with the grace period
-        printf("LUXWAVE: WARNING - Note Off %d: No voice found (neither active nor idle)!\n", note);
-        printf("LUXWAVE: Voice states: [0:note=%d,state=%d] [1:note=%d,state=%d] [2:note=%d,state=%d] [3:note=%d,state=%d] [4:note=%d,state=%d] [5:note=%d,state=%d] [6:note=%d,state=%d] [7:note=%d,state=%d]\n",
-                   state->voices[0].midi_note, state->voices[0].volume_adsr.state,
-                   state->voices[1].midi_note, state->voices[1].volume_adsr.state,
-                   state->voices[2].midi_note, state->voices[2].volume_adsr.state,
-                   state->voices[3].midi_note, state->voices[3].volume_adsr.state,
-                   state->voices[4].midi_note, state->voices[4].volume_adsr.state,
-                   state->voices[5].midi_note, state->voices[5].volume_adsr.state,
-                   state->voices[6].midi_note, state->voices[6].volume_adsr.state,
-                   state->voices[7].midi_note, state->voices[7].volume_adsr.state);
+    // voice_manager_release returns -1 for duplicate/late Note Off (already handled)
+    if (voice_idx >= 0) {
+        // Trigger ADSR release for the found voice
+        adsr_trigger_release(&state->voices[voice_idx].volume_adsr);
+        adsr_trigger_release(&state->voices[voice_idx].filter_adsr);
+        log_debug("SYNTH_LUXWAVE", "Voice %d Note Off: %d -> ADSR Release", voice_idx, note);
+        // CRITICAL: Do NOT clear midi_note here!
+        // Keep it intact so voice stealing can log the old note properly
+        // It will be overwritten by the next note_on() that uses this voice
     }
 }
 
