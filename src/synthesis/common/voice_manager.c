@@ -31,9 +31,39 @@ int voice_manager_allocate(void *voices, int num_voices,
         }
     }
     
-    /* Priority 2: Steal the RELEASE voice with lowest envelope output (quietest) */
+    /* Priority 2A: Steal RELEASE voices below -26dB (inaudible, prevents clicks) */
     if (voice_idx == -1) {
         float lowest_env_output = 2.0f; /* Greater than max envelope output (1.0) */
+        for (i = 0; i < num_voices; i++) {
+            VoiceMetadata meta = get_metadata(voices, i);
+            if (meta.adsr_state == ADSR_STATE_RELEASE && 
+                meta.adsr_output < 0.05f) {  /* -26dB threshold: inaudible */
+                if (meta.adsr_output < lowest_env_output) {
+                    lowest_env_output = meta.adsr_output;
+                    voice_idx = i;
+                }
+            }
+        }
+    }
+    
+    /* Priority 2B: Steal RELEASE voices below -12dB (minimal click) */
+    if (voice_idx == -1) {
+        float lowest_env_output = 2.0f;
+        for (i = 0; i < num_voices; i++) {
+            VoiceMetadata meta = get_metadata(voices, i);
+            if (meta.adsr_state == ADSR_STATE_RELEASE && 
+                meta.adsr_output < 0.25f) {  /* -12dB threshold: minimal click */
+                if (meta.adsr_output < lowest_env_output) {
+                    lowest_env_output = meta.adsr_output;
+                    voice_idx = i;
+                }
+            }
+        }
+    }
+    
+    /* Priority 2C: Steal ANY RELEASE voice (last resort before stealing ACTIVE) */
+    if (voice_idx == -1) {
+        float lowest_env_output = 2.0f;
         for (i = 0; i < num_voices; i++) {
             VoiceMetadata meta = get_metadata(voices, i);
             if (meta.adsr_state == ADSR_STATE_RELEASE) {

@@ -58,7 +58,7 @@ Added RT priority (75) to photowave thread, matching polyphonic:
 
 ```c
 extern int synth_set_rt_priority(pthread_t thread, int priority);
-if (synth_set_rt_priority(pthread_self(), 75) != 0) {
+if (synth_set_rt_priority(pthread_self(), 80) != 0) {
     log_warning("LUXWAVE", "Thread: Failed to set RT priority (continuing without RT)");
 }
 ```
