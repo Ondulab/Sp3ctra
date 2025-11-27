@@ -976,7 +976,7 @@ void *synth_luxwave_thread_func(void *arg) {
     // Set RT priority for photowave synthesis thread (priority 75, same as polyphonic)
     // Use the unified synth_set_rt_priority() function with macOS support
     extern int synth_set_rt_priority(pthread_t thread, int priority);
-    if (synth_set_rt_priority(pthread_self(), 75) != 0) {
+    if (synth_set_rt_priority(pthread_self(), 80) != 0) {
         log_warning("LUXWAVE", "Thread: Failed to set RT priority (continuing without RT)");
     }
     

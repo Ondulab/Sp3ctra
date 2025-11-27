@@ -10,6 +10,7 @@
 #include "../../config/config_loader.h"
 #include "../../config/config_instrument.h"
 #include "../../utils/logger.h"
+#include "../../synthesis/common/voice_manager.h"
 #include <errno.h>
 #include <math.h>
 #include <pthread.h>
@@ -422,7 +423,7 @@ void *synth_luxsynthMode_thread_func(void *arg) {
   // Set RT priority for polyphonic synthesis thread (priority 75, between callback at 70 and additive workers at 80)
   // Use the unified synth_set_rt_priority() function with macOS support
   extern int synth_set_rt_priority(pthread_t thread, int priority);
-  if (synth_set_rt_priority(pthread_self(), 75) != 0) {
+  if (synth_set_rt_priority(pthread_self(), 80) != 0) {
     log_warning("SYNTH", "LuxSynth thread: Failed to set RT priority (continuing without RT)");
   }
   
@@ -698,6 +699,27 @@ static float adsr_get_output(AdsrEnvelope *env) {
   return env->current_output;
 }
 
+// --- Voice Manager Helper Functions ---
+static VoiceMetadata luxsynth_get_voice_metadata(void *voices, int voice_idx) {
+  SynthVoice *voice_array = (SynthVoice *)voices;
+  VoiceMetadata meta;
+  meta.adsr_state = voice_array[voice_idx].voice_state;
+  meta.adsr_output = voice_array[voice_idx].volume_adsr.current_output;
+  meta.midi_note = voice_array[voice_idx].midi_note_number;
+  meta.trigger_order = voice_array[voice_idx].last_triggered_order;
+  return meta;
+}
+
+static AdsrState luxsynth_get_voice_state(void *voices, int voice_idx) {
+  SynthVoice *voice_array = (SynthVoice *)voices;
+  return voice_array[voice_idx].voice_state;
+}
+
+static void luxsynth_set_voice_note(void *voices, int voice_idx, int midi_note) {
+  SynthVoice *voice_array = (SynthVoice *)voices;
+  voice_array[voice_idx].midi_note_number = midi_note;
+}
+
 // --- MIDI Note Handling ---
 static float midi_note_to_frequency(int noteNumber) {
   if (noteNumber < 0 || noteNumber > 127) {
@@ -715,84 +737,17 @@ void synth_luxsynth_note_on(int noteNumber, int velocity) {
 
   g_current_trigger_order++; // Increment global trigger order
 
-  int voice_idx = -1;
-
-  // Priority 1: Find an IDLE voice
-  for (int i = 0; i < g_num_poly_voices; ++i) {
-    if (poly_voices[i].voice_state == ADSR_STATE_IDLE) {
-      voice_idx = i;
-      break;
-    }
-  }
-
-  // Priority 2: Steal the voice in RELEASE with the lowest envelope output
-  // This allows notes to finish their release phase naturally before being stolen
-  if (voice_idx == -1) {
-    float lowest_env_output = 2.0f; // Greater than max envelope output (1.0)
-    int candidate_idx = -1;
-    for (int i = 0; i < g_num_poly_voices; ++i) {
-      if (poly_voices[i].voice_state == ADSR_STATE_RELEASE) {
-        if (poly_voices[i].volume_adsr.current_output < lowest_env_output) {
-          lowest_env_output = poly_voices[i].volume_adsr.current_output;
-          candidate_idx = i;
-        }
-      }
-    }
-    if (candidate_idx != -1) {
-      voice_idx = candidate_idx;
-      int old_note = poly_voices[voice_idx].midi_note_number;
-      log_debug("SYNTH_POLY", "Stealing quietest release voice %d (old note %d, env %.2f) for new note %d",
-                voice_idx, old_note, lowest_env_output, noteNumber);
-      // NOTE: Do NOT clear midi_note_number here - let grace period handle late Note Off
-    }
-  }
-
-  // Priority 3: As last resort, find the oldest active voice (ATTACK, DECAY, SUSTAIN)
-  // This should rarely happen if release times are reasonable
-  if (voice_idx == -1) {
-    unsigned long long oldest_order =
-        g_current_trigger_order +
-        1; // Initialize with a value guaranteed to be newer
-    int candidate_idx = -1;
-    for (int i = 0; i < g_num_poly_voices; ++i) {
-      if (poly_voices[i].voice_state != ADSR_STATE_RELEASE &&
-          poly_voices[i].voice_state !=
-              ADSR_STATE_IDLE) { // i.e., ATTACK, DECAY, SUSTAIN
-        if (poly_voices[i].last_triggered_order < oldest_order) {
-          oldest_order = poly_voices[i].last_triggered_order;
-          candidate_idx = i;
-        }
-      }
-    }
-    if (candidate_idx != -1) {
-      voice_idx = candidate_idx;
-      // CRITICAL FIX: Before stealing, trigger release for the old note
-      // BUT keep midi_note_number intact to allow late Note Off to find it via grace period
-      int old_note = poly_voices[voice_idx].midi_note_number;
-      if (old_note != -1) {
-        adsr_trigger_release(&poly_voices[voice_idx].volume_adsr);
-        adsr_trigger_release(&poly_voices[voice_idx].filter_adsr);
-        poly_voices[voice_idx].voice_state = ADSR_STATE_RELEASE;
-        log_debug("SYNTH_POLY", "Last resort - stealing voice %d: releasing old note %d (will be overwritten by note %d, Order: %llu)",
-                  voice_idx, old_note, noteNumber, oldest_order);
-        // NOTE: Do NOT clear midi_note_number here - let the grace period handle late Note Off
-      } else {
-        log_debug("SYNTH_POLY", "Last resort - stealing oldest active voice %d for note %d (Order: %llu)",
-                  voice_idx, noteNumber, oldest_order);
-      }
-    }
-  }
-
-  // Fallback: If absolutely no voice found (e.g., all voices are in very recent
-  // ATTACK and g_num_poly_voices is small) or if all voices are in RELEASE but
-  // none were selected by prio 3 (should not happen if there's at least one
-  // release voice) For now, we'll just steal voice 0 as a last resort if
-  // voice_idx is still -1. A more robust system might refuse the note or have a
-  // more complex fallback.
-  if (voice_idx == -1) {
-    voice_idx = 0; // Default to stealing voice 0 if no other candidate found
-    printf("LUXSYNTH: Critical fallback. Stealing voice 0 for note %d\n",
-           noteNumber);
+  // Use voice_manager for intelligent voice allocation with progressive thresholds
+  int voice_idx = voice_manager_allocate(
+      poly_voices, g_num_poly_voices,
+      luxsynth_get_voice_metadata,
+      luxsynth_set_voice_note,
+      noteNumber,
+      g_current_trigger_order);
+  
+  if (voice_idx < 0 || voice_idx >= g_num_poly_voices) {
+    log_error("SYNTH_POLY", "voice_manager_allocate returned invalid index %d", voice_idx);
+    return;
   }
 
   SynthVoice *voice = &poly_voices[voice_idx];
@@ -828,71 +783,23 @@ void synth_luxsynth_note_on(int noteNumber, int velocity) {
 }
 
 void synth_luxsynth_note_off(int noteNumber) {
-  // Priority 1: Find the OLDEST voice with this note number that is ACTIVE (not in RELEASE or IDLE)
-  int oldest_voice_idx = -1;
-  unsigned long long oldest_order = g_current_trigger_order + 1;
+  // Use voice_manager for unified voice release with grace period
+  int voice_idx = voice_manager_release(
+      poly_voices, g_num_poly_voices,
+      luxsynth_get_voice_metadata, luxsynth_get_voice_state,
+      luxsynth_set_voice_note, noteNumber
+  );
   
-  for (int i = 0; i < g_num_poly_voices; ++i) {
-    if (poly_voices[i].midi_note_number == noteNumber &&
-        poly_voices[i].voice_state != ADSR_STATE_IDLE &&
-        poly_voices[i].voice_state != ADSR_STATE_RELEASE) {
-      // Find the oldest (lowest trigger order) voice with this note
-      if (poly_voices[i].last_triggered_order < oldest_order) {
-        oldest_order = poly_voices[i].last_triggered_order;
-        oldest_voice_idx = i;
-      }
-    }
-  }
-  
-  // Priority 2: If no active voice found, search in RELEASE voices (duplicate/late Note Off)
-  // This handles duplicate Note Off messages or Note Offs that arrive while voice is already releasing
-  if (oldest_voice_idx == -1) {
-    for (int i = 0; i < g_num_poly_voices; ++i) {
-      if (poly_voices[i].midi_note_number == noteNumber &&
-          poly_voices[i].voice_state == ADSR_STATE_RELEASE) {
-        oldest_voice_idx = i;
-        log_debug("SYNTH_POLY", "Duplicate Note Off %d handled via RELEASE voice %d (already releasing)", 
-                  noteNumber, i);
-        break; // Take the first RELEASE voice found with this note
-      }
-    }
-  }
-  
-  // Priority 3: If still not found, search in IDLE voices (grace period for very late Note Off)
-  // This handles the race condition where ADSR reached IDLE before Note Off arrived
-  if (oldest_voice_idx == -1) {
-    for (int i = 0; i < g_num_poly_voices; ++i) {
-      if (poly_voices[i].midi_note_number == noteNumber &&
-          poly_voices[i].voice_state == ADSR_STATE_IDLE) {
-        oldest_voice_idx = i;
-        log_debug("SYNTH_POLY", "Late Note Off %d handled via IDLE voice %d (grace period)", 
-                  noteNumber, i);
-        break; // Take the first IDLE voice found with this note
-      }
-    }
-  }
-  
-  // Release the voice if found
-  if (oldest_voice_idx != -1) {
-    // Only trigger release if not already IDLE (avoid re-triggering IDLE voices)
-    if (poly_voices[oldest_voice_idx].voice_state != ADSR_STATE_IDLE) {
-      adsr_trigger_release(&poly_voices[oldest_voice_idx].volume_adsr);
-      adsr_trigger_release(&poly_voices[oldest_voice_idx].filter_adsr);
-      poly_voices[oldest_voice_idx].voice_state = ADSR_STATE_RELEASE;
-      log_debug("SYNTH_POLY", "Voice %d Note Off: %d -> ADSR Release", 
-                oldest_voice_idx, noteNumber);
-    }
+  // voice_manager_release returns -1 for duplicate/late Note Off (already handled)
+  if (voice_idx >= 0) {
+    // Trigger ADSR release for the found voice
+    adsr_trigger_release(&poly_voices[voice_idx].volume_adsr);
+    adsr_trigger_release(&poly_voices[voice_idx].filter_adsr);
+    poly_voices[voice_idx].voice_state = ADSR_STATE_RELEASE;
+    log_debug("SYNTH_POLY", "Voice %d Note Off: %d -> ADSR Release", voice_idx, noteNumber);
     // CRITICAL: Do NOT clear midi_note_number here!
     // Keep it intact so voice stealing can log the old note properly
     // It will be overwritten by the next note_on() that uses this voice
-  } else {
-    // DEBUG: Log when no voice is found for Note Off (should be very rare now)
-    printf("LUXSYNTH: WARNING - Note Off %d: No voice found (neither active nor idle)!\n", noteNumber);
-    printf("LUXSYNTH: Voice states: ");
-    for (int i = 0; i < g_num_poly_voices; ++i) {
-      printf("[%d:note=%d,state=%d] ", i, poly_voices[i].midi_note_number, poly_voices[i].voice_state);
-    }
-    printf("\n");
   }
 }
 
