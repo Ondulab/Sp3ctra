@@ -283,8 +283,8 @@ int dmx_init_configuration(int num_spots, DMXSpotType spot_type, int start_chann
         return -1;
     }
     
-    if (spot_type != DMX_SPOT_RGB) {
-        log_error("DMX", "Unsupported spot type: %d (only DMX_SPOT_RGB supported)", spot_type);
+    if (spot_type != DMX_SPOT_RGB && spot_type != DMX_SPOT_RGBW) {
+        log_error("DMX", "Unsupported spot type: %d (only DMX_SPOT_RGB and DMX_SPOT_RGBW supported)", spot_type);
         return -1;
     }
     
@@ -338,6 +338,12 @@ void dmx_generate_channel_mapping(DMXSpot spots[], int num_spots, DMXSpotType sp
                 spots[i].data.rgb.red = 0;
                 spots[i].data.rgb.green = 0;
                 spots[i].data.rgb.blue = 0;
+                break;
+            case DMX_SPOT_RGBW:
+                spots[i].data.rgbw.red = 0;
+                spots[i].data.rgbw.green = 0;
+                spots[i].data.rgbw.blue = 0;
+                spots[i].data.rgbw.white = 0;
                 break;
             // Future extensions for other types
             default:
@@ -597,15 +603,30 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
       smoothW[i] = alpha * smoothW[i] + (1.0 - alpha) * finalColors[i].white;
     }
 
-    // Convert to uint8_t for spots with new union structure
-    spots[i].data.rgb.red = (uint8_t)smoothR[i];
-    spots[i].data.rgb.green = (uint8_t)smoothG[i];
-    spots[i].data.rgb.blue = (uint8_t)smoothB[i];
-    // Note: RGB spots don't have white channel, so we skip spots[i].white
-
-    // Apply color profile correction on RGB
-    applyColorProfile(&spots[i].data.rgb.red, &spots[i].data.rgb.green, &spots[i].data.rgb.blue, redFactor,
-                      greenFactor, blueFactor);
+    // Convert to uint8_t and assign to appropriate spot type
+    if (spots[i].type == DMX_SPOT_RGB) {
+      spots[i].data.rgb.red = (uint8_t)smoothR[i];
+      spots[i].data.rgb.green = (uint8_t)smoothG[i];
+      spots[i].data.rgb.blue = (uint8_t)smoothB[i];
+      
+      // Apply color profile correction on RGB
+      applyColorProfile(&spots[i].data.rgb.red, &spots[i].data.rgb.green, 
+                        &spots[i].data.rgb.blue, redFactor, greenFactor, blueFactor);
+    } else if (spots[i].type == DMX_SPOT_RGBW) {
+      spots[i].data.rgbw.red = (uint8_t)smoothR[i];
+      spots[i].data.rgbw.green = (uint8_t)smoothG[i];
+      spots[i].data.rgbw.blue = (uint8_t)smoothB[i];
+      
+      // Apply color profile correction on RGB
+      applyColorProfile(&spots[i].data.rgbw.red, &spots[i].data.rgbw.green, 
+                        &spots[i].data.rgbw.blue, redFactor, greenFactor, blueFactor);
+      
+      // Calculate White channel using Option B: min(R,G,B) to preserve hue
+      uint8_t minRGB = spots[i].data.rgbw.red;
+      if (spots[i].data.rgbw.green < minRGB) minRGB = spots[i].data.rgbw.green;
+      if (spots[i].data.rgbw.blue < minRGB) minRGB = spots[i].data.rgbw.blue;
+      spots[i].data.rgbw.white = minRGB;
+    }
   }
 }
 

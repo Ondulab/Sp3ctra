@@ -578,16 +578,29 @@ void *dmxSendingThread(void *arg) {
     memset(frame, 0, DMX_FRAME_SIZE);
     frame[0] = 0;
 
-    // For each spot, insert the 3 channels (R, G, B) starting from the address
-    // defined in the new flexible structure
+    // For each spot, insert channels based on spot type (RGB or RGBW)
     for (int i = 0; i < dmxCtx->num_spots; i++) {
       int base = dmxCtx->spots[i].start_channel;
-      if ((base + 2) < DMX_FRAME_SIZE) {
-        frame[base + 0] = dmxCtx->spots[i].data.rgb.red;
-        frame[base + 1] = dmxCtx->spots[i].data.rgb.green;
-        frame[base + 2] = dmxCtx->spots[i].data.rgb.blue;
-      } else {
-        log_error("THREAD", "DMX address out of bounds for spot %d", i);
+      
+      if (dmxCtx->spots[i].type == DMX_SPOT_RGB) {
+        // RGB: 3 channels
+        if ((base + 2) < DMX_FRAME_SIZE) {
+          frame[base + 0] = dmxCtx->spots[i].data.rgb.red;
+          frame[base + 1] = dmxCtx->spots[i].data.rgb.green;
+          frame[base + 2] = dmxCtx->spots[i].data.rgb.blue;
+        } else {
+          log_error("THREAD", "DMX address out of bounds for RGB spot %d", i);
+        }
+      } else if (dmxCtx->spots[i].type == DMX_SPOT_RGBW) {
+        // RGBW: 4 channels
+        if ((base + 3) < DMX_FRAME_SIZE) {
+          frame[base + 0] = dmxCtx->spots[i].data.rgbw.red;
+          frame[base + 1] = dmxCtx->spots[i].data.rgbw.green;
+          frame[base + 2] = dmxCtx->spots[i].data.rgbw.blue;
+          frame[base + 3] = dmxCtx->spots[i].data.rgbw.white;
+        } else {
+          log_error("THREAD", "DMX address out of bounds for RGBW spot %d", i);
+        }
       }
     }
 
