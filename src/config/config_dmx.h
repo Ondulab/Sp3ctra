@@ -25,7 +25,7 @@
 
 #define DMX_SMOOTHING_FACTOR         (0.80)
 
-#define DMX_GAMMA                    (1.2)
+#define DMX_GAMMA                    (1.2) //1.2
 
 // Parameters for progressive response curve
 #define DMX_BLACK_THRESHOLD          (0.3)                  // Threshold below which LEDs remain off (0-1)

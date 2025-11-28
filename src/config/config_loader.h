@@ -150,6 +150,16 @@ typedef struct {
     // LuxSynth harmonicity parameters (color-based timbre control)
     float poly_detune_max_cents;               // Maximum detune for semi-harmonic sounds (cents)
     float poly_harmonicity_curve_exponent;     // Exponent for harmonicity response curve (0.5-2.0)
+    
+    // DMX lighting parameters
+    float dmx_brightness;                      // Global brightness multiplier (0.0-2.0)
+    float dmx_gamma;                           // Gamma correction (0.5-2.5)
+    float dmx_black_threshold;                 // Black threshold - LEDs off below this (0.0-0.5)
+    float dmx_response_curve;                  // Response curve exponent (1.0-5.0)
+    float dmx_red_factor;                      // Red channel correction factor (0.5-2.0)
+    float dmx_green_factor;                    // Green channel correction factor (0.5-2.0)
+    float dmx_blue_factor;                     // Blue channel correction factor (0.5-2.0)
+    float dmx_saturation_factor;               // Color saturation amplification (1.0-5.0)
 } sp3ctra_config_t;
 
 /**************************************************************************************

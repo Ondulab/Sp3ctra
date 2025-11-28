@@ -70,6 +70,7 @@
 #include "dmx.h"
 #include "context.h"
 #include "logger.h"
+#include "config_loader.h"
 #include <math.h>
 
 // Function to determine if a pixel is significant
@@ -413,10 +414,10 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
   static double smoothW[DMX_NUM_SPOTS] = {0.0};
   double alpha = DMX_SMOOTHING_FACTOR;
 
-  // Correction factors for RGB
-  double redFactor = DMX_RED_FACTOR;
-  double greenFactor = DMX_GREEN_FACTOR;
-  double blueFactor = DMX_BLUE_FACTOR;
+  // Correction factors for RGB - use values from configuration
+  double redFactor = g_sp3ctra_config.dmx_red_factor;
+  double greenFactor = g_sp3ctra_config.dmx_green_factor;
+  double blueFactor = g_sp3ctra_config.dmx_blue_factor;
 
   // Buffer to store calculated colors per zone (via blob detection)
   SpotColor zoneColors[DMX_NUM_SPOTS] = {0};
@@ -518,15 +519,22 @@ void computeAverageColorPerZone(const uint8_t *buffer_R,
     double intensity = 1.0 - (luminance / 255.0);
     double response_factor = 0.0;
 
-    if (intensity > DMX_BLACK_THRESHOLD) {
+    // Use configurable black threshold and response curve
+    double black_threshold = g_sp3ctra_config.dmx_black_threshold;
+    double response_curve = g_sp3ctra_config.dmx_response_curve;
+    
+    if (intensity > black_threshold) {
       double normalized =
-          (intensity - DMX_BLACK_THRESHOLD) / (1.0 - DMX_BLACK_THRESHOLD);
-      response_factor = pow(normalized, DMX_RESPONSE_CURVE);
+          (intensity - black_threshold) / (1.0 - black_threshold);
+      response_factor = pow(normalized, response_curve);
     }
     
-    // Gamma correction
-    double gamma = DMX_GAMMA;
+    // Gamma correction - use configurable gamma
+    double gamma = g_sp3ctra_config.dmx_gamma;
     double I_spots_corr = pow(response_factor, gamma);
+    
+    // Apply global brightness multiplier
+    I_spots_corr *= g_sp3ctra_config.dmx_brightness;
 
     // Apply intensity to RGB values
     zoneColors[i].red = avgR * I_spots_corr;
@@ -649,8 +657,8 @@ void applyColorProfile(uint8_t *red, uint8_t *green, uint8_t *blue,
     newBlue = 255.0;
   }
 
-  // Saturation amplification
-  double saturationFactor = DMX_SATURATION_FACTOR;
+  // Saturation amplification - use configurable value
+  double saturationFactor = g_sp3ctra_config.dmx_saturation_factor;
   double avg = (newRed + newGreen + newBlue) / 3.0;
 
   // Increase gap between each component and average (increases saturation)
