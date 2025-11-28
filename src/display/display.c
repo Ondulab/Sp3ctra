@@ -92,21 +92,25 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
       sfImage_setPixel(image, x, 0, color);
     }
 
-    /* Create a texture from the image of the line */
-    {
-      sfTexture *line_texture = sfTexture_createFromImage(image, NULL);
-      if (line_texture == NULL) {
-        log_error("DISPLAY", "Unable to create line texture");
-        sfImage_destroy(image);
-        return;
-      }
+      /* Create a texture from the image of the line */
+      {
+        sfTexture *line_texture = sfTexture_createFromImage(image, NULL);
+        if (line_texture == NULL) {
+          log_error("DISPLAY", "Unable to create line texture");
+          sfImage_destroy(image);
+          return;
+        }
 
-      /* Copy the background texture into the foreground texture with a 1-pixel */
-      /* vertical shift */
-      sfTexture_updateFromTexture(foreground_texture, background_texture, 0, 1);
+        /* Get texture height to place new line at bottom */
+        sfVector2u texture_size = sfTexture_getSize(foreground_texture);
+        unsigned int height = texture_size.y;
 
-      /* Update the foreground texture with the new image line at the top */
-      sfTexture_updateFromImage(foreground_texture, image, 0, 0);
+        /* Copy the background texture into the foreground texture with a 1-pixel */
+        /* upward shift (skip first line, copy from y=1 to y=0) */
+        sfTexture_updateFromTexture(foreground_texture, background_texture, 0, -1);
+
+        /* Update the foreground texture with the new image line at the bottom */
+        sfTexture_updateFromImage(foreground_texture, image, 0, height - 1);
 
       /* Create a sprite to draw the foreground texture */
       {
@@ -186,12 +190,16 @@ void printImage(sfRenderWindow *window, int32_t *image_buff,
     {
       sfTexture *line_texture = sfTexture_createFromImage(image, NULL);
 
-      /* Copy background texture into foreground texture with a 1-pixel downward */
-      /* shift */
-      sfTexture_updateFromTexture(foreground_texture, background_texture, 0, 1);
+      /* Get texture height to place new line at bottom */
+      sfVector2u texture_size = sfTexture_getSize(foreground_texture);
+      unsigned int height = texture_size.y;
 
-      /* Draw the new line at the top of the foreground texture */
-      sfTexture_updateFromImage(foreground_texture, image, 0, 0);
+      /* Copy background texture into foreground texture with a 1-pixel upward */
+      /* shift (skip first line, copy from y=1 to y=0) */
+      sfTexture_updateFromTexture(foreground_texture, background_texture, 0, -1);
+
+      /* Draw the new line at the bottom of the foreground texture */
+      sfTexture_updateFromImage(foreground_texture, image, 0, height - 1);
 
       /* Draw the foreground texture onto the window */
       {
