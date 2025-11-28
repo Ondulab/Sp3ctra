@@ -43,7 +43,7 @@ typedef union {
 // Main spot structure with type and start channel
 typedef struct {
     DMXSpotType type;
-    uint8_t start_channel;  // DMX start channel for this spot
+    uint16_t start_channel;  // DMX start channel for this spot (supports 0-65535)
     DMXSpotData data;
 } DMXSpot;
 
