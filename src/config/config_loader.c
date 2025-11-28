@@ -130,7 +130,17 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     
     // LuxSynth harmonicity parameters (color-based timbre control)
     .poly_detune_max_cents = 10.0f,             // Maximum detune for semi-harmonic sounds
-    .poly_harmonicity_curve_exponent = 1.0f     // Linear response curve by default
+    .poly_harmonicity_curve_exponent = 1.0f,    // Linear response curve by default
+    
+    // DMX lighting parameters
+    .dmx_brightness = 1.0f,                     // Global brightness multiplier
+    .dmx_gamma = 1.2f,                          // Gamma correction
+    .dmx_black_threshold = 0.3f,                // Black threshold
+    .dmx_response_curve = 2.5f,                 // Response curve exponent
+    .dmx_red_factor = 1.0f,                     // Red channel correction
+    .dmx_green_factor = 1.5f,                   // Green channel correction
+    .dmx_blue_factor = 1.0f,                    // Blue channel correction
+    .dmx_saturation_factor = 2.9f               // Color saturation amplification
 };
 
 /**************************************************************************************

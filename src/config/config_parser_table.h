@@ -214,6 +214,24 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  poly_detune_max_cents, 0.0f, 50.0f),
     CONFIG_PARAM("polyphonic", "harmonicity_curve_exponent", PARAM_TYPE_FLOAT,
                  poly_harmonicity_curve_exponent, 0.5f, 2.0f),
+    
+    // DMX lighting parameters
+    CONFIG_PARAM("dmx", "brightness", PARAM_TYPE_FLOAT,
+                 dmx_brightness, 0.0f, 5.0f),
+    CONFIG_PARAM("dmx", "gamma", PARAM_TYPE_FLOAT,
+                 dmx_gamma, 0.5f, 2.5f),
+    CONFIG_PARAM("dmx", "black_threshold", PARAM_TYPE_FLOAT,
+                 dmx_black_threshold, 0.0f, 0.5f),
+    CONFIG_PARAM("dmx", "response_curve", PARAM_TYPE_FLOAT,
+                 dmx_response_curve, 1.0f, 5.0f),
+    CONFIG_PARAM("dmx", "red_factor", PARAM_TYPE_FLOAT,
+                 dmx_red_factor, 0.5f, 2.0f),
+    CONFIG_PARAM("dmx", "green_factor", PARAM_TYPE_FLOAT,
+                 dmx_green_factor, 0.5f, 2.0f),
+    CONFIG_PARAM("dmx", "blue_factor", PARAM_TYPE_FLOAT,
+                 dmx_blue_factor, 0.5f, 2.0f),
+    CONFIG_PARAM("dmx", "saturation_factor", PARAM_TYPE_FLOAT,
+                 dmx_saturation_factor, 1.0f, 5.0f),
 };
 
 #define CONFIG_PARAMS_COUNT (sizeof(CONFIG_PARAMS) / sizeof(CONFIG_PARAMS[0]))
