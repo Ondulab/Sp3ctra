@@ -56,7 +56,7 @@ if (thread_policy_set(...) == KERN_SUCCESS) {
 // Set RT priority for polyphonic synthesis thread (priority 75)
 // Use the unified synth_set_rt_priority() function with macOS support
 extern int synth_set_rt_priority(pthread_t thread, int priority);
-if (synth_set_rt_priority(pthread_self(), 75) != 0) {
+if (synth_set_rt_priority(pthread_self(), 80) != 0) {
   log_warning("SYNTH", "LuxSynth thread: Failed to set RT priority (continuing without RT)");
 }
 ```
@@ -144,7 +144,7 @@ Currently not prioritized (ignored per user request). If needed:
 ```c
 // In synth_luxwave_thread_func()
 extern int synth_set_rt_priority(pthread_t thread, int priority);
-if (synth_set_rt_priority(pthread_self(), 73) != 0) {
+if (synth_set_rt_priority(pthread_self(), 80) != 0) {
   log_warning("LUXWAVE", "Failed to set RT priority (continuing without RT)");
 }
 ```

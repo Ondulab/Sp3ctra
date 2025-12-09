@@ -26,6 +26,10 @@ private:
   unsigned int bufferSize;
   unsigned int channels;
   int requestedDeviceId; // Device ID specifically requested by user (-1 = auto)
+  
+  // Multi-channel output support
+  bool multiChannelOutputEnabled;  // true if 8+ channels detected and ENABLE_RAW_OUTPUTS=1
+  unsigned int actualOutputChannels;  // Actual number of output channels opened
 
   // Callback static (pour faire le lien avec l'instance)
   static int rtCallback(void *outputBuffer, void *inputBuffer,

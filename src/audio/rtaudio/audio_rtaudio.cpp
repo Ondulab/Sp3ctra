@@ -127,6 +127,24 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
   // Non-interleaved stereo configuration (like RtAudio default)
   float *outLeft = outputBuffer;
   float *outRight = outputBuffer + nFrames;
+  
+  // MULTI-CHANNEL OUTPUT SUPPORT: Setup pointers for raw outputs (channels 3-8)
+  float *outCh3 = nullptr;  // LuxStral RAW Left
+  float *outCh4 = nullptr;  // LuxStral RAW Right
+  float *outCh5 = nullptr;  // LuxSynth RAW Left
+  float *outCh6 = nullptr;  // LuxSynth RAW Right
+  float *outCh7 = nullptr;  // LuxWave RAW Left (mono duplicated)
+  float *outCh8 = nullptr;  // LuxWave RAW Right (mono duplicated)
+  
+  if (multiChannelOutputEnabled) {
+    // Calculate pointers for additional output channels (non-interleaved format)
+    outCh3 = outputBuffer + (nFrames * 2);  // Channel 3 starts after channels 1-2
+    outCh4 = outputBuffer + (nFrames * 3);  // Channel 4
+    outCh5 = outputBuffer + (nFrames * 4);  // Channel 5
+    outCh6 = outputBuffer + (nFrames * 5);  // Channel 6
+    outCh7 = outputBuffer + (nFrames * 6);  // Channel 7
+    outCh8 = outputBuffer + (nFrames * 7);  // Channel 8
+  }
 
   // SYNCHRONIZED BUFFER READING - Single offset for all synths to prevent desync
   // This ensures all synthesizers read from the same temporal position
@@ -251,6 +269,34 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       source_luxwave = &photowave_audio_buffers[photowave_read_buffer]
                              .data[global_read_offset];
     }
+
+  // MULTI-CHANNEL RAW OUTPUTS: Copy raw synthesis signals to channels 3-8
+  // This happens BEFORE any processing (mix levels, reverb, EQ, master volume)
+  // to provide completely unprocessed signals for external routing
+  if (multiChannelOutputEnabled) {
+    for (unsigned int i = 0; i < chunk; i++) {
+      // Channels 3-4: LuxStral RAW (stereo, direct from synthesis buffers)
+      outCh3[i] = source_luxstral_left ? source_luxstral_left[i] : 0.0f;
+      outCh4[i] = source_luxstral_right ? source_luxstral_right[i] : 0.0f;
+      
+      // Channels 5-6: LuxSynth RAW (stereo, direct from synthesis buffers)
+      outCh5[i] = source_fft_left ? source_fft_left[i] : 0.0f;
+      outCh6[i] = source_fft_right ? source_fft_right[i] : 0.0f;
+      
+      // Channels 7-8: LuxWave RAW (mono duplicated to stereo)
+      float luxwave_raw = source_luxwave ? source_luxwave[i] : 0.0f;
+      outCh7[i] = luxwave_raw;
+      outCh8[i] = luxwave_raw;
+    }
+    
+    // Advance raw output pointers for next chunk
+    outCh3 += chunk;
+    outCh4 += chunk;
+    outCh5 += chunk;
+    outCh6 += chunk;
+    outCh7 += chunk;
+    outCh8 += chunk;
+  }
 
   // OPTIMIZED MIXING - Direct to output with threaded reverb
   for (unsigned int i = 0; i < chunk; i++) {
@@ -523,6 +569,7 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
       sampleRate(g_sp3ctra_config.sampling_frequency), bufferSize(g_sp3ctra_config.audio_buffer_size), channels(channels),
       requestedDeviceId(g_requested_audio_device_id), // Use global variable if
                                                       // set, otherwise -1
+      multiChannelOutputEnabled(false), actualOutputChannels(2), // Initialize multi-channel support
       masterVolume(1.0f), reverbBuffer(nullptr), reverbMix(DEFAULT_REVERB_MIX),
       reverbRoomSize(DEFAULT_REVERB_ROOM_SIZE),
       reverbDamping(DEFAULT_REVERB_DAMPING), reverbWidth(DEFAULT_REVERB_WIDTH),
@@ -915,11 +962,26 @@ bool AudioSystem::initialize() {
   // Device selection is now complete - preferredDeviceId contains the selected device
   // No additional enumeration or validation needed since it was handled above
 
+  // MULTI-CHANNEL DETECTION: Check device capabilities before opening stream
+  unsigned int requestedChannels = channels;  // Default to 2 channels
+  
+#if ENABLE_RAW_OUTPUTS
+  try {
+    RtAudio::DeviceInfo deviceInfo = audio->getDeviceInfo(preferredDeviceId);
+    if (deviceInfo.outputChannels >= 8) {
+      requestedChannels = 8;  // Request 8 channels for multi-channel mode
+      log_info("AUDIO", "Requesting 8-channel output for multi-channel mode");
+    }
+  } catch (const std::exception &error) {
+    log_warning("AUDIO", "Could not query device for channel count: %s", error.what());
+  }
+#endif
+
   // Stream parameters
   RtAudio::StreamParameters params;
   params.deviceId =
       preferredDeviceId; // Use found preferredDeviceId or default
-  params.nChannels = channels;
+  params.nChannels = requestedChannels;  // Use detected channel count
   params.firstChannel = 0;
 
   // Options to optimize stability on Raspberry Pi Module 5
@@ -995,6 +1057,37 @@ bool AudioSystem::initialize() {
 
       log_info("AUDIO", "Stream opened successfully: %uHz, %u frames", 
               actualSampleRate, bufferSize);
+      
+      // MULTI-CHANNEL OUTPUT DETECTION: Check if device supports 8+ channels
+      try {
+        RtAudio::DeviceInfo deviceInfo = audio->getDeviceInfo(preferredDeviceId);
+        actualOutputChannels = deviceInfo.outputChannels;
+        
+#if ENABLE_RAW_OUTPUTS
+        // Enable multi-channel mode if device has 8+ channels
+        if (actualOutputChannels >= 8) {
+          multiChannelOutputEnabled = true;
+          log_info("AUDIO", "🎛️  Multi-channel mode ENABLED: %u outputs detected", actualOutputChannels);
+          log_info("AUDIO", "   Channels 1-2: Main mix (reverb + EQ + master volume)");
+          log_info("AUDIO", "   Channels 3-4: LuxStral RAW (pre-everything)");
+          log_info("AUDIO", "   Channels 5-6: LuxSynth RAW (pre-everything)");
+          log_info("AUDIO", "   Channels 7-8: LuxWave RAW (pre-everything)");
+        } else {
+          multiChannelOutputEnabled = false;
+          log_info("AUDIO", "🎵 Stereo mode: %u outputs (standard mix only)", actualOutputChannels);
+          if (actualOutputChannels > 2 && actualOutputChannels < 8) {
+            log_info("AUDIO", "   Note: Device has %u channels but 8+ required for raw outputs", actualOutputChannels);
+          }
+        }
+#else
+        multiChannelOutputEnabled = false;
+        log_info("AUDIO", "🎵 Stereo mode: %u outputs (ENABLE_RAW_OUTPUTS disabled)", actualOutputChannels);
+#endif
+      } catch (const std::exception &error) {
+        log_warning("AUDIO", "Could not query device channel count: %s", error.what());
+        multiChannelOutputEnabled = false;
+        actualOutputChannels = 2;
+      }
       
       // Initialize RT profiler with actual audio parameters
       rt_profiler_init(&g_rt_profiler, actualSampleRate, bufferSize);
