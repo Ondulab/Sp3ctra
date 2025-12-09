@@ -36,6 +36,18 @@
 #define SWAP_LEFT_RIGHT_CHANNELS     1       // Set to 1 to swap left/right channels, 0 for normal
 
 /**************************************************************************************
+ * Multi-Channel Output Configuration
+ **************************************************************************************/
+// Enable automatic detection of 8+ channel interfaces for raw outputs
+// When enabled and 8+ channels detected:
+//   - Channels 1-2: Main mix (with reverb, EQ, master volume)
+//   - Channels 3-4: LuxStral RAW (pre-everything, direct from synthesis buffers)
+//   - Channels 5-6: LuxSynth RAW (pre-everything, direct from synthesis buffers)
+//   - Channels 7-8: LuxWave RAW (pre-everything, direct from synthesis buffers)
+// When disabled or <8 channels available: standard 2-channel stereo mix only
+#define ENABLE_RAW_OUTPUTS           1       // Set to 0 to force 2-channel mode
+
+/**************************************************************************************
  * RtAudio Format Configuration - Optimized FLOAT32 Pipeline
  **************************************************************************************/
 // Use RTAUDIO_FLOAT32 exclusively for optimal real-time performance
