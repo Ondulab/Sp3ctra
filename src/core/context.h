@@ -6,6 +6,7 @@
 #include "config.h"
 #include "dmx.h"
 #include "doublebuffer.h"
+#include "../config/config_display.h"
 #include <pthread.h>
 #include <time.h>
 #include <stdint.h>
@@ -115,7 +116,19 @@ typedef struct {
 
   /* IMU + Auto-volume state (protected by imu_mutex) */
   pthread_mutex_t imu_mutex; /* Protects IMU and auto-volume fields */
-  float imu_x_filtered;      /* Low-pass filtered accelerometer X */
+  float imu_x_filtered;      /* Low-pass filtered accelerometer X (for auto-volume) */
+  float imu_raw_x;           /* Raw accelerometer X (for display effects) */
+  float imu_raw_y;           /* Raw accelerometer Y (for display effects) */
+  float imu_raw_z;           /* Raw accelerometer Z (for display effects) */
+  float imu_gyro_x;          /* Raw gyroscope X (rad/s) */
+  float imu_gyro_y;          /* Raw gyroscope Y (rad/s) */
+  float imu_gyro_z;          /* Raw gyroscope Z (rad/s) */
+  float imu_position_x;      /* Integrated position X (from sensor) */
+  float imu_position_y;      /* Integrated position Y (from sensor) */
+  float imu_position_z;      /* Integrated position Z (from sensor) */
+  float imu_angle_x;         /* Integrated angle X/roll (from sensor, radians) */
+  float imu_angle_y;         /* Integrated angle Y/pitch (from sensor, radians) */
+  float imu_angle_z;         /* Integrated angle Z/yaw (from sensor, radians) */
   time_t last_imu_time;      /* Last IMU packet arrival time (seconds) */
   int imu_has_value;         /* 0/1: initial IMU value set */
 

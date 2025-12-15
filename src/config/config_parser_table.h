@@ -210,9 +210,9 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  poly_norm_factor_harmonics, 1.0f, 10000000.0f),
     
     // LuxSynth harmonicity parameters (color-based timbre control)
-    CONFIG_PARAM("polyphonic", "detune_max_cents", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "detune_max_cents", PARAM_TYPE_FLOAT,
                  poly_detune_max_cents, 0.0f, 50.0f),
-    CONFIG_PARAM("polyphonic", "harmonicity_curve_exponent", PARAM_TYPE_FLOAT,
+    CONFIG_PARAM("synth_luxsynth", "harmonicity_curve_exponent", PARAM_TYPE_FLOAT,
                  poly_harmonicity_curve_exponent, 0.5f, 2.0f),
     
     // DMX lighting parameters
@@ -232,6 +232,44 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  dmx_blue_factor, 0.5f, 2.0f),
     CONFIG_PARAM("dmx", "saturation_factor", PARAM_TYPE_FLOAT,
                  dmx_saturation_factor, 1.0f, 5.0f),
+    
+    // Display system parameters
+    CONFIG_PARAM("display", "orientation", PARAM_TYPE_FLOAT,
+                 display_orientation, 0.0f, 1.0f),
+    CONFIG_PARAM("display", "udp_scroll_speed", PARAM_TYPE_FLOAT,
+                 display_udp_scroll_speed, -1.0f, 1.0f),
+    CONFIG_PARAM("display", "accel_x_scroll_speed", PARAM_TYPE_FLOAT,
+                 display_accel_x_scroll_speed, -1.0f, 1.0f),
+    CONFIG_PARAM("display", "accel_y_offset", PARAM_TYPE_FLOAT,
+                 display_accel_y_offset, -1.0f, 1.0f),
+    CONFIG_PARAM("display", "initial_line_position", PARAM_TYPE_FLOAT,
+                 display_initial_line_position, -1.0f, 1.0f),
+    CONFIG_PARAM("display", "line_thickness", PARAM_TYPE_FLOAT,
+                 display_line_thickness, 0.0f, 1.0f),
+    CONFIG_PARAM("display", "transition_time_ms", PARAM_TYPE_FLOAT,
+                 display_transition_time_ms, 0.0f, 1000.0f),
+    CONFIG_PARAM("display", "accel_sensitivity", PARAM_TYPE_FLOAT,
+                 display_accel_sensitivity, 0.1f, 5.0f),
+    CONFIG_PARAM("display", "fade_strength", PARAM_TYPE_FLOAT,
+                 display_fade_strength, 0.0f, 1.0f),
+    CONFIG_PARAM("display", "line_persistence", PARAM_TYPE_FLOAT,
+                 display_line_persistence, 0.0f, 10.0f),
+    CONFIG_PARAM("display", "display_zoom", PARAM_TYPE_FLOAT,
+                 display_zoom, -1.0f, 1.0f),
+    CONFIG_PARAM("display", "history_buffer_size", PARAM_TYPE_INT,
+                 display_history_buffer_size, 100, 10000),
+    CONFIG_PARAM("display", "window_width", PARAM_TYPE_INT,
+                 display_window_width, 1, 10000),
+    CONFIG_PARAM("display", "window_height", PARAM_TYPE_INT,
+                 display_window_height, 1, 10000),
+    
+    // IMU rotation parameters
+    CONFIG_PARAM("display", "gyro_rotation_enabled", PARAM_TYPE_FLOAT,
+                 display_gyro_rotation_enabled, 0.0f, 1.0f),
+    CONFIG_PARAM("display", "gyro_rotation_sensitivity", PARAM_TYPE_FLOAT,
+                 display_gyro_rotation_sensitivity, 0.1f, 5.0f),
+    CONFIG_PARAM("display", "rotation_smoothing", PARAM_TYPE_FLOAT,
+                 display_rotation_smoothing, 0.0f, 0.95f),
 };
 
 #define CONFIG_PARAMS_COUNT (sizeof(CONFIG_PARAMS) / sizeof(CONFIG_PARAMS[0]))
