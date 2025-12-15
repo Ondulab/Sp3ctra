@@ -63,8 +63,8 @@ OBJ_DIR = $(BUILD_DIR)/obj
 TARGET = $(BUILD_DIR)/Sp3ctra
 
 # Source files organized by module
-CORE_SOURCES = src/core/main.c
-CONFIG_SOURCES = src/config/config_loader.c
+CORE_SOURCES = src/core/main.c src/core/display_globals.c
+CONFIG_SOURCES = src/config/config_loader.c src/config/config_display_loader.c
 AUDIO_RTAUDIO_SOURCES = src/audio/rtaudio/audio_c_interface.cpp src/audio/rtaudio/audio_rtaudio.cpp
 AUDIO_BUFFERS_SOURCES = src/audio/buffers/audio_image_buffers.c
 AUDIO_PAN_SOURCES = src/audio/pan/lock_free_pan.c
@@ -100,15 +100,15 @@ COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/midi/midi_mapping.c \
                         src/communication/midi/midi_callbacks.cpp \
                         src/communication/dmx/dmx.c
-PROCESSING_SOURCES = src/processing/image_preprocessor.c src/processing/image_sequencer.c
+PROCESSING_SOURCES = src/processing/image_preprocessor.c src/processing/image_sequencer.c src/processing/imu_gesture.c
 THREADING_SOURCES = src/threading/multithreading.c
 UTILS_SOURCES = src/utils/error.c src/utils/image_debug.c src/utils/logger.c src/utils/rt_profiler.c
 
 # Conditional display sources (only include if NO_SFML is not defined)
 ifeq ($(findstring -DNO_SFML,$(CFLAGS)),)
-DISPLAY_SOURCES = src/display/display.c
+DISPLAY_SOURCES = src/display/display.c src/display/display_buffer.c
 else
-DISPLAY_SOURCES =
+DISPLAY_SOURCES = src/display/display_buffer.c
 endif
 
 # All sources

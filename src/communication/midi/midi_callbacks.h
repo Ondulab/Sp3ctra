@@ -119,6 +119,23 @@ void midi_cb_sequencer_master_tempo(const MidiParameterValue *param, void *user_
 void midi_cb_sequencer_quantize_res(const MidiParameterValue *param, void *user_data);
 
 /* ============================================================================
+ * DISPLAY CALLBACKS
+ * ============================================================================ */
+
+void midi_cb_display_orientation(const MidiParameterValue *param, void *user_data);
+void midi_cb_display_udp_scroll_speed(const MidiParameterValue *param, void *user_data);
+void midi_cb_display_accel_x_scroll_speed(const MidiParameterValue *param, void *user_data);
+void midi_cb_display_accel_y_offset(const MidiParameterValue *param, void *user_data);
+void midi_cb_display_initial_line_position(const MidiParameterValue *param, void *user_data);
+void midi_cb_display_line_thickness(const MidiParameterValue *param, void *user_data);
+void midi_cb_display_transition_time_ms(const MidiParameterValue *param, void *user_data);
+void midi_cb_display_accel_sensitivity(const MidiParameterValue *param, void *user_data);
+void midi_cb_display_fade_strength(const MidiParameterValue *param, void *user_data);
+void midi_cb_display_line_persistence(const MidiParameterValue *param, void *user_data);
+void midi_cb_display_zoom(const MidiParameterValue *param, void *user_data);
+void midi_cb_display_history_buffer_size(const MidiParameterValue *param, void *user_data);
+
+/* ============================================================================
  * SYSTEM CALLBACKS
  * ============================================================================ */
 
@@ -158,6 +175,12 @@ void midi_callbacks_register_synth_luxwave(void);
  * @param sequencer_instance Pointer to sequencer instance (for user_data)
  */
 void midi_callbacks_register_sequencer(void *sequencer_instance);
+
+/**
+ * Register all display callbacks
+ * Should be called after display system initialization
+ */
+void midi_callbacks_register_display(void);
 
 /**
  * Register all system callbacks

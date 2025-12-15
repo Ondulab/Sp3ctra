@@ -696,6 +696,14 @@ int main(int argc, char **argv) {
     foregroundSprite = sfSprite_create();
     sfSprite_setTexture(backgroundSprite, backgroundTexture, sfTrue);
     sfSprite_setTexture(foregroundSprite, foregroundTexture, sfTrue);
+    
+    /* Initialize foreground texture to black to avoid artifacts */
+    sfImage *black_image = sfImage_createFromColor(texture_width, WINDOWS_HEIGHT, sfBlack);
+    if (black_image) {
+      sfTexture_updateFromImage(foregroundTexture, black_image, 0, 0);
+      sfImage_destroy(black_image);
+      log_info("DISPLAY", "Foreground texture initialized to black");
+    }
   }
 #endif // NO_SFML
 

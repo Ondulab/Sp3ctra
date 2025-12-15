@@ -9,9 +9,7 @@
 #define Display_h
 
 #include "config.h"  // For CIS_MAX_PIXELS_NB
-#include <pthread.h> // For pthread_mutex_t
 #include <stdint.h>  // For uint8_t etc.
-#include <stdio.h>
 
 // SFML Includes needed for type definitions in function prototypes
 #ifndef NO_SFML
@@ -35,8 +33,6 @@ int display_Init(sfRenderWindow *window);
 void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
                    uint8_t *buffer_B, sfTexture *background_texture,
                    sfTexture *foreground_texture);
-void printRawData(sfRenderWindow *window, uint32_t *image_buff,
-                  sfTexture *background_texture, sfTexture *foreground_texture);
 #else
 // Stub implementations when SFML is disabled (NO_SFML defined)
 static inline int display_Init(sfRenderWindow *window) {
@@ -53,16 +49,6 @@ static inline void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint
     (void)buffer_R;
     (void)buffer_G;
     (void)buffer_B;
-    (void)background_texture;
-    (void)foreground_texture;
-    // Do nothing - display is disabled
-}
-
-static inline void printRawData(sfRenderWindow *window, uint32_t *image_buff,
-                                sfTexture *background_texture, sfTexture *foreground_texture) {
-    // Suppress unused parameter warnings
-    (void)window;
-    (void)image_buff;
     (void)background_texture;
     (void)foreground_texture;
     // Do nothing - display is disabled

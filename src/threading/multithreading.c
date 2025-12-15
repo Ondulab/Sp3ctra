@@ -333,7 +333,30 @@ void *udpThread(void *arg) {
       struct packet_IMU *imu = (struct packet_IMU *)&packet;
       pthread_mutex_lock(&ctx->imu_mutex);
       float raw_x = imu->acc[0]; // X axis accelerometer
+      float raw_y = imu->acc[1]; // Y axis accelerometer
+      float raw_z = imu->acc[2]; // Z axis accelerometer
       
+      /* Store RAW accelerometer values for display effects (reactive, no filtering) */
+      ctx->imu_raw_x = raw_x;
+      ctx->imu_raw_y = raw_y;
+      ctx->imu_raw_z = raw_z;
+      
+      /* Store RAW gyroscope values (rad/s) */
+      ctx->imu_gyro_x = imu->gyro[0];
+      ctx->imu_gyro_y = imu->gyro[1];
+      ctx->imu_gyro_z = imu->gyro[2];
+      
+      /* Store INTEGRATED positions (from sensor's onboard integration) */
+      ctx->imu_position_x = imu->integrated_acc[0];
+      ctx->imu_position_y = imu->integrated_acc[1];
+      ctx->imu_position_z = imu->integrated_acc[2];
+      
+      /* Store INTEGRATED angles (from sensor's onboard integration, radians) */
+      ctx->imu_angle_x = imu->integrated_gyro[0];
+      ctx->imu_angle_y = imu->integrated_gyro[1];
+      ctx->imu_angle_z = imu->integrated_gyro[2];
+      
+      /* Keep filtered X for auto-volume (needs stability) */
       if (!ctx->imu_has_value) {
         ctx->imu_x_filtered = raw_x;
         ctx->imu_has_value = 1;

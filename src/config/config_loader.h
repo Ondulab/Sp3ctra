@@ -160,6 +160,27 @@ typedef struct {
     float dmx_green_factor;                    // Green channel correction factor (0.5-2.0)
     float dmx_blue_factor;                     // Blue channel correction factor (0.5-2.0)
     float dmx_saturation_factor;               // Color saturation amplification (1.0-5.0)
+    
+    // Display system parameters
+    float display_orientation;                 // Display orientation (0=vertical, 1=horizontal)
+    float display_udp_scroll_speed;            // UDP scroll speed (-1.0 to +1.0)
+    float display_accel_x_scroll_speed;        // Accelerometer X-axis scroll speed modulation (-1.0 to +1.0)
+    float display_accel_y_offset;              // Accelerometer Y-axis position offset (-1.0 to +1.0)
+    float display_initial_line_position;       // Initial line position (-1.0 to +1.0)
+    float display_line_thickness;              // Line thickness (0.0 to 1.0)
+    float display_transition_time_ms;          // Smooth transition time in milliseconds (0-1000)
+    float display_accel_sensitivity;           // Accelerometer sensitivity (0.1-5.0)
+    float display_fade_strength;               // Fade effect strength (0.0-1.0)
+    float display_line_persistence;            // Line persistence in seconds (0-10)
+    float display_zoom;                        // Display zoom factor (-1.0 to +1.0)
+    int display_history_buffer_size;           // History buffer size in lines (100-10000)
+    int display_window_width;                  // Window width in pixels
+    int display_window_height;                 // Window height in pixels
+    
+    // IMU rotation parameters
+    float display_gyro_rotation_enabled;       // Enable gyroscope rotation (0=off, 1=on)
+    float display_gyro_rotation_sensitivity;   // Rotation sensitivity multiplier (0.1-5.0)
+    float display_rotation_smoothing;          // Rotation smoothing factor (0.0-0.95)
 } sp3ctra_config_t;
 
 /**************************************************************************************

@@ -29,6 +29,7 @@
 #endif                    // __LINUX__
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>  // For fabsf()
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,279 +37,297 @@
 #include <time.h> // For clock_gettime
 #include <unistd.h>
 
+#include "../core/context.h"
 #include "display.h"
+#include "display_buffer.h"
 #include "error.h"
 #include "../config/config_instrument.h"
+#include "../core/display_globals.h"
 #include "../utils/logger.h"
 
-// NOTE: All Visual Freeze Feature code previously here has been removed
-// as the freeze logic is now handled in synth.c for synth data.
+/* Static variables for GPU-accelerated circular buffer */
+#ifndef NO_SFML
+static sfRenderTexture *g_history_buffer = NULL;
+static sfTexture *g_line_texture = NULL;
+static sfSprite *g_line_sprite = NULL;
+static sfSprite *g_history_sprite = NULL;
+#endif
+
+static float g_scroll_offset = 0.0f;
+static unsigned int g_last_tex_width = 0;
+static unsigned int g_last_tex_height = 0;
+
+/* Static variables for debug logging */
+static uint64_t g_frame_counter = 0;
+static const uint64_t DEBUG_LOG_INTERVAL = 600;  /* Log every 600 frames (~10 seconds at 60fps) */
 
 int display_Init(sfRenderWindow *window) {
   if (window) {
     log_info("DISPLAY", "SFML window detected in CLI mode, using it for display");
-    log_info("DISPLAY", "SFML CONFIGURED IN CLI+WINDOW MODE");
+    log_info("DISPLAY", "SFML CONFIGURED IN GPU CIRCULAR BUFFER MODE");
   } else {
     log_info("DISPLAY", "Running in CLI mode, no SFML window required");
   }
   return 0;
 }
 
-// Nouvelle fonction printImageRGB acceptant 6 arguments
+// Nouvelle fonction printImageRGB (GPU Accelerated + Circular Buffer)
 void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
                    uint8_t *buffer_B, sfTexture *background_texture,
                    sfTexture *foreground_texture) {
 #ifndef NO_SFML
   // In CLI mode, SFML window presence is optional.
-  // Si elle n'est pas disponible, on quitte simplement la fonction.
-  if (!window || !background_texture || !foreground_texture) {
-    return;
-  }
+  if (!window) return;
 
-  /* NOTE: Visual Freeze logic previously here has been removed. */
-  /* printImageRGB now directly uses the provided buffer_R, buffer_G, buffer_B */
-  /* for display. The decision of whether these buffers contain "live" or */
-  /* "frozen/faded" data (derived from synth.c's processed_grayScale) */
-  /* will be handled by the caller in main.c, which will prepare */
-  /* appropriate R,G,B buffers to pass here. */
+  // Unused parameters in this new GPU implementation, but kept for signature compatibility
+  (void)background_texture;
+  (void)foreground_texture;
 
   {
-    int nb_pixels;
-    sfImage *image;
-    int x;
-    
-    nb_pixels = get_cis_pixels_nb();
-    
-    /* Create an image of one line (width = nb_pixels, height = 1) */
-    image = sfImage_create(nb_pixels, 1);
-    if (image == NULL) {
-      log_error("DISPLAY", "Unable to create image");
-      return;
+    int nb_pixels = get_cis_pixels_nb();
+    sfVector2u window_size = sfRenderWindow_getSize(window);
+    unsigned int win_width = window_size.x;
+    unsigned int win_height = window_size.y;
+
+    /* Initialize or Resize GPU Resources */
+    if (!g_history_buffer || win_width != g_last_tex_width || win_height != g_last_tex_height) {
+        if (g_history_buffer) sfRenderTexture_destroy(g_history_buffer);
+        if (g_line_texture) sfTexture_destroy(g_line_texture);
+        if (g_line_sprite) sfSprite_destroy(g_line_sprite);
+        if (g_history_sprite) sfSprite_destroy(g_history_sprite);
+
+        // Create Render Texture (History Buffer)
+        g_history_buffer = sfRenderTexture_create(win_width, win_height, sfFalse);
+        if (!g_history_buffer) {
+            log_error("DISPLAY", "Failed to create Render Texture");
+            return;
+        }
+        
+        // Enable Repeat for Circular Buffer effect
+        sfTexture_setRepeated((sfTexture*)sfRenderTexture_getTexture(g_history_buffer), sfTrue);
+        
+        // Clear to black initially
+        sfRenderTexture_clear(g_history_buffer, sfBlack);
+        sfRenderTexture_display(g_history_buffer);
+        
+        // Create Reusable Line Texture (1xNbPixels or NbPixelsx1 depending on usage, max size)
+        // We make it large enough to hold the scan line.
+        // We will update it every frame.
+        g_line_texture = sfTexture_create(nb_pixels, 1); 
+        
+        // Create Sprites
+        g_line_sprite = sfSprite_create();
+        sfSprite_setTexture(g_line_sprite, g_line_texture, sfTrue);
+        
+        g_history_sprite = sfSprite_create();
+        sfSprite_setTexture(g_history_sprite, (sfTexture*)sfRenderTexture_getTexture(g_history_buffer), sfTrue);
+        
+        g_last_tex_width = win_width;
+        g_last_tex_height = win_height;
+        g_scroll_offset = 0.0f;
+        
+        log_info("DISPLAY", "GPU Resources Initialized: %ux%u", win_width, win_height);
     }
 
-    /* Set the color of each pixel by combining the three channels */
-    for (x = 0; x < nb_pixels; x++) {
-      sfColor color = sfColor_fromRGB(buffer_R[x], buffer_G[x], buffer_B[x]);
-      sfImage_setPixel(image, x, 0, color);
+    /* Configuration */
+    int is_horizontal_mode = (g_display_config.orientation >= 0.5f);
+    float scroll_speed = g_display_config.udp_scroll_speed;
+    
+    /* Update Scroll Offset */
+    /* If speed is positive, we scroll "forward". */
+    /* The offset represents the "camera position" on the circular buffer. */
+    /* To scroll UP (visual move up), camera moves UP (offset increases). */
+    g_scroll_offset += scroll_speed;
+    
+    /* Normalize offset to avoid float precision issues */
+    float max_dim = is_horizontal_mode ? (float)win_width : (float)win_height;
+    if (g_scroll_offset > max_dim) g_scroll_offset -= max_dim;
+    if (g_scroll_offset < 0.0f) g_scroll_offset += max_dim;
+
+    /* Prepare New Line Image */
+    sfImage *line_image = NULL;
+    
+    /* Calculate Line Position on Screen */
+    float pos_param = g_display_config.initial_line_position;
+    if (pos_param < -1.0f) pos_param = -1.0f;
+    if (pos_param > 1.0f) pos_param = 1.0f;
+    float pos_norm = (pos_param + 1.0f) / 2.0f; // 0.0 to 1.0
+    
+    /* Calculate Thickness */
+    float thickness_param = g_display_config.line_thickness;
+    if (thickness_param < 0.0f) thickness_param = 0.0f;
+    if (thickness_param > 1.0f) thickness_param = 1.0f;
+
+    /* Update Line Texture */
+    if (!is_horizontal_mode) {
+        /* === VERTICAL MODE (Lines are Horizontal) === */
+        /* We create a 1-pixel high image of the scan line */
+        line_image = sfImage_create(nb_pixels, 1);
+        if (line_image) {
+            for (int x = 0; x < nb_pixels; x++) {
+                sfImage_setPixel(line_image, x, 0, sfColor_fromRGB(buffer_R[x], buffer_G[x], buffer_B[x]));
+            }
+            // Update the reusable texture (resize if needed or just update rect)
+            // Ideally we created g_line_texture with enough width.
+            sfTexture_updateFromImage(g_line_texture, line_image, 0, 0);
+            sfImage_destroy(line_image);
+            
+            /* Calculate Drawing Position in Texture */
+            /* Screen_Y = Target_Y */
+            /* Texture_Y = (Screen_Y + Offset) % Height */
+            
+            float target_screen_y = pos_norm * (win_height); // Target Y on screen
+            float draw_y = target_screen_y + g_scroll_offset;
+            while (draw_y >= win_height) draw_y -= win_height;
+            
+            /* Calculate Thickness in Pixels */
+            float thickness_px = 1.0f + (thickness_param * (win_height - 1));
+            
+            /* Setup Sprite for Drawing into History */
+            /* We want to draw the line stretched to thickness */
+            sfSprite_setTextureRect(g_line_sprite, (sfIntRect){0, 0, nb_pixels, 1});
+            
+            /* Scale: Stretch width to Window Width, Stretch height to Thickness */
+            float scale_x = (float)win_width / nb_pixels;
+            sfSprite_setScale(g_line_sprite, (sfVector2f){scale_x, thickness_px});
+            
+            /* Position: Centered on draw_y */
+            /* Note: Origin is top-left. So we position at draw_y - thickness/2 */
+            float y_pos = draw_y - (thickness_px / 2.0f);
+            
+            /* Draw to Render Texture */
+            /* Handle Wrapping: If drawing crosses boundary, draw twice */
+            
+            // Draw 1 (Main)
+            sfSprite_setPosition(g_line_sprite, (sfVector2f){0, y_pos});
+            sfRenderTexture_drawSprite(g_history_buffer, g_line_sprite, NULL);
+            
+            // Draw 2 (Wrap Bottom) - if y_pos + thick > height
+            if (y_pos + thickness_px > win_height) {
+                sfSprite_setPosition(g_line_sprite, (sfVector2f){0, y_pos - win_height});
+                sfRenderTexture_drawSprite(g_history_buffer, g_line_sprite, NULL);
+            }
+            
+            // Draw 3 (Wrap Top) - if y_pos < 0
+            if (y_pos < 0) {
+                sfSprite_setPosition(g_line_sprite, (sfVector2f){0, y_pos + win_height});
+                sfRenderTexture_drawSprite(g_history_buffer, g_line_sprite, NULL);
+            }
+        }
+    } else {
+        /* === HORIZONTAL MODE (Lines are Vertical) === */
+        /* We create a 1-pixel wide image (column) */
+        /* Note: g_line_texture is nb_pixels wide. We reuse it but as 1xHeight? */
+        /* Actually simpler to create a 1xNbPixels image and rotate the sprite? */
+        /* Or create a temporary image. */
+        /* Let's use the existing g_line_texture (horizontal) and rotate the sprite 90 deg! */
+        
+        line_image = sfImage_create(nb_pixels, 1);
+        if (line_image) {
+             for (int i = 0; i < nb_pixels; i++) {
+                sfImage_setPixel(line_image, i, 0, sfColor_fromRGB(buffer_R[i], buffer_G[i], buffer_B[i]));
+            }
+            sfTexture_updateFromImage(g_line_texture, line_image, 0, 0);
+            sfImage_destroy(line_image);
+            
+            float target_screen_x = pos_norm * (win_width);
+            float draw_x = target_screen_x + g_scroll_offset;
+            while (draw_x >= win_width) draw_x -= win_width;
+            
+            float thickness_px = 1.0f + (thickness_param * (win_width - 1));
+            
+            /* Setup Sprite */
+            sfSprite_setTextureRect(g_line_sprite, (sfIntRect){0, 0, nb_pixels, 1});
+            
+            /* Rotation: 90 degrees clockwise */
+            sfSprite_setRotation(g_line_sprite, 90.0f);
+            
+            /* Scale: X becomes Height (stretched to Window Height), Y becomes Width (stretched to Thickness) */
+            /* Before rotation: X is along scan line (pixels), Y is along 1px. */
+            /* After rotation 90: X axis points down. Y axis points left. */
+            /* We want length to match Window Height. We want width (old Y) to match Thickness. */
+            float scale_len = (float)win_height / nb_pixels;
+            sfSprite_setScale(g_line_sprite, (sfVector2f){scale_len, thickness_px});
+            
+            /* Position */
+            /* After 90 deg rot, origin is at Top-Left of sprite, which is Top-Right of visual line if unshifted? */
+            /* Let's verify origin. Standard is (0,0). Rot 90 around (0,0). */
+            /* (10, 0) becomes (0, 10). (0, 1) becomes (-1, 0). */
+            /* So the sprite extends DOWN and LEFT from the position. */
+            /* We want it to extend DOWN (along Y) and RIGHT (thickness). */
+            /* So we should rotate -90 (270) or adjust position? */
+            /* Let's rotate 90. Sprite goes (0,0) -> (0, Height). Thickness extends to (-Thickness). */
+            /* So we position at (draw_x + thickness/2, 0). */
+            /* This puts the line from (draw_x + thick/2) to (draw_x - thick/2) ? Yes. */
+            
+            float x_pos = draw_x + (thickness_px / 2.0f);
+            
+            sfSprite_setPosition(g_line_sprite, (sfVector2f){x_pos, 0});
+            sfRenderTexture_drawSprite(g_history_buffer, g_line_sprite, NULL);
+            
+            /* Wrap */
+            // If x_pos - thickness < 0? No, checking logic of draw_x
+            // Draw logic is slightly complex with rotation.
+            // Simplified: Draw at x_pos. If visible part wraps, draw again.
+            
+            // Check boundaries relative to draw_x (center)
+            float left_edge = draw_x - thickness_px/2.0f;
+            float right_edge = draw_x + thickness_px/2.0f;
+            
+            if (right_edge > win_width) {
+                sfSprite_setPosition(g_line_sprite, (sfVector2f){x_pos - win_width, 0});
+                sfRenderTexture_drawSprite(g_history_buffer, g_line_sprite, NULL);
+            }
+            if (left_edge < 0) {
+                sfSprite_setPosition(g_line_sprite, (sfVector2f){x_pos + win_width, 0});
+                sfRenderTexture_drawSprite(g_history_buffer, g_line_sprite, NULL);
+            }
+            
+            /* Reset rotation for next frame safety */
+            sfSprite_setRotation(g_line_sprite, 0.0f);
+        }
     }
+    
+    /* Finalize History Buffer Update */
+    sfRenderTexture_display(g_history_buffer);
+    
+    /* Draw History Buffer to Window */
+    sfRenderWindow_clear(window, sfBlack);
+    
+    /* Set Texture Rect to create scrolling effect */
+    /* We want to view the texture starting at 'offset'. */
+    /* Because Texture is Repeated, we can just specify the rect. */
+    /* Rect(0, offset, width, height) */
+    
+    sfIntRect view_rect;
+    if (!is_horizontal_mode) {
+        view_rect = (sfIntRect){0, (int)g_scroll_offset, (int)win_width, (int)win_height};
+    } else {
+        view_rect = (sfIntRect){(int)g_scroll_offset, 0, (int)win_width, (int)win_height};
+    }
+    
+    sfSprite_setTextureRect(g_history_sprite, view_rect);
+    sfSprite_setScale(g_history_sprite, (sfVector2f){1.0f, 1.0f}); // Reset scale just in case
+    sfSprite_setPosition(g_history_sprite, (sfVector2f){0, 0});
+    
+    sfRenderWindow_drawSprite(window, g_history_sprite, NULL);
+    sfRenderWindow_display(window);
 
-      /* Create a texture from the image of the line */
-      {
-        sfTexture *line_texture = sfTexture_createFromImage(image, NULL);
-        if (line_texture == NULL) {
-          log_error("DISPLAY", "Unable to create line texture");
-          sfImage_destroy(image);
-          return;
-        }
-
-        /* Get texture height to place new line at bottom */
-        sfVector2u texture_size = sfTexture_getSize(foreground_texture);
-        unsigned int height = texture_size.y;
-
-        /* Copy the background texture into the foreground texture with a 1-pixel */
-        /* upward shift (skip first line, copy from y=1 to y=0) */
-        sfTexture_updateFromTexture(foreground_texture, background_texture, 0, -1);
-
-        /* Update the foreground texture with the new image line at the bottom */
-        sfTexture_updateFromImage(foreground_texture, image, 0, height - 1);
-
-      /* Create a sprite to draw the foreground texture */
-      {
-        sfSprite *foreground_sprite = sfSprite_create();
-        sfSprite_setTexture(foreground_sprite, foreground_texture, sfTrue);
-
-        /* Add dynamic scaling to fix HiDPI/Retina display issues */
-        {
-          sfVector2u texture_size = sfTexture_getSize(foreground_texture);
-          sfVector2u window_size = sfRenderWindow_getSize(window);
-          if (texture_size.x > 0 && texture_size.y > 0) {
-            float scale_x = (float)window_size.x / texture_size.x;
-            float scale_y = (float)window_size.y / texture_size.y;
-            sfSprite_setScale(foreground_sprite, (sfVector2f){scale_x, scale_y});
-          }
-        }
-
-        sfRenderWindow_drawSprite(window, foreground_sprite, NULL);
-
-        /* Display the window contents */
-        sfRenderWindow_display(window);
-
-        /* Copy the updated foreground texture back into the background texture for */
-        /* the next iteration */
-        sfTexture_updateFromTexture(background_texture, foreground_texture, 0, 0);
-
-        /* Cleanup */
-        sfImage_destroy(image);
-        if (line_texture)
-          sfTexture_destroy(line_texture);
-        if (foreground_sprite)
-          sfSprite_destroy(foreground_sprite);
-      }
+    /* Periodic logging */
+    g_frame_counter++;
+    if (g_frame_counter % DEBUG_LOG_INTERVAL == 0) {
+         log_info("DISPLAY_DEBUG", "GPU Mode: %s | Speed: %.2f | Offset: %.2f", 
+                  is_horizontal_mode ? "HORIZONTAL" : "VERTICAL",
+                  scroll_speed,
+                  g_scroll_offset);
     }
   }
 #else
   // NO_SFML is defined, do nothing.
-  // Add (void) casts to prevent unused parameter warnings if necessary.
   (void)window;
   (void)buffer_R;
   (void)buffer_G;
   (void)buffer_B;
-  (void)background_texture;
-  (void)foreground_texture;
-#endif
-}
-
-// Old function using combined 32-bit buffer
-void printImage(sfRenderWindow *window, int32_t *image_buff,
-                sfTexture *background_texture, sfTexture *foreground_texture) {
-#ifndef NO_SFML
-  // In CLI mode, SFML window presence is optional.
-  // Si elle n'est pas disponible, on quitte simplement la fonction.
-  if (!window || !background_texture || !foreground_texture) {
-    return;
-  }
-
-  {
-    int nb_pixels;
-    sfImage *image;
-    int x;
-    
-    nb_pixels = get_cis_pixels_nb();
-    
-    /* Create an image for the new line */
-    image = sfImage_createFromColor(nb_pixels, 1, sfBlack);
-
-    /* Set the color for each pixel in the new line */
-    for (x = 0; x < nb_pixels; x++) {
-      sfColor color =
-          sfColor_fromRGB(image_buff[x] & 0xFF, (image_buff[x] >> 8) & 0xFF,
-                          (image_buff[x] >> 16) & 0xFF);
-      sfImage_setPixel(image, x, 0, color);
-    }
-
-    /* Create a texture from the new line image */
-    {
-      sfTexture *line_texture = sfTexture_createFromImage(image, NULL);
-
-      /* Get texture height to place new line at bottom */
-      sfVector2u texture_size = sfTexture_getSize(foreground_texture);
-      unsigned int height = texture_size.y;
-
-      /* Copy background texture into foreground texture with a 1-pixel upward */
-      /* shift (skip first line, copy from y=1 to y=0) */
-      sfTexture_updateFromTexture(foreground_texture, background_texture, 0, -1);
-
-      /* Draw the new line at the bottom of the foreground texture */
-      sfTexture_updateFromImage(foreground_texture, image, 0, height - 1);
-
-      /* Draw the foreground texture onto the window */
-      {
-        sfSprite *foreground_sprite = sfSprite_create();
-        sfSprite_setTexture(foreground_sprite, foreground_texture, sfTrue);
-
-        /* Add dynamic scaling to fix HiDPI/Retina display issues */
-        {
-          sfVector2u texture_size = sfTexture_getSize(foreground_texture);
-          sfVector2u window_size = sfRenderWindow_getSize(window);
-          if (texture_size.x > 0 && texture_size.y > 0) {
-            float scale_x = (float)window_size.x / texture_size.x;
-            float scale_y = (float)window_size.y / texture_size.y;
-            sfSprite_setScale(foreground_sprite, (sfVector2f){scale_x, scale_y});
-          }
-        }
-
-        sfRenderWindow_drawSprite(window, foreground_sprite, NULL);
-
-        /* Display the window contents */
-        sfRenderWindow_display(window);
-
-        /* Copy the updated foreground texture back into the background texture */
-        sfTexture_updateFromTexture(background_texture, foreground_texture, 0, 0);
-
-        /* Cleanup */
-        sfImage_destroy(image);
-        if (line_texture)
-          sfTexture_destroy(line_texture);
-        if (foreground_sprite)
-          sfSprite_destroy(foreground_sprite);
-      }
-    }
-  }
-#else
-  // NO_SFML is defined, do nothing.
-  (void)window;
-  (void)image_buff;
-  (void)background_texture;
-  (void)foreground_texture;
-#endif
-}
-
-void printRawData(sfRenderWindow *window, uint32_t *image_buff,
-                  sfTexture *background_texture,
-                  sfTexture *foreground_texture) {
-#ifndef NO_SFML
-  // In CLI mode, SFML window presence is optional.
-  // Si elle n'est pas disponible, on quitte simplement la fonction.
-  if (!window || !background_texture || !foreground_texture) {
-    return;
-  }
-
-  {
-    int nb_pixels;
-    int x;
-    
-    nb_pixels = get_cis_pixels_nb();
-    
-    sfRenderWindow_clear(window, sfBlack);
-
-    /* Create a vertical line for each x coordinate */
-    for (x = 0; x < nb_pixels; x++) {
-      /* Draw a black vertical line */
-      sfVertexArray *line = sfVertexArray_create();
-      sfVertexArray_setPrimitiveType(line, sfLinesStrip);
-      sfVertex vertex1 = {.position = {x, 0}, .color = sfBlack};
-      sfVertex vertex2 = {.position = {x, WINDOWS_HEIGHT}, .color = sfBlack};
-      sfVertexArray_append(line, vertex1);
-      sfVertexArray_append(line, vertex2);
-      sfRenderWindow_drawVertexArray(window, line, NULL);
-      sfVertexArray_destroy(line);
-
-      /* Draw a green point */
-      {
-        sfVertexArray *point = sfVertexArray_create();
-        sfVertexArray_setPrimitiveType(point, sfPoints);
-        sfVertex vertex = {
-            .position = {x, (float)(image_buff[x] * (WINDOWS_HEIGHT / 8192.0f))},
-            .color = sfGreen};
-        sfVertexArray_append(point, vertex);
-        sfRenderWindow_drawVertexArray(window, point, NULL);
-        sfVertexArray_destroy(point);
-      }
-    }
-  }
-
-  // Prepare sprites for drawing textures
-  sfSprite *background_sprite = sfSprite_create();
-  sfSprite *foreground_sprite = sfSprite_create();
-  sfSprite_setTexture(background_sprite, background_texture, sfTrue);
-  sfSprite_setTexture(foreground_sprite, foreground_texture, sfTrue);
-
-  // Draw the background texture
-  sfRenderWindow_drawSprite(window, background_sprite, NULL);
-
-  // Draw the foreground texture
-  sfRenderWindow_drawSprite(window, foreground_sprite, NULL);
-
-  // Display the window contents
-  sfRenderWindow_display(window);
-
-  // Clean up
-  sfSprite_destroy(background_sprite);
-  sfSprite_destroy(foreground_sprite);
-#else
-  // NO_SFML is defined, do nothing.
-  (void)window;
-  (void)image_buff;
   (void)background_texture;
   (void)foreground_texture;
 #endif
