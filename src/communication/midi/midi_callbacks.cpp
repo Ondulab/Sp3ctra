@@ -873,25 +873,6 @@ void midi_cb_display_udp_scroll_speed(const MidiParameterValue *param, void *use
     log_info("DISPLAY", "Scroll speed: %.2f", param->raw_value);
 }
 
-void midi_cb_display_accel_x_scroll_speed(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    extern DisplayConfig g_display_config;
-    /* accel_x_scroll_speed removed - no longer used */
-    (void)param;  /* Suppress unused warning */
-    
-    log_info("DISPLAY", "Accel X scroll speed: %.2f", param->raw_value);
-}
-
-void midi_cb_display_accel_y_offset(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    extern DisplayConfig g_display_config;
-    g_display_config.accel_y_position_control = param->raw_value;
-    
-    log_info("DISPLAY", "Accel Y offset: %.2f", param->raw_value);
-}
-
 void midi_cb_display_initial_line_position(const MidiParameterValue *param, void *user_data) {
     (void)user_data;
     
@@ -910,61 +891,7 @@ void midi_cb_display_line_thickness(const MidiParameterValue *param, void *user_
     log_info("DISPLAY", "Line thickness: %.2f", param->value);
 }
 
-void midi_cb_display_transition_time_ms(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    extern DisplayConfig g_display_config;
-    g_display_config.transition_time_ms = param->raw_value;
-    
-    log_info("DISPLAY", "Transition time: %.0f ms", param->raw_value);
-}
-
-void midi_cb_display_accel_sensitivity(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    extern DisplayConfig g_display_config;
-    g_display_config.accel_sensitivity = param->raw_value;
-    
-    log_info("DISPLAY", "Accel sensitivity: %.2f", param->raw_value);
-}
-
-void midi_cb_display_fade_strength(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    extern DisplayConfig g_display_config;
-    g_display_config.fade_strength = param->value;
-    
-    log_info("DISPLAY", "Fade strength: %.2f", param->value);
-}
-
-void midi_cb_display_line_persistence(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    extern DisplayConfig g_display_config;
-    g_display_config.line_persistence = param->raw_value;
-    
-    log_info("DISPLAY", "Line persistence: %.1f s", param->raw_value);
-}
-
-void midi_cb_display_zoom(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    extern DisplayConfig g_display_config;
-    g_display_config.display_zoom = param->raw_value;
-    
-    log_info("DISPLAY", "Zoom: %.2f", param->raw_value);
-}
-
-void midi_cb_display_history_buffer_size(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    extern DisplayConfig g_display_config;
-    int new_size = (int)param->raw_value;
-    
-    // Only log, actual buffer resize would need to be done carefully
-    log_info("DISPLAY", "History buffer size: %d lines (requires restart)", new_size);
-    g_display_config.history_buffer_size = new_size;
-}
+// Obsolete callbacks removed (transition, sensitivity, fade, persistence, zoom, buffer size)
 
 /* ============================================================================
  * SYSTEM CALLBACKS
@@ -1174,18 +1101,10 @@ void midi_callbacks_register_sequencer(void *sequencer_instance) {
 void midi_callbacks_register_display(void) {
     midi_mapping_register_callback("display_orientation", midi_cb_display_orientation, NULL);
     midi_mapping_register_callback("display_udp_scroll_speed", midi_cb_display_udp_scroll_speed, NULL);
-    midi_mapping_register_callback("display_accel_x_scroll_speed", midi_cb_display_accel_x_scroll_speed, NULL);
-    midi_mapping_register_callback("display_accel_y_offset", midi_cb_display_accel_y_offset, NULL);
     midi_mapping_register_callback("display_initial_line_position", midi_cb_display_initial_line_position, NULL);
     midi_mapping_register_callback("display_line_thickness", midi_cb_display_line_thickness, NULL);
-    midi_mapping_register_callback("display_transition_time_ms", midi_cb_display_transition_time_ms, NULL);
-    midi_mapping_register_callback("display_accel_sensitivity", midi_cb_display_accel_sensitivity, NULL);
-    midi_mapping_register_callback("display_fade_strength", midi_cb_display_fade_strength, NULL);
-    midi_mapping_register_callback("display_line_persistence", midi_cb_display_line_persistence, NULL);
-    midi_mapping_register_callback("display_display_zoom", midi_cb_display_zoom, NULL);
-    midi_mapping_register_callback("display_history_buffer_size", midi_cb_display_history_buffer_size, NULL);
     
-    log_info("MIDI", "Callbacks: Display registered (12 parameters)");
+    log_info("MIDI", "Callbacks: Display registered (4 parameters)");
 }
 
 void midi_callbacks_register_system(void) {

@@ -42,11 +42,9 @@ int load_display_config(const char* config_file_path) {
     
     char line[256];
     int in_display_section = 0;
-    int line_number = 0;
     int params_loaded = 0;
     
     while (fgets(line, sizeof(line), file)) {
-        line_number++;
         char* trimmed = trim_whitespace(line);
         
         // Skip empty lines and comments
