@@ -81,6 +81,16 @@ int udp_Init(struct sockaddr_in *si_other, struct sockaddr_in *si_me) {
     // Continue anyway, this is not critical
   }
 
+  // Enable port reuse for multiple instances (required on macOS/BSD for multicast sharing)
+#ifdef SO_REUSEPORT
+  if (setsockopt(s, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse)) == -1) {
+    log_warning("UDP", "Failed to set SO_REUSEPORT: %s", strerror(errno));
+    // Continue anyway, but multiple instances may not work
+  } else {
+    log_info("UDP", "SO_REUSEPORT enabled - multiple instances can share this port");
+  }
+#endif
+
   // Set socket timeout so recvfrom() can be interrupted for clean shutdown
   struct timeval timeout;
   timeout.tv_sec = 0;
