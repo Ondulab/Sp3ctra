@@ -21,21 +21,17 @@ ifeq ($(UNAME_S),Darwin)
     CFLAGS = $(BASE_CFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET) -Wno-deprecated-declarations
     CXXFLAGS = $(BASE_CXXFLAGS) -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET) -Wno-deprecated-declarations
     
-    # Include directories for macOS
-    INCLUDES = -I/opt/homebrew/include -I$(SFML_INCLUDE) \
-               -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects \
+    # Include directories for macOS (core audio only)
+    INCLUDES = -I/opt/homebrew/include \
+               -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers \
                -Isrc/audio/pan -Isrc/synthesis/luxstral -Isrc/synthesis/luxsynth \
                -Isrc/synthesis/luxsynth/kissfft -Isrc/synthesis/luxwave -Isrc/synthesis/common \
                -Isrc/communication/network -Isrc/communication/midi \
-               -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
+               -Isrc/processing -Isrc/threading -Isrc/utils
     
-    # macOS Libraries - Use SFML@2 exclusively to avoid version conflicts
-    SFML_PATH := /opt/homebrew/opt/sfml@2/lib
-    SFML_INCLUDE := /opt/homebrew/opt/sfml@2/include
+    # macOS Libraries (core audio only - no SFML, no DMX)
     LIBS = -framework CoreFoundation -framework CoreAudio -framework AudioToolbox -framework Cocoa \
-           -L/opt/homebrew/lib -L$(SFML_PATH) -lfftw3 -lsndfile -lrtaudio -lrtmidi \
-           -lsfml-graphics -lsfml-window -lsfml-system \
-           -lcsfml-graphics -lcsfml-window -lcsfml-system
+           -L/opt/homebrew/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi
 else
     # Linux/Raspberry Pi specific settings
     CFLAGS = $(BASE_CFLAGS) -DNO_SFML -D__LINUX__ -D_GNU_SOURCE -march=native -mtune=native
@@ -45,16 +41,16 @@ else
     LIBFTDI_CFLAGS := $(shell pkg-config --cflags libftdi1 2>/dev/null)
     LIBFTDI_LIBS := $(shell pkg-config --libs libftdi1 2>/dev/null)
     
-    # Include directories for Linux
-    INCLUDES = -I/usr/include -I/usr/local/include $(LIBFTDI_CFLAGS) \
-               -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers -Isrc/audio/effects \
+    # Include directories for Linux (core audio only)
+    INCLUDES = -I/usr/include -I/usr/local/include \
+               -Isrc/core -Isrc/config -Isrc/audio/rtaudio -Isrc/audio/buffers \
                -Isrc/audio/pan -Isrc/synthesis/luxstral -Isrc/synthesis/luxsynth \
                -Isrc/synthesis/luxsynth/kissfft -Isrc/synthesis/luxwave -Isrc/synthesis/common \
                -Isrc/communication/network -Isrc/communication/midi \
-               -Isrc/communication/dmx -Isrc/display -Isrc/threading -Isrc/utils
+               -Isrc/processing -Isrc/threading -Isrc/utils
     
-    # Linux Libraries (including libftdi1 for DMX support)
-    LIBS = -L/usr/lib -L/usr/local/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi $(LIBFTDI_LIBS) -lasound -lpthread -lm
+    # Linux Libraries (core audio only - no DMX/libftdi1)
+    LIBS = -L/usr/lib -L/usr/local/lib -lfftw3 -lsndfile -lrtaudio -lrtmidi -lasound -lpthread -lm
 endif
 
 # Build directories
@@ -63,13 +59,12 @@ OBJ_DIR = $(BUILD_DIR)/obj
 TARGET = $(BUILD_DIR)/Sp3ctra
 
 # Source files organized by module
-CORE_SOURCES = src/core/main.c src/core/display_globals.c
-CONFIG_SOURCES = src/config/config_loader.c src/config/config_display_loader.c
+CORE_SOURCES = src/core/main.c
+CONFIG_SOURCES = src/config/config_loader.c
 AUDIO_RTAUDIO_SOURCES = src/audio/rtaudio/audio_c_interface.cpp src/audio/rtaudio/audio_rtaudio.cpp
 AUDIO_BUFFERS_SOURCES = src/audio/buffers/audio_image_buffers.c
 AUDIO_PAN_SOURCES = src/audio/pan/lock_free_pan.c
-AUDIO_EFFECTS_SOURCES = src/audio/effects/auto_volume.c src/audio/effects/pareq.cpp \
-                        src/audio/effects/three_band_eq.cpp src/audio/effects/ZitaRev1.cpp
+# Audio effects removed (reverb, EQ, auto-volume) - Core audio only
 # LuxStral synthesis sources (base)
 SYNTHESIS_LUXSTRAL_BASE_SOURCES = src/synthesis/luxstral/synth_luxstral.c src/synthesis/luxstral/wave_generation.c \
                                   src/synthesis/luxstral/synth_luxstral_stereo.c \
@@ -98,25 +93,18 @@ SYNTHESIS_COMMON_SOURCES = src/synthesis/common/voice_manager.c
 COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/midi/midi_controller.cpp \
                         src/communication/midi/midi_mapping.c \
-                        src/communication/midi/midi_callbacks.cpp \
-                        src/communication/dmx/dmx.c
+                        src/communication/midi/midi_callbacks.cpp
 PROCESSING_SOURCES = src/processing/image_preprocessor.c src/processing/image_sequencer.c src/processing/imu_gesture.c
 THREADING_SOURCES = src/threading/multithreading.c
-UTILS_SOURCES = src/utils/error.c src/utils/image_debug.c src/utils/logger.c src/utils/rt_profiler.c
+UTILS_SOURCES = src/utils/error.c src/utils/logger.c src/utils/rt_profiler.c
+# Display sources removed (SFML dependencies eliminated)
 
-# Conditional display sources (only include if NO_SFML is not defined)
-ifeq ($(findstring -DNO_SFML,$(CFLAGS)),)
-DISPLAY_SOURCES = src/display/display.c src/display/display_buffer.c
-else
-DISPLAY_SOURCES = src/display/display_buffer.c
-endif
-
-# All sources
+# All sources (core audio only - no display, no DMX, no effects)
 ALL_SOURCES = $(CORE_SOURCES) $(CONFIG_SOURCES) $(AUDIO_RTAUDIO_SOURCES) $(AUDIO_BUFFERS_SOURCES) \
-              $(AUDIO_PAN_SOURCES) $(AUDIO_EFFECTS_SOURCES) $(SYNTHESIS_LUXSTRAL_SOURCES) \
+              $(AUDIO_PAN_SOURCES) $(SYNTHESIS_LUXSTRAL_SOURCES) \
               $(SYNTHESIS_LUXSYNTH_SOURCES) $(SYNTHESIS_LUXWAVE_SOURCES) $(SYNTHESIS_COMMON_SOURCES) \
               $(COMMUNICATION_SOURCES) $(PROCESSING_SOURCES) \
-              $(DISPLAY_SOURCES) $(THREADING_SOURCES) $(UTILS_SOURCES)
+              $(THREADING_SOURCES) $(UTILS_SOURCES)
 
 # Object files
 OBJECTS = $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(filter %.c,$(ALL_SOURCES))) \
