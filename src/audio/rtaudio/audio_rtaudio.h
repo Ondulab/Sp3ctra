@@ -3,10 +3,8 @@
 #ifndef AUDIO_RTAUDIO_H
 #define AUDIO_RTAUDIO_H
 
-#include "ZitaRev1.h"
 #include "audio_c_api.h"
 #include "config.h"
-#include "three_band_eq.h"
 #include <atomic>
 #include <condition_variable>
 #include <mutex>

@@ -8,7 +8,6 @@
 #include "../../config/config_debug.h"    // For debug configuration macros
 #include "../../config/config_audio.h"    // For HDMI format configuration
 #include "../../config/config_loader.h"   // For runtime configuration access
-#include "../../utils/image_debug.h"      // For continuous volume capture
 #include "../../synthesis/luxstral/wave_generation.h"  // For waves[] access
 #include "../../utils/logger.h"           // For structured logging
 #include "../../utils/rt_profiler.h"      // For RT performance profiling

@@ -17,7 +17,6 @@
 #include "../../audio/buffers/doublebuffer.h"
 #include "../../config/config_debug.h"
 #include "../../config/config_loader.h"
-#include "../../utils/image_debug.h"
 #include "../../utils/logger.h"
 #include "../../utils/rt_profiler.h"
 #include <stdio.h>

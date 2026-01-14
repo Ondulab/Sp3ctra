@@ -10,58 +10,20 @@
 #include <termios.h>
 #include <unistd.h>
 
-// External library includes
-#ifdef NO_SFML
-// If SFML is disabled, provide stubs/forward declarations for SFML types used.
-// This is global for main.c when NO_SFML is defined.
-typedef struct {
-  unsigned long long microseconds;
-} sfTime;
-
-typedef struct sfClock sfClock; // Forward declaration for sfClock
-
-// Stubs for sfClock functions if they are called (they shouldn't be thanks to
-// #ifndef NO_SFML guards below). But the compiler needs to see them if PRINT_FPS
-// is active and tries to compile the calls. The guards around sfClock_* calls in
-// the main loop should prevent this. However, for `sfClock *clock = NULL;` to be
-// valid, the type declaration is sufficient. Function definitions here are for
-// completeness if they were ever called by mistake.
-sfClock *sfClock_create(void) { return NULL; }
-void sfClock_destroy(sfClock *clock) { (void)clock; }
-sfTime sfClock_getElapsedTime(const sfClock *clock) {
-  (void)clock;
-  sfTime t = {0};
-  return t;
-}
-void sfClock_restart(sfClock *clock) { (void)clock; }
-
-// Other SFML types might need forward declarations here if they are used in
-// main.c outside of #ifndef NO_SFML blocks and are not already covered by
-// context.h/display.h. For example: typedef struct sfVideoMode sfVideoMode;
-// If used directly. But sfVideoMode mode = ... is already in a #ifndef NO_SFML block
-
-#else // NO_SFML is NOT defined, so SFML is enabled
-// Include real SFML headers
-#include <SFML/Graphics.h>
-#include <SFML/Network.h>
-#endif // NO_SFML
+// External library includes - SFML completely removed (core audio only)
 
 // Internal project includes
 #include "audio_c_api.h"
-#include "auto_volume.h"
 #include "config.h"
 #include "config_instrument.h"
 #include "config_loader.h"
 #include "context.h"
-#include "display.h"
-#include "dmx.h"
 #include "error.h"
-#include "image_debug.h"
 #include "logger.h"
 #include "multithreading.h"
 #include "synth_luxstral.h"
-#include "synth_luxsynth.h" // Added for the new FFT synth mode
-#include "synth_luxwave.h"  // Added for LuxWave synthesis
+#include "synth_luxsynth.h"
+#include "synth_luxwave.h"
 #include "udp.h"
 #include "../processing/image_preprocessor.h"
 #include "../processing/image_sequencer.h"

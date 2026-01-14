@@ -20,7 +20,6 @@
 #include "../../core/config.h"
 #include "../../config/config_instrument.h"
 #include "../../config/config_synth_luxstral.h"
-#include "../../config/config_dmx.h"
 
 /* Maximum number of notes (static allocation) */
 /* Must handle worst case: 1 pixel per note = CIS_MAX_PIXELS_NB notes */

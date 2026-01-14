@@ -15,7 +15,6 @@
 #include "../../core/context.h"
 #include "../../config/config_debug.h"
 #include "../../config/config_loader.h"
-#include "../../utils/image_debug.h"
 #include <stdio.h>
 #include <math.h>
 

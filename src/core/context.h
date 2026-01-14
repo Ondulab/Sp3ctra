@@ -4,9 +4,7 @@
 #include "audio_c_api.h"
 #include "audio_image_buffers.h"
 #include "config.h"
-#include "dmx.h"
 #include "doublebuffer.h"
-#include "../config/config_display.h"
 #include <pthread.h>
 #include <time.h>
 #include <stdint.h>
@@ -55,88 +53,45 @@ extern volatile int32_t audioBuff[];
 
 extern int params_size;
 
-#ifdef __LINUX__
-// Check if SFML is disabled
-#ifdef NO_SFML
-// Simplified declarations for compilation without SFML
-// Utiliser la forme struct pour permettre les pointeurs opaques
-typedef struct sfRenderWindow sfRenderWindow;
-typedef struct sfEvent sfEvent;
-// Add other types if needed, ex:
-// typedef struct sfTexture sfTexture;
-#else
-// SFML disponible sur Linux
-#include <SFML/Graphics.h>
-#include <SFML/Network.h>
-#endif // NO_SFML
-#else  // Pas __LINUX__ (par exemple macOS)
-// On other platforms (like macOS), check if SFML is disabled
-#ifdef NO_SFML
-// Simplified declarations for compilation without SFML
-// Utiliser la forme struct pour permettre les pointeurs opaques
-typedef struct sfRenderWindow sfRenderWindow;
-typedef struct sfEvent sfEvent;
-// Add other types if needed
-#else
-// SFML available on macOS (and NO_SFML is not defined)
-#include <SFML/Graphics.h>
-#include <SFML/Network.h>
-#endif // NO_SFML
-#endif // __LINUX__
-
+// SFML completely removed (core audio only)
+// DMX removed - stub type for backward compatibility during cleanup
 typedef struct {
   int fd;
   int running;
-  int colorUpdated;
-  // New flexible system - replace static array with dynamic pointer
-  DMXSpot *spots;          // Dynamic array of spots
-  int num_spots;           // Number of spots allocated
   pthread_mutex_t mutex;
   pthread_cond_t cond;
-  // libftdi support for Linux
-  int use_libftdi;    // 0 = traditional fd, 1 = libftdi
-#ifdef __linux__
-  struct ftdi_context *ftdi; // libftdi context (Linux primary)
-#endif
+  void *spots;  // Opaque pointer
+  int num_spots;
 } DMXContext;
 
-// Global DMX context instance
-extern DMXContext dmx_ctx;
-
 typedef struct {
-  sfRenderWindow *window;
+  void *window;  // Opaque pointer (SFML removed)
   int socket;
   struct sockaddr_in *si_other;
   struct sockaddr_in *si_me;
   AudioData *audioData;
-  DoubleBuffer *doubleBuffer;           // Legacy double buffer (for display)
-  AudioImageBuffers *audioImageBuffers; // New dual buffer system for audio
-  DMXContext *dmxCtx;
-  volatile int running; // Ajout du flag de terminaison pour Context
+  DoubleBuffer *doubleBuffer;           // Legacy double buffer
+  AudioImageBuffers *audioImageBuffers; // Audio buffer system
+  DMXContext *dmxCtx;                   // Stub (will be removed later)
+  volatile int running;
 
-  /* IMU + Auto-volume state (protected by imu_mutex) */
-  pthread_mutex_t imu_mutex; /* Protects IMU and auto-volume fields */
-  float imu_x_filtered;      /* Low-pass filtered accelerometer X (for auto-volume) */
-  float imu_raw_x;           /* Raw accelerometer X (for display effects) */
-  float imu_raw_y;           /* Raw accelerometer Y (for display effects) */
-  float imu_raw_z;           /* Raw accelerometer Z (for display effects) */
-  float imu_gyro_x;          /* Raw gyroscope X (rad/s) */
-  float imu_gyro_y;          /* Raw gyroscope Y (rad/s) */
-  float imu_gyro_z;          /* Raw gyroscope Z (rad/s) */
-  float imu_position_x;      /* Integrated position X (from sensor) */
-  float imu_position_y;      /* Integrated position Y (from sensor) */
-  float imu_position_z;      /* Integrated position Z (from sensor) */
-  float imu_angle_x;         /* Integrated angle X/roll (from sensor, radians) */
-  float imu_angle_y;         /* Integrated angle Y/pitch (from sensor, radians) */
-  float imu_angle_z;         /* Integrated angle Z/yaw (from sensor, radians) */
-  time_t last_imu_time;      /* Last IMU packet arrival time (seconds) */
-  int imu_has_value;         /* 0/1: initial IMU value set */
-
-  /* Auto-volume state (mirror of AutoVolume for observability) */
-  float auto_volume_current;      /* Current applied master volume (0..1) */
-  float auto_volume_target;       /* Target volume computed from IMU */
-  time_t auto_last_activity_time; /* Last time activity detected */
-  int auto_is_active;             /* 0/1 */
+  /* IMU state (protected by imu_mutex) */
+  pthread_mutex_t imu_mutex;
+  float imu_x_filtered;
+  float imu_raw_x;
+  float imu_raw_y;
+  float imu_raw_z;
+  float imu_gyro_x;
+  float imu_gyro_y;
+  float imu_gyro_z;
+  float imu_position_x;
+  float imu_position_y;
+  float imu_position_z;
+  float imu_angle_x;
+  float imu_angle_y;
+  float imu_angle_z;
+  time_t last_imu_time;
+  int imu_has_value;
 } Context;
 
 #endif /* CONTEXT_H */

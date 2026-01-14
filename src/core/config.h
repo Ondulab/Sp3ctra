@@ -9,9 +9,7 @@
 // Hardware configurations
 // clang-format off
 #include "../config/config_instrument.h"
-#include "../config/config_display.h"
 #include "../config/config_audio.h"
-#include "../config/config_dmx.h"
 // clang-format on
 
 // Synthesis mode configurations

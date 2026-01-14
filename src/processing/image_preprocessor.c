@@ -11,7 +11,6 @@
 #include "../../config/config_instrument.h"
 #include "../../synthesis/luxstral/synth_luxstral_stereo.h"
 #include "../../synthesis/luxstral/synth_luxstral_math.h"
-#include "../../communication/dmx/dmx.h"
 #include "../../config/config_loader.h"
 #include "../../utils/logger.h"
 #include <string.h>

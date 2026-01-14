@@ -48,7 +48,6 @@
 #include "error.h"
 #include "wave_generation.h"
 #include "../../core/context.h"
-#include "image_debug.h"
 #include "lock_free_pan.h"
 #include "../../config/config_debug.h"
 #include "../../config/config_synth_luxstral.h"
@@ -57,7 +56,6 @@
 #include "../../audio/rtaudio/audio_c_api.h"
 #include "../../audio/pan/lock_free_pan.h"
 #include "../../utils/error.h"
-#include "../../utils/image_debug.h"
 
 #ifdef __APPLE__
 #include <stdlib.h>

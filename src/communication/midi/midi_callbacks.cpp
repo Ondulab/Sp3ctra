@@ -11,7 +11,6 @@
 #include "midi_controller.h"
 #include "../../audio/rtaudio/audio_rtaudio.h"
 #include "../../audio/rtaudio/audio_c_api.h"  // For setSynthLuxStralMixLevel, setSynthLuxSynthMixLevel, setSynthLuxWaveMixLevel
-#include "../../audio/effects/three_band_eq.h"
 #include "../../audio/pan/lock_free_pan.h"
 #include "../../synthesis/luxstral/synth_luxstral.h"
 #include "../../synthesis/luxstral/synth_luxstral_algorithms.h"  // For update_gap_limiter_coefficients

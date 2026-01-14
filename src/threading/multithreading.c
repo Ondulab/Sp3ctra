@@ -2,18 +2,14 @@
 
 #include "multithreading.h"
 #include "audio_c_api.h"
-#include "auto_volume.h"
 #include "config.h"
 #include "config_instrument.h"
 #include "config_loader.h"
 #include "config_synth_luxstral.h" /* For IMU_FILTER_ALPHA_X, AUTO_VOLUME_POLL_MS */
 #include "context.h"
-#include "display.h"
-#include "dmx.h"
 #include "error.h"
 #include "synth_luxstral.h"
 #include "udp.h"
-#include "image_debug.h"
 #include "logger.h"
 #include "../processing/image_preprocessor.h"
 #include "../processing/image_sequencer.h"
