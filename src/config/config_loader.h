@@ -161,6 +161,11 @@ typedef struct {
     float dmx_blue_factor;                     // Blue channel correction factor (0.5-2.0)
     float dmx_saturation_factor;               // Color saturation amplification (1.0-5.0)
     
+    // Network configuration
+    char udp_address[64];                      // UDP address for data reception (unicast or multicast)
+    int udp_port;                              // UDP port for data reception
+    char multicast_interface[64];              // Specific interface IP for multicast (empty = INADDR_ANY)
+    
     // Display system parameters
     float display_orientation;                 // Display orientation (0=vertical, 1=horizontal)
     float display_udp_scroll_speed;            // UDP scroll speed (-1.0 to +1.0)

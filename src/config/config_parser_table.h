@@ -9,7 +9,8 @@
 typedef enum {
     PARAM_TYPE_INT,
     PARAM_TYPE_FLOAT,
-    PARAM_TYPE_BOOL
+    PARAM_TYPE_BOOL,
+    PARAM_TYPE_STRING
 } param_type_t;
 
 typedef struct {
@@ -214,6 +215,14 @@ static const config_param_def_t CONFIG_PARAMS[] = {
                  poly_detune_max_cents, 0.0f, 50.0f),
     CONFIG_PARAM("synth_luxsynth", "harmonicity_curve_exponent", PARAM_TYPE_FLOAT,
                  poly_harmonicity_curve_exponent, 0.5f, 2.0f),
+    
+    // Network configuration
+    CONFIG_PARAM("network", "udp_address", PARAM_TYPE_STRING,
+                 udp_address, 0, 0),
+    CONFIG_PARAM("network", "udp_port", PARAM_TYPE_INT,
+                 udp_port, 1, 65535),
+    CONFIG_PARAM("network", "multicast_interface", PARAM_TYPE_STRING,
+                 multicast_interface, 0, 0),
     
     // DMX lighting parameters
     CONFIG_PARAM("dmx", "brightness", PARAM_TYPE_FLOAT,

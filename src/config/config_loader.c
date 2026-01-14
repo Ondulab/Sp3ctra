@@ -132,6 +132,11 @@ static const sp3ctra_config_t DEFAULT_CONFIG = {
     .poly_detune_max_cents = 10.0f,             // Maximum detune for semi-harmonic sounds
     .poly_harmonicity_curve_exponent = 1.0f,    // Linear response curve by default
     
+    // Network configuration
+    .udp_address = "239.100.100.100",           // UDP multicast address for data reception
+    .udp_port = 55151,                          // UDP port for data reception
+    .multicast_interface = "",                  // Specific interface IP (empty = INADDR_ANY)
+    
     // DMX lighting parameters
     .dmx_brightness = 1.0f,                     // Global brightness multiplier
     .dmx_gamma = 1.2f,                          // Gamma correction
@@ -256,8 +261,24 @@ static int parse_and_set_param(const config_param_def_t* param,
             *(float*)target = value;
             break;
         }
+        
+        case PARAM_TYPE_STRING: {
+            // target points to char array in config structure
+            // For string params, min_value/max_value are not used (set to 0)
+            // String must be properly null-terminated and within bounds
+            size_t len = strlen(value_str);
+            if (len >= 64) {  // Max string length based on char[64] fields
+                config_log_error(line_number,
+                    "%s string too long (max 63 characters): %zu",
+                    param->key, len);
+                return CONFIG_ERROR_INVALID_VALUE;
+            }
+            strncpy((char*)target, value_str, 63);
+            ((char*)target)[63] = '\0';  // Ensure null termination
+            break;
+        }
     }
-    
+
     return CONFIG_SUCCESS;
 }
 
