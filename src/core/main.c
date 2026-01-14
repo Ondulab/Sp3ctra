@@ -105,8 +105,10 @@ void signalHandler(int signal) {
   // Avoid recursive calls to the handler
   if (already_called) {
     // If handler is called again, user is insisting with Ctrl+C,
-    // so force exit immediately
-    kill(getpid(), SIGKILL);
+    // so force exit immediately (but less brutally than SIGKILL)
+    printf("\nForced immediate exit (second Ctrl+C)!\n");
+    fflush(stdout);
+    _exit(1);
     return;
   }
 
@@ -123,17 +125,12 @@ void signalHandler(int signal) {
     if (global_context->dmxCtx) {
       global_context->dmxCtx->running = 0;
     }
-    // Cleanup UDP socket immediately to prevent port conflicts
-    udp_cleanup(global_context->socket);
   }
   keepRunning = 0; // Global variable from DMX module
+  synth_luxwave_thread_stop(); // Signal LuxWave thread to stop immediately
 
-  // Force immediate termination without waiting for threads
-  printf("\nForced exit!\n");
-  fflush(stdout);
-
-  // Kill process with SIGKILL (cannot be ignored or blocked)
-  kill(getpid(), SIGKILL);
+  // NOTE: Let the main loop handle cleanup properly
+  // Don't kill the process here - just set flags and return
 }
 
 int main(int argc, char **argv) {
@@ -848,9 +845,15 @@ int main(int argc, char **argv) {
       sfEvent event;
       while (sfRenderWindow_pollEvent(window, &event)) {
         if (event.type == sfEvtClosed) {
+          log_info("DISPLAY", "Window close event received - initiating shutdown");
           sfRenderWindow_close(window);
+          // Set ALL termination flags
+          running = 0;
           context.running = 0;
+          app_running = 0;
           dmxCtx->running = 0;
+          keepRunning = 0;
+          synth_luxwave_thread_stop(); // Signal LuxWave thread to stop immediately
         }
       }
     }
@@ -944,73 +947,120 @@ int main(int argc, char **argv) {
   }
 #endif // NO_SFML
 
-  printf("\nTerminaison des threads et nettoyage...\n");
-  /* Terminaison et synchronisation */
+  log_info("MAIN", "========================================================");
+  log_info("MAIN", "Application shutdown sequence initiated");
+  log_info("MAIN", "========================================================");
+  
+  /* Step 1: Signal all threads to stop */
+  log_info("MAIN", "Step 1/5: Signaling all threads to stop...");
   context.running = 0;
   dmxCtx->running = 0;
   keepRunning = 0; // Variable globale du module DMX
-
+  synth_luxwave_thread_stop(); // Signal LuxWave thread to stop BEFORE stopping audio
+  app_running = 0;
+  
+  /* Step 2: Stop audio stream FIRST to unblock RT callback */
+  log_info("MAIN", "Step 2/5: Stopping audio stream...");
+  stopAudioUnit();
+  log_info("MAIN", "Audio stream stopped");
+  
+  /* Step 3: Join threads in correct order */
+  log_info("MAIN", "Step 3/5: Joining threads...");
+  
   pthread_join(udpThreadId, NULL);
+  log_info("THREAD", "UDP thread terminated");
+  
   pthread_join(audioThreadId, NULL);
+  log_info("THREAD", "Audio processing thread terminated");
 
   // Join the polyphonic synth thread only if it was created
   if (polyphonic_thread_created) {
     pthread_join(fftSynthThreadId, NULL);
-    printf("LuxSynth synthesis thread terminated\n");
+    log_info("THREAD", "LuxSynth synthesis thread terminated");
   }
 
-  // Stop and join the LuxWave synth thread
-  synth_luxwave_thread_stop();  // Signal thread to stop BEFORE joining
+  // Join the LuxWave synth thread (already signaled to stop in Step 1)
   pthread_join(photowaveThreadId, NULL);
-  printf("LuxWave synthesis thread terminated\n");
+  log_info("THREAD", "LuxWave synthesis thread terminated");
 
 #ifdef USE_DMX
   if (use_dmx && dmxFd >= 0) {
     pthread_join(dmxThreadId, NULL);
+    log_info("THREAD", "DMX thread terminated");
   }
 #endif
+  
+  log_info("MAIN", "All threads joined successfully");
 
-  // Nettoyage MIDI et audio
-  // visual_freeze_cleanup(); // Removed: Old visual-only freeze
-  displayable_synth_buffers_cleanup(); // Cleanup displayable synth buffers
-  synth_data_freeze_cleanup();         // Cleanup synth data freeze resources
-  synth_luxwave_mode_cleanup();      // Cleanup LuxWave synthesis resources
+  /* Step 4: Cleanup resources in correct order */
+  log_info("MAIN", "Step 4/5: Cleaning up resources...");
+  
+  // Cleanup displayable synth buffers
+  displayable_synth_buffers_cleanup();
+  log_info("CLEANUP", "Displayable synth buffers cleaned up");
+  
+  // Cleanup synth data freeze resources
+  synth_data_freeze_cleanup();
+  log_info("CLEANUP", "Synth data freeze cleaned up");
+  
+  // Cleanup LuxWave synthesis resources
+  synth_luxwave_mode_cleanup();
+  log_info("CLEANUP", "LuxWave synthesis cleaned up");
   
   // Cleanup image sequencer
   if (imageSequencer) {
     image_sequencer_destroy(imageSequencer);
     imageSequencer = NULL;
+    log_info("CLEANUP", "Image sequencer destroyed");
   }
   
   // Free local main loop buffers
   if (local_main_R) free(local_main_R);
   if (local_main_G) free(local_main_G);
   if (local_main_B) free(local_main_B);
+  log_info("CLEANUP", "Local main loop buffers freed");
   
-  cleanupDoubleBuffer(&db);            // Cleanup DoubleBuffer resources
-  audio_image_buffers_cleanup(
-      &audioImageBuffers);     // Cleanup new audio image buffers
-  udp_cleanup(context.socket); // Cleanup UDP socket to prevent port conflicts
+  // Cleanup DoubleBuffer resources
+  cleanupDoubleBuffer(&db);
+  log_info("CLEANUP", "Double buffer cleaned up");
+  
+  // Cleanup audio image buffers
+  audio_image_buffers_cleanup(&audioImageBuffers);
+  log_info("CLEANUP", "Audio image buffers cleaned up");
+  
+  // Cleanup UDP socket
+  udp_cleanup(context.socket);
+  log_info("CLEANUP", "UDP socket closed");
   
   // Cleanup unified MIDI system before general MIDI cleanup
   midi_mapping_cleanup();
+  log_info("CLEANUP", "MIDI mapping cleaned up");
+  
   midi_Cleanup();
+  log_info("CLEANUP", "MIDI system cleaned up");
 
   /* Destroy auto-volume controller (if created) before audio cleanup */
   if (gAutoVolumeInstance) {
     auto_volume_destroy(gAutoVolumeInstance);
     gAutoVolumeInstance = NULL;
+    log_info("CLEANUP", "Auto-volume controller destroyed");
   }
 
-  audio_Cleanup(); // Nettoyage de RtAudio
+  // Cleanup RtAudio (stream already stopped in Step 2)
+  audio_Cleanup();
+  log_info("CLEANUP", "Audio system cleaned up");
 
-  /* Nettoyage des ressources graphiques */
+  /* Step 5: Cleanup SFML resources */
+  log_info("MAIN", "Step 5/5: Cleaning up display resources...");
+  
+  // Cleanup GPU scrolling resources BEFORE destroying the window
+  // This is CRITICAL to allow proper process termination
+  display_cleanup();
+  
 #ifndef NO_SFML
   // This block only executes if SFML is enabled
   // Clean up only if SFML window was used
-  if (use_sfml_window &&
-      window) { // window will be non-NULL only if use_sfml_window was true AND
-                // creation succeeded
+  if (use_sfml_window && window) {
     if (backgroundTexture)
       sfTexture_destroy(backgroundTexture);
     if (foregroundTexture)
@@ -1019,9 +1069,18 @@ int main(int argc, char **argv) {
       sfSprite_destroy(backgroundSprite);
     if (foregroundSprite)
       sfSprite_destroy(foregroundSprite);
-    sfRenderWindow_destroy(window); // window est garanti non-NULL ici
+    sfRenderWindow_destroy(window);
+    log_info("CLEANUP", "SFML window and textures destroyed");
   }
 #endif // NO_SFML
 
-  return 0;
+  log_info("MAIN", "========================================================");
+  log_info("MAIN", "Application terminated successfully");
+  log_info("MAIN", "========================================================");
+  
+  // Force process exit - some external library threads may linger
+  // All cleanup is done, safe to exit immediately
+  _exit(0);
+  
+  return 0; // Never reached, but keeps compiler happy
 }

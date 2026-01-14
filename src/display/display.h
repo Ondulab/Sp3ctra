@@ -30,6 +30,7 @@ typedef struct sfColor sfColor;   // Added
 #ifndef NO_SFML
 // Function declarations when SFML is available
 int display_Init(sfRenderWindow *window);
+void display_cleanup(void);
 void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
                    uint8_t *buffer_B, sfTexture *background_texture,
                    sfTexture *foreground_texture);
@@ -39,6 +40,10 @@ static inline int display_Init(sfRenderWindow *window) {
     (void)window; // Suppress unused parameter warning
     printf("Display system disabled (NO_SFML)\n");
     return 0;
+}
+
+static inline void display_cleanup(void) {
+    // Do nothing - display is disabled
 }
 
 static inline void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,

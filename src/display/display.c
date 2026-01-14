@@ -370,3 +370,61 @@ void printImageRGB(sfRenderWindow *window, uint8_t *buffer_R, uint8_t *buffer_G,
   (void)foreground_texture;
 #endif
 }
+
+/**
+ * @brief Cleanup display GPU resources
+ * 
+ * This function MUST be called during shutdown to release all SFML GPU resources
+ * (RenderTextures, Textures, Sprites) that were created for bidirectional scrolling.
+ * Failure to call this function will prevent the process from terminating properly
+ * as the OpenGL context remains active.
+ */
+void display_cleanup(void) {
+#ifndef NO_SFML
+  log_info("DISPLAY", "Cleaning up GPU scrolling resources...");
+  
+  // Destroy RenderTextures (GPU-resident framebuffers)
+  if (g_history_buffer_a) {
+    sfRenderTexture_destroy(g_history_buffer_a);
+    g_history_buffer_a = NULL;
+  }
+  if (g_history_buffer_b) {
+    sfRenderTexture_destroy(g_history_buffer_b);
+    g_history_buffer_b = NULL;
+  }
+  
+  // Destroy Textures
+  if (g_line_texture_h) {
+    sfTexture_destroy(g_line_texture_h);
+    g_line_texture_h = NULL;
+  }
+  if (g_line_texture_v) {
+    sfTexture_destroy(g_line_texture_v);
+    g_line_texture_v = NULL;
+  }
+  
+  // Destroy Sprites
+  if (g_line_sprite) {
+    sfSprite_destroy(g_line_sprite);
+    g_line_sprite = NULL;
+  }
+  if (g_content_sprite) {
+    sfSprite_destroy(g_content_sprite);
+    g_content_sprite = NULL;
+  }
+  if (g_display_sprite) {
+    sfSprite_destroy(g_display_sprite);
+    g_display_sprite = NULL;
+  }
+  
+  // Reset state variables
+  g_buffer_width = 0;
+  g_buffer_height = 0;
+  g_last_win_width = 0;
+  g_last_win_height = 0;
+  g_current_buffer = 0;
+  g_scroll_accumulator = 0.0f;
+  
+  log_info("DISPLAY", "GPU scrolling resources cleaned up");
+#endif
+}

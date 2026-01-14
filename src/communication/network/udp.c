@@ -49,6 +49,15 @@ int udp_Init(struct sockaddr_in *si_other, struct sockaddr_in *si_me) {
     // Continue anyway, this is not critical
   }
 
+  // Set socket timeout so recvfrom() can be interrupted for clean shutdown
+  struct timeval timeout;
+  timeout.tv_sec = 0;
+  timeout.tv_usec = 100000; // 100ms timeout
+  if (setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == -1) {
+    log_warning("UDP", "Failed to set SO_RCVTIMEO: %s", strerror(errno));
+    // Continue anyway, this is not critical for operation
+  }
+
   // Initialisation de la structure
   memset(si_me, 0, sizeof(*si_me));
   si_me->sin_family = AF_INET;
