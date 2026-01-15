@@ -84,11 +84,7 @@ void signalHandler(int signal) {
   app_running = 0;
   if (global_context) {
     global_context->running = 0;
-    if (global_context->dmxCtx) {
-      global_context->dmxCtx->running = 0;
-    }
   }
-  keepRunning = 0; // Global variable from DMX module
   synth_luxwave_thread_stop(); // Signal LuxWave thread to stop immediately
 
   // NOTE: Let the main loop handle cleanup properly
@@ -112,89 +108,30 @@ int main(int argc, char **argv) {
   
   // Configure SIGINT signal handler (Ctrl+C)
   signal(SIGINT, signalHandler);
+  
   /* Parse command-line arguments */
-  int use_dmx = 0;                 // Default: DMX disabled
-  int verbose_dmx = 0;             // Default: normal DMX messages
-  const char *dmx_port = DMX_PORT; // Default DMX port
   int list_audio_devices = 0;      // Display audio devices
   int audio_device_id = -1;        // -1 = use default device
   char *audio_device_name = NULL;  // Name of requested audio device
-  int use_sfml_window = 0; // Default: no SFML window in CLI mode
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-      printf("Sp3ctra - Real-time audio synthesis application\n\n");
+      printf("Sp3ctra Core - Real-time spectral audio synthesis (headless)\n\n");
       printf("Usage: %s [OPTIONS]\n\n", argv[0]);
       printf("OPTIONS:\n");
       printf("  --help, -h               Show this help message\n");
-      printf("  --display                Enable visual scanner display\n");
       printf("  --list-audio-devices     List available audio devices and exit\n");
       printf("  --audio-device=<ID>      Use specific audio device ID\n");
-      printf("  --dmx[=<PORT>[,v]]       Enable DMX with default port (%s) or specific port (v=verbose)\n", DMX_PORT);
       printf("  --test-tone              Enable test tone mode (440Hz)\n");
-      printf("  --debug-image[=LINES]    Enable raw scanner capture debug (default: 1000 lines)\n");
-      printf("  --debug-additive-osc-image[=SAMPLES[,m]] Enable oscillator volume capture debug (default: 48000 samples, m=markers)\n");
-      printf("  --debug-additive-osc=<N|N-M> Debug one or a range of additive oscillators (e.g., 56 or 23-89)\n");
       printf("\nExamples:\n");
-      printf("  ./build/Sp3ctra --help                           # Show this help message\n");
-      printf("  ./build/Sp3ctra --display                        # Enable visual scanner display\n");
-      printf("  ./build/Sp3ctra --list-audio-devices             # List available audio devices and exit\n");
-      printf("  ./build/Sp3ctra --audio-device=3                 # Use specific audio device ID\n");
-      printf("  ./build/Sp3ctra --dmx                            # Enable DMX with default port\n");
-      printf("  ./build/Sp3ctra --dmx=/dev/ttyUSB0               # Enable DMX with custom port\n");
-      printf("  ./build/Sp3ctra --dmx=/dev/ttyUSB0,v             # Enable DMX with verbose mode\n");
-      printf("  ./build/Sp3ctra --test-tone                      # Enable test tone mode (440Hz)\n");
-      printf("  ./build/Sp3ctra --debug-image=2000               # Enable raw scanner capture debug (2000 lines)\n");
-      printf("  ./build/Sp3ctra --debug-additive-osc-image=24000 # Enable oscillator volume capture debug (24000 samples)\n");
-      printf("  ./build/Sp3ctra --debug-additive-osc-image=24000,m # Enable oscillator debug with markers\n");
-      printf("  ./build/Sp3ctra --debug-additive-osc=56          # Debug one additive oscillator (56)\n");
-      printf("  ./build/Sp3ctra --debug-additive-osc=23-89       # Debug range of additive oscillators (23-89)\n");
-      printf("  ./build/Sp3ctra --display --audio-device=1       # Run with visual display and specific audio device\n");
+      printf("  ./build/Sp3ctra --help                  # Show this help message\n");
+      printf("  ./build/Sp3ctra --list-audio-devices    # List available audio devices\n");
+      printf("  ./build/Sp3ctra --audio-device=3        # Use specific audio device ID\n");
+      printf("  ./build/Sp3ctra --test-tone             # Enable test tone mode (440Hz)\n");
       return EXIT_SUCCESS;
     } else if (strcmp(argv[i], "--verbose") == 0 || strcmp(argv[i], "-v") == 0) {
       logger_init(LOG_LEVEL_DEBUG);
       log_info("MAIN", "Verbose logging enabled");
-    // Option --cli removed as redundant (CLI mode is the default mode)
-    } else if (strcmp(argv[i], "--sfml-window") == 0 || strcmp(argv[i], "--show-display") == 0 || strcmp(argv[i], "--display") == 0) {
-      use_sfml_window = 1;
-      printf("Visual scanner display enabled\n");
-    } else if (strcmp(argv[i], "--dmx") == 0) {
-      use_dmx = 1;
-      verbose_dmx = 0;
-      printf("DMX enabled with default port: %s\n", dmx_port);
-    } else if (strncmp(argv[i], "--dmx=", 6) == 0) {
-      const char *dmx_param = argv[i] + 6;
-      
-      // Check for verbose flag: --dmx=<PORT>,v
-      char *comma_pos = strchr(dmx_param, ',');
-      if (comma_pos) {
-        // Extract port and check for verbose flag
-        size_t port_len = comma_pos - dmx_param;
-        if (port_len > 0 && port_len < 256) {
-          static char custom_port[256];
-          strncpy(custom_port, dmx_param, port_len);
-          custom_port[port_len] = '\0';
-          dmx_port = custom_port;
-          
-          // Check for verbose flag
-          if (strcmp(comma_pos + 1, "v") == 0) {
-            verbose_dmx = 1;
-            printf("DMX enabled with port: %s (verbose mode)\n", dmx_port);
-          } else {
-            printf("❌ Error: Invalid DMX flag '%s' (use 'v' for verbose)\n", comma_pos + 1);
-            return EXIT_FAILURE;
-          }
-        } else {
-          printf("❌ Error: Invalid DMX port length\n");
-          return EXIT_FAILURE;
-        }
-      } else {
-        // Only port specified: --dmx=<PORT>
-        dmx_port = dmx_param;
-        verbose_dmx = 0;
-        printf("DMX enabled with port: %s\n", dmx_port);
-      }
-      use_dmx = 1;
     } else if (strcmp(argv[i], "--list-audio-devices") == 0) {
       list_audio_devices = 1;
       printf("Will list audio devices\n");
@@ -325,79 +262,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  int dmxFd = -1;
-  if (use_dmx) {
-#ifdef USE_DMX
-    // Convert verbose_dmx to silent_dmx for init_Dmx function (inverted logic)
-    int silent_dmx = !verbose_dmx;
-    dmxFd = init_Dmx(dmx_port, silent_dmx);
-    if (dmxFd < 0) {
-      if (verbose_dmx) {
-        printf("Failed to initialize DMX. Continuing without DMX support.\n");
-      }
-      // If DMX initialization failed, disable DMX completely
-      use_dmx = 0;
-    }
-#endif
-  }
-
-  DMXContext *dmxCtx = malloc(sizeof(DMXContext));
-  if (dmxCtx == NULL) {
-    perror("Error allocating DMXContext");
-    close(dmxFd);
-    // return EXIT_FAILURE;
-  }
-  
-  // Initialize DMXContext with flexible system
-  dmxCtx->fd = dmxFd;
-  dmxCtx->running = 1;
-  dmxCtx->colorUpdated = 0;
-  dmxCtx->spots = NULL;
-  dmxCtx->num_spots = 0;
-  dmxCtx->use_libftdi = 0;
-#ifdef __linux__
-  dmxCtx->ftdi = NULL;
-#endif
-  pthread_mutex_init(&dmxCtx->mutex, NULL);
-  pthread_cond_init(&dmxCtx->cond, NULL);
-
-  // Initialize flexible DMX configuration
-  if (use_dmx) {
-    printf("🔧 Initializing flexible DMX configuration...\n");
-    dmxCtx->spots = malloc(DMX_NUM_SPOTS * sizeof(DMXSpot));
-    if (dmxCtx->spots == NULL) {
-      printf("❌ Failed to allocate DMX spots array\n");
-      use_dmx = 0;
-    } else {
-      dmxCtx->num_spots = DMX_NUM_SPOTS;
-      // Generate channel mapping using flexible system
-      dmx_generate_channel_mapping(dmxCtx->spots, DMX_NUM_SPOTS, DMX_SPOT_TYPE, DMX_START_CHANNEL);
-      printf("✅ DMX flexible system initialized: %d spots, type=%d, start_channel=%d\n",
-             DMX_NUM_SPOTS, DMX_SPOT_TYPE, DMX_START_CHANNEL);
-    }
-  }
-
-  /* Initialize CSFML */
-  sfRenderWindow *window = NULL;
-#ifndef NO_SFML
-  // This entire block only executes if SFML is enabled
-  // Use runtime pixel count for window width
-  int window_width = get_cis_pixels_nb();
-  sfVideoMode mode = {window_width, WINDOWS_HEIGHT, 32};
-
-  // Create SFML window only if the option is enabled
-  if (use_sfml_window) {
-    window = sfRenderWindow_create(mode, "Sp3ctra SFML Viewer",
-                                   sfResize | sfClose, NULL);
-    if (!window) {
-      perror("Error creating CSFML window");
-      close(dmxCtx->fd);
-      free(dmxCtx);
-      return EXIT_FAILURE;
-    }
-  }
-#endif // NO_SFML
-
   /* Initialize UDP and Audio */
   struct sockaddr_in si_other, si_me;
 
@@ -406,20 +270,8 @@ int main(int argc, char **argv) {
     // Initialize audio temporarily just to list devices
     audio_Init();
     printAudioDevices();
-    // If --list-audio-devices is specified, we clean up and exit,
-    // regardless of other arguments.
     printf("Audio device listing complete. Exiting.\n");
     audio_Cleanup();
-    midi_Cleanup();          // Ensure MIDI cleanup as well
-    if (dmxCtx) {            // Check if dmxCtx was allocated
-      if (dmxCtx->fd >= 0) { // Check if fd is valid before closing
-        close(dmxCtx->fd);
-      }
-      pthread_mutex_destroy(&dmxCtx->mutex); // Clean up mutex and cond
-      pthread_cond_destroy(&dmxCtx->cond);
-      free(dmxCtx);
-      dmxCtx = NULL; // Avoid double free or use after free
-    }
     return EXIT_SUCCESS;
   }
 
@@ -566,21 +418,12 @@ int main(int argc, char **argv) {
   synth_IfftInit();
   synth_luxsynthMode_init(); // Initialize the polyphonic synth mode
   synth_luxwave_mode_init(); // Initialize the LuxWave synth mode
-  display_Init(window);
-  // visual_freeze_init(); // Removed: Old visual-only freeze
   synth_data_freeze_init();         // Initialize synth data freeze feature
   displayable_synth_buffers_init(); // Initialize displayable synth buffers
-
 
   int s = udp_Init(&si_other, &si_me);
   if (s < 0) {
     perror("Error initializing UDP");
-#ifndef NO_SFML
-    if (window)
-      sfRenderWindow_destroy(window);
-#endif
-    close(dmxCtx->fd);
-    free(dmxCtx);
     return EXIT_FAILURE;
   }
 
@@ -597,109 +440,35 @@ int main(int argc, char **argv) {
   AudioImageBuffers audioImageBuffers;
   if (audio_image_buffers_init(&audioImageBuffers) != 0) {
     printf("Erreur lors de l'initialisation des buffers audio-image\n");
-#ifndef NO_SFML
-    if (window)
-      sfRenderWindow_destroy(window);
-#endif
-    close(dmxCtx->fd);
-    free(dmxCtx);
     return EXIT_FAILURE;
   }
 
   /* Build global context structure */
   Context context = {0};
-  context.window = window;
+  context.window = NULL;  // No display
   context.socket = s;
   context.si_other = &si_other;
   context.si_me = &si_me;
-  context.audioData = NULL;   // RtAudio now manages the audio buffer
-  context.doubleBuffer = &db; // Legacy double buffer (for display)
-  context.audioImageBuffers =
-      &audioImageBuffers; // New dual buffer system for audio
-  context.dmxCtx = dmxCtx;
-  context.running = 1; // Termination flag for the context
+  context.audioData = NULL;
+  context.doubleBuffer = &db;
+  context.audioImageBuffers = &audioImageBuffers;
+  context.dmxCtx = NULL;  // No DMX
+  context.running = 1;
 
   // Save context for signal handler
   global_context = &context;
 
-  /* Initialize auto-volume controller (reads IMU X from UDP thread and
-     adjusts master volume). Instance is stored in auto_volume.c as
-     gAutoVolumeInstance. */
-  log_info("INIT", "Initializing auto-volume controller...");
-  log_info("INIT", "Auto-volume config: enabled=%d, threshold=%.3f, timeout=%ds, fade=%dms",
-         g_sp3ctra_config.auto_volume_enabled, IMU_ACTIVE_THRESHOLD_X, g_sp3ctra_config.imu_inactivity_timeout_s, g_sp3ctra_config.auto_volume_fade_ms);
-  log_info("INIT", "Volume levels: active=%.1f, inactive=%.3f",
-         1.0f, g_sp3ctra_config.auto_volume_inactive_level);
+  /* Create threads for UDP and Audio (core audio only) */
+  pthread_t udpThreadId, audioThreadId, fftSynthThreadId;
 
-  gAutoVolumeInstance = auto_volume_create(&context);
-  if (!gAutoVolumeInstance) {
-    log_error("INIT", "Failed to initialize auto-volume controller");
-  } else {
-    log_info("INIT", "Auto-volume controller initialized successfully");
-  }
-
-  /* Create textures and sprites for rendering in main thread */
-  sfTexture *backgroundTexture = NULL;
-  sfTexture *foregroundTexture = NULL;
-
-#ifndef NO_SFML
-  sfSprite *backgroundSprite = NULL;
-  sfSprite *foregroundSprite = NULL;
-  // This block only executes if SFML is enabled
-  // Create textures only if SFML window is requested
-  if (use_sfml_window) {
-    int texture_width = get_cis_pixels_nb();
-    backgroundTexture = sfTexture_create(texture_width, WINDOWS_HEIGHT);
-    foregroundTexture = sfTexture_create(texture_width, WINDOWS_HEIGHT);
-    backgroundSprite = sfSprite_create();
-    foregroundSprite = sfSprite_create();
-    sfSprite_setTexture(backgroundSprite, backgroundTexture, sfTrue);
-    sfSprite_setTexture(foregroundSprite, foregroundTexture, sfTrue);
-    
-    /* Initialize foreground texture to black to avoid artifacts */
-    sfImage *black_image = sfImage_createFromColor(texture_width, WINDOWS_HEIGHT, sfBlack);
-    if (black_image) {
-      sfTexture_updateFromImage(foregroundTexture, black_image, 0, 0);
-      sfImage_destroy(black_image);
-      log_info("DISPLAY", "Foreground texture initialized to black");
-    }
-  }
-#endif // NO_SFML
-
-  /* Create threads for UDP, Audio, and DMX (pas de thread d'affichage) */
-  pthread_t udpThreadId, audioThreadId, dmxThreadId,
-      fftSynthThreadId; // Added fftSynthThreadId
-
-#ifdef USE_DMX
-  if (use_dmx && dmxFd >= 0) {
-    if (pthread_create(&dmxThreadId, NULL, dmxSendingThread,
-                       (void *)context.dmxCtx) != 0) {
-      perror("Error creating DMX thread");
-      close(dmxCtx->fd);
-      free(dmxCtx);
-#ifndef NO_SFML
-      if (window)
-        sfRenderWindow_destroy(window);
-#endif
-      return EXIT_FAILURE;
-    }
-  }
-#endif
   if (pthread_create(&udpThreadId, NULL, udpThread, (void *)&context) != 0) {
     perror("Error creating UDP thread");
-#ifndef NO_SFML
-    if (window)
-      sfRenderWindow_destroy(window);
-#endif
     return EXIT_FAILURE;
   }
+  
   if (pthread_create(&audioThreadId, NULL, audioProcessingThread,
                      (void *)&context) != 0) {
     perror("Error creating audio processing thread");
-#ifndef NO_SFML
-    if (window)
-      sfRenderWindow_destroy(window);
-#endif
     return EXIT_FAILURE;
   }
 
@@ -714,17 +483,10 @@ int main(int argc, char **argv) {
                        synth_luxsynthMode_thread_func,
                        (void *)&context) != 0) {
       perror("Error creating polyphonic synth thread");
-      // Consider cleanup for other threads if this fails mid-startup
-#ifndef NO_SFML
-      if (window)
-        sfRenderWindow_destroy(window);
-#endif
       return EXIT_FAILURE;
     }
     polyphonic_thread_created = 1;
     log_info("THREAD", "LuxSynth synthesis thread started successfully");
-    // Optionally set scheduling parameters for fftSynthThreadId as well if
-    // needed
   } else {
     log_info("THREAD", "LuxSynth synthesis thread NOT created (disabled by configuration)");
   }
@@ -735,10 +497,6 @@ int main(int argc, char **argv) {
                      synth_luxwave_thread_func,
                      (void *)&context) != 0) {
     perror("Error creating LuxWave synth thread");
-#ifndef NO_SFML
-    if (window)
-      sfRenderWindow_destroy(window);
-#endif
     return EXIT_FAILURE;
   }
   log_info("THREAD", "LuxWave synthesis thread started successfully");
