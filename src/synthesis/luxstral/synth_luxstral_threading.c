@@ -551,7 +551,30 @@ void synth_shutdown_thread_pool(void) {
 
   synth_pool_shutdown = 1;
 
-  // Wake up all threads
+  // If using barriers, broadcast to wake up any waiting workers
+  // Cannot use synth_barrier_wait() as we don't know if workers are waiting
+  if (g_use_barriers) {
+    log_info("SYNTH", "Broadcasting shutdown signal to barrier-blocked workers...");
+    
+#ifndef __linux__
+    // macOS: Broadcast on barrier condition variables to wake waiting workers
+    pthread_mutex_lock(&g_worker_start_barrier.mutex);
+    g_worker_start_barrier.generation++;  // Break the wait condition
+    pthread_cond_broadcast(&g_worker_start_barrier.cond);
+    pthread_mutex_unlock(&g_worker_start_barrier.mutex);
+    
+    pthread_mutex_lock(&g_worker_end_barrier.mutex);
+    g_worker_end_barrier.generation++;
+    pthread_cond_broadcast(&g_worker_end_barrier.cond);
+    pthread_mutex_unlock(&g_worker_end_barrier.mutex);
+#else
+    // Linux: pthread_barrier has no direct abort mechanism
+    // Workers will exit via synth_pool_shutdown flag after barrier completes
+    // Try broadcasting on condition variables as fallback
+#endif
+  }
+
+  // Wake up all threads via condition variables (legacy/fallback)
   for (int i = 0; i < num_workers; i++) {
     pthread_mutex_lock(&thread_pool[i].work_mutex);
     pthread_cond_signal(&thread_pool[i].work_cond);

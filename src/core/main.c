@@ -22,6 +22,7 @@
 #include "logger.h"
 #include "multithreading.h"
 #include "synth_luxstral.h"
+#include "synth_luxstral_threading.h"
 #include "synth_luxsynth.h"
 #include "synth_luxwave.h"
 #include "udp.h"
@@ -57,6 +58,9 @@ volatile sig_atomic_t app_running = 1;
 Context *global_context =
     NULL; // Global context for signal handler
 
+// External keepRunning flag used by synthesis threads
+extern volatile int keepRunning;
+
 // Global sequencer instance for MIDI callbacks
 ImageSequencer *g_image_sequencer = NULL;
 
@@ -82,6 +86,7 @@ void signalHandler(int signal) {
 
   // Update stop flags
   app_running = 0;
+  keepRunning = 0;  // Signal synthesis threads to stop
   if (global_context) {
     global_context->running = 0;
   }
@@ -436,6 +441,7 @@ int main(int argc, char **argv) {
   log_info("MAIN", "Step 2/4: Signaling threads to stop...");
   context.running = 0;
   app_running = 0;
+  keepRunning = 0;  // Signal synthesis threads to stop
   synth_luxwave_thread_stop();
   
   /* Step 3: Join threads */
@@ -456,6 +462,10 @@ int main(int argc, char **argv) {
   
   /* Step 4: Cleanup resources */
   log_info("MAIN", "Step 4/4: Cleaning up resources...");
+  
+  /* Shutdown LUXSTRAL thread pool FIRST (must release barrier-blocked workers) */
+  synth_shutdown_thread_pool();
+  log_info("CLEANUP", "LUXSTRAL thread pool shutdown complete");
   
   displayable_synth_buffers_cleanup();
   log_info("CLEANUP", "Displayable synth buffers cleaned up");
@@ -492,6 +502,9 @@ int main(int argc, char **argv) {
   log_info("MAIN", "========================================================");
   log_info("MAIN", "Application terminated successfully");
   log_info("MAIN", "========================================================");
+  
+  // Restore default signal handler to allow clean process termination
+  signal(SIGINT, SIG_DFL);
   
   return 0;
 }
