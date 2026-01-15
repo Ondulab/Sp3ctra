@@ -168,7 +168,7 @@ void midi_cb_synth_luxstral_reverb_send(const MidiParameterValue *param, void *u
         }
     }
     
-    log_info("LUXSTRAL", "Reverb send: %d%%", (int)(param->value * 100));
+    // REMOVED (VST):     log_info("LUXSTRAL", "Reverb send: %d%%", (int)(param->value * 100));
 }
 
 /* ============================================================================
@@ -327,7 +327,7 @@ void midi_cb_synth_luxsynth_reverb_send(const MidiParameterValue *param, void *u
         }
     }
     
-    log_info("LUXSYNTH", "Reverb send: %d%%", (int)(param->value * 100));
+    // REMOVED (VST):     log_info("LUXSYNTH", "Reverb send: %d%%", (int)(param->value * 100));
 }
 
 void midi_cb_synth_luxsynth_lfo_vibrato(const MidiParameterValue *param, void *user_data) {
@@ -471,7 +471,7 @@ void midi_cb_synth_luxwave_reverb_send(const MidiParameterValue *param, void *us
         }
     }
     
-    log_info("LUXWAVE", "Reverb send: %d%%", (int)(param->value * 100));
+    // REMOVED (VST):     log_info("LUXWAVE", "Reverb send: %d%%", (int)(param->value * 100));
 }
 
 void midi_cb_synth_luxwave_note_on(const MidiParameterValue *param, void *user_data) {
