@@ -24,7 +24,7 @@
 
 /* External declarations for global objects */
 extern AudioSystem *gAudioSystem;
-extern ThreeBandEQ *gEqualizer;
+// REMOVED (EQ): // REMOVED (EQ): extern ThreeBandEQ *gEqualizer;
 extern MidiController *gMidiController;
 extern ImageSequencer *g_image_sequencer;
 
@@ -95,53 +95,53 @@ void midi_cb_audio_reverb_width(const MidiParameterValue *param, void *user_data
     }
 }
 
-void midi_cb_audio_eq_low_gain(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    if (gEqualizer) {
-        if (!gEqualizer->isEnabled()) {
-            gEqualizer->setEnabled(true);
-        }
-        gEqualizer->setLowGain(param->raw_value);
-        log_info("AUDIO", "EQ Low gain set to %.1f dB", param->raw_value);
-    }
-}
+// REMOVED: void midi_cb_audio_eq_low_gain(const MidiParameterValue *param, void *user_data) {
+// REMOVED:     (void)user_data;
+// REMOVED:     
+// REMOVED: // REMOVED (EQ):     if (gEqualizer) {
+// REMOVED: // REMOVED (EQ):         if (!gEqualizer->isEnabled()) {
+// REMOVED: // REMOVED (EQ): // REMOVED (EQ):             gEqualizer->setEnabled(true);
+// REMOVED:         }
+// REMOVED: // REMOVED (EQ): // REMOVED (EQ):         gEqualizer->setLowGain(param->raw_value);
+// REMOVED: // REMOVED (EQ):         log_info("AUDIO", "EQ Low gain set to %.1f dB", param->raw_value);
+// REMOVED:     }
+// REMOVED: }
 
-void midi_cb_audio_eq_mid_gain(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    if (gEqualizer) {
-        if (!gEqualizer->isEnabled()) {
-            gEqualizer->setEnabled(true);
-        }
-        gEqualizer->setMidGain(param->raw_value);
-        log_info("AUDIO", "EQ Mid gain set to %.1f dB", param->raw_value);
-    }
-}
+// REMOVED: void midi_cb_audio_eq_mid_gain(const MidiParameterValue *param, void *user_data) {
+// REMOVED:     (void)user_data;
+// REMOVED:     
+// REMOVED: // REMOVED (EQ):     if (gEqualizer) {
+// REMOVED: // REMOVED (EQ):         if (!gEqualizer->isEnabled()) {
+// REMOVED: // REMOVED (EQ):             gEqualizer->setEnabled(true);
+// REMOVED:         }
+// REMOVED: // REMOVED (EQ):         gEqualizer->setMidGain(param->raw_value);
+// REMOVED:         log_info("AUDIO", "EQ Mid gain set to %.1f dB", param->raw_value);
+// REMOVED:     }
+// REMOVED: }
 
-void midi_cb_audio_eq_high_gain(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    if (gEqualizer) {
-        if (!gEqualizer->isEnabled()) {
-            gEqualizer->setEnabled(true);
-        }
-        gEqualizer->setHighGain(param->raw_value);
-        log_info("AUDIO", "EQ High gain set to %.1f dB", param->raw_value);
-    }
-}
+// REMOVED: void midi_cb_audio_eq_high_gain(const MidiParameterValue *param, void *user_data) {
+// REMOVED:     (void)user_data;
+// REMOVED:     
+// REMOVED: // REMOVED (EQ):     if (gEqualizer) {
+// REMOVED: // REMOVED (EQ):         if (!gEqualizer->isEnabled()) {
+// REMOVED: // REMOVED (EQ):             gEqualizer->setEnabled(true);
+// REMOVED:         }
+// REMOVED: // REMOVED (EQ):         gEqualizer->setHighGain(param->raw_value);
+// REMOVED:         log_info("AUDIO", "EQ High gain set to %.1f dB", param->raw_value);
+// REMOVED:     }
+// REMOVED: }
 
-void midi_cb_audio_eq_mid_freq(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    if (gEqualizer) {
-        if (!gEqualizer->isEnabled()) {
-            gEqualizer->setEnabled(true);
-        }
-        gEqualizer->setMidFrequency(param->raw_value);
-        log_info("AUDIO", "EQ Mid frequency set to %.0f Hz", param->raw_value);
-    }
-}
+// REMOVED: void midi_cb_audio_eq_mid_freq(const MidiParameterValue *param, void *user_data) {
+// REMOVED:     (void)user_data;
+// REMOVED:     
+// REMOVED: // REMOVED (EQ):     if (gEqualizer) {
+// REMOVED: // REMOVED (EQ):         if (!gEqualizer->isEnabled()) {
+// REMOVED: // REMOVED (EQ):             gEqualizer->setEnabled(true);
+// REMOVED:         }
+// REMOVED: // REMOVED (EQ):         gEqualizer->setMidFrequency(param->raw_value);
+// REMOVED:         log_info("AUDIO", "EQ Mid frequency set to %.0f Hz", param->raw_value);
+// REMOVED:     }
+// REMOVED: }
 
 /* ============================================================================
  * SYNTHESIS LUXSTRAL CALLBACKS
@@ -854,41 +854,41 @@ void midi_cb_sequencer_quantize_res(const MidiParameterValue *param, void *user_
  * DISPLAY CALLBACKS
  * ============================================================================ */
 
-void midi_cb_display_orientation(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    extern DisplayConfig g_display_config;
-    g_display_config.orientation = param->value;
-    
-    log_info("DISPLAY", "Orientation: %s", (int)param->value == 0 ? "Vertical" : "Horizontal");
-}
+// REMOVED: void midi_cb_display_orientation(const MidiParameterValue *param, void *user_data) {
+// REMOVED:     (void)user_data;
+// REMOVED:     
+// REMOVED: // REMOVED: // REMOVED (display):     extern DisplayConfig g_display_config;
+// REMOVED: // REMOVED:     g_display_config.orientation = param->value;
+// REMOVED:     
+// REMOVED:     log_info("DISPLAY", "Orientation: %s", (int)param->value == 0 ? "Vertical" : "Horizontal");
+// REMOVED: }
 
-void midi_cb_display_udp_scroll_speed(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    extern DisplayConfig g_display_config;
-    g_display_config.udp_scroll_speed = param->raw_value;
-    
-    log_info("DISPLAY", "Scroll speed: %.2f", param->raw_value);
-}
+// REMOVED: void midi_cb_display_udp_scroll_speed(const MidiParameterValue *param, void *user_data) {
+// REMOVED:     (void)user_data;
+// REMOVED:     
+// REMOVED: // REMOVED: // REMOVED (display):     extern DisplayConfig g_display_config;
+// REMOVED: // REMOVED:     g_display_config.udp_scroll_speed = param->raw_value;
+// REMOVED:     
+// REMOVED:     log_info("DISPLAY", "Scroll speed: %.2f", param->raw_value);
+// REMOVED: }
 
-void midi_cb_display_initial_line_position(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    extern DisplayConfig g_display_config;
-    g_display_config.initial_line_position = param->raw_value;
-    
-    log_info("DISPLAY", "Initial line position: %.2f", param->raw_value);
-}
+// REMOVED: void midi_cb_display_initial_line_position(const MidiParameterValue *param, void *user_data) {
+// REMOVED:     (void)user_data;
+// REMOVED:     
+// REMOVED: // REMOVED: // REMOVED (display):     extern DisplayConfig g_display_config;
+// REMOVED: // REMOVED:     g_display_config.initial_line_position = param->raw_value;
+// REMOVED:     
+// REMOVED:     log_info("DISPLAY", "Initial line position: %.2f", param->raw_value);
+// REMOVED: }
 
-void midi_cb_display_line_thickness(const MidiParameterValue *param, void *user_data) {
-    (void)user_data;
-    
-    extern DisplayConfig g_display_config;
-    g_display_config.line_thickness = param->value;
-    
-    log_info("DISPLAY", "Line thickness: %.2f", param->value);
-}
+// REMOVED: void midi_cb_display_line_thickness(const MidiParameterValue *param, void *user_data) {
+// REMOVED:     (void)user_data;
+// REMOVED:     
+// REMOVED: // REMOVED: // REMOVED (display):     extern DisplayConfig g_display_config;
+// REMOVED: // REMOVED:     g_display_config.line_thickness = param->value;
+// REMOVED:     
+// REMOVED:     log_info("DISPLAY", "Line thickness: %.2f", param->value);
+// REMOVED: }
 
 // Obsolete callbacks removed (transition, sensitivity, fade, persistence, zoom, buffer size)
 

@@ -47,10 +47,7 @@ void imu_gesture_calibrate(IMUGestureState *state, Context *ctx);
 /* Reset cursor to center */
 void imu_gesture_reset(IMUGestureState *state);
 
-/* Render cursor for test mode (SFML) */
-#ifndef NO_SFML
-void imu_gesture_render_cursor(sfRenderWindow *window, IMUGestureState *state);
-#endif
+/* Render cursor for test mode (SFML) - REMOVED: SFML no longer supported */
 
 /* Get cursor position in pixel coordinates */
 void imu_gesture_get_pixel_coords(IMUGestureState *state, 

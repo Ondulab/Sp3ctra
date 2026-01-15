@@ -153,108 +153,7 @@ int main(int argc, char **argv) {
       }
     } else if (strcmp(argv[i], "--test-tone") == 0) {
       printf("🎵 Test tone mode enabled (440Hz)\n");
-      // Enable minimal callback mode for testing
       setMinimalCallbackMode(1);
-    } else if (strncmp(argv[i], "--debug-image", 13) == 0) {
-      const char *param = argv[i] + 13;
-      int capture_lines = 1000; // Default value
-      
-      if (*param == '=') {
-        // Parse the number after the equals sign
-        param++; // Skip the '='
-        char *endptr;
-        long lines = strtol(param, &endptr, 10);
-        if (*endptr == '\0' && lines > 0 && lines <= 50000) {
-          capture_lines = (int)lines;
-        } else {
-          printf("❌ Error: Invalid capture lines value '%s' (must be 1-50000)\n", param);
-          return EXIT_FAILURE;
-        }
-      } else if (*param != '\0') {
-        printf("❌ Error: Invalid --debug-image format '%s' (use --debug-image or --debug-image=LINES)\n", argv[i]);
-        return EXIT_FAILURE;
-      }
-      
-      printf("🔧 Image transformation debug enabled (%d lines)\n", capture_lines);
-      // Configure raw scanner capture with runtime parameters
-      image_debug_configure_raw_scanner(1, capture_lines);
-    } else if (strncmp(argv[i], "--debug-additive-osc-image", 26) == 0) {
-      const char *param = argv[i] + 26;
-      int capture_samples = MAX_SAMPLING_FREQUENCY; // Default value (1 second at max freq)
-      int enable_markers = 0; // Default: markers disabled
-      
-      if (*param == '=') {
-        // Parse the number after the equals sign
-        param++; // Skip the '='
-        char *comma_pos = strchr(param, ',');
-        
-        if (comma_pos) {
-          // Parse samples and markers: "2000,m"
-          char samples_str[32];
-          int samples_len = comma_pos - param;
-          if (samples_len < (int)sizeof(samples_str)) {
-            strncpy(samples_str, param, samples_len);
-            samples_str[samples_len] = '\0';
-            
-            long samples = strtol(samples_str, NULL, 10);
-            if (samples > 0 && samples <= 480000) {
-              capture_samples = (int)samples;
-            } else {
-              printf("❌ Error: Invalid capture samples value '%s' (must be 1-480000)\n", samples_str);
-              return EXIT_FAILURE;
-            }
-            
-            // Check for markers flag
-            const char *marker_param = comma_pos + 1;
-            if (strcmp(marker_param, "m") == 0) {
-              enable_markers = 1;
-            } else {
-              printf("❌ Error: Invalid marker flag '%s' (use 'm' to enable markers)\n", marker_param);
-              return EXIT_FAILURE;
-            }
-          } else {
-            printf("❌ Error: Samples value too long\n");
-            return EXIT_FAILURE;
-          }
-        } else {
-          // Only samples specified: "2000"
-          char *endptr;
-          long samples = strtol(param, &endptr, 10);
-          if (*endptr == '\0' && samples > 0 && samples <= 480000) {
-            capture_samples = (int)samples;
-          } else {
-            printf("❌ Error: Invalid capture samples value '%s' (must be 1-480000)\n", param);
-            return EXIT_FAILURE;
-          }
-        }
-      } else if (*param != '\0') {
-        printf("❌ Error: Invalid --debug-additive-osc-image format '%s' (use --debug-additive-osc-image[=SAMPLES[,m]])\n", argv[i]);
-        return EXIT_FAILURE;
-      }
-      
-      printf("🔧 LuxStral oscillator debug enabled (%d samples%s)\n", 
-             capture_samples, enable_markers ? ", markers enabled" : "");
-      // Configure oscillator volume capture with runtime parameters
-      image_debug_configure_oscillator_capture(1, capture_samples, enable_markers);
-    } else if (strncmp(argv[i], "--debug-additive-osc=", 21) == 0) {
-      printf("🔧 Debug oscillateur additif activé !\n");
-      const char *osc_param = argv[i] + 21;
-      
-      // Parse "56" or "23-89" - simplified version without global config
-      if (strchr(osc_param, '-')) {
-        // Range format: "23-89"
-        int start, end;
-        if (sscanf(osc_param, "%d-%d", &start, &end) == 2) {
-          printf("🔧 Debug oscillateur additif activé pour la plage %d-%d\n", start, end);
-        } else {
-          printf("❌ Erreur: format de plage invalide '%s' (utilisez N-M)\n", osc_param);
-          return EXIT_FAILURE;
-        }
-      } else {
-        // Single oscillator format: "56"
-        int single_osc = atoi(osc_param);
-        printf("🔧 Debug oscillateur additif activé pour l'oscillateur %d\n", single_osc);
-      }
     } else {
       printf("Unknown option: %s\n", argv[i]);
       printf("Use --help for usage information\n");
@@ -513,294 +412,86 @@ int main(int argc, char **argv) {
   log_info("LUXWAVE_DEBUG", "Initial mix level at startup: %.2f (%.0f%%)", 
            getSynthLuxWaveMixLevel(), getSynthLuxWaveMixLevel() * 100.0f);
 
-  /* Main loop (gestion des événements et rendu) */
-  // sfEvent event; // Unused variable
-#ifndef NO_SFML
-  sfClock *clock = NULL;
-  // Create clock only if SFML is used
-  clock = sfClock_create();
-#endif // NO_SFML
-
-#ifdef PRINT_FPS
-  unsigned int frameCount = 0;
-#endif
-  int running = 1;
-
-  /* Boucle principale */
+  /* Main loop - Core audio only (headless) */
   log_info("SYNTH", "========================================================");
-  log_info("SYNTH", "Application running");
-  if (use_sfml_window) {
-    log_info("SYNTH", "Visual scanner display enabled");
-  } else {
-    log_info("SYNTH", "No visual display (use --display to enable)");
-  }
+  log_info("SYNTH", "Sp3ctra Core Audio running (headless mode)");
   log_info("SYNTH", "Press Ctrl+C to stop the application");
   log_info("SYNTH", "========================================================");
 
-  /* Boucle principale */
-  /* Allocate local buffers dynamically based on runtime pixel count */
-  int nb_pixels = get_cis_pixels_nb();
-  uint8_t *local_main_R = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
-  uint8_t *local_main_G = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
-  uint8_t *local_main_B = (uint8_t *)malloc(nb_pixels * sizeof(uint8_t));
-  
-  if (!local_main_R || !local_main_G || !local_main_B) {
-    log_error("MAIN", "Failed to allocate local main loop buffers");
-    if (local_main_R) free(local_main_R);
-    if (local_main_G) free(local_main_G);
-    if (local_main_B) free(local_main_B);
-    context.running = 0;
-    return EXIT_FAILURE;
+  /* Simplified main loop - just wait for Ctrl+C */
+  while (app_running && context.running) {
+    usleep(10000);  // 10ms sleep to reduce CPU usage
   }
-  // Note: sequencer_output_R/G/B buffers removed - sequencer output is now
-  // directly written to g_displayable_synth_R/G/B by the UDP thread
-  int process_this_frame_main_loop;
-
-  while (running && context.running && app_running) {
-    process_this_frame_main_loop = 0;
-    /* Gérer les événements SFML si la fenêtre est active et si SFML est compilé
-     */
-#ifndef NO_SFML
-    if (use_sfml_window && window) {
-      sfEvent event;
-      while (sfRenderWindow_pollEvent(window, &event)) {
-        if (event.type == sfEvtClosed) {
-          log_info("DISPLAY", "Window close event received - initiating shutdown");
-          sfRenderWindow_close(window);
-          // Set ALL termination flags
-          running = 0;
-          context.running = 0;
-          app_running = 0;
-          dmxCtx->running = 0;
-          keepRunning = 0;
-          synth_luxwave_thread_stop(); // Signal LuxWave thread to stop immediately
-        }
-      }
-    }
-#else
-    // If NO_SFML is defined, but use_sfml_window is true,
-    // this indicates a configuration inconsistency.
-    // On pourrait ajouter un avertissement ici, ou simplement ne rien faire.
-    if (use_sfml_window && window) {
-      // This block should not be reached if NO_SFML is defined and window
-      // est NULL. Si window est non-NULL ici, c'est une erreur de logique dans
-      // window creation.
-    }
-#endif // NO_SFML
-
-    /* Vérifier si le double buffer contient de nouvelles données */
-    pthread_mutex_lock(&db.mutex);
-    if (db.dataReady) {
-      // Copy live data from double buffer
-      memcpy(local_main_R, db.processingBuffer_R, nb_pixels);
-      memcpy(local_main_G, db.processingBuffer_G, nb_pixels);
-      memcpy(local_main_B, db.processingBuffer_B, nb_pixels);
-      db.dataReady = 0; // Mark as consumed by main loop
-      process_this_frame_main_loop = 1;
-    }
-    pthread_mutex_unlock(&db.mutex);
-
-    if (process_this_frame_main_loop) {
-      /* NOTE: Image sequencer is already processed in UDP thread!
-       * The UDP thread calls image_sequencer_process_frame() and updates
-       * g_displayable_synth_R/G/B with the ADSR-modulated output.
-       * We just use local_main_R/G/B (from db.processingBuffer) for DMX.
-       */
-      
-      /* Rendu de la nouvelle ligne si SFML est activé */
-      if (use_sfml_window && window) {
-        // Lock mutex before accessing displayable synth buffers
-        pthread_mutex_lock(&g_displayable_synth_mutex);
-        printImageRGB(window, g_displayable_synth_R, g_displayable_synth_G,
-                      g_displayable_synth_B, backgroundTexture,
-                      foregroundTexture); // Now displays sequencer output with ADSR!
-        pthread_mutex_unlock(&g_displayable_synth_mutex);
-      }
-
-      /* Calcul de la couleur moyenne et mise à jour du contexte DMX */
-      // DMX uses copied data local_main_R,G,B (which is the data
-      // live de db.processingBuffer)
-      if (use_dmx && dmxCtx->spots && dmxCtx->num_spots > 0) {
-        computeAverageColorPerZone(local_main_R, local_main_G, local_main_B,
-                                   nb_pixels, dmxCtx->spots, dmxCtx->num_spots);
-
-        pthread_mutex_lock(&dmxCtx->mutex);
-        dmxCtx->colorUpdated = 1;
-        pthread_cond_signal(&dmxCtx->cond);
-        pthread_mutex_unlock(&dmxCtx->mutex);
-      }
-
-#ifdef PRINT_FPS
-      frameCount++; // Count each processed frame
-#endif
-    }
-
-#ifdef PRINT_FPS
-    float elapsedTime = 0.0f;
-#ifndef NO_SFML
-    if (clock) { // Check if clock was initialized
-      elapsedTime = sfClock_getElapsedTime(clock).microseconds / 1000000.0f;
-      if (elapsedTime >= 1.0f) {
-        float fps = frameCount / elapsedTime;
-        (void)fps; // Mark fps as used to silence warning if printf is commented
-        // printf("Processing rate: %.2f FPS\n", fps); // Removed or commented
-        sfClock_restart(clock);
-        frameCount = 0; // Reset frameCount here
-      }
-    }
-#else
-    // Alternative for timing if NO_SFML is defined and PRINT_FPS is
-    // active (would require non-SFML clock implementation, like those
-    // at start of file) For now, we do nothing for FPS if
-    // NO_SFML.
-    (void)elapsedTime; // Supprimer l'avertissement unused
-#endif // NO_SFML
-#endif // PRINT_FPS
-
-    /* Petite pause pour limiter la charge CPU */
-    usleep(100);
-  }
-
-#ifndef NO_SFML
-  if (clock) {
-    sfClock_destroy(clock);
-  }
-#endif // NO_SFML
 
   log_info("MAIN", "========================================================");
   log_info("MAIN", "Application shutdown sequence initiated");
   log_info("MAIN", "========================================================");
   
-  /* Step 1: Signal all threads to stop */
-  log_info("MAIN", "Step 1/5: Signaling all threads to stop...");
-  context.running = 0;
-  dmxCtx->running = 0;
-  keepRunning = 0; // Variable globale du module DMX
-  synth_luxwave_thread_stop(); // Signal LuxWave thread to stop BEFORE stopping audio
-  app_running = 0;
-  
-  /* Step 2: Stop audio stream FIRST to unblock RT callback */
-  log_info("MAIN", "Step 2/5: Stopping audio stream...");
+  /* Step 1: Stop audio stream FIRST */
+  log_info("MAIN", "Step 1/4: Stopping audio stream...");
   stopAudioUnit();
   log_info("MAIN", "Audio stream stopped");
   
-  /* Step 3: Join threads in correct order */
-  log_info("MAIN", "Step 3/5: Joining threads...");
+  /* Step 2: Signal threads to stop */
+  log_info("MAIN", "Step 2/4: Signaling threads to stop...");
+  context.running = 0;
+  app_running = 0;
+  synth_luxwave_thread_stop();
   
+  /* Step 3: Join threads */
+  log_info("MAIN", "Step 3/4: Joining threads...");
   pthread_join(udpThreadId, NULL);
   log_info("THREAD", "UDP thread terminated");
   
   pthread_join(audioThreadId, NULL);
   log_info("THREAD", "Audio processing thread terminated");
 
-  // Join the polyphonic synth thread only if it was created
   if (polyphonic_thread_created) {
     pthread_join(fftSynthThreadId, NULL);
     log_info("THREAD", "LuxSynth synthesis thread terminated");
   }
 
-  // Join the LuxWave synth thread (already signaled to stop in Step 1)
   pthread_join(photowaveThreadId, NULL);
   log_info("THREAD", "LuxWave synthesis thread terminated");
-
-#ifdef USE_DMX
-  if (use_dmx && dmxFd >= 0) {
-    pthread_join(dmxThreadId, NULL);
-    log_info("THREAD", "DMX thread terminated");
-  }
-#endif
   
-  log_info("MAIN", "All threads joined successfully");
-
-  /* Step 4: Cleanup resources in correct order */
-  log_info("MAIN", "Step 4/5: Cleaning up resources...");
+  /* Step 4: Cleanup resources */
+  log_info("MAIN", "Step 4/4: Cleaning up resources...");
   
-  // Cleanup displayable synth buffers
   displayable_synth_buffers_cleanup();
   log_info("CLEANUP", "Displayable synth buffers cleaned up");
   
-  // Cleanup synth data freeze resources
   synth_data_freeze_cleanup();
   log_info("CLEANUP", "Synth data freeze cleaned up");
   
-  // Cleanup LuxWave synthesis resources
   synth_luxwave_mode_cleanup();
   log_info("CLEANUP", "LuxWave synthesis cleaned up");
   
-  // Cleanup image sequencer
   if (imageSequencer) {
     image_sequencer_destroy(imageSequencer);
-    imageSequencer = NULL;
     log_info("CLEANUP", "Image sequencer destroyed");
   }
   
-  // Free local main loop buffers
-  if (local_main_R) free(local_main_R);
-  if (local_main_G) free(local_main_G);
-  if (local_main_B) free(local_main_B);
-  log_info("CLEANUP", "Local main loop buffers freed");
-  
-  // Cleanup DoubleBuffer resources
   cleanupDoubleBuffer(&db);
   log_info("CLEANUP", "Double buffer cleaned up");
   
-  // Cleanup audio image buffers
   audio_image_buffers_cleanup(&audioImageBuffers);
   log_info("CLEANUP", "Audio image buffers cleaned up");
   
-  // Cleanup UDP socket
   udp_cleanup(context.socket);
   log_info("CLEANUP", "UDP socket closed");
   
-  // Cleanup unified MIDI system before general MIDI cleanup
   midi_mapping_cleanup();
   log_info("CLEANUP", "MIDI mapping cleaned up");
   
   midi_Cleanup();
   log_info("CLEANUP", "MIDI system cleaned up");
 
-  /* Destroy auto-volume controller (if created) before audio cleanup */
-  if (gAutoVolumeInstance) {
-    auto_volume_destroy(gAutoVolumeInstance);
-    gAutoVolumeInstance = NULL;
-    log_info("CLEANUP", "Auto-volume controller destroyed");
-  }
-
-  // Cleanup RtAudio (stream already stopped in Step 2)
   audio_Cleanup();
   log_info("CLEANUP", "Audio system cleaned up");
-
-  /* Step 5: Cleanup SFML resources */
-  log_info("MAIN", "Step 5/5: Cleaning up display resources...");
-  
-  // Cleanup GPU scrolling resources BEFORE destroying the window
-  // This is CRITICAL to allow proper process termination
-  display_cleanup();
-  
-#ifndef NO_SFML
-  // This block only executes if SFML is enabled
-  // Clean up only if SFML window was used
-  if (use_sfml_window && window) {
-    if (backgroundTexture)
-      sfTexture_destroy(backgroundTexture);
-    if (foregroundTexture)
-      sfTexture_destroy(foregroundTexture);
-    if (backgroundSprite)
-      sfSprite_destroy(backgroundSprite);
-    if (foregroundSprite)
-      sfSprite_destroy(foregroundSprite);
-    sfRenderWindow_destroy(window);
-    log_info("CLEANUP", "SFML window and textures destroyed");
-  }
-#endif // NO_SFML
 
   log_info("MAIN", "========================================================");
   log_info("MAIN", "Application terminated successfully");
   log_info("MAIN", "========================================================");
   
-  // Force process exit - some external library threads may linger
-  // All cleanup is done, safe to exit immediately
-  _exit(0);
-  
-  return 0; // Never reached, but keeps compiler happy
+  return 0;
 }

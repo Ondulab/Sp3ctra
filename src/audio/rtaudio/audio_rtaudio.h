@@ -47,9 +47,9 @@ private:
   // - Unused
   int reverbDelays[8]; // For backward compatibility
 
-  // New implementation based on ZitaRev1
-  ZitaRev1
-      zitaRev; // ZitaRev1 instance for high-quality reverb
+// REMOVED (reverb):   // New implementation based on ZitaRev1
+// REMOVED (reverb):   ZitaRev1
+// REMOVED (reverb):       zitaRev; // ZitaRev1 instance for high-quality reverb
 
   float reverbMix;      // Dry/Wet mix (0.0 - 1.0)
   float reverbRoomSize; // Room size (0.0 - 1.0)

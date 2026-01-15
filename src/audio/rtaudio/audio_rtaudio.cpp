@@ -370,7 +370,7 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       // If transitioning from "at least one send active" to "all sends zero"
       // then clear the reverb buffers immediately
       if (all_sends_zero && !all_sends_zero_last_frame && reverbEnabled) {
-        zitaRev.clear();  // Clear the 8 delay lines
+// REMOVED (reverb):         zitaRev.clear();  // Clear the 8 delay lines
       }
       all_sends_zero_last_frame = all_sends_zero;
 
@@ -433,11 +433,11 @@ int AudioSystem::handleCallback(float *outputBuffer, unsigned int nFrames) {
       
     }
 
-    // Apply EQ to the chunk (after reverb, before master volume)
-    if (gEqualizer && gEqualizer->isEnabled()) {
-      float* eqData[2] = { outLeft, outRight };
-      eq_Process(chunk, 2, eqData);
-    }
+// REMOVED (EQ):     // Apply EQ to the chunk (after reverb, before master volume)
+// REMOVED (EQ):     if (gEqualizer && gEqualizer->isEnabled()) {
+// REMOVED (EQ):       float* eqData[2] = { outLeft, outRight };
+// REMOVED (EQ):       eq_Process(chunk, 2, eqData);
+// REMOVED (EQ):     }
 
     // Apply master volume and limiting to the chunk
     for (unsigned int i = 0; i < chunk; i++) {
@@ -600,15 +600,15 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
 
   // Configure ZitaRev1 with values for long and
   // smooth reverb
-  zitaRev.init(sampleRate);
-  zitaRev.set_roomsize(
-      0.95f); // Very large room size for long reverb
-  zitaRev.set_damping(0.4f); // Reduced high frequency damping for
-                             // more brightness
-  zitaRev.set_width(1.0f);   // Maximum stereo width
-  zitaRev.set_delay(
-      0.08f);            // Larger pre-delay for clarity and separation
-  zitaRev.set_mix(1.0f); // CRITICAL: 100% wet - ZitaRev outputs ONLY wet signal, no dry/wet mixing inside
+// REMOVED (reverb):   zitaRev.init(sampleRate);
+// REMOVED (reverb):   zitaRev.set_roomsize(
+// REMOVED (reverb):       0.95f); // Very large room size for long reverb
+// REMOVED (reverb):   zitaRev.set_damping(0.4f); // Reduced high frequency damping for
+// REMOVED (reverb):                              // more brightness
+// REMOVED (reverb): // REMOVED (reverb):   zitaRev.set_width(1.0f);   // Maximum stereo width
+// REMOVED (reverb):   zitaRev.set_delay(
+// REMOVED (reverb):       0.08f);            // Larger pre-delay for clarity and separation
+// REMOVED (reverb):   zitaRev.set_mix(1.0f); // CRITICAL: 100% wet - ZitaRev outputs ONLY wet signal, no dry/wet mixing inside
   
   log_info("AUDIO", "ZitaRev1 configured: roomsize=0.95, damping=0.4, width=1.0, mix=1.0 (100%% wet - dry/wet mixing handled externally)");
 }
@@ -666,11 +666,11 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
   // Initialize reverb once at startup
   if (!reverb_initialized) {
     // Explicitly clear internal buffers to avoid clicks
-    zitaRev.clear();
+// REMOVED (reverb):     zitaRev.clear();
     // Initialize basic parameters
-    zitaRev.set_roomsize(reverbRoomSize);
-    zitaRev.set_damping(reverbDamping);
-    zitaRev.set_width(reverbWidth);
+// REMOVED (reverb):     zitaRev.set_roomsize(reverbRoomSize);
+// REMOVED (reverb):     zitaRev.set_damping(reverbDamping);
+// REMOVED (reverb):     zitaRev.set_width(reverbWidth);
     // Initialiser les gains avec les bonnes valeurs
     cached_wet_gain = reverbMix;
     cached_dry_gain = 1.0f - reverbMix;
@@ -684,9 +684,9 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
     cached_dry_gain = 1.0f - reverbMix;
 
     // Update ZitaRev1 parameters less frequently
-    zitaRev.set_roomsize(reverbRoomSize);
-    zitaRev.set_damping(reverbDamping);
-    zitaRev.set_width(reverbWidth);
+// REMOVED (reverb):     zitaRev.set_roomsize(reverbRoomSize);
+// REMOVED (reverb):     zitaRev.set_damping(reverbDamping);
+// REMOVED (reverb):     zitaRev.set_width(reverbWidth);
   }
 
   // Optimized ZitaRev1 processing - single sample
@@ -696,7 +696,7 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
   float outBufferR[1] = {0.0f};
 
   // Direct call to ZitaRev1 (main cost)
-  zitaRev.process(inBufferL, inBufferR, outBufferL, outBufferR, 1);
+// REMOVED (reverb):   zitaRev.process(inBufferL, inBufferR, outBufferL, outBufferR, 1);
 
   // CRITICAL FIX: Return ONLY wet signal (reverb processed)
   // Dry/wet mixing is handled in the main callback, not here
@@ -822,9 +822,9 @@ void AudioSystem::reverbThreadFunction() {
       for (int i = 0; i < processingBlockSize; i++) {
         // Update ZitaRev1 parameters (from time to time)
         if (i == 0) { // Only at start of block
-          zitaRev.set_roomsize(reverbRoomSize);
-          zitaRev.set_damping(reverbDamping);
-          zitaRev.set_width(reverbWidth);
+// REMOVED (reverb):           zitaRev.set_roomsize(reverbRoomSize);
+// REMOVED (reverb):           zitaRev.set_damping(reverbDamping);
+// REMOVED (reverb):           zitaRev.set_width(reverbWidth);
         }
 
         // Mono to stereo processing
@@ -834,8 +834,8 @@ void AudioSystem::reverbThreadFunction() {
         float outBufferR_single[1] = {0.0f};
 
         // Process via ZitaRev1
-        zitaRev.process(inBufferL, inBufferR, outBufferL_single,
-                        outBufferR_single, 1);
+// REMOVED (reverb):         zitaRev.process(inBufferL, inBufferR, outBufferL_single,
+// REMOVED (reverb):                         outBufferR_single, 1);
 
         // Apply dry/wet mix
         float wetGain = reverbMix;
@@ -1396,10 +1396,10 @@ void audio_Init(void) {
   }
 
   // Initialize 3-band equalizer
-  if (!gEqualizer) {
-    float sampleRate = (gAudioSystem) ? g_sp3ctra_config.sampling_frequency : 44100.0f;
-    eq_Init(sampleRate);
-    log_info("AUDIO", "Three-band equalizer initialized");
+// REMOVED (EQ):   if (!gEqualizer) {
+// REMOVED (EQ):     float sampleRate = (gAudioSystem) ? g_sp3ctra_config.sampling_frequency : 44100.0f;
+// REMOVED (EQ):     eq_Init(sampleRate);
+// REMOVED (EQ):     log_info("AUDIO", "Three-band equalizer initialized");
   }
 }
 
@@ -1439,10 +1439,10 @@ void audio_Cleanup() {
     gAudioSystem = nullptr;
   }
 
-  // Cleanup equalizer
-  if (gEqualizer) {
-    eq_Cleanup();
-  }
+// REMOVED (EQ):   // Cleanup equalizer
+// REMOVED (EQ):   if (gEqualizer) {
+// REMOVED (EQ):     eq_Cleanup();
+// REMOVED (EQ):   }
 }
 
 // Audio control functions
@@ -1745,4 +1745,4 @@ float getReverbSendLuxWave(void) {
   return g_reverb_send_luxwave;
 }
 
-} // extern "C"
+// REMOVED (EQ): } // extern "C"

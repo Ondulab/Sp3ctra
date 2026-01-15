@@ -34,6 +34,7 @@
 
 // Logger
 #include "../../utils/logger.h"
+#include "../../utils/image_debug_stubs.h"
 
 // Standard includes
 #include <stdio.h>

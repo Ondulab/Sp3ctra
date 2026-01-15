@@ -18,6 +18,7 @@
 #include "../../config/config_debug.h"
 #include "../../config/config_loader.h"
 #include "../../utils/logger.h"
+#include "../../utils/image_debug_stubs.h"
 #include "../../utils/rt_profiler.h"
 #include <stdio.h>
 #include <string.h>

@@ -96,7 +96,7 @@ COMMUNICATION_SOURCES = src/communication/network/udp.c \
                         src/communication/midi/midi_callbacks.cpp
 PROCESSING_SOURCES = src/processing/image_preprocessor.c src/processing/image_sequencer.c src/processing/imu_gesture.c
 THREADING_SOURCES = src/threading/multithreading.c
-UTILS_SOURCES = src/utils/error.c src/utils/logger.c src/utils/rt_profiler.c
+UTILS_SOURCES = src/utils/error.c src/utils/logger.c src/utils/rt_profiler.c src/utils/stubs.c
 # Display sources removed (SFML dependencies eliminated)
 
 # All sources (core audio only - no display, no DMX, no effects)

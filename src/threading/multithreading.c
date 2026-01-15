@@ -11,6 +11,7 @@
 #include "synth_luxstral.h"
 #include "udp.h"
 #include "logger.h"
+#include "../utils/image_debug_stubs.h"
 #include "../processing/image_preprocessor.h"
 #include "../processing/image_sequencer.h"
 #include "../synthesis/luxwave/synth_luxwave.h"
@@ -571,89 +572,89 @@ void *udpThread(void *arg) {
   return NULL;
 }
 
-void *dmxSendingThread(void *arg) {
-  DMXContext *dmxCtx = (DMXContext *)arg;
-  unsigned char frame[DMX_FRAME_SIZE];
-
-  // Check if DMX file descriptor is valid
-  if (dmxCtx->fd < 0) {
-    log_error("THREAD", "DMX thread started with invalid file descriptor, exiting thread");
-    return NULL;
-  }
-
-  while (dmxCtx->running && keepRunning) {
-    // Check if file descriptor is still valid
-    if (dmxCtx->fd < 0) {
-      log_error("THREAD", "DMX file descriptor became invalid, exiting thread");
-      break;
-    }
-
-    // Check immediately if a stop signal has been received
-    if (!dmxCtx->running || !keepRunning) {
-      break;
-    }
-
-    // Reset DMX frame and set start code
-    memset(frame, 0, DMX_FRAME_SIZE);
-    frame[0] = 0;
-
-    // For each spot, insert channels based on spot type (RGB or RGBW)
-    for (int i = 0; i < dmxCtx->num_spots; i++) {
-      int base = dmxCtx->spots[i].start_channel;
-      
-      if (dmxCtx->spots[i].type == DMX_SPOT_RGB) {
-        // RGB: 3 channels
-        if ((base + 2) < DMX_FRAME_SIZE) {
-          frame[base + 0] = dmxCtx->spots[i].data.rgb.red;
-          frame[base + 1] = dmxCtx->spots[i].data.rgb.green;
-          frame[base + 2] = dmxCtx->spots[i].data.rgb.blue;
-        } else {
-          log_error("THREAD", "DMX address out of bounds for RGB spot %d", i);
-        }
-      } else if (dmxCtx->spots[i].type == DMX_SPOT_RGBW) {
-        // RGBW: 4 channels
-        if ((base + 3) < DMX_FRAME_SIZE) {
-          frame[base + 0] = dmxCtx->spots[i].data.rgbw.red;
-          frame[base + 1] = dmxCtx->spots[i].data.rgbw.green;
-          frame[base + 2] = dmxCtx->spots[i].data.rgbw.blue;
-          frame[base + 3] = dmxCtx->spots[i].data.rgbw.white;
-        } else {
-          log_error("THREAD", "DMX address out of bounds for RGBW spot %d", i);
-        }
-      }
-    }
-
-    // Send DMX frame only if fd is valid and the
-    // application is still running
-    if (dmxCtx->running && keepRunning && dmxCtx->fd >= 0 &&
-        send_dmx_frame(dmxCtx->fd, frame, DMX_FRAME_SIZE) < 0) {
-      log_error("THREAD", "Error sending DMX frame: %s", strerror(errno));
-      // In case of repeated error, we can exit the thread
-      if (errno == EBADF || errno == EIO) {
-        log_error("THREAD", "Critical DMX error, exiting thread");
-        break;
-      }
-    }
-
-    // Use an interruptible sleep that periodically checks if a stop signal
-    // has been received
-    for (int i = 0; i < 5; i++) { // 5 * 5ms = 25ms total
-      if (!dmxCtx->running || !keepRunning) {
-        break;
-      }
-      usleep(5000); // 5ms
-    }
-  }
-
-  log_info("THREAD", "DMX thread terminating");
-
-  // Fermer le descripteur de fichier seulement s'il est valide
-  if (dmxCtx->fd >= 0) {
-    close(dmxCtx->fd);
-    dmxCtx->fd = -1;
-  }
-  return NULL;
-}
+// REMOVED (DMX): void *dmxSendingThread(void *arg) {
+// REMOVED (DMX):   DMXContext *dmxCtx = (DMXContext *)arg;
+// REMOVED (DMX):   unsigned char frame[DMX_FRAME_SIZE];
+// REMOVED (DMX): 
+// REMOVED (DMX):   // Check if DMX file descriptor is valid
+// REMOVED (DMX):   if (dmxCtx->fd < 0) {
+// REMOVED (DMX):     log_error("THREAD", "DMX thread started with invalid file descriptor, exiting thread");
+// REMOVED (DMX):     return NULL;
+// REMOVED (DMX):   }
+// REMOVED (DMX): 
+// REMOVED (DMX):   while (dmxCtx->running && keepRunning) {
+// REMOVED (DMX):     // Check if file descriptor is still valid
+// REMOVED (DMX):     if (dmxCtx->fd < 0) {
+// REMOVED (DMX):       log_error("THREAD", "DMX file descriptor became invalid, exiting thread");
+// REMOVED (DMX):       break;
+// REMOVED (DMX):     }
+// REMOVED (DMX): 
+// REMOVED (DMX):     // Check immediately if a stop signal has been received
+// REMOVED (DMX):     if (!dmxCtx->running || !keepRunning) {
+// REMOVED (DMX):       break;
+// REMOVED (DMX):     }
+// REMOVED (DMX): 
+// REMOVED (DMX):     // Reset DMX frame and set start code
+// REMOVED (DMX):     memset(frame, 0, DMX_FRAME_SIZE);
+// REMOVED (DMX):     frame[0] = 0;
+// REMOVED (DMX): 
+// REMOVED (DMX):     // For each spot, insert channels based on spot type (RGB or RGBW)
+// REMOVED (DMX):     for (int i = 0; i < dmxCtx->num_spots; i++) {
+// REMOVED (DMX):       int base = dmxCtx->spots[i].start_channel;
+// REMOVED (DMX):       
+// REMOVED (DMX):       if (dmxCtx->spots[i].type == DMX_SPOT_RGB) {
+// REMOVED (DMX):         // RGB: 3 channels
+// REMOVED (DMX):         if ((base + 2) < DMX_FRAME_SIZE) {
+// REMOVED (DMX):           frame[base + 0] = dmxCtx->spots[i].data.rgb.red;
+// REMOVED (DMX):           frame[base + 1] = dmxCtx->spots[i].data.rgb.green;
+// REMOVED (DMX):           frame[base + 2] = dmxCtx->spots[i].data.rgb.blue;
+// REMOVED (DMX):         } else {
+// REMOVED (DMX):           log_error("THREAD", "DMX address out of bounds for RGB spot %d", i);
+// REMOVED (DMX):         }
+// REMOVED (DMX):       } else if (dmxCtx->spots[i].type == DMX_SPOT_RGBW) {
+// REMOVED (DMX):         // RGBW: 4 channels
+// REMOVED (DMX):         if ((base + 3) < DMX_FRAME_SIZE) {
+// REMOVED (DMX):           frame[base + 0] = dmxCtx->spots[i].data.rgbw.red;
+// REMOVED (DMX):           frame[base + 1] = dmxCtx->spots[i].data.rgbw.green;
+// REMOVED (DMX):           frame[base + 2] = dmxCtx->spots[i].data.rgbw.blue;
+// REMOVED (DMX):           frame[base + 3] = dmxCtx->spots[i].data.rgbw.white;
+// REMOVED (DMX):         } else {
+// REMOVED (DMX):           log_error("THREAD", "DMX address out of bounds for RGBW spot %d", i);
+// REMOVED (DMX):         }
+// REMOVED (DMX):       }
+// REMOVED (DMX):     }
+// REMOVED (DMX): 
+// REMOVED (DMX):     // Send DMX frame only if fd is valid and the
+// REMOVED (DMX):     // application is still running
+// REMOVED (DMX):     if (dmxCtx->running && keepRunning && dmxCtx->fd >= 0 &&
+// REMOVED (DMX):         send_dmx_frame(dmxCtx->fd, frame, DMX_FRAME_SIZE) < 0) {
+// REMOVED (DMX):       log_error("THREAD", "Error sending DMX frame: %s", strerror(errno));
+// REMOVED (DMX):       // In case of repeated error, we can exit the thread
+// REMOVED (DMX):       if (errno == EBADF || errno == EIO) {
+// REMOVED (DMX):         log_error("THREAD", "Critical DMX error, exiting thread");
+// REMOVED (DMX):         break;
+// REMOVED (DMX):       }
+// REMOVED (DMX):     }
+// REMOVED (DMX): 
+// REMOVED (DMX):     // Use an interruptible sleep that periodically checks if a stop signal
+// REMOVED (DMX):     // has been received
+// REMOVED (DMX):     for (int i = 0; i < 5; i++) { // 5 * 5ms = 25ms total
+// REMOVED (DMX):       if (!dmxCtx->running || !keepRunning) {
+// REMOVED (DMX):         break;
+// REMOVED (DMX):       }
+// REMOVED (DMX):       usleep(5000); // 5ms
+// REMOVED (DMX):     }
+// REMOVED (DMX):   }
+// REMOVED (DMX): 
+// REMOVED (DMX):   log_info("THREAD", "DMX thread terminating");
+// REMOVED (DMX): 
+// REMOVED (DMX):   // Fermer le descripteur de fichier seulement s'il est valide
+// REMOVED (DMX):   if (dmxCtx->fd >= 0) {
+// REMOVED (DMX):     close(dmxCtx->fd);
+// REMOVED (DMX):     dmxCtx->fd = -1;
+// REMOVED (DMX):   }
+// REMOVED (DMX):   return NULL;
+// REMOVED (DMX): }
 
 void *audioProcessingThread(void *arg) {
   Context *context = (Context *)arg;
@@ -688,23 +689,23 @@ void *audioProcessingThread(void *arg) {
     // This will NEVER block, even if scanner disconnects!
     synth_AudioProcess(audio_read_R, audio_read_G, audio_read_B, context->doubleBuffer);
 
-    /* Auto-volume periodic update (lightweight). Runs in audioProcessingThread
-       (non-RT) to avoid doing work in the RtAudio callback. */
-    if (gAutoVolumeInstance) {
-      static uint64_t last_auto_ms = 0;
-      struct timespec ts;
-      clock_gettime(CLOCK_MONOTONIC, &ts);
-      uint64_t now =
-          (uint64_t)ts.tv_sec * 1000ull + (uint64_t)(ts.tv_nsec / 1000000ull);
-      if (last_auto_ms == 0) {
-        last_auto_ms = now;
-      }
-      uint64_t dt = (now > last_auto_ms) ? (now - last_auto_ms) : 0;
-      if (dt >= (uint64_t)AUTO_VOLUME_POLL_MS) {
-        auto_volume_step(gAutoVolumeInstance, (unsigned int)dt);
-        last_auto_ms = now;
-      }
-    }
+// REMOVED (auto_volume):     /* Auto-volume periodic update (lightweight). Runs in audioProcessingThread
+// REMOVED (auto_volume):        (non-RT) to avoid doing work in the RtAudio callback. */
+// REMOVED (auto_volume):     if (gAutoVolumeInstance) {
+// REMOVED (auto_volume):       static uint64_t last_auto_ms = 0;
+// REMOVED (auto_volume):       struct timespec ts;
+// REMOVED (auto_volume):       clock_gettime(CLOCK_MONOTONIC, &ts);
+// REMOVED (auto_volume):       uint64_t now =
+// REMOVED (auto_volume):           (uint64_t)ts.tv_sec * 1000ull + (uint64_t)(ts.tv_nsec / 1000000ull);
+// REMOVED (auto_volume):       if (last_auto_ms == 0) {
+// REMOVED (auto_volume):         last_auto_ms = now;
+// REMOVED (auto_volume):       }
+// REMOVED (auto_volume):       uint64_t dt = (now > last_auto_ms) ? (now - last_auto_ms) : 0;
+// REMOVED (auto_volume):       if (dt >= (uint64_t)AUTO_VOLUME_POLL_MS) {
+// REMOVED (auto_volume):         auto_volume_step(gAutoVolumeInstance, (unsigned int)dt);
+// REMOVED (auto_volume):         last_auto_ms = now;
+// REMOVED (auto_volume):       }
+// REMOVED (auto_volume):     }
 
     // Small sleep to prevent excessive CPU usage
     // This is the only delay in the audio thread
