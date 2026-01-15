@@ -18,6 +18,9 @@ int voice_manager_allocate(void *voices, int num_voices,
     int voice_idx = -1;
     int i;
     
+    (void)set_note; /* Unused in this implementation */
+    (void)midi_note; /* Unused in this implementation */
+
     if (!voices || !get_metadata || num_voices <= 0) {
         return -1;
     }
@@ -113,7 +116,9 @@ int voice_manager_release(void *voices, int num_voices,
     unsigned long long oldest_order;
     int i;
     
-    if (!voices || !get_metadata || !get_state || !set_note || num_voices <= 0) {
+    (void)get_state; /* Unused in this implementation */
+
+    if (!voices || !get_metadata || !set_note || num_voices <= 0) {
         return -1;
     }
     

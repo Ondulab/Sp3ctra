@@ -573,6 +573,7 @@ AudioSystem::AudioSystem(unsigned int sampleRate, unsigned int bufferSize,
       reverbRoomSize(DEFAULT_REVERB_ROOM_SIZE),
       reverbDamping(DEFAULT_REVERB_DAMPING), reverbWidth(DEFAULT_REVERB_WIDTH),
       reverbEnabled(ENABLE_REVERB), reverbThreadRunning(false) {
+  (void)sampleRate; // Unused parameter
 
   log_info("AUDIO", "Reverb enabled by default with Zita-Rev1 algorithm");
 
@@ -634,6 +635,7 @@ AudioSystem::~AudioSystem() {
 // ULTRA-OPTIMIZED reverb function for real-time callback
 void AudioSystem::processReverbOptimized(float inputL, float inputR,
                                          float &outputL, float &outputR) {
+  (void)inputL; (void)inputR;
 #if DEBUG_AUDIO_REVERB
   // DEBUG: Log reverb function calls
   static int reverb_call_counter = 0;
@@ -690,8 +692,8 @@ void AudioSystem::processReverbOptimized(float inputL, float inputR,
   }
 
   // Optimized ZitaRev1 processing - single sample
-  float inBufferL[1] = {inputL};
-  float inBufferR[1] = {inputR};
+  // float inBufferL[1] = {inputL};
+  // float inBufferR[1] = {inputR};
   float outBufferL[1] = {0.0f};
   float outBufferR[1] = {0.0f};
 
@@ -828,8 +830,8 @@ void AudioSystem::reverbThreadFunction() {
         }
 
         // Mono to stereo processing
-        float inBufferL[1] = {inputBuffer[i]};
-        float inBufferR[1] = {inputBuffer[i]};
+        // float inBufferL[1] = {inputBuffer[i]};
+        // float inBufferR[1] = {inputBuffer[i]};
         float outBufferL_single[1] = {0.0f};
         float outBufferR_single[1] = {0.0f};
 

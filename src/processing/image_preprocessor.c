@@ -66,8 +66,10 @@ static uint64_t get_timestamp_us(void);
 static float calculate_contrast(float *imageData, size_t size);
 static void preprocess_stereo(const uint8_t *raw_r, const uint8_t *raw_g,
                                const uint8_t *raw_b, PreprocessedImageData *out);
+#ifdef USE_DMX
 static void preprocess_dmx(const uint8_t *raw_r, const uint8_t *raw_g,
                             const uint8_t *raw_b, PreprocessedImageData *out);
+#endif
 #ifndef DISABLE_LUXSYNTH
 static int image_preprocess_color_fft(const uint8_t *raw_r, const uint8_t *raw_g,
                                       const uint8_t *raw_b, PreprocessedImageData *data);
@@ -479,9 +481,9 @@ static void preprocess_stereo(const uint8_t *raw_r, const uint8_t *raw_g,
  * @brief Preprocess DMX zone average colors
  * Calculates average RGB values for each DMX zone
  */
+#ifdef USE_DMX
 static void preprocess_dmx(const uint8_t *raw_r, const uint8_t *raw_g,
                             const uint8_t *raw_b, PreprocessedImageData *out) {
-#ifdef USE_DMX
     int nb_pixels;
     int pixels_per_zone;
     int zone;
@@ -521,8 +523,8 @@ static void preprocess_dmx(const uint8_t *raw_r, const uint8_t *raw_g,
             out->dmx.zone_b[zone] = 0;
         }
     }
-#endif
 }
+#endif
 
 #ifndef DISABLE_LUXSYNTH
 /**
