@@ -28,31 +28,26 @@ CisVisualizerComponent::~CisVisualizerComponent()
 void CisVisualizerComponent::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
-    
-    // Dark background
-    g.fillAll(juce::Colour(0xff1a1a1a));
-    
-    // Draw subtle center line reference
-    int centerY = bounds.getHeight() / 2;
-    g.setColour(juce::Colour(0xff404040));
-    g.drawHorizontalLine(centerY, 0.0f, static_cast<float>(bounds.getWidth()));
+    int displayWidth = bounds.getWidth();
+    int displayHeight = bounds.getHeight();
+    int centerY = displayHeight / 2;
     
     // Check if we have CIS data
     if (cisPixelsCount == 0) {
+        g.fillAll(juce::Colour(0xff1a1a1a));
         g.setColour(juce::Colours::grey);
         g.drawText("Waiting for CIS data...", bounds, 
                    juce::Justification::centred);
         return;
     }
     
-    int displayWidth = bounds.getWidth();
-    int displayHeight = bounds.getHeight();
-    
-    // Get current visualizer mode (0 = Image, 1 = Waveform)
+    // Get current visualizer mode
     auto& apvts = processor.getAPVTS();
     int visualizerMode = (int)apvts.getRawParameterValue("visualizerMode")->load();
     
     if (visualizerMode == 0) {
+        // MODE 0: IMAGE - Direct RGB vertical display with dark background
+        g.fillAll(juce::Colour(0xff1a1a1a));
         // MODE 1: IMAGE - Direct RGB display
         for (int x = 0; x < displayWidth; x++) {
             // Interpolate CIS values for this display position
@@ -68,10 +63,14 @@ void CisVisualizerComponent::paint(juce::Graphics& g)
             g.setColour(pixelColour);
             g.fillRect(x, 0, 1, displayHeight);
         }
-    } else {
-        // MODE 2: WAVEFORM - Bargraph with RGB color and height based on luminosity
+    } else if (visualizerMode == 1) {
+        // MODE 1: WAVEFORM - Bargraph with RGB color and height based on luminosity
         // Start with white background
         g.fillAll(juce::Colours::white);
+        
+        // Draw center line for reference
+        g.setColour(juce::Colour(0xffcccccc));
+        g.drawHorizontalLine(centerY, 0.0f, static_cast<float>(displayWidth));
         
         for (int x = 0; x < displayWidth; x++) {
             // Interpolate CIS values for this display position (SAME AS IMAGE MODE)
@@ -90,6 +89,35 @@ void CisVisualizerComponent::paint(juce::Graphics& g)
             int barHeight = (maxChannel * halfHeight) / 255;
             
             // Draw bar with RGB color and height proportional to luminosity
+            if (barHeight > 0) {
+                g.setColour(pixelColour);
+                g.fillRect(x, centerY - barHeight, 1, barHeight * 2);
+            }
+        }
+    } else {
+        // MODE 3: WAVEFORM INVERSÉ - Bar height inversely proportional to luminosity
+        // Low luminosity = tall bar, high luminosity = short bar
+        // Start with white background
+        g.fillAll(juce::Colours::white);
+        
+        for (int x = 0; x < displayWidth; x++) {
+            // Interpolate CIS values for this display position
+            uint8_t rVal = interpolateCisPixel(localDataR.data(), x, displayWidth);
+            uint8_t gVal = interpolateCisPixel(localDataG.data(), x, displayWidth);
+            uint8_t bVal = interpolateCisPixel(localDataB.data(), x, displayWidth);
+            
+            // Use RGB color directly
+            juce::Colour pixelColour(rVal, gVal, bVal);
+            
+            // Calculate luminosity (brightness) = max of R, G, B
+            int maxChannel = std::max({rVal, gVal, bVal});
+            
+            // INVERSE: Calculate bar height inversely proportional to luminosity
+            // 255 (bright) → 0 (no bar), 0 (dark) → halfHeight (full bar)
+            int halfHeight = displayHeight / 2;
+            int barHeight = ((255 - maxChannel) * halfHeight) / 255;
+            
+            // Draw inverted bar with RGB color
             if (barHeight > 0) {
                 g.setColour(pixelColour);
                 g.fillRect(x, centerY - barHeight, 1, barHeight * 2);

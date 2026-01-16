@@ -10,13 +10,15 @@ class Sp3ctraAudioProcessor;
 /**
  * @brief CIS Visualizer Component
  * 
- * Displays CIS sensor data (RGB channels) with horizontal layout
- * and vertical wave effect using tan() function (matching firmware behavior).
+ * Displays CIS sensor data (RGB channels) with three visualization modes:
+ * - Mode 0 (Image): Direct RGB vertical display
+ * - Mode 1 (Waveform): Bar height proportional to luminosity
+ * - Mode 2 (Waveform Inversé): Bar height inversely proportional to luminosity
  * 
  * Features:
  * - 30 FPS refresh rate (33ms Timer)
  * - Lock-free data reading from AudioImageBuffers
- * - RGB overlay rendering with transparency
+ * - RGB color rendering
  * - Linear interpolation for display scaling (3456 or 1728 → 360 pixels)
  * - Thread-safe: reads in Timer callback, renders in paint()
  */

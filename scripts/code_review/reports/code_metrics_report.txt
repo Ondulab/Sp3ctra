@@ -1,0 +1,28 @@
+================================================================================
+📊 CODE METRICS REPORT
+================================================================================
+
+⚠️  Limited metrics (install lizard for full analysis)
+
+📈 OVERVIEW
+--------------------------------------------------------------------------------
+Total Files: 4
+Total Code Lines: 711
+Total Comment Lines: 123
+Average Comment Ratio: 11.8%
+
+📁 FILE BREAKDOWN
+--------------------------------------------------------------------------------
+  PluginProcessor.cpp             274 code,  58 comments,  1 functions
+  SettingsWindow.cpp              184 code,  31 comments,  0 functions
+  Sp3ctraCore.cpp                 176 code,  20 comments,  1 functions
+  PluginEditor.cpp                 77 code,  14 comments,  0 functions
+
+📊 Issues: 0 errors, 0 warnings, 0 info
+
+✨ QUALITY ASSESSMENT
+--------------------------------------------------------------------------------
+
+  ✅ Quality Score: 100/100 - Excellent!
+
+================================================================================

@@ -1,0 +1,38 @@
+================================================================================
+🔬 STATIC ANALYSIS REPORT (clang-tidy + cppcheck)
+================================================================================
+
+📊 Summary: 0 errors, 12 warnings, 10 info
+Tools:  cppcheck
+
+▶️  CPPCHECK (22 issues)
+--------------------------------------------------------------------------------
+
+  [Static Analysis - Null Pointer] (1 issues)
+    INFO: vst/source/SettingsWindow.cpp:223
+    [constVariablePointer] Variable 'core' can be declared as pointer to const
+
+  [Static Analysis - Other] (21 issues)
+    WARNING: src/core/context.h:4
+    [missingInclude] Include file: "audio_c_api.h" not found.
+    WARNING: src/core/context.h:5
+    [missingInclude] Include file: "audio_image_buffers.h" not found.
+    WARNING: src/core/context.h:7
+    [missingInclude] Include file: "doublebuffer.h" not found.
+    INFO: vst/source/SettingsWindow.h:20
+    [noExplicitConstructor] Class 'SettingsComponent' has a constructor with 1 argument that is not explicit.
+    INFO: vst/source/SettingsWindow.h:64
+    [noExplicitConstructor] Class 'SettingsWindow' has a constructor with 1 argument that is not explicit.
+    INFO: vst/source/PluginEditor.h:20
+    [noExplicitConstructor] Class 'Sp3ctraAudioProcessorEditor' has a constructor with 1 argument that is not explicit.
+    INFO: vst/source/UdpReceiverThread.h:76
+    [cstyleCast] C-style pointer casting
+    INFO: src/config/config_instrument.h:22
+    [shadowVariable] Local variable 'g_sp3ctra_config' shadows outer variable
+    INFO: vst/source/PluginProcessor.cpp:358
+    [shadowVariable] Local variable 'g_sp3ctra_config' shadows outer variable
+    WARNING: src/audio/buffers/doublebuffer.h:4
+    [missingInclude] Include file: "config.h" not found.
+    ... and 11 more
+
+================================================================================

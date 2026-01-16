@@ -12,7 +12,7 @@ SettingsComponent::SettingsComponent(Sp3ctraAudioProcessor& processor)
     // UDP Port - TextEditor (editable field)
     udpPortLabel.setText("UDP Port:", juce::dontSendNotification);
     udpPortLabel.setJustificationType(juce::Justification::centredRight);
-    udpPortLabel.setFont(juce::Font(14.0f));
+    udpPortLabel.setFont(juce::FontOptions(14.0f));
     addAndMakeVisible(udpPortLabel);
 
     udpPortEditor.setMultiLine(false);
@@ -21,7 +21,7 @@ SettingsComponent::SettingsComponent(Sp3ctraAudioProcessor& processor)
     udpPortEditor.setScrollbarsShown(false);
     udpPortEditor.setCaretVisible(true);
     udpPortEditor.setPopupMenuEnabled(true);
-    udpPortEditor.setFont(juce::Font(14.0f));
+    udpPortEditor.setFont(juce::FontOptions(14.0f));
     udpPortEditor.setJustification(juce::Justification::centred);
     udpPortEditor.setInputRestrictions(5, "0123456789");
     
@@ -50,7 +50,7 @@ SettingsComponent::SettingsComponent(Sp3ctraAudioProcessor& processor)
     // UDP Address - 4 TextEditors for IP bytes
     udpAddressLabel.setText("UDP Address:", juce::dontSendNotification);
     udpAddressLabel.setJustificationType(juce::Justification::centredRight);
-    udpAddressLabel.setFont(juce::Font(14.0f));
+    udpAddressLabel.setFont(juce::FontOptions(14.0f));
     addAndMakeVisible(udpAddressLabel);
 
     // Helper lambda to configure IP byte editor
@@ -61,7 +61,7 @@ SettingsComponent::SettingsComponent(Sp3ctraAudioProcessor& processor)
         editor.setScrollbarsShown(false);
         editor.setCaretVisible(true);
         editor.setPopupMenuEnabled(true);
-        editor.setFont(juce::Font(14.0f));
+        editor.setFont(juce::FontOptions(14.0f));
         editor.setJustification(juce::Justification::centred);
         editor.setInputRestrictions(3, "0123456789");
         
@@ -97,23 +97,23 @@ SettingsComponent::SettingsComponent(Sp3ctraAudioProcessor& processor)
     // Dot labels
     dot1Label.setText(".", juce::dontSendNotification);
     dot1Label.setJustificationType(juce::Justification::centred);
-    dot1Label.setFont(juce::Font(16.0f, juce::Font::bold));
+    dot1Label.setFont(juce::Font(juce::FontOptions(16.0f)).boldened());
     addAndMakeVisible(dot1Label);
     
     dot2Label.setText(".", juce::dontSendNotification);
     dot2Label.setJustificationType(juce::Justification::centred);
-    dot2Label.setFont(juce::Font(16.0f, juce::Font::bold));
+    dot2Label.setFont(juce::Font(juce::FontOptions(16.0f)).boldened());
     addAndMakeVisible(dot2Label);
     
     dot3Label.setText(".", juce::dontSendNotification);
     dot3Label.setJustificationType(juce::Justification::centred);
-    dot3Label.setFont(juce::Font(16.0f, juce::Font::bold));
+    dot3Label.setFont(juce::Font(juce::FontOptions(16.0f)).boldened());
     addAndMakeVisible(dot3Label);
 
     // Sensor DPI
     sensorDpiLabel.setText("Sensor DPI:", juce::dontSendNotification);
     sensorDpiLabel.setJustificationType(juce::Justification::centredRight);
-    sensorDpiLabel.setFont(juce::Font(14.0f));
+    sensorDpiLabel.setFont(juce::FontOptions(14.0f));
     addAndMakeVisible(sensorDpiLabel);
 
     sensorDpiCombo.addItem("200 DPI (1728 pixels)", 1);
@@ -126,7 +126,7 @@ SettingsComponent::SettingsComponent(Sp3ctraAudioProcessor& processor)
     // Log Level
     logLevelLabel.setText("Log Level:", juce::dontSendNotification);
     logLevelLabel.setJustificationType(juce::Justification::centredRight);
-    logLevelLabel.setFont(juce::Font(14.0f));
+    logLevelLabel.setFont(juce::FontOptions(14.0f));
     addAndMakeVisible(logLevelLabel);
 
     logLevelCombo.addItem("Error", 1);
@@ -141,11 +141,12 @@ SettingsComponent::SettingsComponent(Sp3ctraAudioProcessor& processor)
     // Visualizer Mode
     visualizerModeLabel.setText("Visualizer Mode:", juce::dontSendNotification);
     visualizerModeLabel.setJustificationType(juce::Justification::centredRight);
-    visualizerModeLabel.setFont(juce::Font(14.0f));
+    visualizerModeLabel.setFont(juce::FontOptions(14.0f));
     addAndMakeVisible(visualizerModeLabel);
 
     visualizerModeCombo.addItem("Image", 1);
     visualizerModeCombo.addItem("Waveform", 2);
+    visualizerModeCombo.addItem("Inverted Waveform", 3);
     addAndMakeVisible(visualizerModeCombo);
 
     visualizerModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
@@ -161,7 +162,7 @@ SettingsComponent::SettingsComponent(Sp3ctraAudioProcessor& processor)
     statusLabel.setText("Settings are saved automatically", 
                        juce::dontSendNotification);
     statusLabel.setJustificationType(juce::Justification::centred);
-    statusLabel.setFont(juce::Font(12.0f, juce::Font::italic));
+    statusLabel.setFont(juce::Font(juce::FontOptions(12.0f)).italicised());
     addAndMakeVisible(statusLabel);
 
     setSize(500, 320);  // +40px for visualizer mode row
@@ -177,7 +178,7 @@ void SettingsComponent::paint(juce::Graphics& g)
 
     // Title
     g.setColour(juce::Colours::white);
-    g.setFont(juce::Font(18.0f, juce::Font::bold));
+    g.setFont(juce::Font(juce::FontOptions(18.0f)).boldened());
     g.drawText("Sp3ctra Configuration", getLocalBounds().removeFromTop(40),
                juce::Justification::centred, true);
 

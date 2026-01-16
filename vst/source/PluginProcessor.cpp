@@ -47,11 +47,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout Sp3ctraAudioProcessor::creat
         Sp3ctraConstants::DEFAULT_LOG_LEVEL  // Default = Info (2)
     ));
     
-    // Visualizer Mode
+    // Visualizer Mode (0 = Image, 1 = Waveform, 2 = Inverted Waveform)
     params.push_back(std::make_unique<juce::AudioParameterChoice>(
         PARAM_VISUALIZER_MODE,
         "Visualizer Mode",
-        juce::StringArray{"Image", "Waveform"},
+        juce::StringArray{"Image", "Waveform", "Inverted Waveform"},
         0  // Default = Image mode
     ));
     
