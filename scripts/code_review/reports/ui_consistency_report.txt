@@ -7,7 +7,7 @@
 ⚠️ WARNINGS:
 --------------------------------------------------------------------------------
   [UI - Event Safety]
-  File: vst/source/PluginEditor.cpp:84
+  File: vst/source/PluginEditor.cpp:94
   🎨 Event handler 'timerCallback' accesses pointers without nullptr checks.
 
   [UI - Parameter Binding]

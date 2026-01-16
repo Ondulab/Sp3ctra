@@ -2,40 +2,48 @@
 🤖 AI VIBE CODING BIAS REPORT
 ================================================================================
 
-📊 Summary: 0 errors, 7 warnings, 5 info
+📊 Summary: 0 errors, 6 warnings, 11 info
 
 ⚠️ WARNINGS:
 --------------------------------------------------------------------------------
   [AI Bias - Placeholder Code]
-  File: vst/source/SettingsWindow.cpp:85
-  💡 TODO comment: // TODO: In future, could add custom string parameter instead of choice
-
-  [AI Bias - Placeholder Code]
-  File: vst/source/PluginProcessor.cpp:193
+  File: vst/source/PluginProcessor.cpp:201
   💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (index);
 
   [AI Bias - Placeholder Code]
-  File: vst/source/PluginProcessor.cpp:198
+  File: vst/source/PluginProcessor.cpp:206
   💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (index);
-
-  [AI Bias - Placeholder Code]
-  File: vst/source/PluginProcessor.cpp:204
-  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (index, newName);
 
   [AI Bias - Placeholder Code]
   File: vst/source/PluginProcessor.cpp:212
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (index, newName);
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:220
   💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (sampleRate, samplesPerBlock);
 
   [AI Bias - Placeholder Code]
-  File: vst/source/PluginProcessor.cpp:225
+  File: vst/source/PluginProcessor.cpp:233
   💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (layouts);
 
   [AI Bias - Placeholder Code]
-  File: vst/source/PluginProcessor.cpp:281
+  File: vst/source/PluginProcessor.cpp:289
   💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused(midiMessages);
 
 ℹ️ INFOS:
 --------------------------------------------------------------------------------
+  [AI Bias - Magic Number]
+  File: vst/source/CisVisualizerComponent.cpp:90
+  💡 Magic number 255 found. Consider using named constant: int barHeight = (maxChannel * halfHeight) / 255;
+
+  [AI Bias - Magic Number]
+  File: vst/source/CisVisualizerComponent.cpp:135
+  💡 Magic number 400 found. Consider using named constant: cisPixelsCount = (g_sp3ctra_config.sensor_dpi == 400)
+
+  [AI Bias - Magic Number]
+  File: vst/source/CisVisualizerComponent.cpp:187
+  💡 Magic number 15. found. Consider using named constant: pixelIntensity = std::tan(angle) * (y + 1) / 15.0f;
+
   [AI Bias - Magic Number]
   File: vst/source/SettingsWindow.cpp:35
   💡 Magic number 1024 found. Consider using named constant: if (port >= 1024 && port <= 65535) {
@@ -45,15 +53,27 @@
   💡 Magic number 65535 found. Consider using named constant: if (port >= 1024 && port <= 65535) {
 
   [AI Bias - Magic Number]
-  File: vst/source/PluginProcessor.cpp:352
+  File: vst/source/SettingsWindow.cpp:75
+  💡 Magic number 255 found. Consider using named constant: if (value >= 0 && value <= 255) {
+
+  [AI Bias - Magic Number]
+  File: vst/source/SettingsWindow.cpp:212
+  💡 Magic number 30 found. Consider using named constant: int byteWidth = (addressRow.getWidth() - 30) / 4;
+
+  [AI Bias - Magic Number]
+  File: vst/source/PluginProcessor.cpp:414
   💡 Magic number 200 found. Consider using named constant: int sensorDpi = (dpiChoice == 0) ? 200 : 400;
 
   [AI Bias - Magic Number]
-  File: vst/source/PluginProcessor.cpp:352
+  File: vst/source/PluginProcessor.cpp:414
   💡 Magic number 400 found. Consider using named constant: int sensorDpi = (dpiChoice == 0) ? 200 : 400;
 
   [AI Bias - Magic Number]
-  File: vst/source/PluginEditor.cpp:46
+  File: vst/source/PluginEditor.cpp:50
   💡 Magic number 60 found. Consider using named constant: auto headerArea = bounds.removeFromTop(60);
+
+  [AI Bias - Magic Number]
+  File: vst/source/PluginEditor.cpp:75
+  💡 Magic number 80 found. Consider using named constant: auto visualizerArea = bounds.removeFromTop(80);
 
 ================================================================================

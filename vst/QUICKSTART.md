@@ -188,6 +188,24 @@ Le build CMake crée aussi une version Standalone :
 
 Cette version est plus facile à débugger (peut être lancée directement dans Xcode/GDB).
 
+## ⚠️ Limitations Connues
+
+### Multi-Instance Non Supporté
+
+**Important** : En raison de l'utilisation d'une configuration globale partagée (`extern sp3ctra_config_t g_sp3ctra_config`), **une seule instance du plugin Sp3ctra VST peut être chargée à la fois** dans un projet DAW.
+
+**Impact** :
+- Si vous chargez 2 instances du plugin dans le même projet, elles partageront la même configuration UDP (adresse, port, DPI)
+- La dernière instance configurée écrasera les paramètres de la première
+- Cela peut causer des conflits et un comportement imprévisible
+
+**Solutions de contournement** :
+1. N'utilisez qu'une seule instance du plugin par projet DAW
+2. Si vous avez besoin de multiples sources Sp3ctra, utilisez des projets DAW séparés
+
+**Résolution future** :
+Cette limitation sera corrigée dans une version future en déplaçant la configuration globale vers une configuration par instance. Consultez `vst/CODE_REVIEW_SUMMARY.md` pour plus de détails sur le plan de correction.
+
 ## Prochaines Étapes
 
 Après validation du VST minimal :
@@ -196,6 +214,7 @@ Après validation du VST minimal :
 3. ✅ Connecter les synthés au `processBlock()`
 4. ✅ Ajouter les paramètres VST (mix levels, reverb, etc.)
 5. ✅ Créer une interface graphique (visualisation des buffers)
+6. 🔄 Résoudre la limitation multi-instance (config globale → config par instance)
 
 ## Ressources
 

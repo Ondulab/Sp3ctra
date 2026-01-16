@@ -2,12 +2,16 @@
 🏗️  ARCHITECTURE REVIEW REPORT
 ================================================================================
 
-📊 Summary: 0 errors, 2 warnings
+📊 Summary: 0 errors, 3 warnings
 
 ⚠️  WARNINGS:
 --------------------------------------------------------------------------------
   [Architecture - Global State]
-  File: vst/source/PluginProcessor.cpp:358
+  File: vst/source/CisVisualizerComponent.cpp:134
+  ⚠️  Global variable access: extern sp3ctra_config_t g_sp3ctra_config;
+
+  [Architecture - Global State]
+  File: vst/source/PluginProcessor.cpp:420
   ⚠️  Global variable access: extern sp3ctra_config_t g_sp3ctra_config;
 
   [Architecture - Global State]

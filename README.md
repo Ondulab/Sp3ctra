@@ -7,9 +7,10 @@ Sp3ctra est un synthétiseur audio avancé développé en C/C++ avec une archite
 - **Synthèse audio en temps réel** : Moteurs de synthèse additive et polyphonique
 - **Architecture modulaire** : Code organisé par domaines fonctionnels
 - **Multi-plateforme** : Support macOS, Linux et Raspberry Pi
+- **Format VST/AU** : Plugin audio pour DAW (Ableton, Reaper, Logic Pro, etc.)
 - **Contrôle MIDI** : Interface complète pour contrôleurs MIDI
 - **Intégration DMX** : Contrôle d'éclairage synchronisé
-- **Interface flexible** : Mode graphique (SFML) ou ligne de commande
+- **Interface flexible** : Mode graphique (SFML), ligne de commande ou plugin VST
 - **Optimisations ARM** : Support spécialisé pour Raspberry Pi 4/5
 
 ## Architecture du projet
@@ -100,7 +101,23 @@ Le projet inclut des scripts de compilation spécialisés :
 
 ## Utilisation
 
-### Lancement de base
+### Format Plugin VST/AU
+
+Sp3ctra est également disponible en format plugin audio (VST3, AU, Standalone) pour une intégration complète dans votre DAW préféré.
+
+```bash
+# Compilation du plugin VST
+bash scripts/build_vst.sh
+
+# Lancement du standalone
+bash scripts/run_standalone.sh
+```
+
+📖 **Documentation VST** : Consultez `vst/QUICKSTART.md` pour le guide complet d'utilisation du plugin.
+
+⚠️ **Limitation connue** : En raison d'une configuration globale partagée, **une seule instance du plugin Sp3ctra VST peut être chargée à la fois** dans un projet DAW. Cette limitation sera résolue dans une future version.
+
+### Lancement de base (standalone)
 
 Après compilation, l'exécutable se trouve dans `build/Sp3ctra` :
 

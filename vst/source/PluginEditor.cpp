@@ -12,14 +12,14 @@ Sp3ctraAudioProcessorEditor::Sp3ctraAudioProcessorEditor (Sp3ctraAudioProcessor&
 
     // Status Label
     statusLabel.setJustificationType(juce::Justification::centred);
-    statusLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+    statusLabel.setFont(juce::Font(juce::FontOptions(14.0f)).boldened());
     addAndMakeVisible(statusLabel);
 
     // Info Label
     infoLabel.setText("Sp3ctra - Spectral Audio Synthesis\nUDP Receiver Active", 
                      juce::dontSendNotification);
     infoLabel.setJustificationType(juce::Justification::centred);
-    infoLabel.setFont(juce::Font(12.0f));
+    infoLabel.setFont(juce::FontOptions(12.0f));
     addAndMakeVisible(infoLabel);
 
     // CIS Visualizer
@@ -56,11 +56,11 @@ void Sp3ctraAudioProcessorEditor::paint (juce::Graphics& g)
 
     // Title
     g.setColour(juce::Colours::white);
-    g.setFont(juce::Font(20.0f, juce::Font::bold));
+    g.setFont(juce::Font(juce::FontOptions(20.0f)).boldened());
     g.drawText("Sp3ctra", headerArea.reduced(10), juce::Justification::centredLeft, true);
 
     // Version
-    g.setFont(juce::Font(11.0f));
+    g.setFont(juce::FontOptions(11.0f));
     g.setColour(juce::Colours::grey);
     g.drawText("v0.0.1", headerArea.reduced(10), juce::Justification::centredRight, true);
 }

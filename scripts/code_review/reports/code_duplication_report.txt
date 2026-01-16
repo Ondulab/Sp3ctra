@@ -2,30 +2,7 @@
 🔁 CODE DUPLICATION REPORT
 ================================================================================
 
-📊 Summary: 0 errors, 1 warnings, 4 info
-
-⚠️ WARNINGS:
---------------------------------------------------------------------------------
-  [Code Duplication - Config Handling]
-  Configuration 'udp_address' is handled in 4 different files. Consider centralizing.
-  Locations:
-    - vst/source/SettingsWindow.cpp:69
-    - vst/source/SettingsWindow.cpp:77
-    - vst/source/SettingsWindow.cpp:78
-    - vst/source/SettingsWindow.cpp:92
-    - vst/source/PluginProcessor.cpp:12
-    - vst/source/PluginProcessor.cpp:35
-    - vst/source/PluginProcessor.cpp:37
-    - vst/source/PluginProcessor.cpp:83
-    - vst/source/PluginProcessor.cpp:89
-    - vst/source/PluginProcessor.cpp:107
-    - vst/source/PluginProcessor.cpp:355
-    - vst/source/PluginProcessor.cpp:360
-    - vst/source/PluginProcessor.cpp:361
-    - vst/source/PluginProcessor.cpp:362
-    - vst/source/PluginEditor.cpp:93
-    - vst/source/Sp3ctraCore.cpp:197
-    - vst/source/Sp3ctraCore.cpp:198
+📊 Summary: 0 errors, 0 warnings, 4 info
 
 ℹ️ INFOS:
 --------------------------------------------------------------------------------

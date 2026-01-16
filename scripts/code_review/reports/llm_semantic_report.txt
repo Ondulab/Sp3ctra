@@ -1,0 +1,13 @@
+================================================================================
+🤖 LLM SEMANTIC ANALYSIS REPORT (Claude)
+================================================================================
+
+❌ Claude API not configured!
+
+To enable LLM analysis:
+1. Get API key from: https://console.anthropic.com/
+2. Set environment variable:
+   export ANTHROPIC_API_KEY='your-api-key-here'
+3. Re-run the analysis
+
+================================================================================

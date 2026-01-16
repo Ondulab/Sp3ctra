@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-01-16T13:27:15.043347",
+  "timestamp": "2026-01-16T19:35:07.905781",
   "project": "/Users/zhonx/Documents/Workspaces/Workspace_Xcode/Sp3ctra_Application",
   "summary": {
-    "total_issues": 22,
+    "total_issues": 27,
     "errors": 0,
-    "warnings": 13,
-    "info": 9
+    "warnings": 12,
+    "info": 15
   },
   "agents_run": [
     "Architecture Review",
