@@ -26,23 +26,65 @@ juce_add_plugin(Sp3ctraVST
     PRODUCT_NAME "Sp3ctra"
 )
 
-# Source files for the plugin wrapper
+# Source files for the plugin wrapper (C++)
 target_sources(Sp3ctraVST
     PRIVATE
         source/PluginProcessor.cpp
         source/PluginProcessor.h
         source/PluginEditor.cpp
         source/PluginEditor.h
+        source/SettingsWindow.cpp
+        source/SettingsWindow.h
+        source/CisVisualizerComponent.cpp
+        source/CisVisualizerComponent.h
+        source/Sp3ctraCore.cpp
+        source/Sp3ctraCore.h
+        source/Sp3ctraConstants.h
+        source/UdpReceiverThread.h
+        source/global_stubs.c
 )
 
-# NOTE: global_stubs.c removed - conflicts with existing headers
-# We'll build a pure JUCE VST first, then integrate C code progressively
+# ✨ BRICK 1: UDP Reception - Add C sources
+# Only include what's needed for UDP + buffers (no synthesis yet)
+target_sources(Sp3ctraVST
+    PRIVATE
+        # UDP communication
+        ../src/communication/network/udp.c
+        
+        # Configuration system
+        ../src/config/config_loader.c
+        
+        # Logging system
+        ../src/utils/logger.c
+        ../src/utils/error.c
+        
+        # Threading (for udpThread and buffer initialization)
+        ../src/threading/multithreading.c
+        
+        # Audio buffers (DoubleBuffer, AudioImageBuffers)
+        ../src/audio/buffers/audio_image_buffers.c
+        
+        # Stubs for missing functions
+        ../src/utils/stubs.c
+)
 
-# TEMPORARILY DISABLED: Add existing C/C++ sources
-# This will be enabled progressively as we refactor the globals
-# file(GLOB_RECURSE CORE_SOURCES "../src/**/*.c")
-# list(FILTER CORE_SOURCES EXCLUDE REGEX ".*/src/core/main.c$")
-# target_sources(Sp3ctraVST PRIVATE ${CORE_SOURCES})
+# Add include directories for C headers
+target_include_directories(Sp3ctraVST
+    PRIVATE
+        ../src
+        ../src/core
+        ../src/config
+        ../src/utils
+        ../src/communication/network
+        ../src/audio/buffers
+        ../src/audio/rtaudio
+        ../src/threading
+        ../src/processing
+        ../src/synthesis/common
+        ../src/synthesis/luxwave
+        ../src/synthesis/luxstral
+        ../src/synthesis/luxsynth
+)
 
 # Compile definitions
 target_compile_definitions(Sp3ctraVST PRIVATE
@@ -58,6 +100,7 @@ target_link_libraries(Sp3ctraVST PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_gui_basics
+    juce::juce_gui_extra
     juce::juce_graphics
     juce::juce_core
     juce::juce_data_structures

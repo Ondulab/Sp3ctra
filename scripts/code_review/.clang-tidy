@@ -1,0 +1,39 @@
+# Configuration clang-tidy pour analyse RT-audio VST
+# Focus sur sécurité, performance, et contraintes temps-réel
+
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  performance-*,
+  -performance-avoid-endl,
+  concurrency-*,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  readability-*,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic
+
+# Configuration spécifique
+CheckOptions:
+  - key: readability-function-size.LineThreshold
+    value: 100
+  - key: readability-function-size.StatementThreshold
+    value: 50
+  - key: performance-unnecessary-value-param.AllowedTypes
+    value: 'juce::String;juce::Colour'
+  - key: modernize-use-nullptr.NullMacros
+    value: 'NULL'
+
+# Headers à considérer
+HeaderFilterRegex: '(vst/source/|src/).*\.(h|hpp)$'
+
+# Traiter comme erreurs
+WarningsAsErrors: 'bugprone-*,concurrency-*,performance-move-*,performance-no-automatic-move'

@@ -1,0 +1,21 @@
+================================================================================
+🎨 UI CONSISTENCY REPORT
+================================================================================
+
+📊 Summary: 0 errors, 3 warnings, 0 info
+
+⚠️ WARNINGS:
+--------------------------------------------------------------------------------
+  [UI - Event Safety]
+  File: vst/source/PluginEditor.cpp:84
+  🎨 Event handler 'timerCallback' accesses pointers without nullptr checks.
+
+  [UI - Parameter Binding]
+  File: vst/source/SettingsWindow.cpp:0
+  🎨 UI has controls and APVTS access but no Attachments. Controls may not be properly bound to parameters.
+
+  [UI - Parameter Binding]
+  File: vst/source/PluginEditor.cpp:0
+  🎨 UI has controls and APVTS access but no Attachments. Controls may not be properly bound to parameters.
+
+================================================================================

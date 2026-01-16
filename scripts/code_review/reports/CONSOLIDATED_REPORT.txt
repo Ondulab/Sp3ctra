@@ -1,0 +1,216 @@
+================================================================================
+📋 VST CODE REVIEW - CONSOLIDATED REPORT
+================================================================================
+
+Project: Sp3ctra VST
+Date: 2026-01-16 13:27:15
+Location: /Users/zhonx/Documents/Workspaces/Workspace_Xcode/Sp3ctra_Application
+
+================================================================================
+
+📊 EXECUTIVE SUMMARY
+================================================================================
+
+Total Issues Found: 22
+  - ❌ Errors: 0
+  - ⚠️  Warnings: 13
+  - ℹ️  Info: 9
+
+✅ No critical errors found!
+
+💡 PRIORITY RECOMMENDATIONS
+================================================================================
+
+1. Review architectural separation of concerns. Ensure PluginProcessor, Sp3ctraCore, and UI components have clear responsibilities.
+2. Refactor duplicated code into shared libraries. This will improve maintainability and reduce the risk of divergent implementations.
+3. Clean up AI-generated code artifacts (excessive comments, placeholders, dead code). This will improve code readability and maintainability.
+4. Standardize UI components (colors, fonts, layouts). Create a theme/style guide to ensure consistent user experience.
+5. Ensure all VST configuration uses APVTS for DAW integration. Avoid .ini file dependencies in plugin code.
+
+================================================================================
+📑 DETAILED REPORTS BY AGENT
+================================================================================
+
+
+================================================================================
+Agent: Architecture Review
+================================================================================
+
+================================================================================
+🏗️  ARCHITECTURE REVIEW REPORT
+================================================================================
+
+📊 Summary: 0 errors, 2 warnings
+
+⚠️  WARNINGS:
+--------------------------------------------------------------------------------
+  [Architecture - Global State]
+  File: vst/source/PluginProcessor.cpp:358
+  ⚠️  Global variable access: extern sp3ctra_config_t g_sp3ctra_config;
+
+  [Architecture - Global State]
+  File: vst/source/Sp3ctraCore.cpp:195
+  ⚠️  Global variable access: extern sp3ctra_config_t g_sp3ctra_config;
+
+================================================================================
+
+
+
+================================================================================
+Agent: Code Duplication
+================================================================================
+
+================================================================================
+🔁 CODE DUPLICATION REPORT
+================================================================================
+
+📊 Summary: 0 errors, 1 warnings, 4 info
+
+⚠️ WARNINGS:
+--------------------------------------------------------------------------------
+  [Code Duplication - Config Handling]
+  Configuration 'udp_address' is handled in 4 different files. Consider centralizing.
+  Locations:
+    - vst/source/SettingsWindow.cpp:69
+    - vst/source/SettingsWindow.cpp:77
+    - vst/source/SettingsWindow.cpp:78
+    - vst/source/SettingsWindow.cpp:92
+    - vst/source/PluginProcessor.cpp:12
+    - vst/source/PluginProcessor.cpp:35
+    - vst/source/PluginProcessor.cpp:37
+    - vst/source/PluginProcessor.cpp:83
+    - vst/source/PluginProcessor.cpp:89
+    - vst/source/PluginProcessor.cpp:107
+    - vst/source/PluginProcessor.cpp:355
+    - vst/source/PluginProcessor.cpp:360
+    - vst/source/PluginProcessor.cpp:361
+    - vst/source/PluginProcessor.cpp:362
+    - vst/source/PluginEditor.cpp:93
+    - vst/source/Sp3ctraCore.cpp:197
+    - vst/source/Sp3ctraCore.cpp:198
+
+ℹ️ INFOS:
+--------------------------------------------------------------------------------
+  [Unused Code - Stubs]
+  Stub function 'image_preprocess_frame' is never called in VST code. Consider removing.
+  Locations:
+    - vst/source/global_stubs.c:0
+
+  [Unused Code - Stubs]
+  Stub function 'image_sequencer_process_frame' is never called in VST code. Consider removing.
+  Locations:
+    - vst/source/global_stubs.c:0
+
+  [Unused Code - Stubs]
+  Stub function 'synth_luxwave_set_image_line' is never called in VST code. Consider removing.
+  Locations:
+    - vst/source/global_stubs.c:0
+
+  [Unused Code - Stubs]
+  Stub function 'synth_AudioProcess' is never called in VST code. Consider removing.
+  Locations:
+    - vst/source/global_stubs.c:0
+
+================================================================================
+
+
+
+================================================================================
+Agent: AI Bias Detection
+================================================================================
+
+================================================================================
+🤖 AI VIBE CODING BIAS REPORT
+================================================================================
+
+📊 Summary: 0 errors, 7 warnings, 5 info
+
+⚠️ WARNINGS:
+--------------------------------------------------------------------------------
+  [AI Bias - Placeholder Code]
+  File: vst/source/SettingsWindow.cpp:85
+  💡 TODO comment: // TODO: In future, could add custom string parameter instead of choice
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:193
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (index);
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:198
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (index);
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:204
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (index, newName);
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:212
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (sampleRate, samplesPerBlock);
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:225
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (layouts);
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:281
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused(midiMessages);
+
+ℹ️ INFOS:
+--------------------------------------------------------------------------------
+  [AI Bias - Magic Number]
+  File: vst/source/SettingsWindow.cpp:35
+  💡 Magic number 1024 found. Consider using named constant: if (port >= 1024 && port <= 65535) {
+
+  [AI Bias - Magic Number]
+  File: vst/source/SettingsWindow.cpp:35
+  💡 Magic number 65535 found. Consider using named constant: if (port >= 1024 && port <= 65535) {
+
+  [AI Bias - Magic Number]
+  File: vst/source/PluginProcessor.cpp:352
+  💡 Magic number 200 found. Consider using named constant: int sensorDpi = (dpiChoice == 0) ? 200 : 400;
+
+  [AI Bias - Magic Number]
+  File: vst/source/PluginProcessor.cpp:352
+  💡 Magic number 400 found. Consider using named constant: int sensorDpi = (dpiChoice == 0) ? 200 : 400;
+
+  [AI Bias - Magic Number]
+  File: vst/source/PluginEditor.cpp:46
+  💡 Magic number 60 found. Consider using named constant: auto headerArea = bounds.removeFromTop(60);
+
+================================================================================
+
+
+
+================================================================================
+Agent: UI Consistency
+================================================================================
+
+================================================================================
+🎨 UI CONSISTENCY REPORT
+================================================================================
+
+📊 Summary: 0 errors, 3 warnings, 0 info
+
+⚠️ WARNINGS:
+--------------------------------------------------------------------------------
+  [UI - Event Safety]
+  File: vst/source/PluginEditor.cpp:84
+  🎨 Event handler 'timerCallback' accesses pointers without nullptr checks.
+
+  [UI - Parameter Binding]
+  File: vst/source/SettingsWindow.cpp:0
+  🎨 UI has controls and APVTS access but no Attachments. Controls may not be properly bound to parameters.
+
+  [UI - Parameter Binding]
+  File: vst/source/PluginEditor.cpp:0
+  🎨 UI has controls and APVTS access but no Attachments. Controls may not be properly bound to parameters.
+
+================================================================================
+
+
+================================================================================
+📝 END OF CONSOLIDATED REPORT
+================================================================================
+
+Generated: 2026-01-16 13:27:15
+Report location: /Users/zhonx/Documents/Workspaces/Workspace_Xcode/Sp3ctra_Application/scripts/code_review/reports

@@ -1,11 +1,22 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "Sp3ctraCore.h"
+#include "UdpReceiverThread.h"
+#include "Sp3ctraConstants.h"
 
 //==============================================================================
 /**
-*/
-class Sp3ctraAudioProcessor  : public juce::AudioProcessor
+ * @brief Sp3ctra VST Audio Processor
+ * 
+ * Main VST plugin class that integrates:
+ * - UDP reception thread (IMAGE_DATA + IMU packets)
+ * - Core synthesis engine (Sp3ctraCore)
+ * - Audio processing (processBlock)
+ * - VST parameters (APVTS with UDP config, sensor DPI, log level)
+ */
+class Sp3ctraAudioProcessor  : public juce::AudioProcessor,
+                                public juce::AudioProcessorValueTreeState::Listener
 {
 public:
     //==============================================================================
@@ -44,11 +55,57 @@ public:
     //==============================================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+    
+    //==============================================================================
+    // AudioProcessorValueTreeState::Listener interface
+    void parameterChanged(const juce::String& parameterID, float newValue) override;
+    
+    //==============================================================================
+    // Public accessors for UI
+    juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
+    Sp3ctraCore* getSp3ctraCore() { return sp3ctraCore.get(); }
+    
+    // Helper to build UDP address string from 4 bytes
+    juce::String getUdpAddressString() const;
 
 private:
     //==============================================================================
+    // Helper to create parameter layout
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    
+    // Apply updated configuration to Sp3ctraCore
+    void applyConfigurationToCore();
+    
+    //==============================================================================
     // Test tone phase accumulator (prevents clicking/crackling)
     float testTonePhase = 0.0f;
+    
+    // ✨ Sp3ctra Core Integration
+    std::unique_ptr<Sp3ctraCore> sp3ctraCore;
+    std::unique_ptr<UdpReceiverThread> udpThread;
+    
+    // ✨ VST Parameters via AudioProcessorValueTreeState
+    juce::AudioProcessorValueTreeState apvts;
+    
+    // Parameter IDs (for consistency)
+    static constexpr const char* PARAM_UDP_PORT = "udpPort";
+    static constexpr const char* PARAM_UDP_BYTE1 = "udpByte1";
+    static constexpr const char* PARAM_UDP_BYTE2 = "udpByte2";
+    static constexpr const char* PARAM_UDP_BYTE3 = "udpByte3";
+    static constexpr const char* PARAM_UDP_BYTE4 = "udpByte4";
+    static constexpr const char* PARAM_SENSOR_DPI = "sensorDpi";
+    static constexpr const char* PARAM_LOG_LEVEL = "logLevel";
+    static constexpr const char* PARAM_VISUALIZER_MODE = "visualizerMode";
+    
+    // Quick access to parameters (cached, no atomic overhead)
+    std::atomic<float>* udpPortParam = nullptr;
+    std::atomic<float>* udpByte1Param = nullptr;
+    std::atomic<float>* udpByte2Param = nullptr;
+    std::atomic<float>* udpByte3Param = nullptr;
+    std::atomic<float>* udpByte4Param = nullptr;
+    std::atomic<float>* sensorDpiParam = nullptr;
+    std::atomic<float>* logLevelParam = nullptr;
+    std::atomic<float>* visualizerModeParam = nullptr;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Sp3ctraAudioProcessor)
 };

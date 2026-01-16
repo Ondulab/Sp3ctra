@@ -1,0 +1,59 @@
+================================================================================
+🤖 AI VIBE CODING BIAS REPORT
+================================================================================
+
+📊 Summary: 0 errors, 7 warnings, 5 info
+
+⚠️ WARNINGS:
+--------------------------------------------------------------------------------
+  [AI Bias - Placeholder Code]
+  File: vst/source/SettingsWindow.cpp:85
+  💡 TODO comment: // TODO: In future, could add custom string parameter instead of choice
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:193
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (index);
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:198
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (index);
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:204
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (index, newName);
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:212
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (sampleRate, samplesPerBlock);
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:225
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused (layouts);
+
+  [AI Bias - Placeholder Code]
+  File: vst/source/PluginProcessor.cpp:281
+  💡 Unused parameter (may indicate incomplete implementation): juce::ignoreUnused(midiMessages);
+
+ℹ️ INFOS:
+--------------------------------------------------------------------------------
+  [AI Bias - Magic Number]
+  File: vst/source/SettingsWindow.cpp:35
+  💡 Magic number 1024 found. Consider using named constant: if (port >= 1024 && port <= 65535) {
+
+  [AI Bias - Magic Number]
+  File: vst/source/SettingsWindow.cpp:35
+  💡 Magic number 65535 found. Consider using named constant: if (port >= 1024 && port <= 65535) {
+
+  [AI Bias - Magic Number]
+  File: vst/source/PluginProcessor.cpp:352
+  💡 Magic number 200 found. Consider using named constant: int sensorDpi = (dpiChoice == 0) ? 200 : 400;
+
+  [AI Bias - Magic Number]
+  File: vst/source/PluginProcessor.cpp:352
+  💡 Magic number 400 found. Consider using named constant: int sensorDpi = (dpiChoice == 0) ? 200 : 400;
+
+  [AI Bias - Magic Number]
+  File: vst/source/PluginEditor.cpp:46
+  💡 Magic number 60 found. Consider using named constant: auto headerArea = bounds.removeFromTop(60);
+
+================================================================================

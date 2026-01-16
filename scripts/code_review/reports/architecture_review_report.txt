@@ -1,0 +1,17 @@
+================================================================================
+🏗️  ARCHITECTURE REVIEW REPORT
+================================================================================
+
+📊 Summary: 0 errors, 2 warnings
+
+⚠️  WARNINGS:
+--------------------------------------------------------------------------------
+  [Architecture - Global State]
+  File: vst/source/PluginProcessor.cpp:358
+  ⚠️  Global variable access: extern sp3ctra_config_t g_sp3ctra_config;
+
+  [Architecture - Global State]
+  File: vst/source/Sp3ctraCore.cpp:195
+  ⚠️  Global variable access: extern sp3ctra_config_t g_sp3ctra_config;
+
+================================================================================

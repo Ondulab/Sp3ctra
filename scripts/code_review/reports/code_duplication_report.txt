@@ -1,0 +1,52 @@
+================================================================================
+🔁 CODE DUPLICATION REPORT
+================================================================================
+
+📊 Summary: 0 errors, 1 warnings, 4 info
+
+⚠️ WARNINGS:
+--------------------------------------------------------------------------------
+  [Code Duplication - Config Handling]
+  Configuration 'udp_address' is handled in 4 different files. Consider centralizing.
+  Locations:
+    - vst/source/SettingsWindow.cpp:69
+    - vst/source/SettingsWindow.cpp:77
+    - vst/source/SettingsWindow.cpp:78
+    - vst/source/SettingsWindow.cpp:92
+    - vst/source/PluginProcessor.cpp:12
+    - vst/source/PluginProcessor.cpp:35
+    - vst/source/PluginProcessor.cpp:37
+    - vst/source/PluginProcessor.cpp:83
+    - vst/source/PluginProcessor.cpp:89
+    - vst/source/PluginProcessor.cpp:107
+    - vst/source/PluginProcessor.cpp:355
+    - vst/source/PluginProcessor.cpp:360
+    - vst/source/PluginProcessor.cpp:361
+    - vst/source/PluginProcessor.cpp:362
+    - vst/source/PluginEditor.cpp:93
+    - vst/source/Sp3ctraCore.cpp:197
+    - vst/source/Sp3ctraCore.cpp:198
+
+ℹ️ INFOS:
+--------------------------------------------------------------------------------
+  [Unused Code - Stubs]
+  Stub function 'image_preprocess_frame' is never called in VST code. Consider removing.
+  Locations:
+    - vst/source/global_stubs.c:0
+
+  [Unused Code - Stubs]
+  Stub function 'image_sequencer_process_frame' is never called in VST code. Consider removing.
+  Locations:
+    - vst/source/global_stubs.c:0
+
+  [Unused Code - Stubs]
+  Stub function 'synth_luxwave_set_image_line' is never called in VST code. Consider removing.
+  Locations:
+    - vst/source/global_stubs.c:0
+
+  [Unused Code - Stubs]
+  Stub function 'synth_AudioProcess' is never called in VST code. Consider removing.
+  Locations:
+    - vst/source/global_stubs.c:0
+
+================================================================================
