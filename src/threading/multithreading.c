@@ -17,6 +17,11 @@
 #include "../synthesis/luxwave/synth_luxwave.h"
 #include <time.h>
 
+/* VST synchronization function declaration (defined in vst_adapters.cpp) */
+#ifdef VST_MODE
+extern void luxstral_wait_for_buffer_consumed(void);
+#endif
+
 /* External sequencer instance */
 extern ImageSequencer *g_image_sequencer;
 
@@ -665,8 +670,13 @@ void *audioProcessingThread(void *arg) {
   uint8_t *audio_read_G = NULL;
   uint8_t *audio_read_B = NULL;
 
+#ifdef VST_MODE
+  log_info("THREAD", "Audio processing thread started with VST SYNCHRONIZATION");
+  log_info("THREAD", "Producer/consumer handoff with processBlock() callback");
+#else
   log_info("THREAD", "Audio processing thread started with lock-free dual buffer system");
   log_info("THREAD", "Real-time audio processing guaranteed - no timeouts, no blocking!");
+#endif
 
   // OPTIMIZATION: Set real-time priority for audio processing thread
   // This ensures the thread gets CPU time even under system load
@@ -681,6 +691,16 @@ void *audioProcessingThread(void *arg) {
 #endif
 
   while (context->running) {
+#ifdef VST_MODE
+    // 🎯 VST SYNCHRONIZATION: Wait for processBlock() to consume the previous buffer
+    // This ensures perfect producer/consumer handoff without buffer overwrites
+    // The wait has a 200ms timeout to avoid deadlock when audio stops
+    luxstral_wait_for_buffer_consumed();
+    
+    // Check if we should exit after waking up
+    if (!context->running) break;
+#endif
+
     // Get current read pointers atomically (no mutex, no blocking!)
     audio_image_buffers_get_read_pointers(audioBuffers, &audio_read_R,
                                           &audio_read_G, &audio_read_B);
@@ -689,27 +709,11 @@ void *audioProcessingThread(void *arg) {
     // This will NEVER block, even if scanner disconnects!
     synth_AudioProcess(audio_read_R, audio_read_G, audio_read_B, context->doubleBuffer);
 
-// REMOVED (auto_volume):     /* Auto-volume periodic update (lightweight). Runs in audioProcessingThread
-// REMOVED (auto_volume):        (non-RT) to avoid doing work in the RtAudio callback. */
-// REMOVED (auto_volume):     if (gAutoVolumeInstance) {
-// REMOVED (auto_volume):       static uint64_t last_auto_ms = 0;
-// REMOVED (auto_volume):       struct timespec ts;
-// REMOVED (auto_volume):       clock_gettime(CLOCK_MONOTONIC, &ts);
-// REMOVED (auto_volume):       uint64_t now =
-// REMOVED (auto_volume):           (uint64_t)ts.tv_sec * 1000ull + (uint64_t)(ts.tv_nsec / 1000000ull);
-// REMOVED (auto_volume):       if (last_auto_ms == 0) {
-// REMOVED (auto_volume):         last_auto_ms = now;
-// REMOVED (auto_volume):       }
-// REMOVED (auto_volume):       uint64_t dt = (now > last_auto_ms) ? (now - last_auto_ms) : 0;
-// REMOVED (auto_volume):       if (dt >= (uint64_t)AUTO_VOLUME_POLL_MS) {
-// REMOVED (auto_volume):         auto_volume_step(gAutoVolumeInstance, (unsigned int)dt);
-// REMOVED (auto_volume):         last_auto_ms = now;
-// REMOVED (auto_volume):       }
-// REMOVED (auto_volume):     }
-
-    // Small sleep to prevent excessive CPU usage
-    // This is the only delay in the audio thread
+#ifndef VST_MODE
+    // Standalone mode: Small sleep to prevent excessive CPU usage
+    // VST mode uses condition variable synchronization instead
     usleep(100); // 0.1ms - much smaller than before
+#endif
   }
 
   log_info("THREAD", "Audio processing thread terminated");

@@ -32,6 +32,9 @@
 // Wave generation
 #include "wave_generation.h"
 
+// Image preprocessing (fallback when no UDP data yet)
+#include "../../src/processing/image_preprocessor.h"
+
 #ifdef __APPLE__
 #include <stdlib.h>
 #else
@@ -62,6 +65,9 @@ static float *tmp_audioData    = NULL;
 // Stereo temp accumulation buffers (persistently allocated to avoid per-call alloc)
 static float *stereoBuffer_L   = NULL;
 static float *stereoBuffer_R   = NULL;
+
+// Track current audio buffer size for safe reallocation
+static int g_luxstral_audio_buffer_size = 0;
 
 // Cleanup function to release persistent buffers (registered via atexit)
 void synth_luxstral_cleanup(void) {
@@ -254,9 +260,26 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     }
   }
 
-  // Allocate persistent buffers once based on runtime audio buffer size
+  // Reallocate persistent buffers if buffer size changed
+  int bs = g_sp3ctra_config.audio_buffer_size;
+  if (bs <= 0) {
+    log_error("SYNTH", "Invalid audio buffer size");
+    return;
+  }
+
+  if (g_luxstral_audio_buffer_size != bs) {
+    // Free old buffers if size changed
+    free(additiveBuffer);  additiveBuffer = NULL;
+    free(sumVolumeBuffer); sumVolumeBuffer = NULL;
+    free(maxVolumeBuffer); maxVolumeBuffer = NULL;
+    free(tmp_audioData);   tmp_audioData = NULL;
+    free(stereoBuffer_L);  stereoBuffer_L = NULL;
+    free(stereoBuffer_R);  stereoBuffer_R = NULL;
+
+    g_luxstral_audio_buffer_size = bs;
+  }
+
   if (!additiveBuffer) {
-    int bs = g_sp3ctra_config.audio_buffer_size;
     additiveBuffer   = (float*)calloc(bs, sizeof(float));
     sumVolumeBuffer  = (float*)calloc(bs, sizeof(float));
     maxVolumeBuffer  = (float*)calloc(bs, sizeof(float));
@@ -376,18 +399,10 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
 
     // Intelligent normalization with exponential response curve (REACTIVATED)
     // ANTI-TAC PROTECTION: Fade-in over first few callbacks to eliminate startup "tac"
-    const float SUM_EPS_FLOAT = 1.0f;   // after scaling (Float path)
+    const float SUM_EPS_FLOAT = 1.0e-6f;   // after scaling (Float path)
     
-    static int startup_callback_count = 0;
-    static const int FADE_IN_CALLBACKS = 10;  // Fade-in over first 10 callbacks (~2-3ms)
-    float fade_in_factor = 1.0f;
-    
-    if (startup_callback_count < FADE_IN_CALLBACKS) {
-      // Smooth exponential fade-in curve (0 -> 1 over FADE_IN_CALLBACKS)
-      fade_in_factor = (float)startup_callback_count / (float)FADE_IN_CALLBACKS;
-      fade_in_factor = fade_in_factor * fade_in_factor; // Quadratic curve for smooth start
-      startup_callback_count++;
-    }
+    // DISABLED: Anti-tac fade-in temporarily for debugging
+    float fade_in_factor = 1.0f;  // Force full volume immediately
     
     for (buff_idx = 0; buff_idx < g_sp3ctra_config.audio_buffer_size; buff_idx++) {
         // Compression applied to all signals
@@ -449,6 +464,19 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     const float safety_scale_stereo = 0.35f;  // Same as mono for consistency
     scale_float(stereoBuffer_L, safety_scale_stereo, g_sp3ctra_config.audio_buffer_size);
     scale_float(stereoBuffer_R, safety_scale_stereo, g_sp3ctra_config.audio_buffer_size);
+
+    // DEBUG: Check if stereo buffers have data
+    static int stereo_dbg_cnt = 0;
+    if ((stereo_dbg_cnt++ % 500) == 0) {
+      float sum_stereo_l = 0.0f, sum_stereo_r = 0.0f;
+      float sum_vol = 0.0f;
+      for (int dd = 0; dd < g_sp3ctra_config.audio_buffer_size; dd++) {
+        sum_stereo_l += fabsf(stereoBuffer_L[dd]);
+        sum_stereo_r += fabsf(stereoBuffer_R[dd]);
+        sum_vol += sumVolumeBuffer[dd];
+      }
+      log_info("SYNTH_DBG", "stereoL_sum=%.6f stereoR_sum=%.6f sumVol=%.6f", sum_stereo_l, sum_stereo_r, sum_vol);
+    }
     
     // Apply final processing and contrast
     // Pre-limit clipping telemetry (once per second, low overhead)
@@ -458,7 +486,7 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
       float left_signal, right_signal;
 
       {
-        const float SUM_EPS_FLOAT = 1.0f;
+        const float SUM_EPS_FLOAT = 1.0e-6f;
         if (sumVolumeBuffer[buff_idx] > SUM_EPS_FLOAT) {
           // Apply exponential response curve to reduce compression effects (stereo mode)
           float sum_normalized = sumVolumeBuffer[buff_idx] / (float)VOLUME_AMP_RESOLUTION;
@@ -494,6 +522,18 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
       if (audioDataLeft[buff_idx] < -1.0f) audioDataLeft[buff_idx] = -1.0f;
       if (audioDataRight[buff_idx] > 1.0f) audioDataRight[buff_idx] = 1.0f;
       if (audioDataRight[buff_idx] < -1.0f) audioDataRight[buff_idx] = -1.0f;
+    }
+
+    // DEBUG: Check final output values
+    static int final_dbg_cnt = 0;
+    if ((final_dbg_cnt++ % 500) == 0) {
+      float out_sum_l = 0.0f, out_sum_r = 0.0f;
+      for (int dd = 0; dd < g_sp3ctra_config.audio_buffer_size; dd++) {
+        out_sum_l += fabsf(audioDataLeft[dd]);
+        out_sum_r += fabsf(audioDataRight[dd]);
+      }
+      log_info("SYNTH_DBG", "FINAL audioL_sum=%.6f audioR_sum=%.6f peakPreL=%.6f peakPreR=%.6f fade=%.2f", 
+               out_sum_l, out_sum_r, peakPreL, peakPreR, fade_in_factor);
     }
 
     // Clipping telemetry disabled in production
@@ -582,52 +622,54 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
     }
   }
 
-  // RT-SAFE: Wait for buffer to be consumed with timeout
-  // Use exponential backoff to reduce CPU usage while maintaining responsiveness
-  int wait_iterations = 0;
-  const int MAX_WAIT_ITERATIONS = 100; // ~10ms max wait
-  
-  while ((__atomic_load_n(&buffers_R[index].ready, __ATOMIC_ACQUIRE) != 0 ||
-          __atomic_load_n(&buffers_L[index].ready, __ATOMIC_ACQUIRE) != 0) &&
-         wait_iterations < MAX_WAIT_ITERATIONS) {
-    // Exponential backoff: start with short sleeps, increase if needed
-    int sleep_us = (wait_iterations < 10) ? 10 : 
-                   (wait_iterations < 50) ? 50 : 100;
-    struct timespec sleep_time = {0, sleep_us * 1000}; // Convert µs to ns
-    nanosleep(&sleep_time, NULL);
-    wait_iterations++;
-  }
-  
-  // If timeout, log warning but continue (graceful degradation)
-  if (wait_iterations >= MAX_WAIT_ITERATIONS) {
-    log_warning("SYNTH", "LuxStral: Buffer wait timeout (callback too slow)");
-  }
-
-  // 🎯 USE PREPROCESSED DATA: Get all preprocessed data in single mutex lock (optimized)
-  float contrast_factor;
-  pthread_mutex_lock(&db->mutex);
-  memcpy(g_grayScale_live, db->preprocessed_data.additive.grayscale, nb_pixels * sizeof(float));
-  contrast_factor = db->preprocessed_data.additive.contrast_factor;
-  pthread_mutex_unlock(&db->mutex);
-
-  // Debug auto-freeze after N images: keep reception active but freeze synth data
-#if LUXSTRAL_DEBUG_AUTOFREEZE_ENABLE
-  {
-    static uint32_t g_image_count = 0;
-    g_image_count++;
-    if (g_image_count == (uint32_t)LUXSTRAL_DEBUG_AUTOFREEZE_AFTER_IMAGES) {
-      pthread_mutex_lock(&g_synth_data_freeze_mutex);
-      // Hard freeze (no fade) - synth_luxstral.c logic will snapshot current g_grayScale_live
-      g_is_synth_data_frozen = 1;
-      g_is_synth_data_fading_out = 0;
-      pthread_mutex_unlock(&g_synth_data_freeze_mutex);
+  // LOCK-FREE DOUBLE BUFFERING with proper alternation:
+  // Use the OTHER buffer if current one is still being read by processBlock.
+  // This prevents overwriting data that hasn't been consumed yet.
+  if (__atomic_load_n(&buffers_L[index].ready, __ATOMIC_ACQUIRE) != 0 ||
+      __atomic_load_n(&buffers_R[index].ready, __ATOMIC_ACQUIRE) != 0) {
+    // Current buffer still in use - try the other one
+    int alt_index = 1 - index;
+    if (__atomic_load_n(&buffers_L[alt_index].ready, __ATOMIC_ACQUIRE) == 0 &&
+        __atomic_load_n(&buffers_R[alt_index].ready, __ATOMIC_ACQUIRE) == 0) {
+      // Other buffer is free, use it
+      index = alt_index;
     }
+    // If both buffers are in use, we'll overwrite current one (glitch, but no deadlock)
   }
-#endif
 
   // 🎯 REMOVED: Color temperature calculation - now done in preprocessing (image_preprocessor.c)
   // The stereo pan positions and gains are already calculated and stored in preprocessed data
   // TODO: Use db->preprocessed_active.stereo.pan_positions[] and gains[] when implementing preprocessed data usage
+
+  // Use preprocessed data when available; fallback to local preprocessing
+  float contrast_factor = 0.0f;
+  int has_preprocessed = 0;
+
+  pthread_mutex_lock(&db->mutex);
+  has_preprocessed = (db->dataReady != 0) && (db->preprocessed_data.timestamp_us != 0);
+  if (has_preprocessed) {
+    memcpy(g_grayScale_live, db->preprocessed_data.additive.grayscale,
+           nb_pixels * sizeof(float));
+    contrast_factor = db->preprocessed_data.additive.contrast_factor;
+  }
+  pthread_mutex_unlock(&db->mutex);
+
+  if (!has_preprocessed) {
+    PreprocessedImageData preprocessed_temp;
+    if (image_preprocess_frame(buffer_R, buffer_G, buffer_B, &preprocessed_temp) == 0) {
+      memcpy(g_grayScale_live, preprocessed_temp.additive.grayscale,
+             nb_pixels * sizeof(float));
+      contrast_factor = preprocessed_temp.additive.contrast_factor;
+
+      pthread_mutex_lock(&db->mutex);
+      db->preprocessed_data = preprocessed_temp;
+      db->dataReady = 1;
+      pthread_mutex_unlock(&db->mutex);
+    } else {
+      memset(g_grayScale_live, 0, nb_pixels * sizeof(float));
+      contrast_factor = 0.0f;
+    }
+  }
 
   // Capture raw scanner line for debug visualization
   image_debug_capture_raw_scanner_line(buffer_R, buffer_G, buffer_B);
@@ -697,6 +739,46 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
                  buffers_R[index].data,
                  contrast_factor,
                  db);
+
+  // Diagnostics (non-RT thread): log signal statistics occasionally
+  static uint32_t diag_counter = 0;
+  if ((diag_counter++ % 500) == 0) {
+    float sum_l = 0.0f;
+    float sum_r = 0.0f;
+    float max_l = 0.0f;
+    float max_r = 0.0f;
+    int bs = g_sp3ctra_config.audio_buffer_size;
+
+    for (int i = 0; i < bs; ++i) {
+      float lv = buffers_L[index].data[i];
+      float rv = buffers_R[index].data[i];
+      sum_l += lv * lv;
+      sum_r += rv * rv;
+      float al = fabsf(lv);
+      float ar = fabsf(rv);
+      if (al > max_l) max_l = al;
+      if (ar > max_r) max_r = ar;
+    }
+
+    float rms_l = (bs > 0) ? sqrtf(sum_l / (float)bs) : 0.0f;
+    float rms_r = (bs > 0) ? sqrtf(sum_r / (float)bs) : 0.0f;
+
+    float gray_sum = 0.0f;
+    for (int i = 0; i < nb_pixels; ++i) {
+      gray_sum += g_grayScale_live[i];
+    }
+    float gray_avg = (nb_pixels > 0) ? (gray_sum / (float)nb_pixels) : 0.0f;
+
+    log_info("SYNTH", "Diagnostics: readyL=%d readyR=%d contrast=%.6f gray_avg=%.6f rmsL=%.6f rmsR=%.6f peakL=%.6f peakR=%.6f",
+             buffers_L[index].ready,
+             buffers_R[index].ready,
+             contrast_factor,
+             gray_avg,
+             rms_l,
+             rms_r,
+             max_l,
+             max_r);
+  }
 
   // NOTE: g_displayable_synth_R/G/B buffers are now updated in multithreading.c
   // with the MIXED RGB colors from the sequencer (not grayscale conversion)

@@ -27,6 +27,12 @@ CisVisualizerComponent::~CisVisualizerComponent()
 //==============================================================================
 void CisVisualizerComponent::paint(juce::Graphics& g)
 {
+    // 🛡️ CRITICAL: Early return if suspended (prevents CoreGraphics crash during prepareToPlay)
+    if (isSuspended.load()) {
+        g.fillAll(juce::Colour(0xff1a1a1a));
+        return;
+    }
+    
     auto bounds = getLocalBounds();
     int displayWidth = bounds.getWidth();
     int displayHeight = bounds.getHeight();
@@ -136,6 +142,20 @@ void CisVisualizerComponent::timerCallback()
 {
     updateCisData();
     repaint();
+}
+
+//==============================================================================
+void CisVisualizerComponent::suspend()
+{
+    isSuspended.store(true);  // Block paint() immediately (returns early with black screen)
+    stopTimer();
+    // NOTE: setVisible(false) causes CALayer dealloc crash - just use atomic flag!
+}
+
+void CisVisualizerComponent::resume()
+{
+    isSuspended.store(false);  // Allow paint() to resume
+    startTimer(1000 / TIMER_FPS);
 }
 
 void CisVisualizerComponent::updateCisData()

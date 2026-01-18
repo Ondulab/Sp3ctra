@@ -24,6 +24,10 @@ public:
     //==============================================================================
     void paint (juce::Graphics&) override;
     void resized() override;
+    
+    // Suspend/resume visualizer (protects against graphics race conditions during buffer size changes)
+    void suspendVisualizer();
+    void resumeVisualizer();
 
 private:
     void timerCallback() override;

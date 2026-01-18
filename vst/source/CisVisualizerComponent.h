@@ -33,6 +33,10 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     
+    // Suspend/resume timer (protects against graphics race conditions during buffer size changes)
+    void suspend();
+    void resume();
+    
 private:
     // Timer callback (30 FPS)
     void timerCallback() override;
@@ -53,6 +57,9 @@ private:
     std::vector<uint8_t> localDataG;
     std::vector<uint8_t> localDataB;
     int cisPixelsCount = 0;
+    
+    // Suspension flag (atomic for thread safety)
+    std::atomic<bool> isSuspended{false};
     
     // Configuration
     static constexpr int TIMER_FPS = 30;           // 30 Hz refresh

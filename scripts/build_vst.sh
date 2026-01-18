@@ -88,9 +88,9 @@ cd "$BUILD_DIR"
 
 # Configure with CMake
 echo ""
-echo -e "${BLUE}Configuring project with CMake...${NC}"
-if cmake ..; then
-    echo -e "${GREEN}✓ Configuration successful${NC}"
+echo -e "${BLUE}Configuring project with CMake ($BUILD_CONFIG)...${NC}"
+if cmake -DCMAKE_BUILD_TYPE=$BUILD_CONFIG ..; then
+    echo -e "${GREEN}✓ Configuration successful (CMAKE_BUILD_TYPE=$BUILD_CONFIG)${NC}"
 else
     echo -e "${RED}✗ Configuration failed${NC}"
     exit 1
@@ -108,10 +108,10 @@ else
     exit 1
 fi
 
-# Check if artifacts were created (no Release/Debug subfolder in this build system)
-VST3_PATH="$BUILD_DIR/Sp3ctraVST_artefacts/VST3/Sp3ctra.vst3"
-AU_PATH="$BUILD_DIR/Sp3ctraVST_artefacts/AU/Sp3ctra.component"
-STANDALONE_PATH="$BUILD_DIR/Sp3ctraVST_artefacts/Standalone/Sp3ctra.app"
+# Check if artifacts were created (CMake places them in Release/Debug subfolder)
+VST3_PATH="$BUILD_DIR/Sp3ctraVST_artefacts/$BUILD_CONFIG/VST3/Sp3ctra.vst3"
+AU_PATH="$BUILD_DIR/Sp3ctraVST_artefacts/$BUILD_CONFIG/AU/Sp3ctra.component"
+STANDALONE_PATH="$BUILD_DIR/Sp3ctraVST_artefacts/$BUILD_CONFIG/Standalone/Sp3ctra.app"
 
 echo ""
 echo -e "${BLUE}Build artifacts:${NC}"

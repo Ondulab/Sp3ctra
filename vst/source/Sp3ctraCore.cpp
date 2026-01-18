@@ -10,6 +10,8 @@ extern "C" {
     #include "../../src/config/config_loader.h"
     #include "../../src/utils/logger.h"
     #include "../../src/threading/multithreading.h"
+    #include "../../src/processing/image_preprocessor.h"
+    #include "luxstral/synth_luxstral_state.h"
     #include <arpa/inet.h>
     #include <sys/socket.h>
     #include <netinet/in.h>
@@ -151,6 +153,20 @@ bool Sp3ctraCore::initializeBuffers() {
         context->window = nullptr;     // No display in VST
         context->dmxCtx = nullptr;     // No DMX in VST
         
+        // 🔧 CRITICAL FIX: Initialize global display buffers (g_displayable_synth_R/G/B)
+        // These buffers are written by udpThread() in multithreading.c
+        // Without this initialization, the app crashes with NULL pointer dereference
+        displayable_synth_buffers_init();
+        synth_data_freeze_init();
+        image_preprocess_init();
+        juce::Logger::writeToLog("Sp3ctraCore: Global display buffers initialized");
+        
+        // 🔧 CRITICAL: Expose buffers globally for processBlock to use
+        extern AudioImageBuffers *g_audioImageBuffers;
+        extern DoubleBuffer *g_doubleBuffer;
+        g_audioImageBuffers = audioImageBuffers.get();
+        g_doubleBuffer = doubleBuffer.get();
+        
         juce::Logger::writeToLog("Sp3ctraCore: Buffers initialized successfully");
         return true;
         
@@ -161,6 +177,11 @@ bool Sp3ctraCore::initializeBuffers() {
 }
 
 void Sp3ctraCore::shutdownBuffers() {
+    // Cleanup global display buffers
+    displayable_synth_buffers_cleanup();
+    synth_data_freeze_cleanup();
+    image_preprocess_cleanup();
+    
     if (audioImageBuffers) {
         audio_image_buffers_cleanup(audioImageBuffers.get());
         audioImageBuffers.reset();

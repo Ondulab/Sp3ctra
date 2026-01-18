@@ -54,8 +54,8 @@ int barrier_init(barrier_t *barrier, int count) {
 
 int barrier_wait(barrier_t *barrier) {
   // 🔧 CRITICAL FIX: Check exit flag before waiting
-  extern volatile int synth_workers_must_exit;
-  extern volatile int synth_pool_shutdown;
+  extern _Atomic int synth_workers_must_exit;
+  extern _Atomic int synth_pool_shutdown;
   
   if (synth_workers_must_exit || synth_pool_shutdown) {
     return -1;  // Early exit - thread should terminate

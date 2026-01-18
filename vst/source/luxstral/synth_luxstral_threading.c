@@ -20,6 +20,7 @@
 #include <math.h>
 #include <time.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <sys/time.h>
 
 #ifdef __linux__
@@ -94,12 +95,12 @@ extern debug_luxstral_osc_config_t g_debug_osc_config;
 synth_thread_worker_t *thread_pool = NULL;
 pthread_t *worker_threads = NULL;
 int num_workers = 0;  // Actual number of workers from config
-volatile int synth_pool_initialized = 0;
-volatile int synth_pool_shutdown = 0;
+_Atomic int synth_pool_initialized = 0;  // RT-SAFE: C11 atomic instead of volatile
+_Atomic int synth_pool_shutdown = 0;     // RT-SAFE: C11 atomic instead of volatile
 
 // 🔧 CRITICAL FIX: Signal to unblock workers during prepareToPlay()
 // When DAW changes buffer size, we need to wake up barrier-blocked workers
-volatile int synth_workers_must_exit = 0;
+_Atomic int synth_workers_must_exit = 0;  // RT-SAFE: C11 atomic instead of volatile
 
 // Barrier synchronization for deterministic execution
 #ifdef __linux__
@@ -109,7 +110,7 @@ pthread_barrier_t g_worker_end_barrier;
 barrier_t g_worker_start_barrier;
 barrier_t g_worker_end_barrier;
 #endif
-volatile int g_use_barriers = 1;  // Enable barriers by default for deterministic execution
+_Atomic int g_use_barriers = 1;  // RT-SAFE: Enable barriers by default for deterministic execution
 
 /* RT-safe double buffering system */
 rt_safe_buffer_t g_rt_luxstral_buffer = {0};
@@ -234,9 +235,12 @@ int synth_init_thread_pool(void) {
       }
       
       // Initialize last pan gains for per-buffer ramping (center equal-power)
+      // ALSO initialize precomputed gains as fallback in case stereo data is not copied
       for (int idx = 0; idx < notes_this; idx++) {
         worker->last_left_gain[idx] = 0.707f;
         worker->last_right_gain[idx] = 0.707f;
+        worker->precomputed_left_gain[idx] = 0.707f;
+        worker->precomputed_right_gain[idx] = 0.707f;
       }
     }
 
@@ -473,6 +477,25 @@ void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
   
   pthread_mutex_unlock(&db->mutex);
 
+  // DEBUG: Log first worker's precomputed volume and stereo gains to diagnose zero output
+  static int debug_log_counter = 0;
+  if ((debug_log_counter++ % 500) == 0 && num_workers > 0) {
+    float vol_sum = 0.0f;
+    float vol_max = 0.0f;
+    float lg_sum = 0.0f, rg_sum = 0.0f;  // Stereo gain sums
+    int notes_this = thread_pool[0].end_note - thread_pool[0].start_note;
+    for (int k = 0; k < notes_this && k < 100; k++) {
+      float v = thread_pool[0].precomputed_volume[k];
+      vol_sum += v;
+      if (v > vol_max) vol_max = v;
+      lg_sum += thread_pool[0].precomputed_left_gain[k];
+      rg_sum += thread_pool[0].precomputed_right_gain[k];
+    }
+    log_info("SYNTH_DBG", "precomputed_volume: sum=%.6f max=%.6f notes=%d", vol_sum, vol_max, notes_this);
+    log_info("SYNTH_DBG", "precomputed_gains: stereo=%d leftSum=%.6f rightSum=%.6f", 
+             g_sp3ctra_config.stereo_mode_enabled, lg_sum, rg_sum);
+  }
+
   // Phase 3: Lock-free parallel pre-computation of waves[] data by ranges
   // Each worker computes independently without mutex contention
   // THREAD-SAFETY ANALYSIS:
@@ -568,28 +591,53 @@ void synth_shutdown_thread_pool(void) {
   if (!synth_pool_initialized)
     return;
 
+  log_info("SYNTH", "Initiating thread pool shutdown...");
+  
+  // 🔧 CRITICAL FIX: Set shutdown flags FIRST
   synth_pool_shutdown = 1;
+  synth_workers_must_exit = 1;
 
-  // If using barriers, broadcast to wake up any waiting workers
-  // Cannot use synth_barrier_wait() as we don't know if workers are waiting
+  // 🔧 ULTRA-CRITICAL FIX: If workers are blocked on barriers, we need to JOIN them
+  // to unblock them. This simulates the main thread rejoining the barriers one last time.
   if (g_use_barriers) {
-    log_info("SYNTH", "Broadcasting shutdown signal to barrier-blocked workers...");
+    log_info("SYNTH", "Performing final barrier sync to unblock workers...");
     
+    // Try to join start barrier (if workers are waiting there)
+    // This will either:
+    // - Succeed if workers are waiting (unblocks them)
+    // - Return immediately if no one is waiting
+    // - Return error if workers already passed (safe to ignore)
+    int start_result = synth_barrier_wait(&g_worker_start_barrier);
+    if (start_result == 0 || start_result == -1) {
+      log_info("SYNTH", "Joined start barrier, workers can proceed to exit check");
+      
+      // Now join end barrier if they proceeded to work phase
+      int end_result = synth_barrier_wait(&g_worker_end_barrier);
+      if (end_result == 0 || end_result == -1) {
+        log_info("SYNTH", "Joined end barrier, workers should exit now");
+      }
+    }
+    
+    // Additional broadcast to catch any edge cases
 #ifndef __linux__
-    // macOS: Broadcast on barrier condition variables to wake waiting workers
+    // macOS: Broadcast on barrier condition variables
     pthread_mutex_lock(&g_worker_start_barrier.mutex);
-    g_worker_start_barrier.generation++;  // Break the wait condition
+    g_worker_start_barrier.generation++;
+    g_worker_start_barrier.waiting = 0;
     pthread_cond_broadcast(&g_worker_start_barrier.cond);
     pthread_mutex_unlock(&g_worker_start_barrier.mutex);
     
     pthread_mutex_lock(&g_worker_end_barrier.mutex);
     g_worker_end_barrier.generation++;
+    g_worker_end_barrier.waiting = 0;
     pthread_cond_broadcast(&g_worker_end_barrier.cond);
     pthread_mutex_unlock(&g_worker_end_barrier.mutex);
 #else
-    // Linux: pthread_barrier has no direct abort mechanism
-    // Workers will exit via synth_pool_shutdown flag after barrier completes
-    // Try broadcasting on condition variables as fallback
+    // Linux: Destroy and recreate with count=1
+    pthread_barrier_destroy(&g_worker_start_barrier);
+    pthread_barrier_destroy(&g_worker_end_barrier);
+    pthread_barrier_init(&g_worker_start_barrier, NULL, 1);
+    pthread_barrier_init(&g_worker_end_barrier, NULL, 1);
 #endif
   }
 
@@ -600,9 +648,14 @@ void synth_shutdown_thread_pool(void) {
     pthread_mutex_unlock(&thread_pool[i].work_mutex);
   }
 
+  // 🔧 CRITICAL: Give workers a moment to process the exit signal
+  usleep(50000);  // 50ms grace period for clean exit
+
   // Wait for all threads to terminate
+  log_info("SYNTH", "Waiting for worker threads to terminate...");
   for (int i = 0; i < num_workers; i++) {
     pthread_join(worker_threads[i], NULL);
+    log_info("SYNTH", "Worker thread %d terminated", i);
 
     // Free dynamically allocated worker buffers
     free(thread_pool[i].thread_luxstralBuffer);    thread_pool[i].thread_luxstralBuffer = NULL;

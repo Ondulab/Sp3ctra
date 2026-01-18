@@ -11,13 +11,13 @@
 #define __SYNTH_LUXSTRAL_THREADING_H__
 
 /* Includes ------------------------------------------------------------------*/
-#include "../../core/config.h"
-#include "../../config/config_synth_luxstral.h"
+#include "vst_adapters.h"
 #include "../../config/config_instrument.h"  // For CIS_MAX_PIXELS_NB
 #include <stdint.h>
 #include <stddef.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <stdatomic.h>  // For _Atomic variables (RT-safe with -O2)
 
 /* Forward declarations ------------------------------------------------------*/
 struct DoubleBuffer;
@@ -110,7 +110,7 @@ int barrier_wait(barrier_t *barrier);
 int barrier_destroy(barrier_t *barrier);
 #endif
 
-extern volatile int g_use_barriers;  // Enable/disable barrier mode
+extern _Atomic int g_use_barriers;  // Enable/disable barrier mode (RT-safe atomic)
 
 /* Exported function prototypes ----------------------------------------------*/
 
@@ -135,18 +135,18 @@ void synth_precompute_wave_data(float *imageData, struct DoubleBuffer *db);
 extern synth_thread_worker_t *thread_pool;  // Dynamically allocated based on num_workers
 extern pthread_t *worker_threads;           // Dynamically allocated based on num_workers
 extern int num_workers;                     // Actual number of workers (from config)
-extern volatile int synth_pool_initialized;
-extern volatile int synth_pool_shutdown;
+extern _Atomic int synth_pool_initialized;  // RT-SAFE: atomic flag (no volatile needed with -O2)
+extern _Atomic int synth_pool_shutdown;     // RT-SAFE: atomic flag (no volatile needed with -O2)
 
 /* 🔧 CRITICAL FIX: Signals to unblock workers during buffer size changes */
-extern volatile int synth_workers_must_exit;  // Temporary exit signal (cleared after stop)
+extern _Atomic int synth_workers_must_exit;  // RT-SAFE: atomic flag (no volatile needed with -O2)
 
 /* RT-safe double buffering system */
 typedef struct {
   // Double buffers for RT-safe access
   float *buffers[2]; // [0] = current RT reads, [1] = workers write
-  volatile int ready_buffer; // Which buffer is ready for RT (atomic read)
-  volatile int worker_buffer; // Which buffer workers are writing to
+  _Atomic int ready_buffer;  // RT-SAFE: Which buffer is ready for RT (atomic read)
+  _Atomic int worker_buffer; // RT-SAFE: Which buffer workers are writing to
   pthread_mutex_t swap_mutex; // Protects buffer swapping (non-RT thread only)
 } rt_safe_buffer_t;
 

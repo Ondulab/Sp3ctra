@@ -112,10 +112,27 @@ void Sp3ctraAudioProcessorEditor::timerCallback()
 
 void Sp3ctraAudioProcessorEditor::openSettings()
 {
-    if (!settingsWindow) {
+    if (!settingsWindow)
+    {
         settingsWindow = std::make_unique<SettingsWindow>(audioProcessor);
-    } else {
-        settingsWindow->setVisible(true);
-        settingsWindow->toFront(true);
+    }
+    settingsWindow->setVisible(true);
+    settingsWindow->toFront(true);
+}
+
+//==============================================================================
+void Sp3ctraAudioProcessorEditor::suspendVisualizer()
+{
+    if (cisVisualizer)
+    {
+        cisVisualizer->suspend();
+    }
+}
+
+void Sp3ctraAudioProcessorEditor::resumeVisualizer()
+{
+    if (cisVisualizer)
+    {
+        cisVisualizer->resume();
     }
 }

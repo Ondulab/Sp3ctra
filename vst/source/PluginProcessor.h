@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Sp3ctraCore.h"
 #include "UdpReceiverThread.h"
+#include "AudioProcessingThread.h"  // Thread for synth_AudioProcess()
 #include "Sp3ctraConstants.h"
 
 //==============================================================================
@@ -74,15 +75,20 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     
     // Apply updated configuration to Sp3ctraCore
-    void applyConfigurationToCore();
+    // needsSocketRestart: true = full reinit (UDP change), false = just update g_sp3ctra_config
+    void applyConfigurationToCore(bool needsSocketRestart = true);
     
     //==============================================================================
-    // Test tone phase accumulator (prevents clicking/crackling)
-    float testTonePhase = 0.0f;
+    // LuxStral synthesis engine state
+    bool luxstralInitialized = false;
+    
+    // Test tone phase accumulator (fallback if LuxStral not working)
+    // Note: testTonePhase removed - no longer using 440Hz fallback tone
     
     // ✨ Sp3ctra Core Integration
     std::unique_ptr<Sp3ctraCore> sp3ctraCore;
     std::unique_ptr<UdpReceiverThread> udpThread;
+    std::unique_ptr<AudioProcessingThread> audioProcessingThread;  // Calls synth_AudioProcess() in loop
     
     // ✨ VST Parameters via AudioProcessorValueTreeState
     juce::AudioProcessorValueTreeState apvts;
