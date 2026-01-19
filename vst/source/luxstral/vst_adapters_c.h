@@ -79,21 +79,23 @@ void vst_log_error(const char* message);
 #endif
 
 /* Logging Macros ------------------------------------------------*/
-#define log_info(tag, fmt, ...) \
+// RENAMED to luxstral_log_* to avoid conflict with unified C logger (src/utils/logger.h)
+// These macros are used by LuxStral C code for legacy compatibility
+#define luxstral_log_info(tag, fmt, ...) \
     do { \
         char buffer[512]; \
         snprintf(buffer, sizeof(buffer), "[%s] " fmt, tag, ##__VA_ARGS__); \
         vst_log_info(buffer); \
     } while(0)
 
-#define log_warning(tag, fmt, ...) \
+#define luxstral_log_warning(tag, fmt, ...) \
     do { \
         char buffer[512]; \
         snprintf(buffer, sizeof(buffer), "[%s] WARNING: " fmt, tag, ##__VA_ARGS__); \
         vst_log_warning(buffer); \
     } while(0)
 
-#define log_error(tag, fmt, ...) \
+#define luxstral_log_error(tag, fmt, ...) \
     do { \
         char buffer[512]; \
         snprintf(buffer, sizeof(buffer), "[%s] ERROR: " fmt, tag, ##__VA_ARGS__); \
@@ -102,7 +104,7 @@ void vst_log_error(const char* message);
 
 /* Error Handling ------------------------------------------------*/
 static inline void die(const char* msg) {
-    log_error("FATAL", "%s", msg);
+    luxstral_log_error("FATAL", "%s", msg);
     // In VST we can't exit, just log the error
 }
 

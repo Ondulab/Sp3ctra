@@ -465,18 +465,18 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
     scale_float(stereoBuffer_L, safety_scale_stereo, g_sp3ctra_config.audio_buffer_size);
     scale_float(stereoBuffer_R, safety_scale_stereo, g_sp3ctra_config.audio_buffer_size);
 
-    // DEBUG: Check if stereo buffers have data
-    static int stereo_dbg_cnt = 0;
-    if ((stereo_dbg_cnt++ % 500) == 0) {
-      float sum_stereo_l = 0.0f, sum_stereo_r = 0.0f;
-      float sum_vol = 0.0f;
-      for (int dd = 0; dd < g_sp3ctra_config.audio_buffer_size; dd++) {
-        sum_stereo_l += fabsf(stereoBuffer_L[dd]);
-        sum_stereo_r += fabsf(stereoBuffer_R[dd]);
-        sum_vol += sumVolumeBuffer[dd];
-      }
-      log_info("SYNTH_DBG", "stereoL_sum=%.6f stereoR_sum=%.6f sumVol=%.6f", sum_stereo_l, sum_stereo_r, sum_vol);
-    }
+    // DEBUG: Check if stereo buffers have data (disabled for production)
+    // static int stereo_dbg_cnt = 0;
+    // if ((stereo_dbg_cnt++ % 500) == 0) {
+    //   float sum_stereo_l = 0.0f, sum_stereo_r = 0.0f;
+    //   float sum_vol = 0.0f;
+    //   for (int dd = 0; dd < g_sp3ctra_config.audio_buffer_size; dd++) {
+    //     sum_stereo_l += fabsf(stereoBuffer_L[dd]);
+    //     sum_stereo_r += fabsf(stereoBuffer_R[dd]);
+    //     sum_vol += sumVolumeBuffer[dd];
+    //   }
+    //   log_info("SYNTH_DBG", "stereoL_sum=%.6f stereoR_sum=%.6f sumVol=%.6f", sum_stereo_l, sum_stereo_r, sum_vol);
+    // }
     
     // Apply final processing and contrast
     // Pre-limit clipping telemetry (once per second, low overhead)
@@ -524,17 +524,17 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
       if (audioDataRight[buff_idx] < -1.0f) audioDataRight[buff_idx] = -1.0f;
     }
 
-    // DEBUG: Check final output values
-    static int final_dbg_cnt = 0;
-    if ((final_dbg_cnt++ % 500) == 0) {
-      float out_sum_l = 0.0f, out_sum_r = 0.0f;
-      for (int dd = 0; dd < g_sp3ctra_config.audio_buffer_size; dd++) {
-        out_sum_l += fabsf(audioDataLeft[dd]);
-        out_sum_r += fabsf(audioDataRight[dd]);
-      }
-      log_info("SYNTH_DBG", "FINAL audioL_sum=%.6f audioR_sum=%.6f peakPreL=%.6f peakPreR=%.6f fade=%.2f", 
-               out_sum_l, out_sum_r, peakPreL, peakPreR, fade_in_factor);
-    }
+    // DEBUG: Check final output values (disabled for production)
+    // static int final_dbg_cnt = 0;
+    // if ((final_dbg_cnt++ % 500) == 0) {
+    //   float out_sum_l = 0.0f, out_sum_r = 0.0f;
+    //   for (int dd = 0; dd < g_sp3ctra_config.audio_buffer_size; dd++) {
+    //     out_sum_l += fabsf(audioDataLeft[dd]);
+    //     out_sum_r += fabsf(audioDataRight[dd]);
+    //   }
+    //   log_info("SYNTH_DBG", "FINAL audioL_sum=%.6f audioR_sum=%.6f peakPreL=%.6f peakPreR=%.6f fade=%.2f", 
+    //            out_sum_l, out_sum_r, peakPreL, peakPreR, fade_in_factor);
+    // }
 
     // Clipping telemetry disabled in production
     // if (log_counter % LOG_FREQUENCY == 0) {
@@ -740,45 +740,45 @@ void synth_AudioProcess(uint8_t *buffer_R, uint8_t *buffer_G,
                  contrast_factor,
                  db);
 
-  // Diagnostics (non-RT thread): log signal statistics occasionally
-  static uint32_t diag_counter = 0;
-  if ((diag_counter++ % 500) == 0) {
-    float sum_l = 0.0f;
-    float sum_r = 0.0f;
-    float max_l = 0.0f;
-    float max_r = 0.0f;
-    int bs = g_sp3ctra_config.audio_buffer_size;
+  // Diagnostics (non-RT thread): log signal statistics occasionally (disabled for production)
+  // static uint32_t diag_counter = 0;
+  // if ((diag_counter++ % 500) == 0) {
+  //   float sum_l = 0.0f;
+  //   float sum_r = 0.0f;
+  //   float max_l = 0.0f;
+  //   float max_r = 0.0f;
+  //   int bs = g_sp3ctra_config.audio_buffer_size;
 
-    for (int i = 0; i < bs; ++i) {
-      float lv = buffers_L[index].data[i];
-      float rv = buffers_R[index].data[i];
-      sum_l += lv * lv;
-      sum_r += rv * rv;
-      float al = fabsf(lv);
-      float ar = fabsf(rv);
-      if (al > max_l) max_l = al;
-      if (ar > max_r) max_r = ar;
-    }
+  //   for (int i = 0; i < bs; ++i) {
+  //     float lv = buffers_L[index].data[i];
+  //     float rv = buffers_R[index].data[i];
+  //     sum_l += lv * lv;
+  //     sum_r += rv * rv;
+  //     float al = fabsf(lv);
+  //     float ar = fabsf(rv);
+  //     if (al > max_l) max_l = al;
+  //     if (ar > max_r) max_r = ar;
+  //   }
 
-    float rms_l = (bs > 0) ? sqrtf(sum_l / (float)bs) : 0.0f;
-    float rms_r = (bs > 0) ? sqrtf(sum_r / (float)bs) : 0.0f;
+  //   float rms_l = (bs > 0) ? sqrtf(sum_l / (float)bs) : 0.0f;
+  //   float rms_r = (bs > 0) ? sqrtf(sum_r / (float)bs) : 0.0f;
 
-    float gray_sum = 0.0f;
-    for (int i = 0; i < nb_pixels; ++i) {
-      gray_sum += g_grayScale_live[i];
-    }
-    float gray_avg = (nb_pixels > 0) ? (gray_sum / (float)nb_pixels) : 0.0f;
+  //   float gray_sum = 0.0f;
+  //   for (int i = 0; i < nb_pixels; ++i) {
+  //     gray_sum += g_grayScale_live[i];
+  //   }
+  //   float gray_avg = (nb_pixels > 0) ? (gray_sum / (float)nb_pixels) : 0.0f;
 
-    log_info("SYNTH", "Diagnostics: readyL=%d readyR=%d contrast=%.6f gray_avg=%.6f rmsL=%.6f rmsR=%.6f peakL=%.6f peakR=%.6f",
-             buffers_L[index].ready,
-             buffers_R[index].ready,
-             contrast_factor,
-             gray_avg,
-             rms_l,
-             rms_r,
-             max_l,
-             max_r);
-  }
+  //   log_info("SYNTH", "Diagnostics: readyL=%d readyR=%d contrast=%.6f gray_avg=%.6f rmsL=%.6f rmsR=%.6f peakL=%.6f peakR=%.6f",
+  //            buffers_L[index].ready,
+  //            buffers_R[index].ready,
+  //            contrast_factor,
+  //            gray_avg,
+  //            rms_l,
+  //            rms_r,
+  //            max_l,
+  //            max_r);
+  // }
 
   // NOTE: g_displayable_synth_R/G/B buffers are now updated in multithreading.c
   // with the MIXED RGB colors from the sequencer (not grayscale conversion)

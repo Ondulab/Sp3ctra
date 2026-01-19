@@ -45,19 +45,39 @@ RTProfiler g_rt_profiler = {0};
 
 /* Logging Functions Implementation ------------------------------*/
 
+// Include the unified C logger
+extern "C" {
+#include "../../src/utils/logger.h"
+}
+
 extern "C" {
 
+/**
+ * @brief Log info message through unified C logger
+ * 
+ * This function routes VST logging to the unified C logger system
+ * which outputs in format: [HH:MM:SS] [LEVEL] [MODULE] message
+ * 
+ * @param message Message to log (may include [MODULE] prefix)
+ */
 void vst_log_info(const char* message) {
-    juce::Logger::writeToLog(juce::String(message));
+    // Route to unified C logger with SYNTH module (for LuxStral code)
+    log_info("SYNTH", "%s", message);
 }
 
+/**
+ * @brief Log warning message through unified C logger
+ */
 void vst_log_warning(const char* message) {
-    juce::Logger::writeToLog("WARNING: " + juce::String(message));
+    log_warning("SYNTH", "%s", message);
 }
 
+/**
+ * @brief Log error message through unified C logger
+ */
 void vst_log_error(const char* message) {
-    juce::Logger::writeToLog("ERROR: " + juce::String(message));
-    DBG("ERROR: " << message);  // Also output to debugger
+    log_error("SYNTH", "%s", message);
+    DBG("ERROR: " << message);  // Also output to IDE debugger
 }
 
 /**
@@ -76,31 +96,29 @@ int luxstral_init_audio_buffers(int buffer_size) {
     // Check if reallocation is needed (different size)
     if (luxstral_audio_buffers_initialized) {
         if (luxstral_audio_buffer_size == buffer_size) {
-            juce::Logger::writeToLog("LuxStral: Audio buffers already initialized with correct size");
+            log_info("SYNTH", "Audio buffers already initialized with correct size");
             return 0;
         }
         
         // Buffer size changed - need to reallocate
-        juce::Logger::writeToLog(juce::String::formatted(
-            "LuxStral: Buffer size changed (%d -> %d), reallocating...",
-            luxstral_audio_buffer_size, buffer_size));
+        log_info("SYNTH", "Buffer size changed (%d -> %d), reallocating...",
+                 luxstral_audio_buffer_size, buffer_size);
         luxstral_cleanup_audio_buffers();
     }
     
     if (buffer_size <= 0) {
-        juce::Logger::writeToLog("LuxStral: ERROR - Invalid buffer size");
+        log_error("SYNTH", "Invalid buffer size");
         return -1;
     }
     
-    juce::Logger::writeToLog(juce::String::formatted(
-        "LuxStral: Initializing audio buffers (size=%d samples)", buffer_size));
+    log_info("SYNTH", "Initializing audio buffers (size=%d samples)", buffer_size);
     
     // Allocate buffers for both double-buffer slots
     for (int i = 0; i < 2; i++) {
         // Left channel
         luxstral_buffers_L[i].data = (float*)calloc(buffer_size, sizeof(float));
         if (!luxstral_buffers_L[i].data) {
-            juce::Logger::writeToLog("LuxStral: ERROR - Failed to allocate left buffer");
+            log_error("SYNTH", "Failed to allocate left buffer");
             luxstral_cleanup_audio_buffers();
             return -1;
         }
@@ -110,7 +128,7 @@ int luxstral_init_audio_buffers(int buffer_size) {
         // Right channel
         luxstral_buffers_R[i].data = (float*)calloc(buffer_size, sizeof(float));
         if (!luxstral_buffers_R[i].data) {
-            juce::Logger::writeToLog("LuxStral: ERROR - Failed to allocate right buffer");
+            log_error("SYNTH", "Failed to allocate right buffer");
             luxstral_cleanup_audio_buffers();
             return -1;
         }
@@ -128,7 +146,7 @@ int luxstral_init_audio_buffers(int buffer_size) {
     // but processBlock() never signals because ready=0 → DEADLOCK!
     __atomic_store_n(&g_vst_callback_consumed_buffer, 1, __ATOMIC_RELEASE);
     
-    juce::Logger::writeToLog("LuxStral: Audio buffers initialized successfully");
+    log_info("SYNTH", "Audio buffers initialized successfully");
     return 0;
 }
 
@@ -151,7 +169,7 @@ void luxstral_cleanup_audio_buffers(void) {
     }
     
     luxstral_audio_buffers_initialized = false;
-    juce::Logger::writeToLog("LuxStral: Audio buffers cleaned up");
+    log_info("SYNTH", "Audio buffers cleaned up");
 }
 
 /**
@@ -171,7 +189,7 @@ bool luxstral_are_audio_buffers_ready(void) {
  */
 void luxstral_init_callback_sync(void) {
     g_vst_callback_consumed_buffer = 1;  // Start ready for first synthesis
-    juce::Logger::writeToLog("LuxStral: Callback synchronization initialized");
+    log_info("SYNTH", "Callback synchronization initialized");
 }
 
 /**
@@ -184,7 +202,7 @@ void luxstral_cleanup_callback_sync(void) {
     pthread_cond_broadcast(&g_vst_callback_sync_cond);
     pthread_mutex_unlock(&g_vst_callback_sync_mutex);
     
-    juce::Logger::writeToLog("LuxStral: Callback synchronization cleaned up");
+    log_info("SYNTH", "Callback synchronization cleaned up");
 }
 
 /**

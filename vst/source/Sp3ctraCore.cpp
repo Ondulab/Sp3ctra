@@ -19,11 +19,11 @@ extern "C" {
 }
 
 Sp3ctraCore::Sp3ctraCore() {
-    juce::Logger::writeToLog("Sp3ctraCore: Constructor called");
+    log_info("CORE", "Constructor called");
 }
 
 Sp3ctraCore::~Sp3ctraCore() {
-    juce::Logger::writeToLog("Sp3ctraCore: Destructor called");
+    log_info("CORE", "Destructor called");
     shutdown();
 }
 
@@ -31,12 +31,12 @@ bool Sp3ctraCore::initialize(const ActiveConfig& config) {
     std::lock_guard<std::mutex> lock(configMutex);
     
     if (initialized.load()) {
-        juce::Logger::writeToLog("Sp3ctraCore: Already initialized, shutting down first");
+        log_info("CORE", "Already initialized, shutting down first");
         shutdownUdp();
         shutdownBuffers();
     }
     
-    juce::Logger::writeToLog("Sp3ctraCore: Initializing...");
+    log_info("CORE", "Initializing...");
     
     // Store active configuration
     active = config;
@@ -46,19 +46,19 @@ bool Sp3ctraCore::initialize(const ActiveConfig& config) {
     
     // Initialize buffers first
     if (!initializeBuffers()) {
-        juce::Logger::writeToLog("Sp3ctraCore: ERROR - Failed to initialize buffers");
+        log_error("CORE", "Failed to initialize buffers");
         return false;
     }
     
     // Initialize UDP
     if (!initializeUdp(config.udpPort.load(), config.udpAddress, config.multicastInterface)) {
-        juce::Logger::writeToLog("Sp3ctraCore: ERROR - Failed to initialize UDP");
+        log_error("CORE", "Failed to initialize UDP");
         shutdownBuffers();
         return false;
     }
     
     initialized.store(true);
-    juce::Logger::writeToLog("Sp3ctraCore: Initialization complete");
+    log_info("CORE", "Initialization complete");
     
     return true;
 }
@@ -73,13 +73,13 @@ bool Sp3ctraCore::applyConfig(const ActiveConfig& config) {
         (config.multicastInterface != active.multicastInterface);
     
     if (udpChanged) {
-        juce::Logger::writeToLog("Sp3ctraCore: UDP config changed, restarting socket...");
+        log_info("CORE", "UDP config changed, restarting socket...");
         
         // Restart UDP with new config
         shutdownUdp();
         
         if (!initializeUdp(config.udpPort.load(), config.udpAddress, config.multicastInterface)) {
-            juce::Logger::writeToLog("Sp3ctraCore: ERROR - Failed to restart UDP");
+            log_error("CORE", "Failed to restart UDP");
             return false;
         }
     }
@@ -87,9 +87,7 @@ bool Sp3ctraCore::applyConfig(const ActiveConfig& config) {
     // Update log level if changed
     if (config.logLevel.load() != active.logLevel.load()) {
         logger_init((log_level_t)config.logLevel.load());
-        juce::Logger::writeToLog(juce::String::formatted(
-            "Sp3ctraCore: Log level changed to %d", config.logLevel.load()
-        ));
+        log_info("CORE", "Log level changed to %d", config.logLevel.load());
     }
     
     // Store new active config
@@ -105,13 +103,13 @@ void Sp3ctraCore::shutdown() {
         return;
     }
     
-    juce::Logger::writeToLog("Sp3ctraCore: Shutting down...");
+    log_info("CORE", "Shutting down...");
     
     shutdownUdp();
     shutdownBuffers();
     
     initialized.store(false);
-    juce::Logger::writeToLog("Sp3ctraCore: Shutdown complete");
+    log_info("CORE", "Shutdown complete");
 }
 
 bool Sp3ctraCore::initializeBuffers() {
@@ -122,7 +120,7 @@ bool Sp3ctraCore::initializeBuffers() {
         
         // Initialize IMU mutex
         if (pthread_mutex_init(&context->imu_mutex, nullptr) != 0) {
-            juce::Logger::writeToLog("Sp3ctraCore: ERROR - Failed to init IMU mutex");
+            log_error("CORE", "Failed to init IMU mutex");
             return false;
         }
         
@@ -139,7 +137,7 @@ bool Sp3ctraCore::initializeBuffers() {
         
         // Initialize audio image buffers using existing C function
         if (audio_image_buffers_init(audioImageBuffers.get()) != 0) {
-            juce::Logger::writeToLog("Sp3ctraCore: ERROR - Failed to init audio image buffers");
+            log_error("CORE", "Failed to init audio image buffers");
             cleanupDoubleBuffer(doubleBuffer.get());
             pthread_mutex_destroy(&context->imu_mutex);
             return false;
@@ -160,7 +158,7 @@ bool Sp3ctraCore::initializeBuffers() {
         displayable_synth_buffers_init();
         synth_data_freeze_init();
         image_preprocess_init();
-        juce::Logger::writeToLog("Sp3ctraCore: Global display buffers initialized");
+        log_info("CORE", "Global display buffers initialized");
         
         // 🔧 CRITICAL: Expose buffers globally for processBlock to use
         extern AudioImageBuffers *g_audioImageBuffers;
@@ -168,11 +166,11 @@ bool Sp3ctraCore::initializeBuffers() {
         g_audioImageBuffers = audioImageBuffers.get();
         g_doubleBuffer = doubleBuffer.get();
         
-        juce::Logger::writeToLog("Sp3ctraCore: Buffers initialized successfully");
+        log_info("CORE", "Buffers initialized successfully");
         return true;
         
     } catch (const std::exception& e) {
-        juce::Logger::writeToLog("Sp3ctraCore: EXCEPTION during buffer init - " + juce::String(e.what()));
+        log_error("CORE", "EXCEPTION during buffer init - %s", e.what());
         return false;
     }
 }
@@ -198,7 +196,7 @@ void Sp3ctraCore::shutdownBuffers() {
         context.reset();
     }
     
-    juce::Logger::writeToLog("Sp3ctraCore: Buffers cleaned up");
+    log_info("CORE", "Buffers cleaned up");
 }
 
 bool Sp3ctraCore::initializeUdp(int port, const std::string& address, const std::string& interface) {
@@ -228,7 +226,7 @@ bool Sp3ctraCore::initializeUdp(int port, const std::string& address, const std:
         int sock = udp_Init(si_other.get(), si_me.get());
         
         if (sock < 0) {
-            juce::Logger::writeToLog("Sp3ctraCore: ERROR - udp_Init failed");
+            log_error("CORE", "udp_Init failed");
             return false;
         }
         
@@ -236,17 +234,13 @@ bool Sp3ctraCore::initializeUdp(int port, const std::string& address, const std:
         context->socket = sock;
         udpRunning.store(true);
         
-        juce::Logger::writeToLog(juce::String::formatted(
-            "Sp3ctraCore: UDP initialized on %s:%d (socket fd=%d)",
-            address.c_str(),
-            port,
-            sock
-        ));
+        log_info("CORE", "UDP initialized on %s:%d (socket fd=%d)",
+            address.c_str(), port, sock);
         
         return true;
         
     } catch (const std::exception& e) {
-        juce::Logger::writeToLog("Sp3ctraCore: EXCEPTION during UDP init - " + juce::String(e.what()));
+        log_error("CORE", "EXCEPTION during UDP init - %s", e.what());
         return false;
     }
 }
@@ -263,7 +257,7 @@ void Sp3ctraCore::shutdownUdp() {
             context->socket = -1;
         }
         
-        juce::Logger::writeToLog("Sp3ctraCore: UDP shutdown complete");
+        log_info("CORE", "UDP shutdown complete");
     }
     
     si_me.reset();

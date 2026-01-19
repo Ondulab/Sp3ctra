@@ -7,6 +7,7 @@
 extern "C" {
     void* udpThread(void* arg);
     #include "../../src/core/context.h"
+    #include "../../src/utils/logger.h"
 }
 
 /**
@@ -28,7 +29,7 @@ public:
      */
     explicit UdpReceiverThread(Sp3ctraCore* core)
         : Thread("Sp3ctraUDP"), core(core) {
-        juce::Logger::writeToLog("UdpReceiverThread: Constructor called");
+        log_info("UDP", "UdpReceiverThread: Constructor called");
     }
     
     /**
@@ -36,7 +37,7 @@ public:
      * @note Automatically stops thread if still running
      */
     ~UdpReceiverThread() override {
-        juce::Logger::writeToLog("UdpReceiverThread: Destructor called");
+        log_info("UDP", "UdpReceiverThread: Destructor called");
         
         // Ensure thread is stopped (JUCE best practice)
         if (isThreadRunning()) {
@@ -54,35 +55,35 @@ public:
      * - Context->running flag for shutdown
      */
     void run() override {
-        juce::Logger::writeToLog("UdpReceiverThread: Thread starting...");
+        log_info("UDP", "Thread starting...");
         
         if (!core) {
-            juce::Logger::writeToLog("UdpReceiverThread: ERROR - core is null!");
+            log_error("UDP", "core is null!");
             return;
         }
         
         Context* ctx = core->getContext();
         if (!ctx) {
-            juce::Logger::writeToLog("UdpReceiverThread: ERROR - Context is null!");
+            log_error("UDP", "Context is null!");
             return;
         }
         
         // Set running flag
         ctx->running = 1;
         
-        juce::Logger::writeToLog("UdpReceiverThread: Calling C udpThread() function...");
+        log_info("UDP", "Calling C udpThread() function...");
         
         // Call existing C function (blocks until Context->running = 0)
         udpThread((void*)ctx);
         
-        juce::Logger::writeToLog("UdpReceiverThread: udpThread() returned, thread exiting");
+        log_info("UDP", "udpThread() returned, thread exiting");
     }
     
     /**
      * @brief Request thread stop (custom method)
      */
     void requestStop() {
-        juce::Logger::writeToLog("UdpReceiverThread: Requesting thread stop");
+        log_info("UDP", "Requesting thread stop");
         
         // Set Context->running = 0 to stop C udpThread loop
         if (core) {

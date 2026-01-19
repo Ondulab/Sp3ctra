@@ -7,6 +7,7 @@
 extern "C" {
     void* audioProcessingThread(void* arg);
     #include "../../src/core/context.h"
+    #include "../../src/utils/logger.h"
 }
 
 /**
@@ -34,7 +35,7 @@ public:
      */
     explicit AudioProcessingThread(Sp3ctraCore* core)
         : Thread("Sp3ctraAudioProcessing"), core(core) {
-        juce::Logger::writeToLog("AudioProcessingThread: Constructor called");
+        log_info("SYNTH", "AudioProcessingThread: Constructor called");
     }
     
     /**
@@ -42,7 +43,7 @@ public:
      * @note Automatically stops thread if still running
      */
     ~AudioProcessingThread() override {
-        juce::Logger::writeToLog("AudioProcessingThread: Destructor called");
+        log_info("SYNTH", "AudioProcessingThread: Destructor called");
         
         // Ensure thread is stopped (JUCE best practice)
         if (isThreadRunning()) {
@@ -60,16 +61,16 @@ public:
      * - Context->running flag for shutdown
      */
     void run() override {
-        juce::Logger::writeToLog("AudioProcessingThread: Thread starting...");
+        log_info("SYNTH", "AudioProcessingThread starting...");
         
         if (!core) {
-            juce::Logger::writeToLog("AudioProcessingThread: ERROR - core is null!");
+            log_error("SYNTH", "AudioProcessingThread: core is null!");
             return;
         }
         
         Context* ctx = core->getContext();
         if (!ctx) {
-            juce::Logger::writeToLog("AudioProcessingThread: ERROR - Context is null!");
+            log_error("SYNTH", "AudioProcessingThread: Context is null!");
             return;
         }
         
@@ -78,19 +79,19 @@ public:
         // without killing the UDP thread (which uses ctx->running)
         ctx->audio_thread_running = 1;
         
-        juce::Logger::writeToLog("AudioProcessingThread: Calling C audioProcessingThread() function...");
+        log_info("SYNTH", "Calling C audioProcessingThread() function...");
         
         // Call existing C function (blocks until Context->audio_thread_running = 0)
         audioProcessingThread((void*)ctx);
         
-        juce::Logger::writeToLog("AudioProcessingThread: audioProcessingThread() returned, thread exiting");
+        log_info("SYNTH", "audioProcessingThread() returned, thread exiting");
     }
     
     /**
      * @brief Request thread stop (custom method)
      */
     void requestStop() {
-        juce::Logger::writeToLog("AudioProcessingThread: Requesting thread stop");
+        log_info("SYNTH", "AudioProcessingThread: Requesting thread stop");
         
         // 🔧 CRITICAL FIX: Set audio_thread_running = 0, NOT running!
         // This stops ONLY the audio thread, UDP thread keeps running

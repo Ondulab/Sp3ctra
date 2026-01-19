@@ -193,10 +193,10 @@ Sp3ctraAudioProcessor::Sp3ctraAudioProcessor()
      : apvts(*this, nullptr, "Parameters", createParameterLayout())
 #endif
 {
-    juce::Logger::writeToLog("=============================================================");
-    juce::Logger::writeToLog("Sp3ctraAudioProcessor: Constructor - Initializing VST plugin");
-    juce::Logger::writeToLog("  Using APVTS (AudioProcessorValueTreeState) for parameters");
-    juce::Logger::writeToLog("=============================================================");
+    log_info("VST", "=============================================================");
+    log_info("VST", "Sp3ctraAudioProcessor: Constructor - Initializing VST plugin");
+    log_info("VST", "  Using APVTS (AudioProcessorValueTreeState) for parameters");
+    log_info("VST", "=============================================================");
     
     // Cache parameter pointers for fast access
     udpPortParam = apvts.getRawParameterValue(PARAM_UDP_PORT);
@@ -244,60 +244,60 @@ Sp3ctraAudioProcessor::Sp3ctraAudioProcessor()
     udpThread = std::make_unique<UdpReceiverThread>(sp3ctraCore.get());
     udpThread->startThread();
     
-    juce::Logger::writeToLog("=============================================================");
-    juce::Logger::writeToLog("Sp3ctraAudioProcessor: Initialization COMPLETE ✓");
-    juce::Logger::writeToLog(juce::String::formatted("  - UDP listening on %s:%d",
+    log_info("VST", "=============================================================");
+    log_info("VST", "Sp3ctraAudioProcessor: Initialization COMPLETE");
+    log_info("VST", "  - UDP listening on %s:%d",
         getUdpAddressString().toRawUTF8(),
-        (int)udpPortParam->load()));
-    juce::Logger::writeToLog("  - Ready to receive IMAGE_DATA and IMU packets");
-    juce::Logger::writeToLog("  - Parameters managed by APVTS (saved in DAW project)");
-    juce::Logger::writeToLog("=============================================================");
+        (int)udpPortParam->load());
+    log_info("VST", "  - Ready to receive IMAGE_DATA and IMU packets");
+    log_info("VST", "  - Parameters managed by APVTS (saved in DAW project)");
+    log_info("VST", "=============================================================");
 }
 
 Sp3ctraAudioProcessor::~Sp3ctraAudioProcessor()
 {
-    juce::Logger::writeToLog("=============================================================");
-    juce::Logger::writeToLog("Sp3ctraAudioProcessor: Destructor - Shutting down");
-    juce::Logger::writeToLog("=============================================================");
+    log_info("VST", "=============================================================");
+    log_info("VST", "Sp3ctraAudioProcessor: Destructor - Shutting down");
+    log_info("VST", "=============================================================");
     
     // 🎵 CRITICAL: Stop audio processing thread FIRST (before UDP and LuxStral cleanup)
     // This thread calls synth_AudioProcess() which accesses audio buffers
     if (audioProcessingThread) {
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: Stopping AudioProcessingThread...");
+        log_info("VST", "Stopping AudioProcessingThread...");
         audioProcessingThread->requestStop();
         audioProcessingThread->stopThread(2000);  // 2 second timeout
         audioProcessingThread.reset();
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: AudioProcessingThread stopped");
+        log_info("VST", "AudioProcessingThread stopped");
     }
     
     // Stop UDP thread (blocks until thread exits)
     if (udpThread) {
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: Stopping UDP thread...");
+        log_info("VST", "Stopping UDP thread...");
         udpThread->requestStop();
         udpThread->stopThread(2000);  // 2 second timeout
         udpThread.reset();
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: UDP thread stopped");
+        log_info("VST", "UDP thread stopped");
     }
     
     // Cleanup LuxStral engine (AFTER both threads are stopped!)
     if (luxstralInitialized) {
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: Cleaning up LuxStral engine...");
+        log_info("VST", "Cleaning up LuxStral engine...");
         synth_luxstral_cleanup();
         luxstralInitialized = false;
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: LuxStral cleanup complete");
+        log_info("VST", "LuxStral cleanup complete");
     }
     
     // Cleanup core (closes socket, frees buffers)
     if (sp3ctraCore) {
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: Shutting down core...");
+        log_info("VST", "Shutting down core...");
         sp3ctraCore->shutdown();
         sp3ctraCore.reset();
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: Core shutdown complete");
+        log_info("VST", "Core shutdown complete");
     }
     
-    juce::Logger::writeToLog("=============================================================");
-    juce::Logger::writeToLog("Sp3ctraAudioProcessor: Destructor complete");
-    juce::Logger::writeToLog("=============================================================");
+    log_info("VST", "=============================================================");
+    log_info("VST", "Sp3ctraAudioProcessor: Destructor complete");
+    log_info("VST", "=============================================================");
 }
 
 //==============================================================================
@@ -374,11 +374,8 @@ void Sp3ctraAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
         editor->suspendVisualizer();
     }
     
-    juce::Logger::writeToLog("=============================================================");
-    juce::Logger::writeToLog(juce::String::formatted(
-        "Sp3ctraAudioProcessor: prepareToPlay - SR=%.1f Hz, BS=%d samples",
-        sampleRate, samplesPerBlock
-    ));
+    log_info("VST", "=============================================================");
+    log_info("VST", "prepareToPlay - SR=%.1f Hz, BS=%d samples", sampleRate, samplesPerBlock);
     
     // Update global config with audio parameters
     extern sp3ctra_config_t g_sp3ctra_config;
@@ -395,7 +392,7 @@ void Sp3ctraAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     // The worker pool uses MAX_BUFFER_SIZE for its buffers and does NOT need to be restarted.
     // Only luxstral_buffers_L/R need to be reallocated (done by luxstral_init_audio_buffers).
     if (audioProcessingThread) {
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: Stopping AudioProcessingThread for buffer reallocation...");
+        log_info("VST", "Stopping AudioProcessingThread for buffer reallocation...");
         
         // 🔧 SIMPLIFIED: Just stop the audio processing thread
         // DO NOT signal workers to exit! They stay alive and ready for the new thread.
@@ -403,7 +400,7 @@ void Sp3ctraAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
         audioProcessingThread->stopThread(2000);
         audioProcessingThread.reset();
         
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: AudioProcessingThread stopped (worker pool untouched)");
+        log_info("VST", "AudioProcessingThread stopped (worker pool untouched)");
     }
     
     // ✅ STATIC ALLOCATION: Buffers are pre-allocated for MAX_BUFFER_SIZE (4096)
@@ -412,13 +409,13 @@ void Sp3ctraAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     
     // Always (re)initialize audio buffers if buffer size changed
     if (luxstral_init_audio_buffers(samplesPerBlock) != 0) {
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: ✗ Failed to initialize audio buffers");
+        log_error("VST", "Failed to initialize audio buffers");
         return;
     }
 
     // Initialize LuxStral on first call only
     if (!luxstralInitialized) {
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: First-time initialization of LuxStral...");
+        log_info("VST", "First-time initialization of LuxStral...");
         
         // Initialize callback synchronization system
         luxstral_init_callback_sync();
@@ -428,22 +425,22 @@ void Sp3ctraAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
         
         if (result == 0) {
             luxstralInitialized = true;
-            juce::Logger::writeToLog("Sp3ctraAudioProcessor: ✓ LuxStral initialized successfully");
+            log_info("VST", "LuxStral initialized successfully");
         } else {
-            juce::Logger::writeToLog("Sp3ctraAudioProcessor: ✗ LuxStral initialization FAILED");
+            log_error("VST", "LuxStral initialization FAILED");
             return;
         }
     } else {
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: LuxStral already initialized");
+        log_info("VST", "LuxStral already initialized");
     }
     
     // Restart audio processing thread with new buffer size
-    juce::Logger::writeToLog("Sp3ctraAudioProcessor: Starting AudioProcessingThread...");
+    log_info("VST", "Starting AudioProcessingThread...");
     audioProcessingThread = std::make_unique<AudioProcessingThread>(sp3ctraCore.get());
     audioProcessingThread->startThread();
-    juce::Logger::writeToLog("Sp3ctraAudioProcessor: ✓ AudioProcessingThread started");
+    log_info("VST", "AudioProcessingThread started");
     
-    juce::Logger::writeToLog("=============================================================");
+    log_info("VST", "=============================================================");
     
     // 🛡️ PROTECTION: Resume visualizer now that reconfiguration is complete
     if (auto* editor = dynamic_cast<Sp3ctraAudioProcessorEditor*>(getActiveEditor())) {
@@ -561,7 +558,7 @@ void Sp3ctraAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     copyXmlToBinary(*xml, destData);
     
-    juce::Logger::writeToLog("Sp3ctraAudioProcessor: State saved to DAW project");
+    log_info("VST", "State saved to DAW project");
 }
 
 void Sp3ctraAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -572,11 +569,11 @@ void Sp3ctraAudioProcessor::setStateInformation (const void* data, int sizeInByt
     if (xmlState.get() != nullptr) {
         if (xmlState->hasTagName(apvts.state.getType())) {
             apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
-            juce::Logger::writeToLog("Sp3ctraAudioProcessor: State restored from settings");
+            log_info("VST", "State restored from settings");
             
             // Stop UDP thread
             if (udpThread) {
-                juce::Logger::writeToLog("Sp3ctraAudioProcessor: Restarting UDP with restored settings...");
+                log_info("VST", "Restarting UDP with restored settings...");
                 udpThread->requestStop();
                 udpThread->stopThread(2000);
                 udpThread.reset();
@@ -589,10 +586,9 @@ void Sp3ctraAudioProcessor::setStateInformation (const void* data, int sizeInByt
             udpThread = std::make_unique<UdpReceiverThread>(sp3ctraCore.get());
             udpThread->startThread();
             
-            juce::Logger::writeToLog(juce::String::formatted(
-                "Sp3ctraAudioProcessor: UDP restarted with %s:%d",
+            log_info("VST", "UDP restarted with %s:%d",
                 getUdpAddressString().toRawUTF8(),
-                (int)udpPortParam->load()));
+                (int)udpPortParam->load());
         }
     }
 }
@@ -613,10 +609,7 @@ juce::String Sp3ctraAudioProcessor::getUdpAddressString() const
 // Parameter Change Listener (called when user modifies parameters in UI)
 void Sp3ctraAudioProcessor::parameterChanged(const juce::String& parameterID, float newValue)
 {
-    juce::Logger::writeToLog(juce::String::formatted(
-        "Sp3ctraAudioProcessor: Parameter '%s' changed to %.2f",
-        parameterID.toRawUTF8(), newValue
-    ));
+    log_debug("VST", "Parameter '%s' changed to %.2f", parameterID.toRawUTF8(), newValue);
     
     // 🔧 CRITICAL: LuxStral parameters are automatically synced to g_sp3ctra_config
     // They are read directly by the synthesis engine, NO restart needed!
@@ -635,7 +628,7 @@ void Sp3ctraAudioProcessor::parameterChanged(const juce::String& parameterID, fl
                            parameterID == PARAM_UDP_BYTE4);
     
     if (needsUdpRestart) {
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: UDP parameter changed - restarting thread...");
+        log_info("VST", "UDP parameter changed - restarting thread...");
         
         // Stop UDP thread
         if (udpThread) {
@@ -656,10 +649,9 @@ void Sp3ctraAudioProcessor::parameterChanged(const juce::String& parameterID, fl
         udpThread = std::make_unique<UdpReceiverThread>(sp3ctraCore.get());
         udpThread->startThread();
         
-        juce::Logger::writeToLog(juce::String::formatted(
-            "Sp3ctraAudioProcessor: UDP thread restarted with %s:%d (buffers untouched)",
+        log_info("VST", "UDP thread restarted with %s:%d (buffers untouched)",
             getUdpAddressString().toRawUTF8(),
-            (int)udpPortParam->load()));
+            (int)udpPortParam->load());
     } else {
         // For other non-UDP, non-LuxStral parameters (sensor DPI, log level, visualizer mode)
         applyConfigurationToCore(false);  // needsSocketRestart = false
@@ -751,19 +743,15 @@ void Sp3ctraAudioProcessor::applyConfigurationToCore(bool needsSocketRestart)
         
         // Apply to core (this will restart UDP socket and reinit buffers)
         if (!sp3ctraCore->initialize(config)) {
-            juce::Logger::writeToLog("Sp3ctraAudioProcessor: WARNING - Failed to apply configuration");
+            log_warning("VST", "Failed to apply configuration");
         } else {
-            juce::Logger::writeToLog(juce::String::formatted(
-                "Sp3ctraAudioProcessor: Configuration applied (full init) - %s:%d, %d DPI, log level %d",
-                udpAddress.toRawUTF8(), udpPort, sensorDpi, logLevel
-            ));
+            log_info("VST", "Configuration applied (full init) - %s:%d, %d DPI, log level %d",
+                udpAddress.toRawUTF8(), udpPort, sensorDpi, logLevel);
         }
     } else {
         // Just update config - NO buffer reinit
-        juce::Logger::writeToLog(juce::String::formatted(
-            "Sp3ctraAudioProcessor: Config updated (no buffer reinit) - %d DPI, log level %d",
-            sensorDpi, logLevel
-        ));
+        log_debug("VST", "Config updated (no buffer reinit) - %d DPI, log level %d",
+            sensorDpi, logLevel);
     }
 }
 

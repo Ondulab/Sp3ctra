@@ -477,24 +477,24 @@ void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
   
   pthread_mutex_unlock(&db->mutex);
 
-  // DEBUG: Log first worker's precomputed volume and stereo gains to diagnose zero output
-  static int debug_log_counter = 0;
-  if ((debug_log_counter++ % 500) == 0 && num_workers > 0) {
-    float vol_sum = 0.0f;
-    float vol_max = 0.0f;
-    float lg_sum = 0.0f, rg_sum = 0.0f;  // Stereo gain sums
-    int notes_this = thread_pool[0].end_note - thread_pool[0].start_note;
-    for (int k = 0; k < notes_this && k < 100; k++) {
-      float v = thread_pool[0].precomputed_volume[k];
-      vol_sum += v;
-      if (v > vol_max) vol_max = v;
-      lg_sum += thread_pool[0].precomputed_left_gain[k];
-      rg_sum += thread_pool[0].precomputed_right_gain[k];
-    }
-    log_info("SYNTH_DBG", "precomputed_volume: sum=%.6f max=%.6f notes=%d", vol_sum, vol_max, notes_this);
-    log_info("SYNTH_DBG", "precomputed_gains: stereo=%d leftSum=%.6f rightSum=%.6f", 
-             g_sp3ctra_config.stereo_mode_enabled, lg_sum, rg_sum);
-  }
+  // DEBUG: Log first worker's precomputed volume and stereo gains (disabled for production)
+  // static int debug_log_counter = 0;
+  // if ((debug_log_counter++ % 500) == 0 && num_workers > 0) {
+  //   float vol_sum = 0.0f;
+  //   float vol_max = 0.0f;
+  //   float lg_sum = 0.0f, rg_sum = 0.0f;  // Stereo gain sums
+  //   int notes_this = thread_pool[0].end_note - thread_pool[0].start_note;
+  //   for (int k = 0; k < notes_this && k < 100; k++) {
+  //     float v = thread_pool[0].precomputed_volume[k];
+  //     vol_sum += v;
+  //     if (v > vol_max) vol_max = v;
+  //     lg_sum += thread_pool[0].precomputed_left_gain[k];
+  //     rg_sum += thread_pool[0].precomputed_right_gain[k];
+  //   }
+  //   log_info("SYNTH_DBG", "precomputed_volume: sum=%.6f max=%.6f notes=%d", vol_sum, vol_max, notes_this);
+  //   log_info("SYNTH_DBG", "precomputed_gains: stereo=%d leftSum=%.6f rightSum=%.6f", 
+  //            g_sp3ctra_config.stereo_mode_enabled, lg_sum, rg_sum);
+  // }
 
   // Phase 3: Lock-free parallel pre-computation of waves[] data by ranges
   // Each worker computes independently without mutex contention

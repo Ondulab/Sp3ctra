@@ -22,12 +22,12 @@ static float *g_unitary_waveform_dynamic = NULL;
 
 int synth_runtime_init(int max_pixels, int pixels_per_note) {
     if (pixels_per_note < 1) {
-        fprintf(stderr, "[RUNTIME ERROR] pixels_per_note must be >= 1\n");
+        log_error("SYNTH", "pixels_per_note must be >= 1");
         return -1;
     }
     
     if (max_pixels % pixels_per_note != 0) {
-        fprintf(stderr, "[RUNTIME ERROR] max_pixels (%d) must be divisible by pixels_per_note (%d)\n",
+        log_error("SYNTH", "max_pixels (%d) must be divisible by pixels_per_note (%d)",
                 max_pixels, pixels_per_note);
         return -1;
     }
@@ -46,7 +46,7 @@ int synth_runtime_init(int max_pixels, int pixels_per_note) {
 
 int synth_runtime_allocate_buffers(void) {
     if (g_synth_runtime.num_notes <= 0) {
-        fprintf(stderr, "[RUNTIME ERROR] Runtime config not initialized\n");
+        log_error("SYNTH", "Runtime config not initialized");
         return -1;
     }
     
@@ -54,7 +54,7 @@ int synth_runtime_allocate_buffers(void) {
     size_t waves_size = g_synth_runtime.num_notes * sizeof(struct wave);
     g_waves_dynamic = (struct wave*)calloc(g_synth_runtime.num_notes, sizeof(struct wave));
     if (!g_waves_dynamic) {
-        fprintf(stderr, "[RUNTIME ERROR] Failed to allocate waves array (%zu bytes)\n", waves_size);
+        log_error("SYNTH", "Failed to allocate waves array (%zu bytes)", waves_size);
         return -1;
     }
     
@@ -63,7 +63,7 @@ int synth_runtime_allocate_buffers(void) {
     size_t waveform_size = WAVEFORM_TABLE_SIZE * sizeof(float);
     g_unitary_waveform_dynamic = (float*)calloc(WAVEFORM_TABLE_SIZE, sizeof(float));
     if (!g_unitary_waveform_dynamic) {
-        fprintf(stderr, "[RUNTIME ERROR] Failed to allocate unitary waveform (%zu bytes)\n", waveform_size);
+        log_error("SYNTH", "Failed to allocate unitary waveform (%zu bytes)", waveform_size);
         free(g_waves_dynamic);
         g_waves_dynamic = NULL;
         return -1;
