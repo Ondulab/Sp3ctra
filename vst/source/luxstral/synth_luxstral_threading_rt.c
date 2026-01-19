@@ -219,7 +219,8 @@ int synth_set_rt_priority(pthread_t thread, int priority) {
     return -1;
   }
   
-  log_info("SYNTH_RT", "✓ RT time-constraint policy enabled (period=%.2fms, computation=%.2fms, constraint=%.2fms)",
+  // Use startup_detail for individual worker logs (reduces verbosity in normal mode)
+  log_startup_detail("SYNTH_RT", "RT time-constraint policy enabled (period=%.2fms, computation=%.2fms, constraint=%.2fms)",
            AUDIO_PERIOD_NS / 1000000.0,
            (AUDIO_PERIOD_NS * 0.6) / 1000000.0,
            (AUDIO_PERIOD_NS * 0.9) / 1000000.0);

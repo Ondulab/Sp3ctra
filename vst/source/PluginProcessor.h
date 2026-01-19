@@ -68,6 +68,10 @@ public:
     
     // Helper to build UDP address string from 4 bytes
     juce::String getUdpAddressString() const;
+    
+    // UDP Batch Update API (prevents multiple UDP restarts during bulk parameter changes)
+    void beginUdpBatchUpdate();
+    void endUdpBatchUpdate();
 
 private:
     //==============================================================================
@@ -79,8 +83,9 @@ private:
     void applyConfigurationToCore(bool needsSocketRestart = true);
     
     //==============================================================================
-    // LuxStral synthesis engine state
+    // Initialization state flags
     bool luxstralInitialized = false;
+    bool coreNeedsInit = true;  // Lazy init: wait for setStateInformation() before starting UDP
     
     // Test tone phase accumulator (fallback if LuxStral not working)
     // Note: testTonePhase removed - no longer using 440Hz fallback tone
@@ -112,6 +117,10 @@ private:
     std::atomic<float>* sensorDpiParam = nullptr;
     std::atomic<float>* logLevelParam = nullptr;
     std::atomic<float>* visualizerModeParam = nullptr;
+    
+    // UDP Batch Update state (prevents multiple UDP restarts)
+    std::atomic<bool> udpBatchUpdateActive{false};
+    std::atomic<bool> udpNeedsRestart{false};
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Sp3ctraAudioProcessor)
 };

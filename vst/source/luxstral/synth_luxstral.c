@@ -186,7 +186,7 @@ int32_t synth_IfftInit(void) {
   printf("-------------------------------\n");
 #endif
 
-  log_info("SYNTH", "Note number = %d", (int)get_current_number_of_notes());
+  // Note: "Note number" already logged above - removed duplicate here
 
   // Allocate imageRef dynamically
   imageRef = (int32_t*)calloc(get_current_number_of_notes(), sizeof(int32_t));

@@ -96,6 +96,36 @@ bool Sp3ctraCore::applyConfig(const ActiveConfig& config) {
     return true;
 }
 
+bool Sp3ctraCore::restartUdp(int port, const std::string& address, const std::string& interface) {
+    std::lock_guard<std::mutex> lock(configMutex);
+    
+    if (!initialized.load()) {
+        log_error("CORE", "Cannot restart UDP - core not initialized");
+        return false;
+    }
+    
+    log_info("CORE", "Restarting UDP socket only (buffers untouched)...");
+    
+    // Close the old socket
+    shutdownUdp();
+    
+    // Create new socket with new parameters
+    if (!initializeUdp(port, address, interface)) {
+        log_error("CORE", "Failed to restart UDP with new config");
+        return false;
+    }
+    
+    // Update stored config
+    active.udpPort.store(port);
+    active.udpAddress = address;
+    active.multicastInterface = interface;
+    
+    log_info("CORE", "UDP restarted on %s:%d (socket fd=%d)", 
+             address.c_str(), port, socketFd.load());
+    
+    return true;
+}
+
 void Sp3ctraCore::shutdown() {
     std::lock_guard<std::mutex> lock(configMutex);
     

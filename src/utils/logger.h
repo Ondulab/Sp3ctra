@@ -33,12 +33,27 @@ void logger_init(log_level_t level);
 
 // Check if startup verbose logging is enabled
 int is_startup_verbose(void);
+int is_startup_full_verbose(void);
 
 // Log functions
 void log_error(const char* module, const char* fmt, ...);
 void log_warning(const char* module, const char* fmt, ...);
 void log_info(const char* module, const char* fmt, ...);
 void log_debug(const char* module, const char* fmt, ...);
+
+// ============================================================================
+// STARTUP VERBOSE MACROS
+// Use these for init-time logs that should be condensed in normal mode
+// Set SP3CTRA_STARTUP_VERBOSE=2 env var for full output
+// ============================================================================
+
+// Log only in STARTUP_VERBOSE_FULL mode (detailed init logs)
+#define log_startup_detail(module, ...) \
+    do { if (is_startup_full_verbose()) log_debug(module, __VA_ARGS__); } while(0)
+
+// Log in STARTUP_VERBOSE_NORMAL and FULL modes (condensed init logs)
+#define log_startup_info(module, ...) \
+    do { if (is_startup_verbose()) log_info(module, __VA_ARGS__); } while(0)
 
 // Config-specific logging with line numbers
 void config_log_error(int line, const char* fmt, ...);

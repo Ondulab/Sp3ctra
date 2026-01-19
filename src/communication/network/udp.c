@@ -170,6 +170,9 @@ int udp_Init(struct sockaddr_in *si_other, struct sockaddr_in *si_me) {
 void udp_cleanup(int socket_fd) {
   if (socket_fd >= 0) {
     log_info("UDP", "Closing UDP socket");
+    // ✅ FIX: Shutdown socket FIRST to unblock any pending recvfrom() calls
+    // This allows the UDP thread to terminate cleanly instead of being killed forcefully
+    shutdown(socket_fd, SHUT_RDWR);
     close(socket_fd);
   }
 }

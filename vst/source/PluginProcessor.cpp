@@ -233,25 +233,20 @@ Sp3ctraAudioProcessor::Sp3ctraAudioProcessor()
     apvts.addParameterListener("luxstralNoiseGateThreshold", this);
     apvts.addParameterListener("luxstralNumWorkers", this);
     
-    // Create Sp3ctra core
+    // Create Sp3ctra core (but do NOT initialize yet - lazy init)
     sp3ctraCore = std::make_unique<Sp3ctraCore>();
     
-    // NO .ini loading! Parameters come from APVTS (saved in DAW project)
-    // Initialize configuration from APVTS parameters
-    applyConfigurationToCore();
+    // 🔧 LAZY INITIALIZATION: Do NOT start UDP here!
+    // The DAW will call setStateInformation() with saved parameters BEFORE prepareToPlay().
+    // If we init now with default params, we'd have to shutdown and reinit when state is restored.
+    // Instead, we defer initialization to setStateInformation() or prepareToPlay() (whichever comes first).
     
-    // Start UDP receiver thread
-    udpThread = std::make_unique<UdpReceiverThread>(sp3ctraCore.get());
-    udpThread->startThread();
+    // Just update g_sp3ctra_config with APVTS values (no socket/buffer creation)
+    applyConfigurationToCore(false);  // false = don't call sp3ctraCore->initialize()
     
-    log_info("VST", "=============================================================");
-    log_info("VST", "Sp3ctraAudioProcessor: Initialization COMPLETE");
-    log_info("VST", "  - UDP listening on %s:%d",
-        getUdpAddressString().toRawUTF8(),
-        (int)udpPortParam->load());
-    log_info("VST", "  - Ready to receive IMAGE_DATA and IMU packets");
+    log_info("VST", "Sp3ctraAudioProcessor: Constructor complete (deferred init)");
+    log_info("VST", "  - Waiting for DAW state restoration or prepareToPlay()");
     log_info("VST", "  - Parameters managed by APVTS (saved in DAW project)");
-    log_info("VST", "=============================================================");
 }
 
 Sp3ctraAudioProcessor::~Sp3ctraAudioProcessor()
@@ -377,6 +372,25 @@ void Sp3ctraAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     log_info("VST", "=============================================================");
     log_info("VST", "prepareToPlay - SR=%.1f Hz, BS=%d samples", sampleRate, samplesPerBlock);
     
+    // 🔧 LAZY INIT: If Core not yet initialized (new plugin, no saved state),
+    // initialize now with default APVTS parameters
+    if (coreNeedsInit) {
+        log_info("VST", "First-time Core initialization (new plugin, no saved state)...");
+        
+        // Initialize Core with default parameters (creates buffers + UDP socket)
+        applyConfigurationToCore(true);  // true = full init
+        
+        // Start UDP receiver thread (socket already created by applyConfigurationToCore)
+        udpThread = std::make_unique<UdpReceiverThread>(sp3ctraCore.get());
+        udpThread->startThread();
+        
+        coreNeedsInit = false;
+        
+        log_info("VST", "Core initialized - UDP listening on %s:%d",
+            getUdpAddressString().toRawUTF8(),
+            (int)udpPortParam->load());
+    }
+    
     // Update global config with audio parameters
     extern sp3ctra_config_t g_sp3ctra_config;
     
@@ -403,7 +417,7 @@ void Sp3ctraAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
         log_info("VST", "AudioProcessingThread stopped (worker pool untouched)");
     }
     
-    // ✅ STATIC ALLOCATION: Buffers are pre-allocated for MAX_BUFFER_SIZE (4096)
+    // STATIC ALLOCATION: Buffers are pre-allocated for MAX_BUFFER_SIZE (4096)
     // NO cleanup/reinit needed! Buffers already exist and are large enough
     // This prevents crashes when DAW changes buffer size (256 → 512 → 1024, etc.)
     
@@ -569,26 +583,53 @@ void Sp3ctraAudioProcessor::setStateInformation (const void* data, int sizeInByt
     if (xmlState.get() != nullptr) {
         if (xmlState->hasTagName(apvts.state.getType())) {
             apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
-            log_info("VST", "State restored from settings");
+            log_info("VST", "State restored from DAW project");
             
-            // Stop UDP thread
-            if (udpThread) {
-                log_info("VST", "Restarting UDP with restored settings...");
-                udpThread->requestStop();
-                udpThread->stopThread(2000);
-                udpThread.reset();
+            // 🔧 LAZY INIT: First-time initialization with restored parameters
+            if (coreNeedsInit) {
+                log_info("VST", "First-time Core initialization with restored settings...");
+                
+                // Initialize Core with restored parameters (creates buffers + UDP socket)
+                applyConfigurationToCore(true);  // true = full init
+                
+                // Start UDP receiver thread
+                udpThread = std::make_unique<UdpReceiverThread>(sp3ctraCore.get());
+                udpThread->startThread();
+                
+                coreNeedsInit = false;
+                
+                log_info("VST", "Core initialized - UDP listening on %s:%d",
+                    getUdpAddressString().toRawUTF8(),
+                    (int)udpPortParam->load());
+            } else {
+                // Already initialized - just restart UDP if config changed
+                if (udpThread) {
+                    log_info("VST", "Restarting UDP with restored settings...");
+                    udpThread->requestStop();
+                    udpThread->stopThread(2000);
+                    udpThread.reset();
+                }
+                
+                // Update config (no buffer reinit needed)
+                applyConfigurationToCore(false);
+                
+                // 🔧 FIX: Restart UDP socket with restored config (buffers untouched)
+                if (!sp3ctraCore->restartUdp(
+                        (int)udpPortParam->load(),
+                        getUdpAddressString().toStdString(),
+                        ""  // multicast interface - auto-detect
+                    )) {
+                    log_error("VST", "Failed to restart UDP with restored config!");
+                }
+                
+                // Restart UDP thread AFTER socket is created
+                udpThread = std::make_unique<UdpReceiverThread>(sp3ctraCore.get());
+                udpThread->startThread();
+                
+                log_info("VST", "UDP restarted with %s:%d",
+                    getUdpAddressString().toRawUTF8(),
+                    (int)udpPortParam->load());
             }
-            
-            // Re-apply configuration to core with restored parameters
-            applyConfigurationToCore();
-            
-            // Restart UDP thread with new configuration
-            udpThread = std::make_unique<UdpReceiverThread>(sp3ctraCore.get());
-            udpThread->startThread();
-            
-            log_info("VST", "UDP restarted with %s:%d",
-                getUdpAddressString().toRawUTF8(),
-                (int)udpPortParam->load());
         }
     }
 }
@@ -628,7 +669,22 @@ void Sp3ctraAudioProcessor::parameterChanged(const juce::String& parameterID, fl
                            parameterID == PARAM_UDP_BYTE4);
     
     if (needsUdpRestart) {
-        log_info("VST", "UDP parameter changed - restarting thread...");
+        // 🔧 CRITICAL: Ignore UDP parameter changes if core not yet initialized
+        // This prevents errors during APVTS state restoration at startup
+        if (coreNeedsInit) {
+            log_debug("VST", "UDP parameter changed (init pending) - restart deferred");
+            return;  // Don't restart now, will init properly in setStateInformation/prepareToPlay
+        }
+        
+        // 🔧 BATCH UPDATE: If we're in a batch update, just mark that restart is needed
+        // The actual restart will happen once in endUdpBatchUpdate()
+        if (udpBatchUpdateActive.load()) {
+            udpNeedsRestart.store(true);
+            log_debug("VST", "UDP parameter changed (batch mode) - restart deferred");
+            return;  // Don't restart now, wait for batch completion
+        }
+        
+        log_info("VST", "UDP parameter changed - restarting socket...");
         
         // Stop UDP thread
         if (udpThread) {
@@ -637,19 +693,24 @@ void Sp3ctraAudioProcessor::parameterChanged(const juce::String& parameterID, fl
             udpThread.reset();
         }
         
-        // 🔧 CRITICAL FIX: For UDP changes, ONLY update g_sp3ctra_config
-        // Do NOT call sp3ctraCore->shutdown()! It would free AudioImageBuffers 
-        // while AudioProcessingThread is still using them!
-        applyConfigurationToCore(false);  // Update g_sp3ctra_config only
+        // Update g_sp3ctra_config with new UDP parameters
+        applyConfigurationToCore(false);
         
-        // The Core's udpInit() will be called by UdpReceiverThread using updated g_sp3ctra_config
-        // This creates a new socket WITHOUT touching the AudioImageBuffers
+        // 🔧 FIX: Restart UDP socket with new config (buffers untouched)
+        // This closes the old socket and creates a new one with updated port/address
+        if (!sp3ctraCore->restartUdp(
+                (int)udpPortParam->load(),
+                getUdpAddressString().toStdString(),
+                ""  // multicast interface - auto-detect
+            )) {
+            log_error("VST", "Failed to restart UDP with new config!");
+        }
         
-        // Restart UDP thread - it will create a new socket with updated config
+        // Restart UDP thread AFTER socket is created
         udpThread = std::make_unique<UdpReceiverThread>(sp3ctraCore.get());
         udpThread->startThread();
         
-        log_info("VST", "UDP thread restarted with %s:%d (buffers untouched)",
+        log_info("VST", "UDP restarted with %s:%d (buffers untouched)",
             getUdpAddressString().toRawUTF8(),
             (int)udpPortParam->load());
     } else {
@@ -752,6 +813,56 @@ void Sp3ctraAudioProcessor::applyConfigurationToCore(bool needsSocketRestart)
         // Just update config - NO buffer reinit
         log_debug("VST", "Config updated (no buffer reinit) - %d DPI, log level %d",
             sensorDpi, logLevel);
+    }
+}
+
+//==============================================================================
+// UDP Batch Update API Implementation
+void Sp3ctraAudioProcessor::beginUdpBatchUpdate()
+{
+    udpBatchUpdateActive.store(true);
+    udpNeedsRestart.store(false);
+    log_debug("VST", "UDP batch update started");
+}
+
+void Sp3ctraAudioProcessor::endUdpBatchUpdate()
+{
+    udpBatchUpdateActive.store(false);
+    
+    // If UDP parameters changed during batch, restart once now
+    if (udpNeedsRestart.load()) {
+        log_info("VST", "UDP batch update complete - applying single restart");
+        
+        // Stop UDP thread
+        if (udpThread) {
+            udpThread->requestStop();
+            udpThread->stopThread(2000);
+            udpThread.reset();
+        }
+        
+        // Update g_sp3ctra_config with current UDP parameters
+        applyConfigurationToCore(false);
+        
+        // Restart UDP socket with new config (buffers untouched)
+        if (!sp3ctraCore->restartUdp(
+                (int)udpPortParam->load(),
+                getUdpAddressString().toStdString(),
+                ""  // multicast interface - auto-detect
+            )) {
+            log_error("VST", "Failed to restart UDP after batch update!");
+        }
+        
+        // Restart UDP thread AFTER socket is created
+        udpThread = std::make_unique<UdpReceiverThread>(sp3ctraCore.get());
+        udpThread->startThread();
+        
+        log_info("VST", "UDP restarted with %s:%d (single batch restart)",
+            getUdpAddressString().toRawUTF8(),
+            (int)udpPortParam->load());
+        
+        udpNeedsRestart.store(false);
+    } else {
+        log_debug("VST", "UDP batch update complete - no restart needed");
     }
 }
 

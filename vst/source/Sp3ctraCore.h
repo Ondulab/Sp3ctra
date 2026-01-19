@@ -92,6 +92,16 @@ public:
     void shutdown();
     
     /**
+     * @brief Restart UDP socket with new parameters (buffers untouched)
+     * @param port New UDP port
+     * @param address New UDP multicast address
+     * @param interface Multicast interface (empty for auto-detect)
+     * @return true on success, false on failure
+     * @note This only restarts the socket, audio buffers are NOT affected
+     */
+    bool restartUdp(int port, const std::string& address, const std::string& interface);
+    
+    /**
      * @brief Check if UDP is running
      */
     bool isUdpRunning() const { return udpRunning.load(); }

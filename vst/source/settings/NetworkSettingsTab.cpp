@@ -25,20 +25,7 @@ NetworkSettingsTab::NetworkSettingsTab(Sp3ctraAudioProcessor& processor)
     int currentPort = (int)apvts.getRawParameterValue("udpPort")->load();
     udpPortEditor.setText(juce::String(currentPort), false);
     
-    udpPortEditor.onReturnKey = [this]() {
-        int port = udpPortEditor.getText().getIntValue();
-        if (port >= 1024 && port <= 65535) {
-            apvts.getParameter("udpPort")->setValueNotifyingHost(
-                apvts.getParameter("udpPort")->convertTo0to1(port));
-        } else {
-            int currentPort = (int)apvts.getRawParameterValue("udpPort")->load();
-            udpPortEditor.setText(juce::String(currentPort), false);
-        }
-    };
-    
-    udpPortEditor.onFocusLost = [this]() {
-        udpPortEditor.onReturnKey();
-    };
+    // ✅ NO callbacks - changes only applied via "Apply Settings" button
     
     addAndMakeVisible(udpPortEditor);
 
@@ -63,20 +50,7 @@ NetworkSettingsTab::NetworkSettingsTab(Sp3ctraAudioProcessor& processor)
         int currentValue = (int)apvts.getRawParameterValue(paramName)->load();
         editor.setText(juce::String(currentValue), false);
         
-        editor.onReturnKey = [this, &editor, paramName]() {
-            int value = editor.getText().getIntValue();
-            if (value >= 0 && value <= 255) {
-                apvts.getParameter(paramName)->setValueNotifyingHost(
-                    apvts.getParameter(paramName)->convertTo0to1(value));
-            } else {
-                int current = (int)apvts.getRawParameterValue(paramName)->load();
-                editor.setText(juce::String(current), false);
-            }
-        };
-        
-        editor.onFocusLost = [&editor]() {
-            editor.onReturnKey();
-        };
+        // ✅ NO callbacks - changes only applied via "Apply Settings" button
         
         addAndMakeVisible(editor);
     };
@@ -197,12 +171,32 @@ void NetworkSettingsTab::resized()
 
 void NetworkSettingsTab::applyChanges()
 {
-    // Force apply all TextEditor values to APVTS
-    udpPortEditor.onReturnKey();
-    udpByte1Editor.onReturnKey();
-    udpByte2Editor.onReturnKey();
-    udpByte3Editor.onReturnKey();
-    udpByte4Editor.onReturnKey();
+    // ✅ FIX: Read values from TextEditor and apply ALL at once with batch update
+    audioProcessor.beginUdpBatchUpdate();
+    
+    // Read and validate UDP Port
+    int port = udpPortEditor.getText().getIntValue();
+    if (port >= 1024 && port <= 65535) {
+        apvts.getParameter("udpPort")->setValueNotifyingHost(
+            apvts.getParameter("udpPort")->convertTo0to1(port));
+    }
+    
+    // Read and validate UDP Address bytes
+    auto applyByte = [this](juce::TextEditor& editor, const char* paramName) {
+        int value = editor.getText().getIntValue();
+        if (value >= 0 && value <= 255) {
+            apvts.getParameter(paramName)->setValueNotifyingHost(
+                apvts.getParameter(paramName)->convertTo0to1(value));
+        }
+    };
+    
+    applyByte(udpByte1Editor, "udpByte1");
+    applyByte(udpByte2Editor, "udpByte2");
+    applyByte(udpByte3Editor, "udpByte3");
+    applyByte(udpByte4Editor, "udpByte4");
+    
+    // End batch - this will trigger a SINGLE UDP restart with all new parameters
+    audioProcessor.endUdpBatchUpdate();
     
     updateStatusLabel();
     

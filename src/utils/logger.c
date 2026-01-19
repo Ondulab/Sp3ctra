@@ -117,6 +117,11 @@ void logger_init(log_level_t level) {
 
 int is_startup_verbose(void) {
     init_startup_verbose();
+    return (g_startup_verbose >= STARTUP_VERBOSE_NORMAL);
+}
+
+int is_startup_full_verbose(void) {
+    init_startup_verbose();
     return (g_startup_verbose == STARTUP_VERBOSE_FULL);
 }
 

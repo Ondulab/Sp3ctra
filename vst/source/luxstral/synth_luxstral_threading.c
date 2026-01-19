@@ -291,6 +291,9 @@ void *synth_persistent_worker_thread(void *arg) {
 }
 
 
+// Global atomic flag to log Float32 path only once across all workers
+static _Atomic int g_f32_path_logged = 0;
+
 /**
  * @brief  Process a range of notes for a given worker (Float32 version)
  * @param  worker Pointer to worker structure
@@ -298,10 +301,11 @@ void *synth_persistent_worker_thread(void *arg) {
  */
 void synth_process_worker_range(synth_thread_worker_t *worker) {
   int32_t buff_idx, note, local_note_idx;
-  static int f32_logged = 0;
-  if (!f32_logged) {
-    log_info("SYNTH", "Float32 WORKER: Using Float32 path in workers");
-    f32_logged = 1;
+  
+  // Thread-safe one-time log using atomic compare-exchange
+  int expected = 0;
+  if (atomic_compare_exchange_strong(&g_f32_path_logged, &expected, 1)) {
+    log_info("SYNTH", "Float32 path active in worker threads");
   }
 
   // Release capture buffers if capture was disabled since last buffer
@@ -548,6 +552,8 @@ void synth_precompute_wave_data(float *imageData, DoubleBuffer *db) {
  * @retval 0 on success, -1 on error
  */
 int synth_start_worker_threads(void) {
+  int rt_success_count = 0;  // Track how many workers got RT priority
+  
   for (int i = 0; i < num_workers; i++) {
     if (pthread_create(&worker_threads[i], NULL, synth_persistent_worker_thread,
                        &thread_pool[i]) != 0) {
@@ -557,9 +563,10 @@ int synth_start_worker_threads(void) {
 
     // ✅ PHASE 1: Set RT priority for deterministic execution
 #if defined(__linux__) || defined(__APPLE__)
-    if (synth_set_rt_priority(worker_threads[i], 80) != 0) {
-      log_warning("SYNTH", "Failed to set RT priority for worker %d (continuing without RT)", i);
+    if (synth_set_rt_priority(worker_threads[i], 80) == 0) {
+      rt_success_count++;
     }
+    // Note: Individual failure warnings are logged in synth_set_rt_priority()
 #endif
 
     // ✅ OPTIMIZATION: CPU affinity to balance load on Pi5
@@ -574,12 +581,24 @@ int synth_start_worker_threads(void) {
     int result =
         pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &cpuset);
     if (result == 0) {
-      log_info("SYNTH", "Worker thread %d assigned to CPU %d", i, cpu_id);
+      log_startup_detail("SYNTH", "Worker thread %d assigned to CPU %d", i, cpu_id);
     } else {
       log_warning("SYNTH", "Cannot assign thread %d to CPU %d (error: %d)", i, cpu_id, result);
     }
 #endif
   }
+  
+  // Condensed summary log (always shown in NORMAL mode)
+#if defined(__linux__) || defined(__APPLE__)
+  if (rt_success_count == num_workers) {
+    log_info("SYNTH", "RT priority enabled for all %d worker threads", num_workers);
+  } else if (rt_success_count > 0) {
+    log_info("SYNTH", "RT priority enabled for %d/%d worker threads", rt_success_count, num_workers);
+  } else {
+    log_info("SYNTH", "RT priority not available (continuing without RT for %d workers)", num_workers);
+  }
+#endif
+  
   return 0;
 }
 
