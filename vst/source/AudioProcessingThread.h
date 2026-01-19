@@ -21,6 +21,10 @@ extern "C" {
  * In VST mode, this thread performs the same role:
  * - Continuously calls synth_AudioProcess() to generate audio
  * - processBlock() only READS the generated buffers (no synthesis in callback!)
+ * 
+ * 🔧 CRITICAL FIX: This thread uses its OWN stop flag (audioThreadShouldRun)
+ * instead of sharing ctx->running with UdpReceiverThread. This prevents
+ * buffer size changes from killing the UDP thread!
  */
 class AudioProcessingThread : public juce::Thread {
 public:
@@ -69,12 +73,14 @@ public:
             return;
         }
         
-        // Ensure running flag is set
-        ctx->running = 1;
+        // 🔧 CRITICAL FIX: Set audio_thread_running, NOT running!
+        // This allows stopping ONLY the audio thread during buffer size changes
+        // without killing the UDP thread (which uses ctx->running)
+        ctx->audio_thread_running = 1;
         
         juce::Logger::writeToLog("AudioProcessingThread: Calling C audioProcessingThread() function...");
         
-        // Call existing C function (blocks until Context->running = 0)
+        // Call existing C function (blocks until Context->audio_thread_running = 0)
         audioProcessingThread((void*)ctx);
         
         juce::Logger::writeToLog("AudioProcessingThread: audioProcessingThread() returned, thread exiting");
@@ -86,11 +92,12 @@ public:
     void requestStop() {
         juce::Logger::writeToLog("AudioProcessingThread: Requesting thread stop");
         
-        // Set Context->running = 0 to stop C audioProcessingThread loop
+        // 🔧 CRITICAL FIX: Set audio_thread_running = 0, NOT running!
+        // This stops ONLY the audio thread, UDP thread keeps running
         if (core) {
             Context* ctx = core->getContext();
             if (ctx) {
-                ctx->running = 0;
+                ctx->audio_thread_running = 0;
             }
         }
     }

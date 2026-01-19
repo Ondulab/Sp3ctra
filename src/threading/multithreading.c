@@ -690,15 +690,22 @@ void *audioProcessingThread(void *arg) {
   }
 #endif
 
+  // 🔧 VST FIX: Use audio_thread_running for audio thread control
+  // This allows stopping ONLY the audio thread during buffer size changes
+  // without affecting the UDP thread (which uses context->running)
+#ifdef VST_MODE
+  while (context->audio_thread_running) {
+#else
   while (context->running) {
+#endif
 #ifdef VST_MODE
     // 🎯 VST SYNCHRONIZATION: Wait for processBlock() to consume the previous buffer
     // This ensures perfect producer/consumer handoff without buffer overwrites
     // The wait has a 200ms timeout to avoid deadlock when audio stops
     luxstral_wait_for_buffer_consumed();
     
-    // Check if we should exit after waking up
-    if (!context->running) break;
+    // Check if we should exit after waking up (use audio_thread_running, NOT running!)
+    if (!context->audio_thread_running) break;
 #endif
 
     // Get current read pointers atomically (no mutex, no blocking!)

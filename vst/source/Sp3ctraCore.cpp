@@ -148,7 +148,8 @@ bool Sp3ctraCore::initializeBuffers() {
         // Link buffers to context
         context->doubleBuffer = doubleBuffer.get();
         context->audioImageBuffers = audioImageBuffers.get();
-        context->running = 1;
+        context->running = 1;              // Controls UDP thread
+        context->audio_thread_running = 1; // 🔧 SEPARATE flag for audio thread (VST buffer size changes)
         context->audioData = nullptr;  // Not used in VST
         context->window = nullptr;     // No display in VST
         context->dmxCtx = nullptr;     // No DMX in VST

@@ -122,6 +122,12 @@ int luxstral_init_audio_buffers(int buffer_size) {
     luxstral_audio_buffer_size = buffer_size;  // Store current size
     luxstral_audio_buffers_initialized = true;
     
+    // 🔧 CRITICAL FIX: Reset producer/consumer synchronization state
+    // Without this, after buffer reallocation (DAW buffer size change),
+    // audioProcessingThread blocks waiting for g_vst_callback_consumed_buffer=1
+    // but processBlock() never signals because ready=0 → DEADLOCK!
+    __atomic_store_n(&g_vst_callback_consumed_buffer, 1, __ATOMIC_RELEASE);
+    
     juce::Logger::writeToLog("LuxStral: Audio buffers initialized successfully");
     return 0;
 }

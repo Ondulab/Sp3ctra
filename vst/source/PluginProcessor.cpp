@@ -391,40 +391,19 @@ void Sp3ctraAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     g_sp3ctra_config.semitone_per_octave = 12;  // Standard musical scale
     g_sp3ctra_config.comma_per_semitone = 36;   // Default granularity
     
-    // 🛑 CRITICAL FIX: Unblock barrier-waiting workers BEFORE stopping thread
+    // 🛑 CRITICAL FIX: Stop AudioProcessingThread WITHOUT touching the worker pool!
+    // The worker pool uses MAX_BUFFER_SIZE for its buffers and does NOT need to be restarted.
+    // Only luxstral_buffers_L/R need to be reallocated (done by luxstral_init_audio_buffers).
     if (audioProcessingThread) {
         juce::Logger::writeToLog("Sp3ctraAudioProcessor: Stopping AudioProcessingThread for buffer reallocation...");
         
-        // 🔧 STEP 1: Signal workers to exit (unblocks barriers)
-        extern _Atomic int synth_workers_must_exit;
-        extern _Atomic int synth_pool_shutdown;
-        extern _Atomic int synth_pool_initialized;
-        extern barrier_t g_worker_start_barrier;
-        extern barrier_t g_worker_end_barrier;
-        
-        synth_workers_must_exit = 1;
-        
-        // 🔧 STEP 2: Broadcast on barriers to wake waiting workers
-        pthread_mutex_lock(&g_worker_start_barrier.mutex);
-        g_worker_start_barrier.generation++;  // Invalidate barrier
-        pthread_cond_broadcast(&g_worker_start_barrier.cond);
-        pthread_mutex_unlock(&g_worker_start_barrier.mutex);
-        
-        pthread_mutex_lock(&g_worker_end_barrier.mutex);
-        g_worker_end_barrier.generation++;
-        pthread_cond_broadcast(&g_worker_end_barrier.cond);
-        pthread_mutex_unlock(&g_worker_end_barrier.mutex);
-        
-        // 🔧 STEP 3: NOW we can safely stop the thread
+        // 🔧 SIMPLIFIED: Just stop the audio processing thread
+        // DO NOT signal workers to exit! They stay alive and ready for the new thread.
         audioProcessingThread->requestStop();
         audioProcessingThread->stopThread(2000);
         audioProcessingThread.reset();
         
-        // 🔧 STEP 4: CRITICAL - Reset pool state for next restart
-        synth_workers_must_exit = 0;
-        synth_pool_shutdown = 0;  // ← KEY FIX: Allow pool to restart!
-        
-        juce::Logger::writeToLog("Sp3ctraAudioProcessor: AudioProcessingThread stopped, pool ready for restart");
+        juce::Logger::writeToLog("Sp3ctraAudioProcessor: AudioProcessingThread stopped (worker pool untouched)");
     }
     
     // ✅ STATIC ALLOCATION: Buffers are pre-allocated for MAX_BUFFER_SIZE (4096)

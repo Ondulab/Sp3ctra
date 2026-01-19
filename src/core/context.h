@@ -73,7 +73,8 @@ typedef struct {
   DoubleBuffer *doubleBuffer;           // Legacy double buffer
   AudioImageBuffers *audioImageBuffers; // Audio buffer system
   DMXContext *dmxCtx;                   // Stub (will be removed later)
-  volatile int running;
+  volatile int running;                 // Controls UDP thread (and general shutdown)
+  volatile int audio_thread_running;    // 🔧 SEPARATE flag for audio thread (VST buffer size changes)
 
   /* IMU state (protected by imu_mutex) */
   pthread_mutex_t imu_mutex;
