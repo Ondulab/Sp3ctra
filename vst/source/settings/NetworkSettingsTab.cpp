@@ -180,20 +180,43 @@ void NetworkSettingsTab::applyChanges()
         apvts.getParameter("udpPort")->setValueNotifyingHost(
             apvts.getParameter("udpPort")->convertTo0to1(port));
     }
-    
+
+    int bytes[4] = {
+        udpByte1Editor.getText().getIntValue(),
+        udpByte2Editor.getText().getIntValue(),
+        udpByte3Editor.getText().getIntValue(),
+        udpByte4Editor.getText().getIntValue()
+    };
+
+    bool allZero = (bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0 && bytes[3] == 0);
+    if (allZero) {
+        juce::String defaultAddress(Sp3ctraConstants::DEFAULT_UDP_ADDRESS);
+        juce::StringArray parts;
+        parts.addTokens(defaultAddress, ".", "");
+        if (parts.size() == 4) {
+            for (int i = 0; i < 4; ++i) {
+                bytes[i] = parts[i].getIntValue();
+            }
+
+            udpByte1Editor.setText(juce::String(bytes[0]), false);
+            udpByte2Editor.setText(juce::String(bytes[1]), false);
+            udpByte3Editor.setText(juce::String(bytes[2]), false);
+            udpByte4Editor.setText(juce::String(bytes[3]), false);
+        }
+    }
+
     // Read and validate UDP Address bytes
-    auto applyByte = [this](juce::TextEditor& editor, const char* paramName) {
-        int value = editor.getText().getIntValue();
+    auto applyByte = [this](int value, const char* paramName) {
         if (value >= 0 && value <= 255) {
             apvts.getParameter(paramName)->setValueNotifyingHost(
                 apvts.getParameter(paramName)->convertTo0to1(value));
         }
     };
     
-    applyByte(udpByte1Editor, "udpByte1");
-    applyByte(udpByte2Editor, "udpByte2");
-    applyByte(udpByte3Editor, "udpByte3");
-    applyByte(udpByte4Editor, "udpByte4");
+    applyByte(bytes[0], "udpByte1");
+    applyByte(bytes[1], "udpByte2");
+    applyByte(bytes[2], "udpByte3");
+    applyByte(bytes[3], "udpByte4");
     
     // End batch - this will trigger a SINGLE UDP restart with all new parameters
     audioProcessor.endUdpBatchUpdate();
@@ -201,7 +224,7 @@ void NetworkSettingsTab::applyChanges()
     updateStatusLabel();
     
     // Visual feedback
-    applyButton.setButtonText("Settings Applied!");
+    applyButton.setButtonText(allZero ? "0.0.0.0 replaced" : "Settings Applied!");
     juce::Timer::callAfterDelay(1500, [this]() {
         applyButton.setButtonText("Apply Settings");
     });

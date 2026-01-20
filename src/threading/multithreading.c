@@ -313,6 +313,10 @@ void *udpThread(void *arg) {
   log_info("THREAD", "UDP thread started with dual buffer system");
   log_info("THREAD", "Listening for packets on socket %d, expecting IMAGE_DATA_HEADER (0x%02X)", s, IMAGE_DATA_HEADER);
 
+  // 🔧 DEBUG: Packet counter for logging (reset for each thread instance)
+  int packet_counter = 0;
+  int first_packet_logged = 0;  // Log very first packet after restart
+
   while (ctx->running) {
     recv_len = recvfrom(s, &packet, sizeof(packet), 0,
                         (struct sockaddr *)si_other, &slen);
@@ -321,6 +325,29 @@ void *udpThread(void *arg) {
         log_error("THREAD", "recvfrom error: %s", strerror(errno));
       }
       continue;
+    }
+
+    // 🔧 CRITICAL FIX: Check ctx->running AFTER each packet reception
+    // If packets arrive continuously (95000+), recvfrom() never times out
+    // and the thread never re-checks the while() condition.
+    // This check ensures the thread can exit promptly when requested.
+    if (!ctx->running) {
+      log_info("THREAD", "ctx->running=0 detected, exiting main loop");
+      // 🔧 BUGFIX: Release write_mutex if held (prevents deadlock on restart)
+      if (audio_write_started) {
+        audio_image_buffers_complete_write(audioBuffers);
+        audio_write_started = 0;
+        log_info("THREAD", "Released write_mutex before exit (incomplete line)");
+      }
+      break;
+    }
+
+    // Log very first packet (to confirm reception restarted)
+    packet_counter++;
+    if (!first_packet_logged) {
+      log_info("THREAD", "🟢 FIRST PACKET after restart! type=0x%02X size=%zd socket=%d",
+               packet.type, recv_len, s);
+      first_packet_logged = 1;
     }
 
 #ifdef DEBUG_UDP
@@ -469,6 +496,18 @@ void *udpThread(void *arg) {
 
     if (fragmentCount == packet.total_fragments) {
       PreprocessedImageData preprocessed_temp;
+
+      // 🔧 CRITICAL FIX: Abort heavy processing if stop requested
+      if (!ctx->running) {
+        log_info("THREAD", "ctx->running=0 detected before heavy processing, exiting");
+        // 🔧 BUGFIX: Release write_mutex if held (prevents deadlock on restart)
+        if (audio_write_started) {
+          audio_image_buffers_complete_write(audioBuffers);
+          audio_write_started = 0;
+          log_info("THREAD", "Released write_mutex before exit (incomplete line)");
+        }
+        break;
+      }
       
 #ifdef DEBUG_UDP
       log_debug("UDP", "COMPLETE LINE RECEIVED! line_id=%u, %u fragments", packet.line_id, fragmentCount);
@@ -564,6 +603,28 @@ void *udpThread(void *arg) {
                                           db->processingBuffer_G, 
                                           db->processingBuffer_B);
     }
+    
+    // 🔧 CRITICAL FIX: Check ctx->running at END of loop iteration too
+    // Heavy processing above (preprocessing, sequencer, display update) can take time
+    // Check again before next recvfrom() to exit promptly
+    if (!ctx->running) {
+      log_info("THREAD", "ctx->running=0 detected at end of iteration, exiting");
+      // 🔧 BUGFIX: Release write_mutex if held (prevents deadlock on restart)
+      if (audio_write_started) {
+        audio_image_buffers_complete_write(audioBuffers);
+        audio_write_started = 0;
+        log_info("THREAD", "Released write_mutex before exit (incomplete line)");
+      }
+      break;
+    }
+  }
+
+  // 🔧 FINAL SAFETY: Release write_mutex if still held after normal loop exit
+  // This handles the case where the while(ctx->running) condition fails
+  if (audio_write_started) {
+    audio_image_buffers_complete_write(audioBuffers);
+    audio_write_started = 0;
+    log_info("THREAD", "Released write_mutex at thread exit (safety cleanup)");
   }
 
   log_info("THREAD", "UDP thread terminating");

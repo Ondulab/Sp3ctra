@@ -98,32 +98,64 @@ bool Sp3ctraCore::applyConfig(const ActiveConfig& config) {
 
 bool Sp3ctraCore::restartUdp(int port, const std::string& address, const std::string& interface) {
     std::lock_guard<std::mutex> lock(configMutex);
-    
+
     if (!initialized.load()) {
         log_error("CORE", "Cannot restart UDP - core not initialized");
         return false;
     }
-    
+
     log_info("CORE", "Restarting UDP socket only (buffers untouched)...");
-    
+
     // Close the old socket
     shutdownUdp();
-    
+
+    // 🔧 CRITICAL FIX: Wait longer for socket to be fully released by kernel
+    // The UDP thread may take time to exit after stopThread() is called from PluginProcessor
+    // This ensures the socket is completely closed before we try to bind a new one
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    log_info("CORE", "Waited 200ms for socket cleanup");
+
+    // 🔧 CRITICAL FIX: Ensure context->running is set to 1 before restarting
+    // The UDP thread checks this flag in its main loop
+    if (context) {
+        context->running = 1;
+        log_info("CORE", "Context running flag reset to 1");
+    }
+
     // Create new socket with new parameters
     if (!initializeUdp(port, address, interface)) {
         log_error("CORE", "Failed to restart UDP with new config");
         return false;
     }
-    
+
     // Update stored config
     active.udpPort.store(port);
     active.udpAddress = address;
     active.multicastInterface = interface;
-    
-    log_info("CORE", "UDP restarted on %s:%d (socket fd=%d)", 
+
+    log_info("CORE", "UDP restarted on %s:%d (socket fd=%d)",
              address.c_str(), port, socketFd.load());
-    
+
     return true;
+}
+
+void Sp3ctraCore::closeUdpSocket() {
+    std::lock_guard<std::mutex> lock(configMutex);
+
+    int sock = socketFd.load();
+    if (sock < 0) {
+        return;
+    }
+
+    log_info("CORE", "Force closing UDP socket fd=%d to unblock recvfrom()", sock);
+    udp_cleanup(sock);
+    socketFd.store(-1);
+
+    if (context) {
+        context->socket = -1;
+    }
+
+    udpRunning.store(false);
 }
 
 void Sp3ctraCore::shutdown() {

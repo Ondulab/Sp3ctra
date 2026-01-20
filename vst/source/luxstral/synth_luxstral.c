@@ -305,6 +305,10 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
   if (synth_pool_initialized && !synth_pool_shutdown) {
     // === OPTIMIZED VERSION WITH THREAD POOL ===
     
+    // HOT-RELOAD CHECK: Process pending frequency reinit BEFORE workers start
+    // This is safe because workers are waiting on start_barrier
+    check_and_process_frequency_reinit();
+    
     // Phase 1: Pre-compute data in single-thread (avoids contention)
     synth_precompute_wave_data(imageData, db);
 
@@ -513,9 +517,10 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
       if (aL > peakPreL) peakPreL = aL;
       if (aR > peakPreR) peakPreR = aR;
 
-      // Apply contrast factor
-      audioDataLeft[buff_idx] = left_signal * contrast_factor;
-      audioDataRight[buff_idx] = right_signal * contrast_factor;
+      // Apply contrast factor AND global fade for smooth transitions
+      float global_fade = get_global_fade_factor_and_update();
+      audioDataLeft[buff_idx] = left_signal * contrast_factor * global_fade;
+      audioDataRight[buff_idx] = right_signal * contrast_factor * global_fade;
 
       // Apply final hard limiting
       if (audioDataLeft[buff_idx] > 1.0f) audioDataLeft[buff_idx] = 1.0f;
@@ -556,7 +561,9 @@ void synth_IfftMode(float *imageData, float *audioDataLeft, float *audioDataRigh
         float a = fabsf(mono_pre);
         if (a > peakPre) peakPre = a;
 
-        float mono_sample = mono_pre * contrast_factor;
+        // Apply contrast factor AND global fade for smooth transitions
+        float global_fade = get_global_fade_factor_and_update();
+        float mono_sample = mono_pre * contrast_factor * global_fade;
 
         // Duplicate mono sample to both channels
         audioDataLeft[buff_idx] = mono_sample;

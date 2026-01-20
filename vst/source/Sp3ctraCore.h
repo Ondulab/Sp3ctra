@@ -100,6 +100,12 @@ public:
      * @note This only restarts the socket, audio buffers are NOT affected
      */
     bool restartUdp(int port, const std::string& address, const std::string& interface);
+
+    /**
+     * @brief Force close the UDP socket fd without freeing address structs
+     * @note Safe to call before stopping the UDP thread to unblock recvfrom()
+     */
+    void closeUdpSocket();
     
     /**
      * @brief Check if UDP is running

@@ -74,6 +74,51 @@ uint32_t init_waves(volatile float *unitary_waveform,
                     volatile struct wave *waves,
                     volatile struct waveParams *parameters);
 
+/**************************************************************************************
+ * Hot-reload frequency range API
+ * Thread-safe mechanism for changing frequency range at runtime
+ **************************************************************************************/
+
+/**
+ * @brief Request frequency range reinit from UI thread
+ * Sets atomic flag that will be processed by synth thread
+ * @note Thread-safe: can be called from JUCE message thread
+ */
+void request_frequency_reinit(void);
+
+/**
+ * @brief Check and process pending frequency reinit
+ * Should be called at the beginning of synth_IfftMode() BEFORE workers start
+ * @return 1 if reinit was performed, 0 otherwise
+ * @note Thread-safe: called from synth thread while workers are waiting
+ */
+int check_and_process_frequency_reinit(void);
+
+/**
+ * @brief Check if frequency reinit is currently in progress (fading out)
+ * @return 1 if fading out, 0 otherwise
+ */
+int is_frequency_reinit_fading_out(void);
+
+/**************************************************************************************
+ * Global fade API for smooth transitions
+ * Applied to entire output signal, not individual oscillators
+ **************************************************************************************/
+
+/**
+ * @brief Get and update global fade factor for a single sample
+ * Call this for each output sample to apply smooth exponential fade
+ * @return Current fade factor (0.0 to 1.0)
+ * @note Call once per sample for smooth per-sample fade
+ */
+float get_global_fade_factor_and_update(void);
+
+/**
+ * @brief Get current global fade factor without updating
+ * @return Current fade factor (0.0 to 1.0)
+ */
+float get_global_fade_factor(void);
+
 /* Private defines -----------------------------------------------------------*/
 
 #endif /* __WAVE_GENERATION_H */

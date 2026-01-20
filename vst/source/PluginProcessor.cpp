@@ -8,6 +8,7 @@ extern "C" {
     #include "../../src/utils/logger.h"
     #include "luxstral/synth_luxstral.h"  // LuxStral synthesis engine
     #include "luxstral/vst_adapters.h"    // Audio buffer init functions
+    #include "luxstral/wave_generation.h" // Hot-reload frequency API
 }
 
 //==============================================================================
@@ -658,6 +659,14 @@ void Sp3ctraAudioProcessor::parameterChanged(const juce::String& parameterID, fl
     if (isLuxStralParam) {
         // Just update g_sp3ctra_config silently (no restart)
         applyConfigurationToCore(false);
+        
+        // 🔧 HOT-RELOAD: Frequency range changes require waveform regeneration
+        // This triggers fade-out → regenerate → fade-in for smooth transition
+        if (parameterID == "luxstralLowFreq" || parameterID == "luxstralHighFreq") {
+            log_info("VST", "Frequency range changed - requesting hot-reload");
+            request_frequency_reinit();
+        }
+        
         return;  // Done - synthesis engine will pick up changes automatically
     }
     
@@ -686,10 +695,19 @@ void Sp3ctraAudioProcessor::parameterChanged(const juce::String& parameterID, fl
         
         log_info("VST", "UDP parameter changed - restarting socket...");
         
-        // Stop UDP thread
+        // 🔧 CRITICAL FIX: requestStop() FIRST, then close socket to unblock recvfrom()
         if (udpThread) {
-            udpThread->requestStop();
-            udpThread->stopThread(2000);
+            udpThread->requestStop();  // Sets ctx->running = 0
+        }
+
+        // Close socket completely (not just shutdown) to force recvfrom() exit
+        if (sp3ctraCore) {
+            sp3ctraCore->closeUdpSocket();
+        }
+
+        // Wait for thread to exit
+        if (udpThread) {
+            udpThread->stopThread(1500);
             udpThread.reset();
         }
         
@@ -829,41 +847,45 @@ void Sp3ctraAudioProcessor::endUdpBatchUpdate()
 {
     udpBatchUpdateActive.store(false);
     
-    // If UDP parameters changed during batch, restart once now
-    if (udpNeedsRestart.load()) {
-        log_info("VST", "UDP batch update complete - applying single restart");
-        
-        // Stop UDP thread
-        if (udpThread) {
-            udpThread->requestStop();
-            udpThread->stopThread(2000);
-            udpThread.reset();
-        }
-        
-        // Update g_sp3ctra_config with current UDP parameters
-        applyConfigurationToCore(false);
-        
-        // Restart UDP socket with new config (buffers untouched)
-        if (!sp3ctraCore->restartUdp(
-                (int)udpPortParam->load(),
-                getUdpAddressString().toStdString(),
-                ""  // multicast interface - auto-detect
-            )) {
-            log_error("VST", "Failed to restart UDP after batch update!");
-        }
-        
-        // Restart UDP thread AFTER socket is created
-        udpThread = std::make_unique<UdpReceiverThread>(sp3ctraCore.get());
-        udpThread->startThread();
-        
-        log_info("VST", "UDP restarted with %s:%d (single batch restart)",
-            getUdpAddressString().toRawUTF8(),
-            (int)udpPortParam->load());
-        
-        udpNeedsRestart.store(false);
-    } else {
-        log_debug("VST", "UDP batch update complete - no restart needed");
+    // 🔧 DEBUG: Always force restart to expose the bug
+    // (Skip comparison - always restart even if config unchanged)
+    int newPort = (int)udpPortParam->load();
+    juce::String newAddress = getUdpAddressString();
+    
+    log_info("VST", "UDP batch update - FORCING restart to %s:%d",
+        newAddress.toRawUTF8(), newPort);
+    
+    // 🔧 CRITICAL FIX: Set ctx->running=0 FIRST, then close socket
+    if (udpThread) {
+        udpThread->requestStop();  // Sets ctx->running = 0
     }
+
+    // Close socket completely (not just shutdown) to force recvfrom() exit
+    if (sp3ctraCore) {
+        sp3ctraCore->closeUdpSocket();
+    }
+
+    // Wait for thread to exit
+    if (udpThread) {
+        udpThread->stopThread(1500);
+        udpThread.reset();
+    }
+    
+    // Update g_sp3ctra_config with current UDP parameters
+    applyConfigurationToCore(false);
+    
+    // Restart UDP socket with new config (buffers untouched)
+    if (!sp3ctraCore->restartUdp(newPort, newAddress.toStdString(), "")) {
+        log_error("VST", "Failed to restart UDP after batch update!");
+    }
+    
+    // Restart UDP thread AFTER socket is created
+    udpThread = std::make_unique<UdpReceiverThread>(sp3ctraCore.get());
+    udpThread->startThread();
+    
+    log_info("VST", "UDP restarted with %s:%d (FORCED)", newAddress.toRawUTF8(), newPort);
+    
+    udpNeedsRestart.store(false);
 }
 
 //==============================================================================

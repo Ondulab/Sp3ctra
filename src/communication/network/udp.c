@@ -81,14 +81,22 @@ int udp_Init(struct sockaddr_in *si_other, struct sockaddr_in *si_me) {
     // Continue anyway, this is not critical
   }
 
-  // Enable port reuse for multiple instances (required on macOS/BSD for multicast sharing)
-#ifdef SO_REUSEPORT
+  // 🔧 CRITICAL FIX: SO_REUSEPORT DISABLED
+  // SO_REUSEPORT causes packets to be lost after socket restart because the kernel
+  // keeps routing packets to the old (closed) socket for an indeterminate time.
+  // SO_REUSEADDR alone is sufficient to prevent "Address already in use" errors
+  // and allows clean socket restart without packet loss.
+  //
+  // NOTE: This means only ONE process can listen on port 55151 at a time.
+  // If you need multiple processes, use different ports or multicast with IGMP.
+#ifdef SO_REUSEPORT_DISABLED_DUE_TO_RESTART_BUG
   if (setsockopt(s, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse)) == -1) {
     log_warning("UDP", "Failed to set SO_REUSEPORT: %s", strerror(errno));
-    // Continue anyway, but multiple instances may not work
   } else {
-    log_info("UDP", "SO_REUSEPORT enabled - multiple instances can share this port");
+    log_info("UDP", "SO_REUSEPORT enabled");
   }
+#else
+  log_info("UDP", "SO_REUSEPORT disabled (prevents packet loss on restart)");
 #endif
 
   // Set socket timeout so recvfrom() can be interrupted for clean shutdown
@@ -170,9 +178,24 @@ int udp_Init(struct sockaddr_in *si_other, struct sockaddr_in *si_me) {
 void udp_cleanup(int socket_fd) {
   if (socket_fd >= 0) {
     log_info("UDP", "Closing UDP socket");
-    // ✅ FIX: Shutdown socket FIRST to unblock any pending recvfrom() calls
-    // This allows the UDP thread to terminate cleanly instead of being killed forcefully
+    
+    // ✅ FIX: Force immediate close with SO_LINGER to avoid TIME_WAIT state
+    // This prevents SO_REUSEPORT from routing packets to the old socket
+    struct linger so_linger;
+    so_linger.l_onoff = 1;   // Enable linger
+    so_linger.l_linger = 0;  // Timeout = 0 (immediate close, send RST)
+    
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger)) < 0) {
+      log_warning("UDP", "Failed to set SO_LINGER: %s", strerror(errno));
+    }
+    
+    // Shutdown socket FIRST to unblock any pending recvfrom() calls
+    // This allows the UDP thread to terminate cleanly
     shutdown(socket_fd, SHUT_RDWR);
+    
+    // Close the socket (will be immediate due to SO_LINGER)
     close(socket_fd);
+    
+    log_info("UDP", "Socket closed (immediate via SO_LINGER)");
   }
 }

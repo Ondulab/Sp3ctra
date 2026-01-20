@@ -68,10 +68,10 @@ public:
             return;
         }
         
-        // Set running flag
-        ctx->running = 1;
+        // 🔧 FIX: Do NOT set ctx->running here - already set by restartUdp() BEFORE thread starts
+        // Setting it again here can cause race conditions with thread synchronization
         
-        log_info("UDP", "Calling C udpThread() function...");
+        log_info("UDP", "Calling C udpThread() function (ctx->running=%d)...", ctx->running);
         
         // Call existing C function (blocks until Context->running = 0)
         udpThread((void*)ctx);
